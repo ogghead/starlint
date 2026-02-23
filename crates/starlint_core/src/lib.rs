@@ -1,0 +1,16 @@
+//! Core linting engine for starlint.
+//!
+//! Provides parsing, AST traversal, rule dispatch, file discovery,
+//! and diagnostic formatting.
+
+pub mod diagnostic;
+pub mod engine;
+pub mod error;
+pub mod file_discovery;
+pub mod fix;
+pub mod parser;
+pub mod rule;
+pub mod traversal;
+
+pub use engine::{FileDiagnostics, LintSession};
+pub use starlint_plugin_sdk;

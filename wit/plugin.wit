@@ -1,0 +1,147 @@
+/// starlint plugin interface.
+///
+/// Defines the contract between starlint and WASM plugins.
+/// Plugins implement the `plugin` interface and export it via the
+/// `linter-plugin` world.
+package starlint:plugin@0.1.0;
+
+interface types {
+    /// Byte-offset span in source text.
+    record span {
+        start: u32,
+        end: u32,
+    }
+
+    /// Severity of a lint diagnostic.
+    enum severity {
+        warning,
+        error,
+        suggestion,
+    }
+
+    /// Category of a lint rule.
+    enum category {
+        correctness,
+        style,
+        performance,
+        suggestion,
+        custom,
+    }
+
+    /// Metadata describing a lint rule.
+    record rule-meta {
+        name: string,
+        description: string,
+        category: category,
+        default-severity: severity,
+    }
+
+    /// A lint diagnostic emitted by a rule.
+    record lint-diagnostic {
+        rule-name: string,
+        message: string,
+        span: span,
+        severity: severity,
+        help: option<string>,
+    }
+
+    /// Flags declaring which node types a plugin is interested in.
+    flags node-interest {
+        import-declaration,
+        export-default-declaration,
+        export-named-declaration,
+        call-expression,
+        member-expression,
+        identifier-reference,
+        arrow-function-expression,
+        function-declaration,
+        variable-declaration,
+        string-literal,
+        object-expression,
+        array-expression,
+        debugger-statement,
+    }
+
+    /// Simplified AST node representations for the WASM boundary.
+    variant ast-node {
+        import-decl(import-declaration-node),
+        export-default-decl(export-default-node),
+        export-named-decl(export-named-node),
+        call-expr(call-expression-node),
+        debugger-stmt(debugger-statement-node),
+    }
+
+    /// Import declaration.
+    record import-declaration-node {
+        span: span,
+        source: string,
+        specifiers: list<import-specifier>,
+    }
+
+    /// Import specifier.
+    record import-specifier {
+        local: string,
+        imported: option<string>,
+    }
+
+    /// Export default declaration.
+    record export-default-node {
+        span: span,
+    }
+
+    /// Export named declaration.
+    record export-named-node {
+        span: span,
+        names: list<string>,
+    }
+
+    /// Call expression.
+    record call-expression-node {
+        span: span,
+        callee-path: string,
+        argument-count: u32,
+        is-awaited: bool,
+    }
+
+    /// Debugger statement.
+    record debugger-statement-node {
+        span: span,
+    }
+
+    /// Context about the file being linted.
+    record file-context {
+        file-path: string,
+        source-text: string,
+        extension: string,
+    }
+
+    /// A batch of nodes for a single file.
+    record node-batch {
+        file: file-context,
+        nodes: list<ast-node>,
+    }
+
+    /// Opaque JSON configuration string.
+    type plugin-config = string;
+}
+
+interface plugin {
+    use types.{rule-meta, lint-diagnostic, node-interest, node-batch, plugin-config};
+
+    /// Return metadata for all rules provided by this plugin.
+    get-rules: func() -> list<rule-meta>;
+
+    /// Declare which AST node types this plugin needs.
+    get-node-interests: func() -> node-interest;
+
+    /// Configure the plugin. Returns a list of validation errors (empty = OK).
+    configure: func(config: plugin-config) -> list<string>;
+
+    /// Lint a file. Receives a batch of matching nodes, returns diagnostics.
+    lint-file: func(batch: node-batch) -> list<lint-diagnostic>;
+}
+
+/// The world that plugins must target.
+world linter-plugin {
+    export plugin;
+}
