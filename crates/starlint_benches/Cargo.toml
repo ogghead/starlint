@@ -1,0 +1,33 @@
+[package]
+name = "starlint_benches"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Per-rule benchmarks for starlint lint rules"
+
+[dependencies]
+starlint_rule_framework = { workspace = true, features = ["test-utils"] }
+starlint_parser = { workspace = true }
+starlint_ast = { workspace = true }
+starlint_scope = { workspace = true }
+
+starlint_plugin_core = { workspace = true }
+starlint_plugin_react = { workspace = true }
+starlint_plugin_typescript = { workspace = true }
+starlint_plugin_testing = { workspace = true }
+starlint_plugin_modules = { workspace = true }
+starlint_plugin_nextjs = { workspace = true }
+starlint_plugin_vue = { workspace = true }
+starlint_plugin_jsdoc = { workspace = true }
+starlint_plugin_storybook = { workspace = true }
+
+criterion = { workspace = true }
+
+[[bench]]
+name = "rules"
+harness = false
+
+[lints]
+workspace = true

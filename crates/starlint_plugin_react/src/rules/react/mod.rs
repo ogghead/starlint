@@ -1,0 +1,57 @@
+//! React-specific lint rules.
+//!
+//! Rules are prefixed with `react/` in config and output.
+
+pub mod button_has_type;
+pub mod checked_requires_onchange_or_readonly;
+pub mod display_name;
+pub mod exhaustive_deps;
+pub mod forbid_dom_props;
+pub mod forbid_elements;
+pub mod forward_ref_uses_ref;
+pub mod iframe_missing_sandbox;
+pub mod jsx_boolean_value;
+pub mod jsx_curly_brace_presence;
+pub mod jsx_filename_extension;
+pub mod jsx_fragments;
+pub mod jsx_handler_names;
+pub mod jsx_key;
+pub mod jsx_max_depth;
+pub mod jsx_no_comment_textnodes;
+pub mod jsx_no_constructed_context_values;
+pub mod jsx_no_duplicate_props;
+pub mod jsx_no_script_url;
+pub mod jsx_no_target_blank;
+pub mod jsx_no_undef;
+pub mod jsx_no_useless_fragment;
+pub mod jsx_pascal_case;
+pub mod jsx_props_no_spread_multi;
+pub mod jsx_props_no_spreading;
+pub mod no_array_index_key;
+pub mod no_children_prop;
+pub mod no_danger;
+pub mod no_danger_with_children;
+pub mod no_did_mount_set_state;
+pub mod no_direct_mutation_state;
+pub mod no_find_dom_node;
+pub mod no_is_mounted;
+pub mod no_multi_comp;
+pub mod no_namespace;
+pub mod no_redundant_should_component_update;
+pub mod no_render_return_value;
+pub mod no_set_state;
+pub mod no_string_refs;
+pub mod no_this_in_sfc;
+pub mod no_unescaped_entities;
+pub mod no_unknown_property;
+pub mod no_unsafe;
+pub mod no_will_update_set_state;
+pub mod only_export_components;
+pub mod prefer_es6_class;
+pub mod react_in_jsx_scope;
+pub mod require_render_return;
+pub mod rules_of_hooks;
+pub mod self_closing_comp;
+pub mod state_in_constructor;
+pub mod style_prop_object;
+pub mod void_dom_elements_no_children;

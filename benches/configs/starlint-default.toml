@@ -1,0 +1,2 @@
+# Empty config — starlint enables all 710+ rules when no rules are specified.
+# Used for "full defaults" benchmark scenario.

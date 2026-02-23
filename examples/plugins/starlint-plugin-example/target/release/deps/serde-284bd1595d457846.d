@@ -1,0 +1,14 @@
+/home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/release/deps/serde-284bd1595d457846.d: /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/release/build/serde-c7b00effde66393b/out/private.rs
+
+/home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/release/deps/libserde-284bd1595d457846.rlib: /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/release/build/serde-c7b00effde66393b/out/private.rs
+
+/home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/release/deps/libserde-284bd1595d457846.rmeta: /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs /home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs /home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/release/build/serde-c7b00effde66393b/out/private.rs
+
+/home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/lib.rs:
+/home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/integer128.rs:
+/home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/mod.rs:
+/home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/de.rs:
+/home/ogghead/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/serde-1.0.228/src/private/ser.rs:
+/home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/release/build/serde-c7b00effde66393b/out/private.rs:
+
+# env-dep:OUT_DIR=/home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/release/build/serde-c7b00effde66393b/out

@@ -1,0 +1,123 @@
+//! Rule: `import/no-self-import`
+//!
+//! Forbid a module from importing itself. Self-imports are always a mistake
+//! and can cause runtime errors or infinite loops.
+//!
+//! This is a limited implementation — it checks if the import source
+//! matches the file's own name without full path resolution.
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
+use starlint_rule_framework::FixBuilder;
+use starlint_rule_framework::fix_utils;
+use starlint_rule_framework::{LintContext, LintRule};
+
+/// Flags imports that appear to reference the current file.
+#[derive(Debug)]
+pub struct NoSelfImport;
+
+impl LintRule for NoSelfImport {
+    fn meta(&self) -> RuleMeta {
+        RuleMeta {
+            name: "import/no-self-import".to_owned(),
+            description: "Forbid a module from importing itself".to_owned(),
+            category: Category::Correctness,
+            default_severity: Severity::Warning,
+        }
+    }
+
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
+    }
+
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
+            return;
+        };
+
+        let source_value = import.source.as_str();
+
+        // Only check relative imports
+        if !source_value.starts_with("./") && !source_value.starts_with("../") {
+            return;
+        }
+
+        // Extract the file stem from the current file path
+        let file_stem = ctx
+            .file_path()
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+
+        // Extract the imported file stem from the source
+        // e.g., `./foo` -> `foo`, `./bar/baz` -> `baz`
+        let import_stem = source_value
+            .rsplit('/')
+            .next()
+            .unwrap_or("")
+            .split('.')
+            .next()
+            .unwrap_or("");
+
+        // Heuristic: if the imported stem matches the file stem and
+        // the import is a same-directory relative import
+        if source_value.starts_with("./")
+            && !source_value.contains("/..")
+            && source_value.matches('/').count() == 1
+            && import_stem == file_stem
+        {
+            let import_span = Span::new(import.span.start, import.span.end);
+            let fix = FixBuilder::new("Remove self-import", FixKind::SuggestionFix)
+                .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
+                .build();
+            ctx.report(Diagnostic {
+                rule_name: "import/no-self-import".to_owned(),
+                message: "Module should not import itself".to_owned(),
+                span: import_span,
+                severity: Severity::Warning,
+                help: None,
+                fix,
+                labels: vec![],
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starlint_rule_framework::lint_source;
+
+    fn lint_with_path(
+        source: &str,
+        path: &str,
+    ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSelfImport)];
+        lint_source(source, path, &rules)
+    }
+
+    #[test]
+    fn test_flags_self_import() {
+        let diags = lint_with_path(r#"import foo from "./test";"#, "test.ts");
+        assert_eq!(diags.len(), 1, "self-import should be flagged");
+    }
+
+    #[test]
+    fn test_allows_different_module() {
+        let diags = lint_with_path(r#"import foo from "./other";"#, "test.ts");
+        assert!(
+            diags.is_empty(),
+            "import of different module should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_package_import() {
+        let diags = lint_with_path(r#"import foo from "lodash";"#, "test.ts");
+        assert!(diags.is_empty(), "package import should not be flagged");
+    }
+}

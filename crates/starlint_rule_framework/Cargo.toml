@@ -1,0 +1,29 @@
+[package]
+name = "starlint_rule_framework"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Rule authoring framework for starlint — LintRule, LintContext, Plugin, traversal, fix utilities"
+
+[features]
+default = []
+test-utils = ["dep:starlint_parser"]
+
+[dependencies]
+starlint_ast = { workspace = true }
+starlint_plugin_sdk = { workspace = true }
+starlint_scope = { workspace = true }
+serde_json = { workspace = true }
+smallvec = { workspace = true }
+
+# Only needed for lint_source() test helper
+starlint_parser = { workspace = true, optional = true }
+
+[dev-dependencies]
+starlint_parser = { workspace = true }
+pretty_assertions = { workspace = true }
+
+[lints]
+workspace = true

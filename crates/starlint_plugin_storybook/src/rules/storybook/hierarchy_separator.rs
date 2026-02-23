@@ -1,0 +1,117 @@
+//! Rule: `storybook/hierarchy-separator`
+//!
+//! Deprecated hierarchy separator in title property.
+//! Checks for `|` in title strings (should use `/` instead).
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+
+use starlint_rule_framework::{LintContext, LintRule};
+
+/// Rule name constant.
+const RULE_NAME: &str = "storybook/hierarchy-separator";
+
+/// Deprecated hierarchy separator in title property.
+#[derive(Debug)]
+pub struct HierarchySeparator;
+
+impl LintRule for HierarchySeparator {
+    fn meta(&self) -> RuleMeta {
+        RuleMeta {
+            name: RULE_NAME.to_owned(),
+            description: "Deprecated hierarchy separator in title property".to_owned(),
+            category: Category::Style,
+            default_severity: Severity::Warning,
+        }
+    }
+
+    fn needs_traversal(&self) -> bool {
+        false
+    }
+
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
+        let file_name = ctx.file_path().to_string_lossy();
+        if !file_name.contains(".stories.") && !file_name.contains(".story.") {
+            return;
+        }
+
+        let source = ctx.source_text().to_owned();
+
+        // Find title property in default export meta
+        // Look for patterns like `title: 'Components|Button'` or `title: "Components|Button"`
+        let title_patterns = ["title: '", "title: \"", "title:'", "title:\""];
+
+        for pattern in &title_patterns {
+            let mut search_pos = 0;
+            while let Some(pos) = source.get(search_pos..).and_then(|s| s.find(pattern)) {
+                let abs_pos = search_pos.saturating_add(pos);
+                let value_start = abs_pos.saturating_add(pattern.len());
+                let quote_char = pattern.chars().last().unwrap_or('\'');
+
+                // Find the closing quote
+                let remaining = source.get(value_start..).unwrap_or_default();
+                let Some(close_pos) = remaining.find(quote_char) else {
+                    search_pos = value_start;
+                    continue;
+                };
+
+                let title_value = remaining.get(..close_pos).unwrap_or_default();
+
+                if title_value.contains('|') {
+                    let start = u32::try_from(value_start).unwrap_or(0);
+                    let end = start.saturating_add(u32::try_from(close_pos).unwrap_or(0));
+                    let fixed_title = title_value.replace('|', "/");
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Use `/` instead of `|` as hierarchy separator in title"
+                            .to_owned(),
+                        span: Span::new(start, end),
+                        severity: Severity::Warning,
+                        help: Some("Replace `|` with `/`".to_owned()),
+                        fix: Some(Fix {
+                            kind: FixKind::SafeFix,
+                            message: "Replace `|` with `/`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(start, end),
+                                replacement: fixed_title,
+                            }],
+                            is_snippet: false,
+                        }),
+                        labels: vec![],
+                    });
+                }
+
+                search_pos = value_start.saturating_add(close_pos).saturating_add(1);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    use starlint_rule_framework::lint_source;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(HierarchySeparator)];
+        lint_source(source, "Button.stories.tsx", &rules)
+    }
+
+    #[test]
+    fn test_flags_pipe_separator() {
+        let diags = lint("export default { title: 'Components|Button' };");
+        assert_eq!(diags.len(), 1, "should flag | in title");
+    }
+
+    #[test]
+    fn test_allows_slash_separator() {
+        let diags = lint("export default { title: 'Components/Button' };");
+        assert!(diags.is_empty(), "should allow / in title");
+    }
+
+    #[test]
+    fn test_allows_no_separator() {
+        let diags = lint("export default { title: 'Button' };");
+        assert!(diags.is_empty(), "should allow title without separator");
+    }
+}

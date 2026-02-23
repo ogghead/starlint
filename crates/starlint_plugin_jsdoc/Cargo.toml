@@ -1,0 +1,20 @@
+[package]
+name = "starlint_plugin_jsdoc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "JSDoc lint rules for starlint"
+
+[dependencies]
+starlint_rule_framework = { workspace = true }
+starlint_plugin_sdk = { workspace = true }
+
+
+
+[dev-dependencies]
+starlint_rule_framework = { workspace = true, features = ["test-utils"] }
+
+[lints]
+workspace = true

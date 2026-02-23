@@ -1,0 +1,118 @@
+name: Flamegraph
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: flamegraph
+  cancel-in-progress: true
+
+jobs:
+  flamegraph:
+    name: Generate flamegraph
+    # Pin to ubuntu-22.04: ubuntu-latest (24.04) runs kernel 6.14 which
+    # lacks matching linux-tools packages (Ubuntu bug #2117159).
+    runs-on: ubuntu-22.04
+    env:
+      CARGO_BUILD_JOBS: "4"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Cache cargo-flamegraph binary
+        id: cache-flamegraph
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/flamegraph
+          key: cargo-flamegraph-v1
+
+      - name: Install perf and cargo-flamegraph
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y linux-tools-$(uname -r) \
+            || sudo apt-get install -y linux-tools-generic
+          if [ ! -f ~/.cargo/bin/flamegraph ]; then
+            cargo install flamegraph --locked
+          fi
+
+      - name: Allow perf events
+        run: sudo sysctl kernel.perf_event_paranoid=-1
+
+      - name: Cache benchmark corpora
+        uses: actions/cache@v5
+        with:
+          path: benches/corpora
+          key: bench-corpora-v1
+
+      - name: Clone grafana corpus
+        run: |
+          if [ ! -d benches/corpora/grafana ]; then
+            mkdir -p benches/corpora
+            git clone --depth 1 --filter=blob:none --sparse \
+              https://github.com/grafana/grafana.git benches/corpora/grafana
+            cd benches/corpora/grafana && git sparse-checkout set public/app
+          fi
+
+      - name: Build release binary
+        env:
+          RUSTFLAGS: "-C force-frame-pointers=yes"
+        run: cargo build --profile flamegraph --bin starlint
+
+      - name: Generate flamegraph
+        run: |
+          set +e
+          RAYON_NUM_THREADS=2 flamegraph \
+            --ignore-status \
+            --post-process "tee flamegraph.txt" \
+            -o flamegraph.svg \
+            -- target/flamegraph/starlint \
+               --config benches/configs/starlint-default.toml \
+               benches/corpora/grafana 2>&1
+          exit_code=$?
+          set -e
+          if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
+            echo "Flamegraph SVG size: $(du -h flamegraph.svg | cut -f1)"
+          else
+            echo "::error::flamegraph.svg not generated (flamegraph exit code: $exit_code)"
+            exit 1
+          fi
+          if [ -f flamegraph.txt ] && [ -s flamegraph.txt ]; then
+            echo "Collapsed stacks size: $(du -h flamegraph.txt | cut -f1)"
+            echo "Top 10 hottest stacks:"
+            sort -t' ' -k2 -rn flamegraph.txt | head -10
+          fi
+
+      - name: Upload flamegraph artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: flamegraph-${{ github.sha }}
+          path: |
+            flamegraph.svg
+            flamegraph.txt
+          retention-days: 90
+
+      - name: Publish flamegraph to assets branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Save files outside the working tree before resetting
+          cp flamegraph.svg /tmp/flamegraph.svg
+          cp flamegraph.txt /tmp/flamegraph.txt
+          # Create orphan branch with flamegraph assets
+          git checkout --orphan flamegraph-assets-tmp
+          git rm -rf .
+          cp /tmp/flamegraph.svg flamegraph.svg
+          cp /tmp/flamegraph.txt flamegraph.txt
+          git add flamegraph.svg flamegraph.txt
+          git commit -m "Update flamegraph from ${{ github.sha }}"
+          git push origin flamegraph-assets-tmp:flamegraph-assets --force

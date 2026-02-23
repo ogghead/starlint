@@ -1,0 +1,135 @@
+/// starlint plugin interface.
+///
+/// Defines the contract between starlint and WASM plugins.
+/// Plugins export the `plugin` interface to provide lint rules.
+package starlint:plugin@0.1.0;
+
+interface types {
+    /// Byte-offset span in source text.
+    record span {
+        start: u32,
+        end: u32,
+    }
+
+    /// Severity of a lint diagnostic.
+    enum severity {
+        warning,
+        error,
+        suggestion,
+    }
+
+    /// Category of a lint rule.
+    enum category {
+        correctness,
+        style,
+        performance,
+        suggestion,
+        custom,
+    }
+
+    /// Metadata describing a lint rule.
+    record rule-meta {
+        name: string,
+        description: string,
+        category: category,
+        default-severity: severity,
+    }
+
+    /// Opaque JSON configuration string.
+    type plugin-config = string;
+
+    /// Context about the file being linted.
+    record file-context {
+        file-path: string,
+        source-text: string,
+        extension: string,
+    }
+
+    /// Safety classification of a fix.
+    enum fix-kind {
+        /// Fix is safe and preserves semantics.
+        safe-fix,
+        /// Fix is a suggestion that may change semantics.
+        suggestion-fix,
+        /// Fix may change semantics in a breaking way.
+        dangerous-fix,
+    }
+
+    /// A single text edit (replace span contents with new text).
+    record edit {
+        /// Span to replace.
+        span: span,
+        /// Replacement text.
+        replacement: string,
+    }
+
+    /// An auto-fix consisting of one or more text edits.
+    record fix {
+        /// Safety classification.
+        kind: fix-kind,
+        /// Human-readable description of the fix.
+        message: string,
+        /// Ordered list of text edits to apply.
+        edits: list<edit>,
+        /// Whether edit replacements contain LSP snippet syntax.
+        is-snippet: bool,
+    }
+
+    /// A labeled source span for additional context in diagnostics.
+    record label {
+        /// Source span.
+        span: span,
+        /// Label message.
+        message: string,
+    }
+
+    /// A lint diagnostic with fix support.
+    record lint-diagnostic {
+        rule-name: string,
+        message: string,
+        span: span,
+        severity: severity,
+        help: option<string>,
+        /// Optional auto-fix.
+        fix: option<fix>,
+        /// Additional labeled spans for context.
+        labels: list<label>,
+    }
+
+    /// Serialized AST tree (JSON-encoded `starlint_ast::AstTree`).
+    ///
+    /// The full AST is serialized as JSON bytes rather than defined as
+    /// 85+ WIT records. Plugins deserialize using the `starlint_ast` crate
+    /// (or any JSON parser for non-Rust plugins).
+    ///
+    /// The tree is a flat indexed structure where nodes reference children
+    /// by `u32` index. See `starlint_ast` crate documentation for the
+    /// exact schema.
+    type serialized-ast-tree = list<u8>;
+}
+
+/// Plugin interface (full AST tree + fix support).
+///
+/// Receives the complete AST tree for each file, enabling deep
+/// navigation and fix production.
+interface plugin {
+    use types.{rule-meta, lint-diagnostic, file-context, serialized-ast-tree, plugin-config};
+
+    /// Return metadata for all rules provided by this plugin.
+    get-rules: func() -> list<rule-meta>;
+
+    /// Declare file-path glob patterns this plugin applies to.
+    /// Empty list = all files (default). Example: ["*.stories.*", "*.test.*"]
+    get-file-patterns: func() -> list<string>;
+
+    /// Configure the plugin. Returns a list of validation errors (empty = OK).
+    configure: func(config: plugin-config) -> list<string>;
+
+    /// Lint a file. Receives the full AST tree, returns diagnostics with fix support.
+    lint-file: func(file: file-context, tree: serialized-ast-tree) -> list<lint-diagnostic>;
+}
+
+/// Plugins export the `plugin` interface.
+world linter-plugin {
+    export plugin;
+}

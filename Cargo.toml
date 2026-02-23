@@ -1,0 +1,185 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+exclude = ["examples/plugins/starlint-plugin-example", "examples/plugins/starlint-plugin-jsx-example", "examples/plugins/starlint-plugin-storybook", "examples/plugins/starlint-plugin-testing", "examples/plugins/starlint-plugin-react", "examples/plugins/starlint-plugin-modules", "examples/plugins/starlint-plugin-nextjs", "examples/plugins/starlint-plugin-vue", "examples/plugins/starlint-plugin-jsdoc", "examples/plugins/starlint-plugin-typescript"]
+
+[workspace.package]
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/ogghead/starlint"
+publish = false
+
+[workspace.dependencies]
+# Error handling and diagnostics
+miette = { version = "7", features = ["fancy"] }
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+
+# File discovery
+globset = "0.4"
+ignore = "0.4"
+
+# Collections
+smallvec = "1"
+
+# Parallelism
+rayon = "1.10"
+
+# WASM runtime
+wasmtime = { version = "42", features = ["component-model", "winch"] }
+
+# LSP
+tower-lsp = "0.20"
+tokio = { version = "1", features = ["rt", "io-std", "macros", "time"] }
+
+# Internal crates
+starlint_ast = { path = "crates/starlint_ast" }
+starlint_core = { path = "crates/starlint_core" }
+starlint_config = { path = "crates/starlint_config" }
+starlint_parser = { path = "crates/starlint_parser" }
+starlint_plugin_sdk = { path = "crates/starlint_plugin_sdk" }
+starlint_scope = { path = "crates/starlint_scope" }
+starlint_loader = { path = "crates/starlint_loader" }
+starlint_wasm_host = { path = "crates/starlint_wasm_host" }
+starlint_lsp = { path = "crates/starlint_lsp" }
+starlint_rule_framework = { path = "crates/starlint_rule_framework" }
+
+# Plugin crates
+starlint_plugin_core = { path = "crates/starlint_plugin_core" }
+starlint_plugin_react = { path = "crates/starlint_plugin_react" }
+starlint_plugin_typescript = { path = "crates/starlint_plugin_typescript" }
+starlint_plugin_testing = { path = "crates/starlint_plugin_testing" }
+starlint_plugin_modules = { path = "crates/starlint_plugin_modules" }
+starlint_plugin_nextjs = { path = "crates/starlint_plugin_nextjs" }
+starlint_plugin_vue = { path = "crates/starlint_plugin_vue" }
+starlint_plugin_jsdoc = { path = "crates/starlint_plugin_jsdoc" }
+starlint_plugin_storybook = { path = "crates/starlint_plugin_storybook" }
+
+# Testing
+pretty_assertions = "1"
+insta = { version = "1", features = ["yaml"] }
+criterion = { version = "0.5", features = ["html_reports"] }
+proptest = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.rustdoc]
+missing_crate_level_docs = "deny"
+unescaped_backticks = "deny"
+broken_intra_doc_links = "deny"
+bare_urls = "deny"
+invalid_html_tags = "deny"
+invalid_rust_codeblocks = "deny"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+
+# Pedantic relaxations
+module_name_repetitions = "allow"
+must_use_candidate = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+
+# Nursery relaxation
+option_if_let_else = "allow"
+
+# Integration tests live in tests/
+tests_outside_test_module = "allow"
+
+# === Restriction lints (opt-in, strictest quality) ===
+
+# Panic prevention (deny)
+unwrap_used = "deny"
+expect_used = "deny"
+unwrap_in_result = "deny"
+get_unwrap = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+unreachable = "deny"
+indexing_slicing = "deny"
+
+# Debug artifacts (deny)
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+use_debug = "deny"
+
+# Shadowing (deny)
+shadow_reuse = "deny"
+shadow_same = "deny"
+shadow_unrelated = "deny"
+
+# Error handling quality (deny)
+map_err_ignore = "deny"
+missing_assert_message = "deny"
+try_err = "deny"
+error_impl_error = "deny"
+
+# Type safety and conversions (deny)
+as_conversions = "deny"
+lossy_float_literal = "deny"
+float_cmp_const = "deny"
+integer_division = "deny"
+arithmetic_side_effects = "deny"
+
+# Code hygiene (deny)
+wildcard_imports = "deny"
+empty_structs_with_brackets = "deny"
+pub_without_shorthand = "deny"
+large_stack_frames = "deny"
+clone_on_ref_ptr = "deny"
+multiple_inherent_impl = "deny"
+string_add = "deny"
+str_to_string = "deny"
+implicit_clone = "deny"
+format_push_string = "deny"
+verbose_file_reads = "deny"
+exit = "deny"
+mem_forget = "deny"
+rest_pat_in_fully_bound_structs = "deny"
+same_name_method = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+empty_drop = "deny"
+if_then_some_else_none = "deny"
+let_underscore_must_use = "deny"
+missing_docs_in_private_items = "deny"
+undocumented_unsafe_blocks = "deny"
+unnecessary_safety_comment = "deny"
+unnecessary_safety_doc = "deny"
+
+[profile.dev]
+split-debuginfo = "unpacked"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[profile.ci-bench]
+inherits = "release"
+lto = false
+codegen-units = 16
+
+[profile.flamegraph]
+inherits = "release"
+lto = false
+codegen-units = 16
+debug = true
+strip = false

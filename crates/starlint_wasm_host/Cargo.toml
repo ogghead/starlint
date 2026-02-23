@@ -1,0 +1,37 @@
+[package]
+name = "starlint_wasm_host"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "WASM plugin host for starlint"
+
+[features]
+default = ["wasm"]
+wasm = ["dep:wasmtime"]
+
+[dependencies]
+starlint_plugin_sdk = { workspace = true }
+starlint_rule_framework = { workspace = true }
+
+globset = { workspace = true }
+miette = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde_json = { workspace = true }
+wasmtime = { workspace = true, optional = true }
+
+starlint_ast = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+starlint_parser = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "wasm_overhead"
+harness = false
+
+[lints]
+workspace = true

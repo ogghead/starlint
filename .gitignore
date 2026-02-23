@@ -1,0 +1,28 @@
+/target
+examples/plugins/*/target/
+
+# Coverage
+lcov.info
+*.profraw
+tarpaulin-report.*
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+
+# npm platform binaries (built in CI)
+npm/cli-*/starlint
+npm/cli-*/starlint.exe
+npm/*.tgz
+
+# Claude
+.claude/

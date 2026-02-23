@@ -1,0 +1,36 @@
+{
+  "name": "starlint",
+  "version": "0.2.0",
+  "description": "A fast, Rust-based JavaScript/TypeScript linter",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ogghead/starlint"
+  },
+  "homepage": "https://github.com/ogghead/starlint",
+  "keywords": [
+    "linter",
+    "javascript",
+    "typescript",
+    "lint",
+    "static-analysis"
+  ],
+  "bin": {
+    "starlint": "bin/starlint"
+  },
+  "files": [
+    "bin/starlint",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=14"
+  },
+  "optionalDependencies": {
+    "@starlint/cli-linux-x64-gnu": "0.2.0",
+    "@starlint/cli-linux-arm64-gnu": "0.2.0",
+    "@starlint/cli-darwin-x64": "0.2.0",
+    "@starlint/cli-darwin-arm64": "0.2.0",
+    "@starlint/cli-win32-x64-msvc": "0.2.0"
+  }
+}

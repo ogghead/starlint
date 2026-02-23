@@ -1,0 +1,1 @@
+/home/ogghead/starlint/examples/plugins/starlint-plugin-example/target/wasm32-wasip1/release/starlint_plugin_example.wasm: /home/ogghead/starlint/examples/plugins/starlint-plugin-example/src/lib.rs /home/ogghead/starlint/examples/plugins/starlint-plugin-example/wit/plugin.wit

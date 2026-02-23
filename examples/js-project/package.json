@@ -1,0 +1,13 @@
+{
+  "name": "starlint-example",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Example project demonstrating starlint usage",
+  "scripts": {
+    "lint": "starlint src/",
+    "lint:fix": "starlint fix src/"
+  },
+  "devDependencies": {
+    "starlint": "^0.1.1"
+  }
+}

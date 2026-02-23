@@ -1,0 +1,142 @@
+//! Typescript lint rules for starlint.
+//!
+//! Provides [`create_plugin`] to construct a [`Plugin`] containing all
+//! typescript rules.
+
+pub mod rules;
+
+use starlint_rule_framework::{LintRule, LintRulePlugin, Plugin};
+
+/// Create the typescript plugin with all its rules.
+#[must_use]
+pub fn create_plugin() -> Box<dyn Plugin> {
+    Box::new(LintRulePlugin::new(all_rules()))
+}
+
+/// Return all typescript lint rules.
+#[must_use]
+#[allow(clippy::too_many_lines)]
+pub fn all_rules() -> Vec<Box<dyn LintRule>> {
+    vec![
+        Box::new(crate::rules::typescript::adjacent_overload_signatures::AdjacentOverloadSignatures),
+        Box::new(crate::rules::typescript::array_type::ArrayType),
+        Box::new(crate::rules::typescript::await_thenable::AwaitThenable),
+        Box::new(crate::rules::typescript::ban_ts_comment::BanTsComment),
+        Box::new(crate::rules::typescript::ban_tslint_comment::BanTslintComment),
+        Box::new(crate::rules::typescript::ban_types::BanTypes),
+        Box::new(crate::rules::typescript::consistent_generic_constructors::ConsistentGenericConstructors),
+        Box::new(crate::rules::typescript::consistent_indexed_object_style::ConsistentIndexedObjectStyle),
+        Box::new(crate::rules::typescript::consistent_return::ConsistentReturn),
+        Box::new(crate::rules::typescript::consistent_type_assertions::ConsistentTypeAssertions),
+        Box::new(crate::rules::typescript::consistent_type_definitions::ConsistentTypeDefinitions),
+        Box::new(crate::rules::typescript::consistent_type_exports::ConsistentTypeExports),
+        Box::new(crate::rules::typescript::consistent_type_imports::ConsistentTypeImports),
+        Box::new(crate::rules::typescript::dot_notation::DotNotation),
+        Box::new(crate::rules::typescript::explicit_function_return_type::ExplicitFunctionReturnType),
+        Box::new(crate::rules::typescript::explicit_module_boundary_types::ExplicitModuleBoundaryTypes),
+        Box::new(crate::rules::typescript::no_array_delete::NoArrayDelete),
+        Box::new(crate::rules::typescript::no_base_to_string::NoBaseToString),
+        Box::new(crate::rules::typescript::no_confusing_non_null_assertion::NoConfusingNonNullAssertion),
+        Box::new(crate::rules::typescript::no_confusing_void_expression::NoConfusingVoidExpression),
+        Box::new(crate::rules::typescript::no_deprecated::NoDeprecated),
+        Box::new(crate::rules::typescript::no_duplicate_enum_values::NoDuplicateEnumValues),
+        Box::new(crate::rules::typescript::no_dynamic_delete::NoDynamicDelete),
+        Box::new(crate::rules::typescript::no_empty_interface::NoEmptyInterface),
+        Box::new(crate::rules::typescript::no_empty_object_type::NoEmptyObjectType),
+        Box::new(crate::rules::typescript::no_explicit_any::NoExplicitAny),
+        Box::new(crate::rules::typescript::no_extra_non_null_assertion::NoExtraNonNullAssertion),
+        Box::new(crate::rules::typescript::no_extraneous_class::NoExtraneousClass),
+        Box::new(crate::rules::typescript::no_floating_promises::NoFloatingPromises),
+        Box::new(crate::rules::typescript::no_for_in_array::NoForInArray),
+        Box::new(crate::rules::typescript::no_implied_eval::NoImpliedEval),
+        Box::new(crate::rules::typescript::no_inferrable_types::NoInferrableTypes),
+        Box::new(crate::rules::typescript::no_invalid_void_type::NoInvalidVoidType::new()),
+        Box::new(crate::rules::typescript::no_misused_new::NoMisusedNew),
+        Box::new(crate::rules::typescript::no_misused_promises::NoMisusedPromises),
+        Box::new(crate::rules::typescript::no_misused_spread::NoMisusedSpread),
+        Box::new(crate::rules::typescript::no_namespace::NoNamespace),
+        Box::new(crate::rules::typescript::no_mixed_enums::NoMixedEnums),
+        Box::new(crate::rules::typescript::no_non_null_asserted_optional_chain::NoNonNullAssertedOptionalChain),
+        Box::new(crate::rules::typescript::no_non_null_assertion::NoNonNullAssertion),
+        Box::new(crate::rules::typescript::no_require_imports::NoRequireImports),
+        Box::new(crate::rules::typescript::no_restricted_types::NoRestrictedTypes),
+        Box::new(crate::rules::typescript::no_this_alias::NoThisAlias),
+        Box::new(crate::rules::typescript::no_unnecessary_boolean_literal_compare::NoUnnecessaryBooleanLiteralCompare),
+        Box::new(crate::rules::typescript::no_unnecessary_condition::NoUnnecessaryCondition),
+        Box::new(crate::rules::typescript::no_unnecessary_parameter_property_assignment::NoUnnecessaryParameterPropertyAssignment),
+        Box::new(crate::rules::typescript::no_unnecessary_qualifier::NoUnnecessaryQualifier),
+        Box::new(crate::rules::typescript::no_unnecessary_template_expression::NoUnnecessaryTemplateExpression),
+        Box::new(crate::rules::typescript::no_unnecessary_type_arguments::NoUnnecessaryTypeArguments),
+        Box::new(crate::rules::typescript::no_unnecessary_type_assertion::NoUnnecessaryTypeAssertion),
+        Box::new(crate::rules::typescript::no_unnecessary_type_constraint::NoUnnecessaryTypeConstraint),
+        Box::new(crate::rules::typescript::no_unnecessary_type_parameters::NoUnnecessaryTypeParameters),
+        Box::new(crate::rules::typescript::no_unsafe_argument::NoUnsafeArgument),
+        Box::new(crate::rules::typescript::no_unsafe_assignment::NoUnsafeAssignment),
+        Box::new(crate::rules::typescript::no_unsafe_call::NoUnsafeCall),
+        Box::new(crate::rules::typescript::no_unsafe_declaration_merging::NoUnsafeDeclarationMerging),
+        Box::new(crate::rules::typescript::no_unsafe_enum_comparison::NoUnsafeEnumComparison),
+        Box::new(crate::rules::typescript::no_unsafe_function_type::NoUnsafeFunctionType),
+        Box::new(crate::rules::typescript::no_unsafe_member_access::NoUnsafeMemberAccess),
+        Box::new(crate::rules::typescript::no_unsafe_return::NoUnsafeReturn),
+        Box::new(crate::rules::typescript::no_unsafe_type_assertion::NoUnsafeTypeAssertion),
+        Box::new(crate::rules::typescript::no_unsafe_unary_minus::NoUnsafeUnaryMinus),
+        Box::new(crate::rules::typescript::no_useless_empty_export::NoUselessEmptyExport),
+        Box::new(crate::rules::typescript::no_var_requires::NoVarRequires),
+        Box::new(crate::rules::typescript::no_wrapper_object_types::NoWrapperObjectTypes),
+        Box::new(crate::rules::typescript::non_nullable_type_assertion_style::NonNullableTypeAssertionStyle),
+        Box::new(crate::rules::typescript::only_throw_error::OnlyThrowError),
+        Box::new(crate::rules::typescript::parameter_properties::ParameterProperties),
+        Box::new(crate::rules::typescript::prefer_as_const::PreferAsConst),
+        Box::new(crate::rules::typescript::prefer_enum_initializers::PreferEnumInitializers),
+        Box::new(crate::rules::typescript::prefer_find::PreferFind),
+        Box::new(crate::rules::typescript::prefer_for_of::PreferForOf),
+        Box::new(crate::rules::typescript::prefer_function_type::PreferFunctionType),
+        Box::new(crate::rules::typescript::prefer_includes::PreferIncludes),
+        Box::new(crate::rules::typescript::prefer_literal_enum_member::PreferLiteralEnumMember),
+        Box::new(crate::rules::typescript::prefer_namespace_keyword::PreferNamespaceKeyword),
+        Box::new(crate::rules::typescript::prefer_nullish_coalescing::PreferNullishCoalescing),
+        Box::new(crate::rules::typescript::prefer_optional_chain::PreferOptionalChain),
+        Box::new(crate::rules::typescript::prefer_promise_reject_errors::PreferPromiseRejectErrors),
+        Box::new(crate::rules::typescript::prefer_readonly::PreferReadonly),
+        Box::new(crate::rules::typescript::prefer_readonly_parameter_types::PreferReadonlyParameterTypes),
+        Box::new(crate::rules::typescript::prefer_reduce_type_parameter::PreferReduceTypeParameter),
+        Box::new(crate::rules::typescript::prefer_regexp_exec::PreferRegexpExec),
+        Box::new(crate::rules::typescript::prefer_return_this_type::PreferReturnThisType),
+        Box::new(crate::rules::typescript::prefer_string_starts_ends_with::PreferStringStartsEndsWith),
+        Box::new(crate::rules::typescript::promise_function_async::PromiseFunctionAsync),
+        Box::new(crate::rules::typescript::related_getter_setter_pairs::RelatedGetterSetterPairs),
+        Box::new(crate::rules::typescript::require_array_sort_compare::RequireArraySortCompare),
+        Box::new(crate::rules::typescript::require_await::RequireAwait),
+        Box::new(crate::rules::typescript::restrict_plus_operands::RestrictPlusOperands),
+        Box::new(crate::rules::typescript::restrict_template_expressions::RestrictTemplateExpressions),
+        Box::new(crate::rules::typescript::return_await::ReturnAwait),
+        Box::new(crate::rules::typescript::strict_boolean_expressions::StrictBooleanExpressions),
+        Box::new(crate::rules::typescript::strict_void_return::StrictVoidReturn),
+        Box::new(crate::rules::typescript::switch_exhaustiveness_check::SwitchExhaustivenessCheck),
+        Box::new(crate::rules::typescript::triple_slash_reference::TripleSlashReference),
+        Box::new(crate::rules::typescript::unbound_method::UnboundMethod),
+        Box::new(crate::rules::typescript::unified_signatures::UnifiedSignatures),
+        Box::new(crate::rules::typescript::use_unknown_in_catch_callback_variable::UseUnknownInCatchCallbackVariable),
+    ]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_plugin_returns_rules() {
+        let plugin = create_plugin();
+        let rules = plugin.rules();
+        assert!(
+            !rules.is_empty(),
+            "typescript plugin should provide at least one rule"
+        );
+    }
+
+    #[test]
+    fn test_all_rules_count() {
+        let rules = all_rules();
+        assert_eq!(rules.len(), 99, "typescript should have 99 rules");
+    }
+}
