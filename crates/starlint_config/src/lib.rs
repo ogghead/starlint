@@ -21,7 +21,7 @@ pub struct Config {
     #[serde(default)]
     pub plugins: Vec<PluginDeclaration>,
 
-    /// Rule configurations: rule name → severity or detailed config.
+    /// Rule configurations: rule name -> severity or detailed config.
     #[serde(default)]
     pub rules: HashMap<String, RuleConfig>,
 
@@ -31,17 +31,11 @@ pub struct Config {
 }
 
 /// General settings.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Settings {
     /// Number of threads (0 = auto-detect).
     #[serde(default)]
     pub threads: usize,
-}
-
-impl Default for Settings {
-    fn default() -> Self {
-        Self { threads: 0 }
-    }
 }
 
 /// A plugin declaration in config.
@@ -91,8 +85,11 @@ mod tests {
     #[test]
     fn test_config_deserialize_minimal() {
         let toml_str = "";
-        let config: Result<Config, _> = toml::from_str(toml_str);
-        assert!(config.is_ok(), "empty config should deserialize to defaults");
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(
+            result.is_ok(),
+            "empty config should deserialize to defaults"
+        );
     }
 
     #[test]
@@ -102,11 +99,9 @@ mod tests {
 "no-debugger" = "error"
 "no-console" = "warn"
 "#;
-        let config: Result<Config, _> = toml::from_str(toml_str);
-        assert!(config.is_ok(), "config with rules should deserialize");
-        let config = config.ok();
-        assert!(config.is_some(), "should have config");
-        if let Some(cfg) = config {
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_ok(), "config with rules should deserialize");
+        if let Ok(cfg) = result {
             assert_eq!(cfg.rules.len(), 2, "should have two rules");
         }
     }
@@ -118,8 +113,8 @@ mod tests {
 name = "storybook"
 path = "./plugins/storybook.wasm"
 "#;
-        let config: Result<Config, _> = toml::from_str(toml_str);
-        assert!(config.is_ok(), "config with plugin should deserialize");
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_ok(), "config with plugin should deserialize");
     }
 
     #[test]
@@ -131,7 +126,7 @@ files = ["**/*.stories.tsx"]
 [overrides.rules]
 "storybook/default-exports" = "error"
 "#;
-        let config: Result<Config, _> = toml::from_str(toml_str);
-        assert!(config.is_ok(), "config with overrides should deserialize");
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_ok(), "config with overrides should deserialize");
     }
 }

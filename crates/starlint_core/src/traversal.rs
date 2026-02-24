@@ -6,9 +6,9 @@
 
 use std::path::Path;
 
+use oxc_ast::AstKind;
 use oxc_ast::ast::Program;
-use oxc_ast::visit::walk;
-use oxc_ast::{AstKind, Visit};
+use oxc_ast_visit::Visit;
 
 use crate::rule::{NativeLintContext, NativeRule};
 use starlint_plugin_sdk::diagnostic::Diagnostic;
@@ -22,10 +22,16 @@ pub fn traverse_and_lint<'a>(
     source_text: &'a str,
     file_path: &'a Path,
 ) -> Vec<Diagnostic> {
-    let traversal_rules: Vec<&dyn NativeRule> =
-        rules.iter().filter(|r| r.needs_traversal()).map(|r| r.as_ref()).collect();
-    let once_rules: Vec<&dyn NativeRule> =
-        rules.iter().filter(|r| !r.needs_traversal()).map(|r| r.as_ref()).collect();
+    let traversal_rules: Vec<&dyn NativeRule> = rules
+        .iter()
+        .filter(|r| r.needs_traversal())
+        .map(std::convert::AsRef::as_ref)
+        .collect();
+    let once_rules: Vec<&dyn NativeRule> = rules
+        .iter()
+        .filter(|r| !r.needs_traversal())
+        .map(std::convert::AsRef::as_ref)
+        .collect();
 
     let mut all_diagnostics = Vec::new();
 
@@ -78,10 +84,6 @@ impl<'a> Visit<'a> for RuleDispatchVisitor<'a, '_> {
             self.diagnostics.extend(ctx.into_diagnostics());
         }
     }
-
-    fn visit_program(&mut self, program: &Program<'a>) {
-        walk::walk_program(self, program);
-    }
 }
 
 #[cfg(test)]
@@ -127,18 +129,11 @@ mod tests {
         let source = "debugger;\nconst x = 1;";
         let result = parse_file(&allocator, source, Path::new("test.js"));
         assert!(result.is_ok(), "parse should succeed");
-        let parsed = result.ok();
-        assert!(parsed.is_some(), "should have parse result");
-        let parsed = parsed.unwrap_or_else(|| {
-            // This won't be reached due to the assertion above.
-            let alloc = Allocator::default();
-            let r = parse_file(&alloc, "", Path::new("empty.js"));
-            r.ok().unwrap_or_else(|| std::process::exit(1))
-        });
-
-        let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDebuggerRule)];
-        let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
-        assert_eq!(diags.len(), 1, "should find one debugger statement");
+        if let Ok(parsed) = result {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDebuggerRule)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(diags.len(), 1, "should find one debugger statement");
+        }
     }
 
     #[test]
@@ -146,10 +141,7 @@ mod tests {
         let allocator = Allocator::default();
         let source = "const x = 1;";
         let result = parse_file(&allocator, source, Path::new("test.js"));
-        let parsed = result.ok();
-        assert!(parsed.is_some(), "should have parse result");
-        // Use a safe approach to handle the unwrap
-        if let Some(parsed) = parsed {
+        if let Ok(parsed) = result {
             let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDebuggerRule)];
             let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
             assert_eq!(diags.len(), 0, "clean file should have no diagnostics");

@@ -20,7 +20,10 @@ pub enum LintError {
 
     /// A file could not be parsed.
     #[error("parse error in {path}")]
-    #[diagnostic(code(starlint::parse), help("Check that the file is valid JavaScript/TypeScript"))]
+    #[diagnostic(
+        code(starlint::parse),
+        help("Check that the file is valid JavaScript/TypeScript")
+    )]
     Parse {
         /// Path of the file that failed to parse.
         path: String,

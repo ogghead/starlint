@@ -14,7 +14,10 @@ pub enum CliError {
 
     /// No files found to lint.
     #[error("no lintable files found in the given paths")]
-    #[diagnostic(code(starlint::no_files), help("Check that the paths contain JS/TS files"))]
+    #[diagnostic(
+        code(starlint::no_files),
+        help("Check that the paths contain JS/TS files")
+    )]
     NoFiles,
 }
 

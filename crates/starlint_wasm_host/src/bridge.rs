@@ -9,6 +9,7 @@ use starlint_plugin_sdk::diagnostic::Span;
 
 /// Flags indicating which node types a plugin is interested in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[allow(clippy::struct_excessive_bools)] // Intentional: one flag per AST node type
 pub struct NodeInterest {
     /// Import declarations.
     pub import_declaration: bool,
@@ -41,7 +42,7 @@ pub struct NodeInterest {
 impl NodeInterest {
     /// Check if any interest flag is set.
     #[must_use]
-    pub fn any(&self) -> bool {
+    pub const fn any(&self) -> bool {
         self.import_declaration
             || self.export_default_declaration
             || self.export_named_declaration
@@ -59,7 +60,7 @@ impl NodeInterest {
 
     /// Compute the union of two interest sets.
     #[must_use]
-    pub fn union(self, other: Self) -> Self {
+    pub const fn union(self, other: Self) -> Self {
         Self {
             import_declaration: self.import_declaration || other.import_declaration,
             export_default_declaration: self.export_default_declaration
@@ -194,9 +195,18 @@ mod tests {
             ..NodeInterest::default()
         };
         let combined = a.union(b);
-        assert!(combined.import_declaration, "union should include import_declaration");
-        assert!(combined.call_expression, "union should include call_expression");
-        assert!(!combined.debugger_statement, "union should not include debugger_statement");
+        assert!(
+            combined.import_declaration,
+            "union should include import_declaration"
+        );
+        assert!(
+            combined.call_expression,
+            "union should include call_expression"
+        );
+        assert!(
+            !combined.debugger_statement,
+            "union should not include debugger_statement"
+        );
     }
 
     #[test]

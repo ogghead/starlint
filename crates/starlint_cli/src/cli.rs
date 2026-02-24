@@ -7,6 +7,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 /// starlint — a fast JS/TS linter with WASM plugin support.
 #[derive(Debug, Parser)]
 #[command(name = "starlint", version, about)]
+#[allow(clippy::struct_excessive_bools)] // CLI flags are naturally booleans
 pub struct Cli {
     /// Subcommand (default: lint).
     #[command(subcommand)]

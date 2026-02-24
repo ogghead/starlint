@@ -48,15 +48,12 @@ pub fn load_config(path: &Path) -> miette::Result<Config> {
 
 /// Load config from a directory, or return defaults if no config file exists.
 pub fn resolve_config(start_dir: &Path) -> miette::Result<Config> {
-    match find_config_file(start_dir) {
-        Some(path) => {
-            tracing::info!("using config: {}", path.display());
-            load_config(&path)
-        }
-        None => {
-            tracing::debug!("no config file found, using defaults");
-            Ok(Config::default())
-        }
+    if let Some(path) = find_config_file(start_dir) {
+        tracing::info!("using config: {}", path.display());
+        load_config(&path)
+    } else {
+        tracing::debug!("no config file found, using defaults");
+        Ok(Config::default())
     }
 }
 
@@ -74,6 +71,9 @@ mod tests {
     #[test]
     fn test_resolve_config_defaults() {
         let result = resolve_config(Path::new("/tmp"));
-        assert!(result.is_ok(), "should return defaults when no config file exists");
+        assert!(
+            result.is_ok(),
+            "should return defaults when no config file exists"
+        );
     }
 }

@@ -13,11 +13,22 @@ use cli::{Cli, Command, OutputFormatArg};
 use starlint_core::diagnostic::OutputFormat;
 use starlint_core::engine::LintSession;
 use starlint_core::file_discovery::discover_files;
+use starlint_core::starlint_plugin_sdk::diagnostic::Severity;
+
+/// Result of running the linter, used to determine process exit code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExitStatus {
+    /// No errors found.
+    Success,
+    /// Lint errors found.
+    LintErrors,
+}
 
 /// Run the starlint CLI.
 ///
 /// Parses arguments, loads config, discovers files, lints, and formats output.
-pub fn run() -> miette::Result<()> {
+/// Returns the exit status (caller decides the exit code).
+pub fn run() -> miette::Result<ExitStatus> {
     miette::set_hook(Box::new(|_| {
         Box::new(miette::MietteHandlerOpts::new().build())
     }))?;
@@ -38,9 +49,12 @@ pub fn run() -> miette::Result<()> {
     };
 
     let paths = match &args.command {
-        Some(Command::Lint { paths }) | Some(Command::Fix { paths, .. }) => paths.clone(),
-        Some(Command::Init) => return run_init(),
-        Some(Command::Rules { plugin, json }) => return run_rules(plugin.as_deref(), *json),
+        Some(Command::Lint { paths } | Command::Fix { paths, .. }) => paths.clone(),
+        Some(Command::Init) => return run_init().map(|()| ExitStatus::Success),
+        Some(Command::Rules { plugin, json }) => {
+            run_rules(plugin.as_deref(), *json);
+            return Ok(ExitStatus::Success);
+        }
         None => args.paths.clone(),
     };
 
@@ -48,7 +62,7 @@ pub fn run() -> miette::Result<()> {
     let files = discover_files(&paths);
     if files.is_empty() {
         tracing::warn!("no lintable files found");
-        return Ok(());
+        return Ok(ExitStatus::Success);
     }
 
     tracing::info!("found {} files to lint", files.len());
@@ -71,18 +85,17 @@ pub fn run() -> miette::Result<()> {
             output_format,
         );
         if !output.is_empty() {
-            // Use tracing for output since print_stdout is denied.
             tracing::info!("{output}");
         }
         for diag in &result.diagnostics {
             match diag.severity {
-                starlint_plugin_sdk::diagnostic::Severity::Error => {
+                Severity::Error => {
                     total_errors = total_errors.wrapping_add(1);
                 }
-                starlint_plugin_sdk::diagnostic::Severity::Warning => {
+                Severity::Warning => {
                     total_warnings = total_warnings.wrapping_add(1);
                 }
-                starlint_plugin_sdk::diagnostic::Severity::Suggestion => {}
+                Severity::Suggestion => {}
             }
         }
     }
@@ -95,10 +108,10 @@ pub fn run() -> miette::Result<()> {
     }
 
     if total_errors > 0 {
-        std::process::exit(1);
+        Ok(ExitStatus::LintErrors)
+    } else {
+        Ok(ExitStatus::Success)
     }
-
-    Ok(())
 }
 
 /// Initialize a default `starlint.toml` config file.
@@ -131,7 +144,6 @@ threads = 0  # 0 = auto-detect
 }
 
 /// List available rules.
-fn run_rules(_plugin: Option<&str>, _json: bool) -> miette::Result<()> {
+fn run_rules(_plugin: Option<&str>, _json: bool) {
     tracing::info!("no rules registered yet");
-    Ok(())
 }

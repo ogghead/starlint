@@ -17,7 +17,7 @@ pub struct Span {
 impl Span {
     /// Create a new span from start (inclusive) to end (exclusive).
     #[must_use]
-    pub fn new(start: u32, end: u32) -> Self {
+    pub const fn new(start: u32, end: u32) -> Self {
         Self { start, end }
     }
 }
@@ -107,8 +107,7 @@ mod tests {
         let json = serde_json::to_string(&diag).ok();
         assert!(json.is_some(), "serialization should succeed");
 
-        let roundtrip: Result<Diagnostic, _> =
-            serde_json::from_str(json.as_deref().unwrap_or(""));
+        let roundtrip: Result<Diagnostic, _> = serde_json::from_str(json.as_deref().unwrap_or(""));
         assert!(roundtrip.is_ok(), "deserialization should succeed");
         assert_eq!(
             roundtrip.ok(),

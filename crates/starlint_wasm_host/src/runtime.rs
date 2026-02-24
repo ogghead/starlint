@@ -30,7 +30,7 @@ pub struct WasmPluginHost {
 impl WasmPluginHost {
     /// Create a new WASM plugin host.
     #[must_use]
-    pub fn new(limits: ResourceLimits) -> Self {
+    pub const fn new(limits: ResourceLimits) -> Self {
         Self { _limits: limits }
     }
 }
@@ -43,7 +43,10 @@ mod tests {
     #[test]
     fn test_resource_limits_default() {
         let limits = ResourceLimits::default();
-        assert_eq!(limits.fuel_per_file, 10_000_000, "default fuel should be 10M");
+        assert_eq!(
+            limits.fuel_per_file, 10_000_000,
+            "default fuel should be 10M"
+        );
         assert_eq!(
             limits.max_memory_bytes,
             16 * 1024 * 1024,

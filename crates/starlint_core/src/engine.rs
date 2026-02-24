@@ -73,12 +73,7 @@ impl LintSession {
                 if parsed.panicked {
                     tracing::warn!("parse errors in {}", file_path.display());
                 }
-                traverse_and_lint(
-                    &parsed.program,
-                    &self.native_rules,
-                    source_text,
-                    file_path,
-                )
+                traverse_and_lint(&parsed.program, &self.native_rules, source_text, file_path)
             }
             Err(err) => {
                 tracing::warn!("failed to parse {}: {err}", file_path.display());
@@ -95,7 +90,7 @@ impl LintSession {
 
     /// Get the configured output format.
     #[must_use]
-    pub fn output_format(&self) -> OutputFormat {
+    pub const fn output_format(&self) -> OutputFormat {
         self.output_format
     }
 }

@@ -56,13 +56,37 @@ mod tests {
 
     #[test]
     fn test_is_lintable_file() {
-        assert!(is_lintable_file(Path::new("foo.ts")), "ts should be lintable");
-        assert!(is_lintable_file(Path::new("foo.tsx")), "tsx should be lintable");
-        assert!(is_lintable_file(Path::new("foo.js")), "js should be lintable");
-        assert!(is_lintable_file(Path::new("foo.jsx")), "jsx should be lintable");
-        assert!(is_lintable_file(Path::new("foo.mjs")), "mjs should be lintable");
-        assert!(!is_lintable_file(Path::new("foo.py")), "py should not be lintable");
-        assert!(!is_lintable_file(Path::new("foo.rs")), "rs should not be lintable");
-        assert!(!is_lintable_file(Path::new("foo")), "no extension should not be lintable");
+        assert!(
+            is_lintable_file(Path::new("foo.ts")),
+            "ts should be lintable"
+        );
+        assert!(
+            is_lintable_file(Path::new("foo.tsx")),
+            "tsx should be lintable"
+        );
+        assert!(
+            is_lintable_file(Path::new("foo.js")),
+            "js should be lintable"
+        );
+        assert!(
+            is_lintable_file(Path::new("foo.jsx")),
+            "jsx should be lintable"
+        );
+        assert!(
+            is_lintable_file(Path::new("foo.mjs")),
+            "mjs should be lintable"
+        );
+        assert!(
+            !is_lintable_file(Path::new("foo.py")),
+            "py should not be lintable"
+        );
+        assert!(
+            !is_lintable_file(Path::new("foo.rs")),
+            "rs should not be lintable"
+        );
+        assert!(
+            !is_lintable_file(Path::new("foo")),
+            "no extension should not be lintable"
+        );
     }
 }

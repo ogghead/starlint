@@ -9,7 +9,10 @@ use thiserror::Error;
 pub enum WasmError {
     /// Plugin file could not be loaded.
     #[error("failed to load plugin: {path}")]
-    #[diagnostic(code(starlint::wasm::load), help("Check the plugin path in starlint.toml"))]
+    #[diagnostic(
+        code(starlint::wasm::load),
+        help("Check the plugin path in starlint.toml")
+    )]
     LoadFailed {
         /// Plugin file path.
         path: String,

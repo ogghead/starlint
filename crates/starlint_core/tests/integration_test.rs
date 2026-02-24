@@ -30,7 +30,10 @@ fn test_file_discovery_finds_fixtures() {
 #[test]
 fn test_config_deserialize_empty() {
     let config: Result<starlint_config::Config, _> = toml::from_str("");
-    assert!(config.is_ok(), "empty config should deserialize to defaults");
+    assert!(
+        config.is_ok(),
+        "empty config should deserialize to defaults"
+    );
 }
 
 #[test]

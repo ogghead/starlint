@@ -2,6 +2,7 @@
 //!
 //! Supports pretty (human-readable), JSON, and compact output formats.
 
+use std::fmt::Write;
 use std::path::Path;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
@@ -34,6 +35,7 @@ pub fn format_diagnostics(
 }
 
 /// Format diagnostics in human-readable form.
+#[allow(clippy::let_underscore_must_use)] // writeln! to String is infallible
 fn format_pretty(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path) -> String {
     let mut output = String::new();
 
@@ -45,18 +47,20 @@ fn format_pretty(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path
             Severity::Suggestion => "suggestion",
         };
 
-        output.push_str(&format!(
-            "  {severity_str}[{rule}]: {message}\n",
+        let _ = writeln!(
+            output,
+            "  {severity_str}[{rule}]: {message}",
             rule = diag.rule_name,
             message = diag.message,
-        ));
-        output.push_str(&format!(
-            "    --> {path}:{line}:{col}\n",
+        );
+        let _ = writeln!(
+            output,
+            "    --> {path}:{line}:{col}",
             path = file_path.display(),
-        ));
+        );
 
         if let Some(help) = &diag.help {
-            output.push_str(&format!("    help: {help}\n"));
+            let _ = writeln!(output, "    help: {help}");
         }
 
         output.push('\n');
@@ -69,7 +73,6 @@ fn format_pretty(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path
 fn format_json(diagnostics: &[Diagnostic], file_path: &Path) -> String {
     let mut entries = Vec::new();
     for diag in diagnostics {
-        // Build a JSON object with file_path included.
         let entry = serde_json::json!({
             "file": file_path.display().to_string(),
             "rule": diag.rule_name,
@@ -80,7 +83,6 @@ fn format_json(diagnostics: &[Diagnostic], file_path: &Path) -> String {
         });
         entries.push(entry);
     }
-    // Return one JSON object per line for streaming compatibility.
     entries
         .iter()
         .filter_map(|e| serde_json::to_string(e).ok())
@@ -89,6 +91,7 @@ fn format_json(diagnostics: &[Diagnostic], file_path: &Path) -> String {
 }
 
 /// Format diagnostics in compact single-line form.
+#[allow(clippy::let_underscore_must_use)] // writeln! to String is infallible
 fn format_compact(diagnostics: &[Diagnostic], file_path: &Path) -> String {
     let mut output = String::new();
     for diag in diagnostics {
@@ -97,26 +100,27 @@ fn format_compact(diagnostics: &[Diagnostic], file_path: &Path) -> String {
             Severity::Warning => 'W',
             Severity::Suggestion => 'S',
         };
-        output.push_str(&format!(
-            "{path}:{start}-{end} {sev} [{rule}] {message}\n",
+        let _ = writeln!(
+            output,
+            "{path}:{start}-{end} {sev} [{rule}] {message}",
             path = file_path.display(),
             start = diag.span.start,
             end = diag.span.end,
             sev = severity_char,
             rule = diag.rule_name,
             message = diag.message,
-        ));
+        );
     }
     output
 }
 
 /// Convert a byte offset to 1-based line and column numbers.
 fn offset_to_line_col(source: &str, offset: u32) -> (usize, usize) {
-    let mut line = 1;
-    let mut col = 1;
-    #[allow(clippy::indexing_slicing)]
+    let mut line: usize = 1;
+    let mut col: usize = 1;
+    let offset_usize: usize = offset.try_into().unwrap_or(usize::MAX);
     for (i, ch) in source.char_indices() {
-        if i >= offset.try_into().unwrap_or(usize::MAX) {
+        if i >= offset_usize {
             break;
         }
         if ch == '\n' {
@@ -152,8 +156,16 @@ mod tests {
     fn test_offset_to_line_col() {
         let source = "abc\ndef\nghi";
         assert_eq!(offset_to_line_col(source, 0), (1, 1), "start of file");
-        assert_eq!(offset_to_line_col(source, 4), (2, 1), "start of second line");
-        assert_eq!(offset_to_line_col(source, 5), (2, 2), "second char of second line");
+        assert_eq!(
+            offset_to_line_col(source, 4),
+            (2, 1),
+            "start of second line"
+        );
+        assert_eq!(
+            offset_to_line_col(source, 5),
+            (2, 2),
+            "second char of second line"
+        );
     }
 
     #[test]
@@ -170,14 +182,23 @@ mod tests {
     fn test_format_pretty() {
         let diag = make_diag("no-debugger", "bad code", Severity::Warning);
         let output = format_pretty(&[diag], "debugger;", Path::new("test.js"));
-        assert!(output.contains("warning[no-debugger]"), "should contain severity and rule");
-        assert!(output.contains("test.js:1:1"), "should contain file location");
+        assert!(
+            output.contains("warning[no-debugger]"),
+            "should contain severity and rule"
+        );
+        assert!(
+            output.contains("test.js:1:1"),
+            "should contain file location"
+        );
     }
 
     #[test]
     fn test_format_json() {
         let diag = make_diag("no-debugger", "bad", Severity::Error);
         let output = format_json(&[diag], Path::new("test.js"));
-        assert!(output.contains("\"rule\":\"no-debugger\""), "json should contain rule name");
+        assert!(
+            output.contains("\"rule\":\"no-debugger\""),
+            "json should contain rule name"
+        );
     }
 }

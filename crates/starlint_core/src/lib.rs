@@ -5,6 +5,7 @@
 
 pub mod diagnostic;
 pub mod engine;
+#[allow(unused_assignments)] // False positive from thiserror 2.x macro-generated Display impls
 pub mod error;
 pub mod file_discovery;
 pub mod fix;

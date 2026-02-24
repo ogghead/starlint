@@ -12,12 +12,12 @@ pub fn validate_plugin_path(path: &Path) -> miette::Result<PathBuf> {
         return Err(miette!("plugin file not found: {}", path.display()));
     }
 
-    let ext = path
+    let has_wasm_ext = path
         .extension()
         .and_then(|e| e.to_str())
-        .unwrap_or("");
+        .is_some_and(|ext| ext == "wasm");
 
-    if ext != "wasm" {
+    if !has_wasm_ext {
         return Err(miette!(
             "plugin file must have .wasm extension, got: {}",
             path.display()

@@ -60,7 +60,7 @@ pub struct NativeLintContext<'a> {
 
 impl<'a> NativeLintContext<'a> {
     /// Create a new lint context.
-    pub fn new(source_text: &'a str, file_path: &'a Path) -> Self {
+    pub const fn new(source_text: &'a str, file_path: &'a Path) -> Self {
         Self {
             source_text,
             file_path,
@@ -70,13 +70,13 @@ impl<'a> NativeLintContext<'a> {
 
     /// Get the source text of the file being linted.
     #[must_use]
-    pub fn source_text(&self) -> &str {
+    pub const fn source_text(&self) -> &str {
         self.source_text
     }
 
     /// Get the file path.
     #[must_use]
-    pub fn file_path(&self) -> &Path {
+    pub const fn file_path(&self) -> &Path {
         self.file_path
     }
 
@@ -129,12 +129,20 @@ mod tests {
         ctx.report_error("test/rule", "bad code", Span::new(0, 3));
         let diags = ctx.into_diagnostics();
         assert_eq!(diags.len(), 1, "should have one diagnostic");
-        assert_eq!(diags.first().map(|d| d.rule_name.as_str()), Some("test/rule"), "rule name should match");
+        assert_eq!(
+            diags.first().map(|d| d.rule_name.as_str()),
+            Some("test/rule"),
+            "rule name should match"
+        );
     }
 
     #[test]
     fn test_lint_context_source_text() {
         let ctx = NativeLintContext::new("const a = 1;", Path::new("test.js"));
-        assert_eq!(ctx.source_text(), "const a = 1;", "source text should match");
+        assert_eq!(
+            ctx.source_text(),
+            "const a = 1;",
+            "source text should match"
+        );
     }
 }
