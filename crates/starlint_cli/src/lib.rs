@@ -99,10 +99,13 @@ pub fn run() -> miette::Result<ExitStatus> {
     tracing::debug!("found {} files to lint", files.len());
 
     // Build lint session with rules from config.
-    let configured = rules_for_config(&config.rules);
+    let configured = rules_for_config(&config.rules, &config.overrides);
     tracing::debug!("enabled {} native rule(s)", configured.rules.len());
+    let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);
     let mut session = LintSession::new(configured.rules, output_format)
-        .with_severity_overrides(configured.severity_overrides);
+        .with_severity_overrides(configured.severity_overrides)
+        .with_override_set(override_set)
+        .with_disabled_rules(configured.disabled_rules);
 
     // Load WASM plugins if configured and not disabled.
     if !args.no_plugins && !config.plugins.is_empty() {

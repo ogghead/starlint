@@ -2,7 +2,7 @@
 //!
 //! [`LintSession`] holds the resolved rule set and lints files in parallel.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use oxc_allocator::Allocator;
@@ -10,6 +10,7 @@ use rayon::prelude::*;
 
 use crate::diagnostic::OutputFormat;
 use crate::error::LintError;
+use crate::overrides::OverrideSet;
 use crate::parser::parse_file;
 use crate::plugin::PluginHost;
 use crate::rule::NativeRule;
@@ -40,6 +41,10 @@ pub struct LintSession {
     output_format: OutputFormat,
     /// Severity overrides from config (rule name → configured severity).
     severity_overrides: HashMap<String, Severity>,
+    /// File-pattern overrides compiled from config.
+    override_set: OverrideSet,
+    /// Rules loaded but disabled by default (only active via file-pattern overrides).
+    disabled_rules: HashSet<String>,
 }
 
 impl LintSession {
@@ -51,6 +56,8 @@ impl LintSession {
             plugin_host: None,
             output_format,
             severity_overrides: HashMap::new(),
+            override_set: OverrideSet::empty(),
+            disabled_rules: HashSet::new(),
         }
     }
 
@@ -65,6 +72,20 @@ impl LintSession {
     #[must_use]
     pub fn with_plugin_host(mut self, host: Box<dyn PluginHost>) -> Self {
         self.plugin_host = Some(host);
+        self
+    }
+
+    /// Set file-pattern overrides compiled from config.
+    #[must_use]
+    pub fn with_override_set(mut self, override_set: OverrideSet) -> Self {
+        self.override_set = override_set;
+        self
+    }
+
+    /// Set disabled rules (loaded but suppressed unless overrides activate them).
+    #[must_use]
+    pub fn with_disabled_rules(mut self, disabled_rules: HashSet<String>) -> Self {
+        self.disabled_rules = disabled_rules;
         self
     }
 
@@ -137,6 +158,12 @@ impl LintSession {
                     diag.severity = *severity;
                 }
             }
+        }
+
+        // Apply file-pattern overrides and suppress disabled rules.
+        if !self.override_set.is_empty() || !self.disabled_rules.is_empty() {
+            self.override_set
+                .apply(file_path, &self.disabled_rules, &mut diagnostics);
         }
 
         FileDiagnostics {

@@ -21,6 +21,7 @@ oxc_ast_visit = { workspace = true }
 oxc_parser = { workspace = true }
 oxc_span = { workspace = true }
 
+globset = { workspace = true }
 ignore = { workspace = true }
 rayon = { workspace = true }
 

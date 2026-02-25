@@ -31,8 +31,8 @@ pub struct Config {
 
     /// File-pattern overrides.
     ///
-    /// Note: Parsed from config but not yet applied by the engine.
-    /// File-pattern override application is planned for a future release.
+    /// Override blocks match files by glob pattern and adjust rule severity
+    /// for matching files. Multiple matching blocks merge in order (later wins).
     #[serde(default)]
     pub overrides: Vec<Override>,
 }

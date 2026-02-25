@@ -79,11 +79,14 @@ impl Backend {
                 })
                 .unwrap_or_default();
 
-            let configured = rules_for_config(&config.rules);
+            let configured = rules_for_config(&config.rules, &config.overrides);
             tracing::info!("LSP: {} native rule(s) enabled", configured.rules.len());
 
+            let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);
             let mut session = LintSession::new(configured.rules, OutputFormat::Pretty)
-                .with_severity_overrides(configured.severity_overrides);
+                .with_severity_overrides(configured.severity_overrides)
+                .with_override_set(override_set)
+                .with_disabled_rules(configured.disabled_rules);
 
             // Load WASM plugins if configured.
             if !config.plugins.is_empty() {
