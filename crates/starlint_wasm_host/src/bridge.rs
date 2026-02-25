@@ -95,6 +95,22 @@ pub enum WitAstNode {
     ExportDefaultDecl(ExportDefaultNode),
     /// An export named declaration.
     ExportNamedDecl(ExportNamedNode),
+    /// A member expression.
+    MemberExpr(MemberExpressionNode),
+    /// An identifier reference.
+    IdentifierRef(IdentifierReferenceNode),
+    /// An arrow function expression.
+    ArrowFnExpr(ArrowFunctionExpressionNode),
+    /// A function declaration.
+    FnDecl(FunctionDeclarationNode),
+    /// A variable declaration.
+    VarDecl(VariableDeclarationNode),
+    /// A string literal.
+    StringLit(StringLiteralNode),
+    /// An object expression.
+    ObjectExpr(ObjectExpressionNode),
+    /// An array expression.
+    ArrayExpr(ArrayExpressionNode),
 }
 
 /// Simplified import declaration for WASM plugins.
@@ -151,6 +167,103 @@ pub struct ExportNamedNode {
     pub span: Span,
     /// Exported names.
     pub names: Vec<String>,
+}
+
+/// Simplified member expression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MemberExpressionNode {
+    /// Source span.
+    pub span: Span,
+    /// Object as a dot-path string.
+    pub object: String,
+    /// Property name.
+    pub property: String,
+    /// Whether this is a computed access (`obj[expr]`).
+    pub computed: bool,
+}
+
+/// Simplified identifier reference.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdentifierReferenceNode {
+    /// Source span.
+    pub span: Span,
+    /// Identifier name.
+    pub name: String,
+}
+
+/// Simplified arrow function expression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArrowFunctionExpressionNode {
+    /// Source span.
+    pub span: Span,
+    /// Number of parameters.
+    pub params_count: u32,
+    /// Whether the function is async.
+    pub is_async: bool,
+    /// Whether the body is an expression (vs block).
+    pub is_expression: bool,
+}
+
+/// Simplified function declaration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FunctionDeclarationNode {
+    /// Source span.
+    pub span: Span,
+    /// Function name (if any).
+    pub name: Option<String>,
+    /// Number of parameters.
+    pub params_count: u32,
+    /// Whether the function is async.
+    pub is_async: bool,
+    /// Whether the function is a generator.
+    pub is_generator: bool,
+}
+
+/// A single variable declarator.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariableDeclaratorNode {
+    /// Binding name.
+    pub name: String,
+    /// Whether an initializer is present.
+    pub has_init: bool,
+}
+
+/// Simplified variable declaration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VariableDeclarationNode {
+    /// Source span.
+    pub span: Span,
+    /// Declaration kind (`var`, `let`, `const`, `using`).
+    pub kind: String,
+    /// Individual declarators.
+    pub declarations: Vec<VariableDeclaratorNode>,
+}
+
+/// Simplified string literal.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StringLiteralNode {
+    /// Source span.
+    pub span: Span,
+    /// String value.
+    pub value: String,
+}
+
+/// Simplified object expression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ObjectExpressionNode {
+    /// Source span.
+    pub span: Span,
+    /// Number of properties.
+    pub property_count: u32,
+}
+
+/// Simplified array expression.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArrayExpressionNode {
+    /// Source span.
+    pub span: Span,
+    /// Number of elements.
+    pub element_count: u32,
 }
 
 /// File context provided to WASM plugins.

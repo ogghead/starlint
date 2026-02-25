@@ -8,7 +8,7 @@ use thiserror::Error;
 #[non_exhaustive]
 pub enum WasmError {
     /// Plugin file could not be loaded.
-    #[error("failed to load plugin: {path}")]
+    #[error("failed to load plugin {path}: {reason}")]
     #[diagnostic(
         code(starlint::wasm::load),
         help("Check the plugin path in starlint.toml")
@@ -16,24 +16,40 @@ pub enum WasmError {
     LoadFailed {
         /// Plugin file path.
         path: String,
+        /// Error details from the OS.
+        reason: String,
     },
 
-    /// Plugin exceeded resource limits.
-    #[error("plugin exceeded resource limits: {plugin_name}")]
+    /// WASM engine or component compilation error.
+    #[error("WASM compilation failed for {path}: {reason}")]
     #[diagnostic(
-        code(starlint::wasm::resource_limit),
-        help("The plugin may be in an infinite loop or using too much memory")
+        code(starlint::wasm::compile),
+        help("Ensure the plugin is a valid WASM component")
     )]
-    ResourceLimit {
-        /// Plugin name.
-        plugin_name: String,
+    CompileFailed {
+        /// Plugin file path.
+        path: String,
+        /// Error details.
+        reason: String,
     },
 
-    /// Plugin returned an invalid result.
-    #[error("plugin returned invalid result: {plugin_name}")]
-    #[diagnostic(code(starlint::wasm::invalid_result))]
-    InvalidResult {
+    /// Plugin instantiation or call failed.
+    #[error("WASM runtime error in plugin '{plugin_name}': {reason}")]
+    #[diagnostic(code(starlint::wasm::runtime))]
+    RuntimeError {
         /// Plugin name.
         plugin_name: String,
+        /// Error details.
+        reason: String,
+    },
+
+    /// Plugin configuration error.
+    #[error("plugin '{plugin_name}' rejected configuration: {errors}")]
+    #[diagnostic(code(starlint::wasm::config))]
+    ConfigRejected {
+        /// Plugin name.
+        plugin_name: String,
+        /// Validation errors from the plugin.
+        errors: String,
     },
 }

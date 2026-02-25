@@ -1,0 +1,50 @@
+{
+  "name": "starlint",
+  "displayName": "starlint",
+  "description": "Fast JS/TS linter with WASM plugin support",
+  "version": "0.1.0",
+  "publisher": "ogghead",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "activationEvents": [
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact",
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "starlint",
+      "properties": {
+        "starlint.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the starlint binary (auto-detected from PATH if empty)"
+        },
+        "starlint.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable or disable the starlint linter"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "watch": "tsc -watch -p ."
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.0.0"
+  }
+}

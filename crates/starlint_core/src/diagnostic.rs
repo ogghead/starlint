@@ -69,7 +69,11 @@ fn format_pretty(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path
     output
 }
 
-/// Format diagnostics as JSON.
+/// Format diagnostics as newline-delimited JSON (NDJSON).
+///
+/// Each diagnostic is emitted as a standalone JSON object on its own line,
+/// rather than wrapped in a JSON array. This is compatible with tools like
+/// `jq` and line-oriented log processors.
 fn format_json(diagnostics: &[Diagnostic], file_path: &Path) -> String {
     let mut entries = Vec::new();
     for diag in diagnostics {
@@ -81,13 +85,17 @@ fn format_json(diagnostics: &[Diagnostic], file_path: &Path) -> String {
             "span": { "start": diag.span.start, "end": diag.span.end },
             "help": diag.help,
         });
-        entries.push(entry);
+        match serde_json::to_string(&entry) {
+            Ok(json_str) => entries.push(json_str),
+            Err(err) => {
+                tracing::warn!(
+                    "failed to serialize diagnostic for rule '{}': {err}",
+                    diag.rule_name
+                );
+            }
+        }
     }
-    entries
-        .iter()
-        .filter_map(|e| serde_json::to_string(e).ok())
-        .collect::<Vec<_>>()
-        .join("\n")
+    entries.join("\n")
 }
 
 /// Format diagnostics in compact single-line form.

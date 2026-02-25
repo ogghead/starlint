@@ -14,12 +14,16 @@ path = "src/main.rs"
 starlint_core = { workspace = true }
 starlint_config = { workspace = true }
 starlint_wasm_host = { workspace = true }
+starlint_lsp = { workspace = true }
 
+tokio = { workspace = true }
 miette = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 clap = { workspace = true }
+serde_json = { workspace = true }
+rayon = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }

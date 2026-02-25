@@ -28,14 +28,6 @@ pub enum LintError {
         /// Path of the file that failed to parse.
         path: String,
     },
-
-    /// Semantic analysis failed.
-    #[error("semantic analysis error in {path}")]
-    #[diagnostic(code(starlint::semantic))]
-    Semantic {
-        /// Path of the file.
-        path: String,
-    },
 }
 
 #[cfg(test)]

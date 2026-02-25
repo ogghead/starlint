@@ -4,6 +4,7 @@
 //! Plugins communicate via the WIT-defined interface in `wit/plugin.wit`.
 
 pub mod bridge;
+pub mod collector;
 #[allow(unused_assignments)] // False positive from thiserror 2.x macro-generated Display impls
 pub mod error;
 pub mod loader;

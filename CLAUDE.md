@@ -30,8 +30,11 @@ crates/
   starlint_cli/           # CLI binary (clap, orchestration)
   starlint_core/          # Linter engine (parse, traverse, dispatch, diagnostics)
   starlint_config/        # Config file loading (starlint.toml)
+  starlint_lsp/           # LSP server (tower-lsp, diagnostics, code actions)
   starlint_plugin_sdk/    # Shared types for plugins (no oxc dependency)
   starlint_wasm_host/     # WASM runtime (wasmtime, bridge, loader)
+editors/
+  vscode/                 # VS Code extension (language client)
 wit/
   plugin.wit              # WIT interface definition (plugin ABI)
 ```
@@ -39,10 +42,11 @@ wit/
 ### Crate Dependency Graph
 
 ```
-starlint_cli → starlint_core, starlint_config, starlint_wasm_host
-starlint_core → oxc_*, starlint_plugin_sdk
-starlint_config → starlint_plugin_sdk, toml, serde
-starlint_wasm_host → starlint_plugin_sdk, starlint_core, wasmtime
+starlint_cli → starlint_core, starlint_config, starlint_wasm_host, starlint_lsp, tokio
+starlint_lsp → starlint_core, starlint_config, starlint_wasm_host, tower-lsp, tokio
+starlint_core → oxc_*, starlint_plugin_sdk, starlint_config
+starlint_config → toml, serde
+starlint_wasm_host → starlint_plugin_sdk, starlint_core, wasmtime, oxc_ast, oxc_ast_visit
 starlint_plugin_sdk → serde (NO oxc dependency)
 ```
 

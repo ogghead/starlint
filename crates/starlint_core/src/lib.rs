@@ -10,7 +10,9 @@ pub mod error;
 pub mod file_discovery;
 pub mod fix;
 pub mod parser;
+pub mod plugin;
 pub mod rule;
+pub mod rules;
 pub mod traversal;
 
 pub use engine::{FileDiagnostics, LintSession};

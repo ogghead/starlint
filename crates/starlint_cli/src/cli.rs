@@ -68,6 +68,8 @@ pub enum Command {
         #[arg(long)]
         dangerous: bool,
     },
+    /// Start the LSP server (for editor integration).
+    Lsp,
     /// Initialize a starlint.toml config file.
     Init,
     /// List available rules.
