@@ -83,3 +83,20 @@ starlint_plugin_sdk → serde (NO oxc dependency)
 - Unit tests: `#[cfg(test)] mod tests` at bottom of each file
 - Integration tests: `crates/starlint_core/tests/`
 - Fixtures: `crates/starlint_core/tests/fixtures/{valid,invalid}/`
+
+## Task Tracking (Beads)
+
+This project uses [beads](https://github.com/steveyegge/beads) (`bd`) for task tracking.
+
+### Workflow
+1. **Start of session**: `bd prime` runs automatically via hook
+2. **Find ready work**: `bd ready --json`
+3. **Claim a task**: `bd update <id> --status in_progress --claim --json`
+4. **Create new issues**: `bd create "Title" --description "Details" -t <type> -p <priority> --json`
+5. **Close completed work**: `bd close <id> --reason "summary" --json`
+6. **Before ending session**: `bd sync`
+
+### Rules
+- Always use `--json` flag for machine-readable output
+- Never use `bd edit` (interactive editor)
+- Include issue IDs in commit messages: `git commit -m "Fix X (bd-abc)"`
