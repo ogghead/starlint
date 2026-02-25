@@ -8,6 +8,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::RwLock;
 use tower_lsp::jsonrpc::Result;
@@ -28,6 +29,9 @@ use starlint_core::rules::rules_for_config;
 
 use crate::convert;
 use crate::document::{CachedFix, DocumentState};
+
+/// Maximum time allowed for session rebuild (config loading + WASM compilation).
+const REBUILD_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// LSP server backend for starlint.
 pub struct Backend {
@@ -64,7 +68,7 @@ impl Backend {
             .clone()
             .unwrap_or_else(|| PathBuf::from("."));
 
-        let result = tokio::task::spawn_blocking(move || {
+        let task = tokio::task::spawn_blocking(move || {
             let config = find_config_file(&search_dir)
                 .and_then(|p| match load_config(&p) {
                     Ok(c) => Some(c),
@@ -95,12 +99,14 @@ impl Backend {
             }
 
             session
-        })
-        .await;
+        });
 
-        match result {
-            Ok(session) => *self.session.write().await = Some(session),
-            Err(err) => tracing::error!("LSP: session rebuild panicked: {err}"),
+        match tokio::time::timeout(REBUILD_TIMEOUT, task).await {
+            Ok(Ok(session)) => *self.session.write().await = Some(session),
+            Ok(Err(err)) => tracing::error!("LSP: session rebuild panicked: {err}"),
+            Err(_elapsed) => {
+                tracing::error!("LSP: session rebuild timed out after {REBUILD_TIMEOUT:?}");
+            }
         }
     }
 
@@ -128,7 +134,7 @@ impl Backend {
             lsp_diagnostics.push(lsp_diag.clone());
 
             // Cache code actions for fixes.
-            if let Some(action) = convert::fix_to_code_action(diag, uri, &doc.text) {
+            if let Some(action) = convert::fix_to_code_action(diag, &lsp_diag, uri, &doc.text) {
                 cached_fixes.push(CachedFix {
                     diagnostic_range: lsp_diag.range,
                     action,
@@ -153,10 +159,7 @@ impl Backend {
 fn build_plugin_host(
     plugins: &[starlint_config::PluginDeclaration],
 ) -> std::result::Result<starlint_wasm_host::runtime::WasmPluginHost, Box<dyn std::error::Error>> {
-    let pairs: Vec<_> = plugins
-        .iter()
-        .map(|p| (p.path.as_path(), ""))
-        .collect();
+    let pairs: Vec<_> = plugins.iter().map(|p| (p.path.as_path(), "")).collect();
     starlint_wasm_host::runtime::WasmPluginHost::with_plugins(&pairs)
 }
 

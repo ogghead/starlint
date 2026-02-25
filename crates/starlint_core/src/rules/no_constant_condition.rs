@@ -15,15 +15,17 @@ use crate::rule::{NativeLintContext, NativeRule};
 #[derive(Debug)]
 pub struct NoConstantCondition;
 
-/// Returns `true` if the expression is a literal (boolean, numeric, null, or string).
-const fn is_constant_expression(expr: &Expression<'_>) -> bool {
-    matches!(
-        expr,
+/// Returns `true` if the expression is a literal (boolean, numeric, null, string,
+/// or a template literal with no interpolations).
+fn is_constant_expression(expr: &Expression<'_>) -> bool {
+    match expr {
         Expression::BooleanLiteral(_)
-            | Expression::NumericLiteral(_)
-            | Expression::NullLiteral(_)
-            | Expression::StringLiteral(_)
-    )
+        | Expression::NumericLiteral(_)
+        | Expression::NullLiteral(_)
+        | Expression::StringLiteral(_) => true,
+        Expression::TemplateLiteral(tpl) => tpl.expressions.is_empty(),
+        _ => false,
+    }
 }
 
 impl NativeRule for NoConstantCondition {
@@ -256,6 +258,35 @@ mod tests {
             assert!(
                 diags.is_empty(),
                 "for loop with no test should not be flagged"
+            );
+        }
+    }
+
+    #[test]
+    fn test_flags_template_literal_no_interpolation() {
+        let allocator = Allocator::default();
+        let source = "if (`constant`) {}";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConstantCondition)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(
+                diags.len(),
+                1,
+                "template literal without interpolation is constant"
+            );
+        }
+    }
+
+    #[test]
+    fn test_allows_template_literal_with_interpolation() {
+        let allocator = Allocator::default();
+        let source = "if (`hello ${x}`) {}";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConstantCondition)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert!(
+                diags.is_empty(),
+                "template literal with interpolation is not constant"
             );
         }
     }

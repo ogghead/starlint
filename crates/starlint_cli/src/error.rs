@@ -4,6 +4,11 @@ use miette::Diagnostic;
 use thiserror::Error;
 
 /// Top-level CLI errors.
+///
+/// Note: These variants are defined for structured error reporting but are
+/// not yet wired into all production code paths. Some error sites currently
+/// use `miette!()` or `eprintln!` directly. TODO: Migrate those sites to
+/// use `CliError` for consistent error handling.
 #[derive(Debug, Error, Diagnostic)]
 #[non_exhaustive]
 pub enum CliError {

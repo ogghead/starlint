@@ -43,7 +43,7 @@ wasmtime = { version = "42", features = ["component-model"] }
 
 # LSP
 tower-lsp = "0.20"
-tokio = { version = "1", features = ["rt", "io-std", "macros"] }
+tokio = { version = "1", features = ["rt", "io-std", "macros", "time"] }
 
 # Internal crates
 starlint_core = { path = "crates/starlint_core" }

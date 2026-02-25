@@ -39,12 +39,10 @@ pub fn traverse_and_lint<'a>(
     if !traversal_rules.is_empty() {
         let mut visitor = RuleDispatchVisitor {
             rules: &traversal_rules,
-            source_text,
-            file_path,
-            diagnostics: Vec::new(),
+            ctx: NativeLintContext::new(source_text, file_path),
         };
         visitor.visit_program(program);
-        all_diagnostics.append(&mut visitor.diagnostics);
+        all_diagnostics.extend(visitor.ctx.into_diagnostics());
     }
 
     // Run file-level rules (run_once).
@@ -65,23 +63,20 @@ pub fn traverse_and_lint<'a>(
 }
 
 /// Visitor that dispatches AST nodes to multiple rules.
+///
+/// Uses a single shared [`NativeLintContext`] for the entire traversal to
+/// avoid allocating a new `Vec<Diagnostic>` per node per rule.
 struct RuleDispatchVisitor<'a, 'rules> {
     /// Active rules to dispatch to.
     rules: &'rules [&'rules dyn NativeRule],
-    /// Source text.
-    source_text: &'a str,
-    /// File path.
-    file_path: &'a Path,
-    /// Collected diagnostics.
-    diagnostics: Vec<Diagnostic>,
+    /// Shared lint context — all rules push diagnostics into this.
+    ctx: NativeLintContext<'a>,
 }
 
 impl<'a> Visit<'a> for RuleDispatchVisitor<'a, '_> {
     fn enter_node(&mut self, kind: AstKind<'a>) {
         for rule in self.rules {
-            let mut ctx = NativeLintContext::new(self.source_text, self.file_path);
-            rule.run(&kind, &mut ctx);
-            self.diagnostics.extend(ctx.into_diagnostics());
+            rule.run(&kind, &mut self.ctx);
         }
     }
 }

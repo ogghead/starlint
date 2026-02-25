@@ -4,6 +4,11 @@ use miette::Diagnostic;
 use thiserror::Error;
 
 /// Errors that can occur during linting.
+///
+/// Note: The engine currently emits synthetic `Diagnostic` entries (with rule
+/// names `starlint/io-error` and `starlint/parse-error`) instead of returning
+/// these error variants. These types are retained for future use if the engine
+/// adopts a `Result`-based error flow.
 #[derive(Debug, Error, Diagnostic)]
 #[non_exhaustive]
 pub enum LintError {

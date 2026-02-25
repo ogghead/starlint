@@ -13,7 +13,7 @@ use crate::parser::parse_file;
 use crate::plugin::PluginHost;
 use crate::rule::NativeRule;
 use crate::traversal::traverse_and_lint;
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 
 /// Diagnostics collected for a single file.
 #[derive(Debug, Clone)]
@@ -78,7 +78,19 @@ impl LintSession {
                     Ok(text) => text,
                     Err(err) => {
                         tracing::warn!("failed to read {}: {err}", path.display());
-                        return None;
+                        return Some(FileDiagnostics {
+                            path: path.clone(),
+                            source_text: String::new(),
+                            diagnostics: vec![Diagnostic {
+                                rule_name: "starlint/io-error".to_owned(),
+                                message: format!("Failed to read file: {err}"),
+                                span: Span::new(0, 0),
+                                severity: Severity::Error,
+                                help: Some("Check that the file exists and is readable".to_owned()),
+                                fix: None,
+                                labels: vec![],
+                            }],
+                        });
                     }
                 };
                 let result = self.lint_single_file(path, &source_text);
@@ -117,7 +129,15 @@ impl LintSession {
             }
             Err(err) => {
                 tracing::warn!("failed to parse {}: {err}", file_path.display());
-                Vec::new()
+                vec![Diagnostic {
+                    rule_name: "starlint/parse-error".to_owned(),
+                    message: format!("Failed to parse file: {err}"),
+                    span: Span::new(0, 0),
+                    severity: Severity::Error,
+                    help: Some("Check that the file is valid JavaScript/TypeScript".to_owned()),
+                    fix: None,
+                    labels: vec![],
+                }]
             }
         };
 
@@ -156,6 +176,68 @@ mod tests {
         assert!(
             result.diagnostics.is_empty(),
             "no rules should produce no diagnostics"
+        );
+    }
+
+    #[test]
+    fn test_lint_single_file_parse_error() {
+        let session = LintSession::new(vec![], OutputFormat::Pretty);
+        // parse_file returns Err only for unsupported file extensions.
+        let result = session.lint_single_file(Path::new("test.py"), "const x = 1;");
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.rule_name == "starlint/parse-error"),
+            "unsupported file type should produce a synthetic parse-error diagnostic"
+        );
+    }
+
+    #[allow(clippy::let_underscore_must_use)] // Test cleanup is best-effort
+    #[test]
+    fn test_lint_files_parallel() {
+        let dir = std::env::temp_dir().join("starlint-test-parallel");
+        std::fs::create_dir_all(&dir).ok();
+
+        let file_a = dir.join("a.js");
+        let file_b = dir.join("b.js");
+        std::fs::write(&file_a, "debugger;").ok();
+        std::fs::write(&file_b, "const x = 1;").ok();
+
+        let rules = crate::rules::all_rules();
+        let session = LintSession::new(rules, OutputFormat::Pretty);
+        let results = session.lint_files(&[file_a.clone(), file_b.clone()]);
+
+        // File a has debugger statement -> should have diagnostics.
+        assert!(
+            results.iter().any(|r| r.path == file_a),
+            "file with violations should appear in results"
+        );
+        // File b is clean -> should not appear.
+        assert!(
+            !results.iter().any(|r| r.path == file_b),
+            "clean file should not appear in results"
+        );
+
+        // Clean up (best-effort).
+        std::fs::remove_file(&file_a).ok();
+        std::fs::remove_file(&file_b).ok();
+        std::fs::remove_dir(&dir).ok();
+    }
+
+    #[test]
+    fn test_lint_files_io_error() {
+        let session = LintSession::new(vec![], OutputFormat::Pretty);
+        let nonexistent = PathBuf::from("/nonexistent/starlint-test.js");
+        let results = session.lint_files(&[nonexistent]);
+
+        assert_eq!(results.len(), 1, "should return result for unreadable file");
+        assert!(
+            results.first().is_some_and(|r| r
+                .diagnostics
+                .iter()
+                .any(|d| d.rule_name == "starlint/io-error")),
+            "should contain synthetic io-error diagnostic"
         );
     }
 }

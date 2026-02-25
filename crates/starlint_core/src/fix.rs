@@ -41,10 +41,17 @@ pub fn apply_fixes(source: &str, diagnostics: &[Diagnostic]) -> String {
                 continue;
             }
 
-            if start <= result.len() && end <= result.len() {
-                result.replace_range(start..end, &edit.replacement);
-                last_edit_start = edit.span.start;
+            // Guard: skip invalid spans (inverted, out-of-bounds, or mid-UTF-8).
+            if start > end
+                || end > result.len()
+                || !result.is_char_boundary(start)
+                || !result.is_char_boundary(end)
+            {
+                continue;
             }
+
+            result.replace_range(start..end, &edit.replacement);
+            last_edit_start = edit.span.start;
         }
     }
 
@@ -109,5 +116,37 @@ mod tests {
         ];
         let result = apply_fixes(source, &diags);
         assert_eq!(result, "xxx bbb zzz", "both fixes should apply");
+    }
+
+    #[test]
+    fn test_inverted_span_does_not_panic() {
+        let source = "hello world";
+        let diag = make_diag_with_fix(Span::new(5, 3), "X");
+        let result = apply_fixes(source, &[diag]);
+        assert_eq!(
+            result, source,
+            "inverted span (start > end) should be skipped"
+        );
+    }
+
+    #[test]
+    fn test_mid_utf8_span_does_not_panic() {
+        // 'ä' is 2 bytes (0xC3 0xA4). Offset 1 falls mid-character.
+        let source = "ä";
+        let diag = make_diag_with_fix(Span::new(1, 2), "X");
+        let result = apply_fixes(source, &[diag]);
+        assert_eq!(result, source, "mid-UTF-8 byte offset should be skipped");
+    }
+
+    #[test]
+    fn test_overlapping_fixes_skip_second() {
+        let source = "abcdefgh";
+        let diags = vec![
+            make_diag_with_fix(Span::new(2, 6), "XX"),
+            make_diag_with_fix(Span::new(4, 8), "YY"),
+        ];
+        let result = apply_fixes(source, &diags);
+        // Fixes sorted descending by start: (4,8) applied first, then (2,6) overlaps → skipped.
+        assert_eq!(result, "abcdYY", "overlapping fix should be skipped");
     }
 }

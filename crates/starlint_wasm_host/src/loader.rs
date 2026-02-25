@@ -15,7 +15,7 @@ pub fn validate_plugin_path(path: &Path) -> miette::Result<PathBuf> {
     let has_wasm_ext = path
         .extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|ext| ext == "wasm");
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("wasm"));
 
     if !has_wasm_ext {
         return Err(miette!(

@@ -132,10 +132,10 @@ fn offset_to_line_col(source: &str, offset: u32) -> (usize, usize) {
             break;
         }
         if ch == '\n' {
-            line = line.wrapping_add(1);
+            line = line.saturating_add(1);
             col = 1;
         } else {
-            col = col.wrapping_add(1);
+            col = col.saturating_add(1);
         }
     }
     (line, col)
@@ -174,6 +174,28 @@ mod tests {
             (2, 2),
             "second char of second line"
         );
+    }
+
+    #[test]
+    fn test_offset_to_line_col_multibyte() {
+        // 'ä' is 2 bytes in UTF-8.
+        let source = "ä\nb";
+        assert_eq!(offset_to_line_col(source, 0), (1, 1), "start of file");
+        assert_eq!(offset_to_line_col(source, 2), (1, 2), "after ä");
+        assert_eq!(
+            offset_to_line_col(source, 3),
+            (2, 1),
+            "start of second line"
+        );
+    }
+
+    #[test]
+    fn test_offset_to_line_col_emoji() {
+        // '😀' is 4 bytes in UTF-8.
+        let source = "a😀b";
+        assert_eq!(offset_to_line_col(source, 0), (1, 1), "'a'");
+        assert_eq!(offset_to_line_col(source, 1), (1, 2), "start of emoji");
+        assert_eq!(offset_to_line_col(source, 5), (1, 3), "'b' after emoji");
     }
 
     #[test]

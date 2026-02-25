@@ -91,4 +91,34 @@ mod tests {
             assert!(diags.is_empty(), "should not flag logger.log");
         }
     }
+
+    #[test]
+    fn test_ignores_computed_console_access() {
+        // Known limitation: computed member access like console["log"]() is not detected.
+        let allocator = Allocator::default();
+        let source = r#"console["log"]("hello");"#;
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConsole)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert!(
+                diags.is_empty(),
+                "computed console access is a known false negative"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ignores_aliased_console() {
+        // Known limitation: `const c = console; c.log()` is not detected.
+        let allocator = Allocator::default();
+        let source = "const c = console; c.log('hello');";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConsole)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert!(
+                diags.is_empty(),
+                "aliased console access is a known false negative"
+            );
+        }
+    }
 }

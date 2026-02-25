@@ -26,6 +26,9 @@ pub struct Config {
     pub rules: HashMap<String, RuleConfig>,
 
     /// File-pattern overrides.
+    ///
+    /// Note: Parsed from config but not yet applied by the engine.
+    /// File-pattern override application is planned for a future release.
     #[serde(default)]
     pub overrides: Vec<Override>,
 }

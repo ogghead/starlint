@@ -228,7 +228,7 @@ fn apply_fixes_to_files(results: &[FileDiagnostics], include_dangerous: bool) {
         let dir = result.path.parent().unwrap_or_else(|| Path::new("."));
         match write_atomic(dir, &result.path, &fixed_source) {
             Ok(()) => {
-                files_fixed = files_fixed.wrapping_add(1);
+                files_fixed = files_fixed.saturating_add(1);
             }
             Err(err) => {
                 eprintln!(
@@ -266,10 +266,10 @@ fn report_diagnostics(
         for diag in &result.diagnostics {
             match diag.severity {
                 Severity::Error => {
-                    total_errors = total_errors.wrapping_add(1);
+                    total_errors = total_errors.saturating_add(1);
                 }
                 Severity::Warning => {
-                    total_warnings = total_warnings.wrapping_add(1);
+                    total_warnings = total_warnings.saturating_add(1);
                 }
                 Severity::Suggestion => {}
             }
@@ -318,16 +318,20 @@ fn print_timing(
 fn build_plugin_host(
     plugins: &[starlint_config::PluginDeclaration],
 ) -> std::result::Result<starlint_wasm_host::runtime::WasmPluginHost, Box<dyn std::error::Error>> {
-    let pairs: Vec<_> = plugins
-        .iter()
-        .map(|p| (p.path.as_path(), ""))
-        .collect();
+    let pairs: Vec<_> = plugins.iter().map(|p| (p.path.as_path(), "")).collect();
     starlint_wasm_host::runtime::WasmPluginHost::with_plugins(&pairs)
 }
 
+/// Atomic counter for unique temp file names within a process.
+static TEMP_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// Write content to a file atomically via a temp file and rename.
+///
+/// Uses PID + atomic counter to avoid collisions between threads or
+/// concurrent starlint processes.
 fn write_atomic(dir: &Path, target: &Path, content: &str) -> std::io::Result<()> {
-    let tmp_path = dir.join(format!(".starlint-fix-{}.tmp", std::process::id()));
+    let seq = TEMP_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp_path = dir.join(format!(".starlint-fix-{}-{seq}.tmp", std::process::id()));
     std::fs::write(&tmp_path, content)?;
     std::fs::rename(&tmp_path, target)?;
     Ok(())
@@ -352,6 +356,8 @@ threads = 0  # 0 = auto-detect
 # name = "storybook"
 # path = "./plugins/starlint-plugin-storybook.wasm"
 
+# Note: Adding any rule here disables all other built-in rules not listed.
+# To keep all defaults, leave the [rules] section empty.
 [rules]
 # "no-debugger" = "error"
 "#;

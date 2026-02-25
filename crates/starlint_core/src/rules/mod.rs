@@ -64,7 +64,12 @@ pub struct ConfiguredRules {
 /// Build a rule set from config.
 ///
 /// If `rule_configs` is empty, returns all rules with their default severity.
-/// Otherwise, only enables rules that appear in the config (unless "off").
+/// Otherwise, **only** enables rules that appear in the config (unless "off").
+/// Rules not mentioned in config are silently disabled. For example, setting
+/// `"no-debugger" = "error"` in `[rules]` will disable all other built-in rules.
+/// To override a single rule while keeping all defaults, add all desired rules
+/// to the `[rules]` section.
+///
 /// Configured severities are returned in [`ConfiguredRules::severity_overrides`]
 /// so the engine can apply them to diagnostics.
 #[must_use]
@@ -114,10 +119,7 @@ pub fn rules_for_config<S: ::std::hash::BuildHasher>(
                                     .collect(),
                             );
                             if let Err(err) = rule.configure(&options_value) {
-                                tracing::warn!(
-                                    "failed to configure rule `{}`: {err}",
-                                    meta.name
-                                );
+                                tracing::warn!("failed to configure rule `{}`: {err}", meta.name);
                             }
                             enabled.push(rule);
                         }

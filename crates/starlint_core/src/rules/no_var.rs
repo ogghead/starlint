@@ -30,7 +30,7 @@ impl NativeRule for NoVar {
         if let AstKind::VariableDeclaration(decl) = kind {
             if decl.kind == VariableDeclarationKind::Var {
                 // The `var` keyword is always the first 3 bytes of the declaration span.
-                let var_span = Span::new(decl.span.start, decl.span.start.wrapping_add(3));
+                let var_span = Span::new(decl.span.start, decl.span.start.saturating_add(3));
 
                 ctx.report(Diagnostic {
                     rule_name: "no-var".to_owned(),

@@ -26,6 +26,7 @@ pub fn discover_files(paths: &[PathBuf]) -> Vec<PathBuf> {
                 .hidden(false)
                 .git_ignore(true)
                 .git_global(true)
+                .follow_links(false)
                 .build();
 
             for entry in walker.flatten() {

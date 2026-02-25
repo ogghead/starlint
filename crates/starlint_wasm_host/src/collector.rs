@@ -382,6 +382,57 @@ mod tests {
     }
 
     #[test]
+    fn test_await_member_expression_call() {
+        let allocator = Allocator::default();
+        let source = "async function f() { await obj.method(); }";
+        let parsed = parse_file(&allocator, source, Path::new("test.js"));
+        assert!(parsed.is_ok(), "parse should succeed");
+
+        if let Ok(result) = parsed {
+            let interest = NodeInterest {
+                call_expression: true,
+                ..NodeInterest::default()
+            };
+            let mut collector = NodeCollector::new(interest);
+            collector.visit_program(&result.program);
+            let nodes = collector.into_nodes();
+            assert_eq!(nodes.len(), 1, "should collect one call expression");
+            assert!(
+                matches!(nodes.first(), Some(WitAstNode::CallExpr(call)) if call.is_awaited && call.callee_path == "obj.method"),
+                "await obj.method() should be marked as awaited"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sibling_not_marked_awaited() {
+        let allocator = Allocator::default();
+        let source = "async function f() { await fetch('url'); bar(); baz(); }";
+        let parsed = parse_file(&allocator, source, Path::new("test.js"));
+        assert!(parsed.is_ok(), "parse should succeed");
+
+        if let Ok(result) = parsed {
+            let interest = NodeInterest {
+                call_expression: true,
+                ..NodeInterest::default()
+            };
+            let mut collector = NodeCollector::new(interest);
+            collector.visit_program(&result.program);
+            let nodes = collector.into_nodes();
+            assert_eq!(nodes.len(), 3, "should collect three call expressions");
+            // Only the first should be awaited.
+            let awaited_count = nodes
+                .iter()
+                .filter(|n| matches!(n, WitAstNode::CallExpr(c) if c.is_awaited))
+                .count();
+            assert_eq!(
+                awaited_count, 1,
+                "only the awaited call should be marked, not siblings"
+            );
+        }
+    }
+
+    #[test]
     fn test_collect_export_named() {
         let allocator = Allocator::default();
         let source = "const a = 1; const b = 2; export { a, b };";

@@ -75,8 +75,8 @@ fn find_operator_span(source: &str, start: u32, end: u32, operator: &str) -> Spa
 
     if let Some(slice) = source.get(clamped_start..clamped_end) {
         if let Some(offset) = slice.find(operator) {
-            let op_start = start.wrapping_add(u32::try_from(offset).unwrap_or(0));
-            let op_end = op_start.wrapping_add(u32::try_from(operator.len()).unwrap_or(0));
+            let op_start = start.saturating_add(u32::try_from(offset).unwrap_or(0));
+            let op_end = op_start.saturating_add(u32::try_from(operator.len()).unwrap_or(0));
             return Span::new(op_start, op_end);
         }
     }
