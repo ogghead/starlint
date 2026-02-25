@@ -152,10 +152,7 @@ mod host {
         /// (rules, node interests) for later use.
         pub fn load_plugin(&mut self, path: &Path, config_json: &str) -> Result<(), WasmError> {
             // Validate path early for better error messages (existence + .wasm extension).
-            crate::loader::validate_plugin_path(path).map_err(|err| WasmError::LoadFailed {
-                path: path.display().to_string(),
-                reason: err.to_string(),
-            })?;
+            crate::loader::validate_plugin_path(path)?;
 
             let bytes = std::fs::read(path).map_err(|err| WasmError::LoadFailed {
                 path: path.display().to_string(),

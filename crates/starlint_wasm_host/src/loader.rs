@@ -4,12 +4,20 @@
 
 use std::path::{Path, PathBuf};
 
-use miette::miette;
+use crate::error::WasmError;
 
 /// Validate that a plugin file exists and has a `.wasm` extension.
-pub fn validate_plugin_path(path: &Path) -> miette::Result<PathBuf> {
+///
+/// # Errors
+///
+/// Returns `WasmError::LoadFailed` if the file does not exist or has a
+/// non-`.wasm` extension.
+pub fn validate_plugin_path(path: &Path) -> Result<PathBuf, WasmError> {
     if !path.exists() {
-        return Err(miette!("plugin file not found: {}", path.display()));
+        return Err(WasmError::LoadFailed {
+            path: path.display().to_string(),
+            reason: "plugin file not found".to_owned(),
+        });
     }
 
     let has_wasm_ext = path
@@ -18,10 +26,10 @@ pub fn validate_plugin_path(path: &Path) -> miette::Result<PathBuf> {
         .is_some_and(|ext| ext.eq_ignore_ascii_case("wasm"));
 
     if !has_wasm_ext {
-        return Err(miette!(
-            "plugin file must have .wasm extension, got: {}",
-            path.display()
-        ));
+        return Err(WasmError::LoadFailed {
+            path: path.display().to_string(),
+            reason: "plugin file must have .wasm extension".to_owned(),
+        });
     }
 
     Ok(path.to_path_buf())

@@ -4,10 +4,11 @@
 
 use std::path::Path;
 
-use miette::miette;
 use oxc_allocator::Allocator;
 use oxc_parser::{ParseOptions, Parser};
 use oxc_span::SourceType;
+
+use crate::error::LintError;
 
 /// Result of parsing a single file.
 pub struct ParseResult<'a> {
@@ -21,13 +22,17 @@ pub struct ParseResult<'a> {
 ///
 /// The allocator must outlive the returned AST. The file path is used
 /// to determine the source type (JS, TS, JSX, TSX).
+/// # Errors
+///
+/// Returns `LintError::Parse` if the file extension is not a supported JS/TS type.
 pub fn parse_file<'a>(
     allocator: &'a Allocator,
     source_text: &'a str,
     file_path: &Path,
-) -> miette::Result<ParseResult<'a>> {
-    let source_type = SourceType::from_path(file_path)
-        .map_err(|_err| miette!("unsupported file type: {}", file_path.display()))?;
+) -> Result<ParseResult<'a>, LintError> {
+    let source_type = SourceType::from_path(file_path).map_err(|_err| LintError::Parse {
+        path: file_path.display().to_string(),
+    })?;
 
     let ret = Parser::new(allocator, source_text, source_type)
         .with_options(ParseOptions::default())

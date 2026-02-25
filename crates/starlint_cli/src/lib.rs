@@ -70,7 +70,10 @@ pub fn run() -> miette::Result<ExitStatus> {
         }) => (paths.clone(), true, *dangerous),
         Some(Command::Lint { paths }) => (paths.clone(), args.fix, args.fix_dangerous),
         Some(Command::Lsp) => return run_lsp(),
-        Some(Command::Init) => return run_init().map(|()| ExitStatus::Success),
+        Some(Command::Init) => {
+            run_init()?;
+            return Ok(ExitStatus::Success);
+        }
         Some(Command::Rules { plugin, json }) => {
             run_rules(plugin.as_deref(), *json);
             return Ok(ExitStatus::Success);
@@ -149,13 +152,15 @@ pub fn run() -> miette::Result<ExitStatus> {
 ///
 /// Returns an error if a config file exists but fails to parse.
 /// Returns `Config::default()` only when no config file is found.
-fn load_merged_config(explicit_path: Option<&Path>) -> miette::Result<starlint_config::Config> {
+fn load_merged_config(
+    explicit_path: Option<&Path>,
+) -> Result<starlint_config::Config, error::CliError> {
     if let Some(path) = explicit_path {
-        return load_config(path);
+        return Ok(load_config(path)?);
     }
 
     match starlint_config::resolve::find_config_file(Path::new(".")) {
-        Some(path) => load_config(&path),
+        Some(path) => Ok(load_config(&path)?),
         None => Ok(starlint_config::Config::default()),
     }
 }
@@ -339,7 +344,7 @@ fn write_atomic(dir: &Path, target: &Path, content: &str) -> std::io::Result<()>
 
 /// Initialize a default `starlint.toml` config file.
 #[allow(clippy::print_stdout, clippy::print_stderr)]
-fn run_init() -> miette::Result<()> {
+fn run_init() -> Result<(), error::CliError> {
     let config_path = PathBuf::from("starlint.toml");
     if config_path.exists() {
         eprintln!("warning: starlint.toml already exists");
@@ -363,7 +368,7 @@ threads = 0  # 0 = auto-detect
 "#;
 
     std::fs::write(&config_path, default_config)
-        .map_err(|err| miette::miette!("failed to write starlint.toml: {err}"))?;
+        .map_err(|err| error::CliError::Init(err.to_string()))?;
 
     println!("created starlint.toml");
     Ok(())
@@ -413,7 +418,7 @@ fn run_lsp() -> miette::Result<ExitStatus> {
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
-        .map_err(|err| miette::miette!("failed to create tokio runtime: {err}"))?;
+        .map_err(|err| error::CliError::Runtime(err.to_string()))?;
     rt.block_on(starlint_lsp::run_lsp())?;
     Ok(ExitStatus::Success)
 }

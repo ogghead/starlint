@@ -5,25 +5,28 @@ use thiserror::Error;
 
 /// Top-level CLI errors.
 ///
-/// Note: These variants are defined for structured error reporting but are
-/// not yet wired into all production code paths. Some error sites currently
-/// use `miette!()` or `eprintln!` directly. TODO: Migrate those sites to
-/// use `CliError` for consistent error handling.
+/// Wraps domain errors from lower crates (`ConfigError`) and adds CLI-specific
+/// variants for init and runtime failures.
 #[derive(Debug, Error, Diagnostic)]
 #[non_exhaustive]
 pub enum CliError {
-    /// Configuration file error.
-    #[error("configuration error: {0}")]
-    #[diagnostic(code(starlint::config), help("Check your starlint.toml configuration"))]
-    Config(String),
+    /// Configuration file error (delegates to `ConfigError`).
+    #[error(transparent)]
+    #[diagnostic(transparent)]
+    Config(#[from] starlint_config::ConfigError),
 
-    /// No files found to lint.
-    #[error("no lintable files found in the given paths")]
+    /// Failed to initialize default config file.
+    #[error("failed to initialize config: {0}")]
     #[diagnostic(
-        code(starlint::no_files),
-        help("Check that the paths contain JS/TS files")
+        code(starlint::init),
+        help("Check file permissions in the current directory")
     )]
-    NoFiles,
+    Init(String),
+
+    /// Tokio runtime creation failed.
+    #[error("failed to create async runtime: {0}")]
+    #[diagnostic(code(starlint::runtime))]
+    Runtime(String),
 }
 
 #[cfg(test)]
@@ -32,12 +35,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_cli_error_display() {
-        let err = CliError::Config("bad config".to_owned());
+    fn test_cli_error_config_display() {
+        let inner = starlint_config::ConfigError::ParseFailed {
+            path: "starlint.toml".to_owned(),
+            reason: "bad toml".to_owned(),
+        };
+        let err = CliError::Config(inner);
         assert_eq!(
             err.to_string(),
-            "configuration error: bad config",
-            "config error format must be stable"
+            "failed to parse config file starlint.toml: bad toml",
+            "config error should delegate to ConfigError display"
+        );
+    }
+
+    #[test]
+    fn test_cli_error_init_display() {
+        let err = CliError::Init("permission denied".to_owned());
+        assert_eq!(
+            err.to_string(),
+            "failed to initialize config: permission denied",
+            "init error format must be stable"
+        );
+    }
+
+    #[test]
+    fn test_cli_error_runtime_display() {
+        let err = CliError::Runtime("could not spawn threads".to_owned());
+        assert_eq!(
+            err.to_string(),
+            "failed to create async runtime: could not spawn threads",
+            "runtime error format must be stable"
         );
     }
 }

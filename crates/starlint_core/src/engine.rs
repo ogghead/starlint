@@ -9,11 +9,12 @@ use oxc_allocator::Allocator;
 use rayon::prelude::*;
 
 use crate::diagnostic::OutputFormat;
+use crate::error::LintError;
 use crate::parser::parse_file;
 use crate::plugin::PluginHost;
 use crate::rule::NativeRule;
 use crate::traversal::traverse_and_lint;
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
 
 /// Diagnostics collected for a single file.
 #[derive(Debug, Clone)]
@@ -76,20 +77,16 @@ impl LintSession {
             .filter_map(|path| {
                 let source_text = match std::fs::read_to_string(path) {
                     Ok(text) => text,
-                    Err(err) => {
-                        tracing::warn!("failed to read {}: {err}", path.display());
+                    Err(io_err) => {
+                        let err = LintError::FileRead {
+                            path: path.display().to_string(),
+                            source: io_err,
+                        };
+                        tracing::warn!("{err}");
                         return Some(FileDiagnostics {
                             path: path.clone(),
                             source_text: String::new(),
-                            diagnostics: vec![Diagnostic {
-                                rule_name: "starlint/io-error".to_owned(),
-                                message: format!("Failed to read file: {err}"),
-                                span: Span::new(0, 0),
-                                severity: Severity::Error,
-                                help: Some("Check that the file exists and is readable".to_owned()),
-                                fix: None,
-                                labels: vec![],
-                            }],
+                            diagnostics: vec![err.into_diagnostic()],
                         });
                     }
                 };
@@ -128,16 +125,8 @@ impl LintSession {
                 diags
             }
             Err(err) => {
-                tracing::warn!("failed to parse {}: {err}", file_path.display());
-                vec![Diagnostic {
-                    rule_name: "starlint/parse-error".to_owned(),
-                    message: format!("Failed to parse file: {err}"),
-                    span: Span::new(0, 0),
-                    severity: Severity::Error,
-                    help: Some("Check that the file is valid JavaScript/TypeScript".to_owned()),
-                    fix: None,
-                    labels: vec![],
-                }]
+                tracing::warn!("{err}");
+                vec![err.into_diagnostic()]
             }
         };
 

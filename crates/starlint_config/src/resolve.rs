@@ -5,9 +5,8 @@
 
 use std::path::{Path, PathBuf};
 
-use miette::miette;
-
 use crate::Config;
+use crate::error::ConfigError;
 
 /// Config file names to look for, in priority order.
 const CONFIG_FILE_NAMES: &[&str] = &["starlint.toml"];
@@ -36,18 +35,31 @@ pub fn find_config_file(start_dir: &Path) -> Option<PathBuf> {
 }
 
 /// Load and parse a config file.
-pub fn load_config(path: &Path) -> miette::Result<Config> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|err| miette!("failed to read config file {}: {err}", path.display()))?;
+///
+/// # Errors
+///
+/// Returns `ConfigError::ReadFailed` if the file cannot be read, or
+/// `ConfigError::ParseFailed` if it is not valid TOML.
+pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
+    let content = std::fs::read_to_string(path).map_err(|err| ConfigError::ReadFailed {
+        path: path.display().to_string(),
+        source: err,
+    })?;
 
-    let config: Config = toml::from_str(&content)
-        .map_err(|err| miette!("failed to parse config file {}: {err}", path.display()))?;
+    let config: Config = toml::from_str(&content).map_err(|err| ConfigError::ParseFailed {
+        path: path.display().to_string(),
+        reason: err.to_string(),
+    })?;
 
     Ok(config)
 }
 
 /// Load config from a directory, or return defaults if no config file exists.
-pub fn resolve_config(start_dir: &Path) -> miette::Result<Config> {
+///
+/// # Errors
+///
+/// Returns `ConfigError` if a config file is found but cannot be read or parsed.
+pub fn resolve_config(start_dir: &Path) -> Result<Config, ConfigError> {
     if let Some(path) = find_config_file(start_dir) {
         tracing::info!("using config: {}", path.display());
         load_config(&path)

@@ -3,7 +3,11 @@
 //! Supports `starlint.toml` config files with rule severity overrides,
 //! plugin declarations, and file-pattern-based overrides.
 
+#[allow(unused_assignments)] // False positive from thiserror 2.x macro-generated Display impls
+pub mod error;
 pub mod resolve;
+
+pub use error::ConfigError;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
