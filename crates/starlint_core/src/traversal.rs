@@ -79,6 +79,12 @@ impl<'a> Visit<'a> for RuleDispatchVisitor<'a, '_> {
             rule.run(&kind, &mut self.ctx);
         }
     }
+
+    fn leave_node(&mut self, kind: AstKind<'a>) {
+        for rule in self.rules {
+            rule.leave(&kind, &mut self.ctx);
+        }
+    }
 }
 
 #[cfg(test)]

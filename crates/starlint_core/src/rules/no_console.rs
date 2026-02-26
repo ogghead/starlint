@@ -6,12 +6,17 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
-/// Flags calls to `console.*` methods.
+/// Flags `console.*` call statements and offers to remove them.
+///
+/// Matches `ExpressionStatement` (not `CallExpression`) so the fix can cleanly
+/// remove the entire statement. Console calls embedded in other expressions
+/// (e.g. `const x = console.log(1)`) are not detected — this is a known
+/// limitation, similar to computed access and aliased console.
 #[derive(Debug)]
 pub struct NoConsole;
 
@@ -22,24 +27,43 @@ impl NativeRule for NoConsole {
             description: "Disallow `console.*` calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        if let AstKind::CallExpression(call) = kind {
-            if let Expression::StaticMemberExpression(member) = &call.callee {
-                if let Expression::Identifier(ident) = &member.object {
-                    if ident.name == "console" {
-                        ctx.report_warning(
-                            "no-console",
-                            &format!("Unexpected `console.{}` call", member.property.name),
-                            Span::new(call.span.start, call.span.end),
-                        );
-                    }
-                }
-            }
+        let AstKind::ExpressionStatement(stmt) = kind else {
+            return;
+        };
+        let Expression::CallExpression(call) = &stmt.expression else {
+            return;
+        };
+        let Expression::StaticMemberExpression(member) = &call.callee else {
+            return;
+        };
+        let Expression::Identifier(ident) = &member.object else {
+            return;
+        };
+        if ident.name != "console" {
+            return;
         }
+
+        let span = Span::new(stmt.span.start, stmt.span.end);
+        ctx.report(Diagnostic {
+            rule_name: "no-console".to_owned(),
+            message: format!("Unexpected `console.{}` call", member.property.name),
+            span,
+            severity: Severity::Warning,
+            help: Some("Remove the `console` call or replace with a logger".to_owned()),
+            fix: Some(Fix {
+                message: format!("Remove `console.{}()` statement", member.property.name),
+                edits: vec![Edit {
+                    span,
+                    replacement: String::new(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 
@@ -78,6 +102,40 @@ mod tests {
             let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConsole)];
             let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
             assert_eq!(diags.len(), 1, "should flag console.error");
+        }
+    }
+
+    #[test]
+    fn test_fix_removes_statement() {
+        let allocator = Allocator::default();
+        let source = "console.log('hello');";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConsole)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            let fix = diags.first().and_then(|d| d.fix.as_ref());
+            assert!(fix.is_some(), "should provide a fix");
+            let edit = fix.and_then(|f| f.edits.first());
+            assert_eq!(
+                edit.map(|e| e.replacement.as_str()),
+                Some(""),
+                "fix should remove the statement"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ignores_embedded_console_call() {
+        // Known limitation: console calls embedded in expressions are not detected
+        // because we match ExpressionStatement (needed for clean statement removal).
+        let allocator = Allocator::default();
+        let source = "const x = console.log(1);";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConsole)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert!(
+                diags.is_empty(),
+                "embedded console call is a known false negative"
+            );
         }
     }
 

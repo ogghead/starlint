@@ -5,8 +5,9 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,6 +29,28 @@ fn is_constant_expression(expr: &Expression<'_>) -> bool {
     }
 }
 
+/// Determine the JS truthiness of a constant literal expression.
+///
+/// Returns `Some(true)` for truthy literals, `Some(false)` for falsy, `None` if
+/// truthiness cannot be determined.
+fn is_truthy_literal(expr: &Expression<'_>) -> Option<bool> {
+    match expr {
+        Expression::BooleanLiteral(lit) => Some(lit.value),
+        Expression::NumericLiteral(lit) => Some(lit.value != 0.0 && !lit.value.is_nan()),
+        Expression::NullLiteral(_) => Some(false),
+        Expression::StringLiteral(lit) => Some(!lit.value.is_empty()),
+        Expression::TemplateLiteral(tpl) => {
+            if !tpl.expressions.is_empty() {
+                return None;
+            }
+            // Empty template `` is falsy (empty string), non-empty is truthy.
+            let is_empty = tpl.quasis.iter().all(|q| q.value.raw.is_empty());
+            Some(!is_empty)
+        }
+        _ => None,
+    }
+}
+
 impl NativeRule for NoConstantCondition {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
@@ -35,10 +58,11 @@ impl NativeRule for NoConstantCondition {
             description: "Disallow constant expressions in conditions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
+    #[allow(clippy::too_many_lines)] // Five AstKind arms with similar structure
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         match kind {
             AstKind::IfStatement(stmt) => {
@@ -106,6 +130,28 @@ impl NativeRule for NoConstantCondition {
             }
             AstKind::ConditionalExpression(expr) => {
                 if is_constant_expression(&expr.test) {
+                    let source = ctx.source_text();
+                    let fix = is_truthy_literal(&expr.test).and_then(|truthy| {
+                        let branch = if truthy {
+                            &expr.consequent
+                        } else {
+                            &expr.alternate
+                        };
+                        let branch_span = branch.span();
+                        let start = usize::try_from(branch_span.start).ok()?;
+                        let end = usize::try_from(branch_span.end).ok()?;
+                        let branch_text = source.get(start..end)?;
+                        Some(Fix {
+                            message: format!(
+                                "Replace with {} branch",
+                                if truthy { "consequent" } else { "alternate" }
+                            ),
+                            edits: vec![Edit {
+                                span: Span::new(expr.span.start, expr.span.end),
+                                replacement: branch_text.to_owned(),
+                            }],
+                        })
+                    });
                     ctx.report(Diagnostic {
                         rule_name: "no-constant-condition".to_owned(),
                         message: "Unexpected constant condition in ternary expression".to_owned(),
@@ -114,7 +160,7 @@ impl NativeRule for NoConstantCondition {
                         help: Some(
                             "Replace the constant condition with a dynamic expression".to_owned(),
                         ),
-                        fix: None,
+                        fix,
                         labels: vec![],
                     });
                 }
@@ -287,6 +333,78 @@ mod tests {
             assert!(
                 diags.is_empty(),
                 "template literal with interpolation is not constant"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ternary_true_fix_replaces_with_consequent() {
+        let allocator = Allocator::default();
+        let source = "var r = true ? 1 : 2;";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConstantCondition)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(diags.len(), 1);
+            let fix = diags.first().and_then(|d| d.fix.as_ref());
+            assert!(fix.is_some(), "ternary should have a fix");
+            let edit = fix.and_then(|f| f.edits.first());
+            assert_eq!(
+                edit.map(|e| e.replacement.as_str()),
+                Some("1"),
+                "truthy condition should replace with consequent"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ternary_false_fix_replaces_with_alternate() {
+        let allocator = Allocator::default();
+        let source = "var r = false ? 1 : 2;";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConstantCondition)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(diags.len(), 1);
+            let fix = diags.first().and_then(|d| d.fix.as_ref());
+            assert!(fix.is_some(), "ternary should have a fix");
+            let edit = fix.and_then(|f| f.edits.first());
+            assert_eq!(
+                edit.map(|e| e.replacement.as_str()),
+                Some("2"),
+                "falsy condition should replace with alternate"
+            );
+        }
+    }
+
+    #[test]
+    fn test_ternary_null_fix() {
+        let allocator = Allocator::default();
+        let source = "var r = null ? a : b;";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConstantCondition)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            let edit = diags
+                .first()
+                .and_then(|d| d.fix.as_ref())
+                .and_then(|f| f.edits.first());
+            assert_eq!(
+                edit.map(|e| e.replacement.as_str()),
+                Some("b"),
+                "null is falsy, should replace with alternate"
+            );
+        }
+    }
+
+    #[test]
+    fn test_if_statement_has_no_fix() {
+        let allocator = Allocator::default();
+        let source = "if (true) { x(); }";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConstantCondition)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(diags.len(), 1, "should flag if(true)");
+            assert!(
+                diags.first().and_then(|d| d.fix.as_ref()).is_none(),
+                "if statement should not have a fix"
             );
         }
     }

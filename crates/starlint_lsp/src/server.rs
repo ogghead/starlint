@@ -218,6 +218,14 @@ impl LanguageServer for Backend {
         }
 
         self.rebuild_session().await;
+
+        // Re-lint all documents that were opened during initialization.
+        // VS Code sends did_open for already-open files before the session is
+        // ready, so those initial lint_and_publish calls silently return empty.
+        let uris: Vec<Url> = self.documents.read().await.keys().cloned().collect();
+        for uri in &uris {
+            self.lint_and_publish(uri).await;
+        }
     }
 
     async fn shutdown(&self) -> Result<()> {

@@ -5,7 +5,7 @@
 
 use oxc_ast::AstKind;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -21,20 +21,27 @@ impl NativeRule for NoEmpty {
             description: "Disallow empty block statements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         if let AstKind::BlockStatement(block) = kind {
             if block.body.is_empty() {
+                let span = Span::new(block.span.start, block.span.end);
                 ctx.report(Diagnostic {
                     rule_name: "no-empty".to_owned(),
                     message: "Empty block statement".to_owned(),
-                    span: Span::new(block.span.start, block.span.end),
+                    span,
                     severity: Severity::Warning,
                     help: Some("Add a comment inside the block if intentionally empty".to_owned()),
-                    fix: None,
+                    fix: Some(Fix {
+                        message: "Add `/* empty */` comment".to_owned(),
+                        edits: vec![Edit {
+                            span,
+                            replacement: "{ /* empty */ }".to_owned(),
+                        }],
+                    }),
                     labels: vec![],
                 });
             }
@@ -78,6 +85,25 @@ mod tests {
             assert!(
                 diags.is_empty(),
                 "non-empty block should have no diagnostics"
+            );
+        }
+    }
+
+    #[test]
+    fn test_fix_adds_empty_comment() {
+        let allocator = Allocator::default();
+        let source = "if (true) {}";
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoEmpty)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(diags.len(), 1);
+            let fix = diags.first().and_then(|d| d.fix.as_ref());
+            assert!(fix.is_some(), "should provide a fix");
+            let edit = fix.and_then(|f| f.edits.first());
+            assert_eq!(
+                edit.map(|e| e.replacement.as_str()),
+                Some("{ /* empty */ }"),
+                "fix should replace block with comment"
             );
         }
     }

@@ -3,13 +3,93 @@
 //! All rules are registered in [`all_rules`]. The [`rules_for_config`] function
 //! filters and configures rules based on a rule config map.
 
+pub mod array_callback_return;
+pub mod catch_error_name;
+pub mod constructor_super;
 pub mod eqeqeq;
+pub mod for_direction;
+pub mod getter_return;
+pub mod max_complexity;
+pub mod new_for_builtins;
+pub mod no_async_promise_executor;
+pub mod no_compare_neg_zero;
 pub mod no_console;
+pub mod no_console_spaces;
+pub mod no_constant_binary_expression;
 pub mod no_constant_condition;
+pub mod no_case_declarations;
+pub mod no_cond_assign;
+pub mod no_constructor_return;
+pub mod no_control_regex;
 pub mod no_debugger;
+pub mod no_delete_var;
+pub mod no_dupe_class_members;
+pub mod no_dupe_else_if;
+pub mod no_dupe_keys;
+pub mod no_duplicate_case;
 pub mod no_empty;
+pub mod no_empty_character_class;
+pub mod no_empty_pattern;
+pub mod no_empty_static_block;
+pub mod no_ex_assign;
 pub mod no_extra_semi;
+pub mod no_fallthrough;
+pub mod no_inner_declarations;
+pub mod no_irregular_whitespace;
+pub mod no_lonely_if;
+pub mod no_loss_of_precision;
+pub mod no_nested_ternary;
+pub mod no_new_native_nonconstructor;
+pub mod no_nonoctal_decimal_escape;
+pub mod no_obj_calls;
+pub mod no_promise_executor_return;
+pub mod no_prototype_builtins;
+pub mod no_regex_spaces;
+pub mod no_return_assign;
+pub mod no_script_url;
+pub mod no_self_assign;
+pub mod no_sequences;
+pub mod no_self_compare;
+pub mod no_setter_return;
+pub mod no_shadow_restricted_names;
+pub mod no_ternary;
+pub mod no_sparse_arrays;
+pub mod no_template_curly_in_string;
+pub mod no_this_before_super;
+pub mod no_throw_literal;
+pub mod no_typeof_undefined;
+pub mod no_undefined;
+pub mod no_unneeded_ternary;
+pub mod no_unsafe_finally;
+pub mod no_unexpected_multiline;
+pub mod no_unsafe_negation;
+pub mod no_unreachable;
+pub mod no_unsafe_optional_chaining;
+pub mod no_unused_labels;
+pub mod no_unused_private_class_members;
+pub mod no_useless_call;
+pub mod no_useless_catch;
+pub mod no_useless_computed_key;
+pub mod no_useless_concat;
+pub mod no_useless_constructor;
+pub mod no_useless_rename;
+pub mod no_with;
 pub mod no_var;
+pub mod no_zero_fractions;
+pub mod number_literal_case;
+pub mod operator_assignment;
+pub mod prefer_includes;
+pub mod prefer_object_has_own;
+pub mod prefer_optional_catch_binding;
+pub mod prefer_rest_params;
+pub mod prefer_spread;
+pub mod prefer_template;
+pub mod radix;
+pub mod symbol_description;
+pub mod throw_new_error;
+pub mod use_isnan;
+pub mod valid_typeof;
+pub mod yoda;
 
 use std::collections::{HashMap, HashSet};
 
@@ -27,8 +107,88 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_constant_condition::NoConstantCondition),
         Box::new(no_empty::NoEmpty),
         Box::new(no_extra_semi::NoExtraSemi),
+        Box::new(no_lonely_if::NoLonelyIf),
+        Box::new(no_unneeded_ternary::NoUnneededTernary),
+        Box::new(no_useless_catch::NoUselessCatch),
+        Box::new(no_useless_rename::NoUselessRename),
         Box::new(eqeqeq::Eqeqeq),
         Box::new(no_var::NoVar),
+        Box::new(max_complexity::MaxComplexity::new()),
+        Box::new(no_zero_fractions::NoZeroFractions),
+        Box::new(number_literal_case::NumberLiteralCase),
+        Box::new(no_nested_ternary::NoNestedTernary),
+        Box::new(throw_new_error::ThrowNewError),
+        Box::new(no_typeof_undefined::NoTypeofUndefined),
+        Box::new(catch_error_name::CatchErrorName::new()),
+        Box::new(new_for_builtins::NewForBuiltins),
+        Box::new(no_console_spaces::NoConsoleSpaces),
+        Box::new(prefer_optional_catch_binding::PreferOptionalCatchBinding),
+        Box::new(prefer_includes::PreferIncludes),
+        Box::new(for_direction::ForDirection),
+        Box::new(no_compare_neg_zero::NoCompareNegZero),
+        Box::new(no_dupe_keys::NoDupeKeys),
+        Box::new(no_duplicate_case::NoDuplicateCase),
+        Box::new(no_sparse_arrays::NoSparseArrays),
+        Box::new(valid_typeof::ValidTypeof),
+        Box::new(use_isnan::UseIsnan),
+        Box::new(no_self_assign::NoSelfAssign),
+        Box::new(no_self_compare::NoSelfCompare),
+        Box::new(no_empty_pattern::NoEmptyPattern),
+        Box::new(no_delete_var::NoDeleteVar),
+        Box::new(no_empty_static_block::NoEmptyStaticBlock),
+        Box::new(no_obj_calls::NoObjCalls),
+        Box::new(no_template_curly_in_string::NoTemplateCurlyInString),
+        Box::new(no_async_promise_executor::NoAsyncPromiseExecutor),
+        Box::new(no_shadow_restricted_names::NoShadowRestrictedNames),
+        Box::new(no_case_declarations::NoCaseDeclarations),
+        Box::new(no_ex_assign::NoExAssign),
+        Box::new(no_dupe_class_members::NoDupeClassMembers),
+        Box::new(no_new_native_nonconstructor::NoNewNativeNonconstructor),
+        Box::new(no_unsafe_negation::NoUnsafeNegation),
+        Box::new(no_unused_labels::NoUnusedLabels),
+        Box::new(no_prototype_builtins::NoPrototypeBuiltins),
+        Box::new(no_nonoctal_decimal_escape::NoNonoctalDecimalEscape),
+        Box::new(no_loss_of_precision::NoLossOfPrecision),
+        Box::new(no_setter_return::NoSetterReturn),
+        Box::new(getter_return::GetterReturn),
+        Box::new(no_cond_assign::NoCondAssign),
+        Box::new(no_unsafe_finally::NoUnsafeFinally),
+        Box::new(no_constructor_return::NoConstructorReturn),
+        Box::new(constructor_super::ConstructorSuper),
+        Box::new(no_irregular_whitespace::NoIrregularWhitespace),
+        Box::new(no_promise_executor_return::NoPromiseExecutorReturn),
+        Box::new(no_dupe_else_if::NoDupeElseIf),
+        Box::new(no_unsafe_optional_chaining::NoUnsafeOptionalChaining),
+        Box::new(no_inner_declarations::NoInnerDeclarations),
+        Box::new(no_unreachable::NoUnreachable),
+        Box::new(no_this_before_super::NoThisBeforeSuper),
+        Box::new(no_constant_binary_expression::NoConstantBinaryExpression),
+        Box::new(array_callback_return::ArrayCallbackReturn),
+        Box::new(no_unexpected_multiline::NoUnexpectedMultiline),
+        Box::new(no_regex_spaces::NoRegexSpaces),
+        Box::new(no_empty_character_class::NoEmptyCharacterClass),
+        Box::new(no_control_regex::NoControlRegex),
+        Box::new(no_fallthrough::NoFallthrough),
+        Box::new(no_unused_private_class_members::NoUnusedPrivateClassMembers),
+        Box::new(no_useless_constructor::NoUselessConstructor),
+        Box::new(no_throw_literal::NoThrowLiteral),
+        Box::new(no_script_url::NoScriptUrl),
+        Box::new(no_return_assign::NoReturnAssign),
+        Box::new(no_sequences::NoSequences),
+        Box::new(no_useless_computed_key::NoUselessComputedKey),
+        Box::new(symbol_description::SymbolDescription),
+        Box::new(prefer_object_has_own::PreferObjectHasOwn),
+        Box::new(no_with::NoWith),
+        Box::new(no_useless_concat::NoUselessConcat),
+        Box::new(no_useless_call::NoUselessCall),
+        Box::new(no_undefined::NoUndefined),
+        Box::new(no_ternary::NoTernary),
+        Box::new(prefer_template::PreferTemplate),
+        Box::new(yoda::Yoda),
+        Box::new(radix::Radix),
+        Box::new(prefer_spread::PreferSpread),
+        Box::new(prefer_rest_params::PreferRestParams),
+        Box::new(operator_assignment::OperatorAssignment),
     ]
 }
 

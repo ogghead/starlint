@@ -21,10 +21,16 @@ pub trait NativeRule: Debug + Send + Sync {
     /// Metadata describing this rule.
     fn meta(&self) -> RuleMeta;
 
-    /// Called for each AST node during traversal.
+    /// Called for each AST node when entering during traversal.
     ///
     /// Default implementation does nothing. Override to inspect specific node kinds.
     fn run(&self, _kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {}
+
+    /// Called for each AST node when leaving during traversal.
+    ///
+    /// Default implementation does nothing. Override for rules that need scope
+    /// tracking (e.g. counting complexity within function boundaries).
+    fn leave(&self, _kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {}
 
     /// Called once per file, after traversal completes.
     ///
