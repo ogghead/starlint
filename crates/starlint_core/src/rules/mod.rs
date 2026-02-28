@@ -349,7 +349,7 @@ use crate::rule::NativeRule;
 
 /// Return all built-in native rules with their default configuration.
 #[must_use]
-#[allow(clippy::too_many_lines)]
+#[allow(clippy::too_many_lines, clippy::large_stack_frames)]
 pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
     let mut rules: Vec<Box<dyn NativeRule>> = vec![
         Box::new(accessor_pairs::AccessorPairs),
