@@ -78,11 +78,7 @@ mod tests {
     #[test]
     fn test_flags_return_assignment() {
         let diags = lint("function f() { return x = 1; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "return with assignment should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "return with assignment should be flagged");
     }
 
     #[test]
@@ -116,9 +112,6 @@ mod tests {
     #[test]
     fn test_allows_empty_return() {
         let diags = lint("function f() { return; }");
-        assert!(
-            diags.is_empty(),
-            "empty return should not be flagged"
-        );
+        assert!(diags.is_empty(), "empty return should not be flagged");
     }
 }

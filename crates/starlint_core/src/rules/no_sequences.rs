@@ -62,11 +62,7 @@ mod tests {
     #[test]
     fn test_flags_comma_operator() {
         let diags = lint("var x = (1, 2);");
-        assert_eq!(
-            diags.len(),
-            1,
-            "comma operator should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "comma operator should be flagged");
     }
 
     #[test]
@@ -81,10 +77,7 @@ mod tests {
     #[test]
     fn test_allows_comma_in_array() {
         let diags = lint("var x = [1, 2];");
-        assert!(
-            diags.is_empty(),
-            "comma in array should not be flagged"
-        );
+        assert!(diags.is_empty(), "comma in array should not be flagged");
     }
 
     #[test]

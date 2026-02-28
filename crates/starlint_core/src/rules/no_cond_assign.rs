@@ -107,7 +107,11 @@ mod tests {
     #[test]
     fn test_flags_assignment_in_for() {
         let diags = lint("for (;x = 5;) {}");
-        assert_eq!(diags.len(), 1, "assignment in for condition should be flagged");
+        assert_eq!(
+            diags.len(),
+            1,
+            "assignment in for condition should be flagged"
+        );
     }
 
     #[test]

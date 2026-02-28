@@ -45,10 +45,7 @@ impl NativeRule for NoConstructorReturn {
 }
 
 /// Walk statements looking for return statements that have a value.
-fn check_statements_for_value_return(
-    stmts: &[Statement<'_>],
-    ctx: &mut NativeLintContext<'_>,
-) {
+fn check_statements_for_value_return(stmts: &[Statement<'_>], ctx: &mut NativeLintContext<'_>) {
     for stmt in stmts {
         check_statement_for_value_return(stmt, ctx);
     }
@@ -130,10 +127,7 @@ mod tests {
     #[test]
     fn test_allows_method_return() {
         let diags = lint("class Foo { bar() { return 1; } }");
-        assert!(
-            diags.is_empty(),
-            "return in method should not be flagged"
-        );
+        assert!(diags.is_empty(), "return in method should not be flagged");
     }
 
     #[test]

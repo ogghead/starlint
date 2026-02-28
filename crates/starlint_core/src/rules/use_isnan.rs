@@ -121,6 +121,9 @@ mod tests {
     #[test]
     fn test_allows_arithmetic_with_nan() {
         let diags = lint("const y = x + NaN;");
-        assert!(diags.is_empty(), "arithmetic with NaN should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "arithmetic with NaN should not be flagged"
+        );
     }
 }

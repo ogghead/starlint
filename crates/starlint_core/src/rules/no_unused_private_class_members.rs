@@ -159,30 +159,19 @@ mod tests {
     #[test]
     fn test_flags_unused_private_field() {
         let diags = lint("class A { #unused = 1; method() { return 2; } }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "unused private field should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "unused private field should be flagged");
     }
 
     #[test]
     fn test_allows_used_private_field() {
         let diags = lint("class A { #x = 1; method() { return this.#x; } }");
-        assert!(
-            diags.is_empty(),
-            "used private field should not be flagged"
-        );
+        assert!(diags.is_empty(), "used private field should not be flagged");
     }
 
     #[test]
     fn test_flags_unused_private_method() {
         let diags = lint("class A { #unusedMethod() {} method() { return 1; } }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "unused private method should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "unused private method should be flagged");
     }
 
     #[test]

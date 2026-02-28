@@ -91,30 +91,19 @@ mod tests {
     #[test]
     fn test_flags_throw_number() {
         let diags = lint("throw 0;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "throwing a number should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "throwing a number should be flagged");
     }
 
     #[test]
     fn test_flags_throw_null() {
         let diags = lint("throw null;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "throwing null should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "throwing null should be flagged");
     }
 
     #[test]
     fn test_allows_throw_new_error() {
         let diags = lint("throw new Error('msg');");
-        assert!(
-            diags.is_empty(),
-            "throwing new Error should not be flagged"
-        );
+        assert!(diags.is_empty(), "throwing new Error should not be flagged");
     }
 
     #[test]

@@ -131,38 +131,25 @@ mod tests {
     #[test]
     fn test_flags_fallthrough() {
         let diags = lint("switch(x) { case 1: foo(); case 2: bar(); break; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "case without break should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "case without break should be flagged");
     }
 
     #[test]
     fn test_allows_break() {
         let diags = lint("switch(x) { case 1: foo(); break; case 2: bar(); break; }");
-        assert!(
-            diags.is_empty(),
-            "cases with break should not be flagged"
-        );
+        assert!(diags.is_empty(), "cases with break should not be flagged");
     }
 
     #[test]
     fn test_allows_return() {
         let diags = lint("function f(x) { switch(x) { case 1: return 1; case 2: return 2; } }");
-        assert!(
-            diags.is_empty(),
-            "cases with return should not be flagged"
-        );
+        assert!(diags.is_empty(), "cases with return should not be flagged");
     }
 
     #[test]
     fn test_allows_throw() {
         let diags = lint("switch(x) { case 1: throw new Error(); case 2: break; }");
-        assert!(
-            diags.is_empty(),
-            "cases with throw should not be flagged"
-        );
+        assert!(diags.is_empty(), "cases with throw should not be flagged");
     }
 
     #[test]

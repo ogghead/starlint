@@ -40,11 +40,8 @@ impl NativeRule for NoUnexpectedMultiline {
             AstKind::CallExpression(call) => {
                 let callee_end = callee_end_offset(&call.callee);
                 if callee_end > 0 {
-                    let has_newline = check_newline_before_paren(
-                        ctx.source_text(),
-                        callee_end,
-                        call.span.end,
-                    );
+                    let has_newline =
+                        check_newline_before_paren(ctx.source_text(), callee_end, call.span.end);
                     if has_newline {
                         ctx.report_error(
                             "no-unexpected-multiline",

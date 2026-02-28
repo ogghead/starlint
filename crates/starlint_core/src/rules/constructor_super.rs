@@ -88,11 +88,10 @@ fn statement_contains_super_call(stmt: &Statement<'_>) -> bool {
 fn expression_contains_super_call(expr: &Expression<'_>) -> bool {
     match expr {
         Expression::CallExpression(call) => matches!(&call.callee, Expression::Super(_)),
-        Expression::SequenceExpression(seq) => {
-            seq.expressions
-                .iter()
-                .any(|e| expression_contains_super_call(e))
-        }
+        Expression::SequenceExpression(seq) => seq
+            .expressions
+            .iter()
+            .any(|e| expression_contains_super_call(e)),
         _ => false,
     }
 }

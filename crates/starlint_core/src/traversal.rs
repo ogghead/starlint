@@ -9,6 +9,7 @@ use std::path::Path;
 use oxc_ast::AstKind;
 use oxc_ast::ast::Program;
 use oxc_ast_visit::Visit;
+use oxc_semantic::Semantic;
 
 use crate::rule::{NativeLintContext, NativeRule};
 use starlint_plugin_sdk::diagnostic::Diagnostic;
@@ -16,11 +17,26 @@ use starlint_plugin_sdk::diagnostic::Diagnostic;
 /// Traverse the AST and dispatch to all active rules.
 ///
 /// Returns diagnostics from all rules combined.
+/// For rules that need semantic analysis, use [`traverse_and_lint_with_semantic`].
 pub fn traverse_and_lint<'a>(
     program: &Program<'a>,
     rules: &[Box<dyn NativeRule>],
     source_text: &'a str,
     file_path: &'a Path,
+) -> Vec<Diagnostic> {
+    traverse_and_lint_with_semantic(program, rules, source_text, file_path, None)
+}
+
+/// Traverse the AST and dispatch to all active rules, with optional semantic data.
+///
+/// When `semantic` is `Some`, rules can access scope/symbol information via
+/// [`NativeLintContext::semantic()`].
+pub fn traverse_and_lint_with_semantic<'a>(
+    program: &Program<'a>,
+    rules: &[Box<dyn NativeRule>],
+    source_text: &'a str,
+    file_path: &'a Path,
+    semantic: Option<&'a Semantic<'a>>,
 ) -> Vec<Diagnostic> {
     let traversal_rules: Vec<&dyn NativeRule> = rules
         .iter()
@@ -37,9 +53,13 @@ pub fn traverse_and_lint<'a>(
 
     // Run traversal-based rules via single-pass visitor.
     if !traversal_rules.is_empty() {
+        let ctx = match semantic {
+            Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
+            None => NativeLintContext::new(source_text, file_path),
+        };
         let mut visitor = RuleDispatchVisitor {
             rules: &traversal_rules,
-            ctx: NativeLintContext::new(source_text, file_path),
+            ctx,
         };
         visitor.visit_program(program);
         all_diagnostics.extend(visitor.ctx.into_diagnostics());
@@ -47,14 +67,20 @@ pub fn traverse_and_lint<'a>(
 
     // Run file-level rules (run_once).
     for rule in &once_rules {
-        let mut ctx = NativeLintContext::new(source_text, file_path);
+        let mut ctx = match semantic {
+            Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
+            None => NativeLintContext::new(source_text, file_path),
+        };
         rule.run_once(&mut ctx);
         all_diagnostics.extend(ctx.into_diagnostics());
     }
 
     // Run run_once for traversal rules too (they may have both).
     for rule in &traversal_rules {
-        let mut ctx = NativeLintContext::new(source_text, file_path);
+        let mut ctx = match semantic {
+            Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
+            None => NativeLintContext::new(source_text, file_path),
+        };
         rule.run_once(&mut ctx);
         all_diagnostics.extend(ctx.into_diagnostics());
     }

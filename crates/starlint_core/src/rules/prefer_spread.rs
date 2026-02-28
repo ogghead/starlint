@@ -72,28 +72,18 @@ mod tests {
     #[test]
     fn test_flags_apply() {
         let diags = lint("foo.apply(null, args);");
-        assert_eq!(
-            diags.len(),
-            1,
-            ".apply() should be flagged"
-        );
+        assert_eq!(diags.len(), 1, ".apply() should be flagged");
     }
 
     #[test]
     fn test_allows_spread() {
         let diags = lint("foo(...args);");
-        assert!(
-            diags.is_empty(),
-            "spread operator should not be flagged"
-        );
+        assert!(diags.is_empty(), "spread operator should not be flagged");
     }
 
     #[test]
     fn test_allows_normal_call() {
         let diags = lint("foo(1, 2);");
-        assert!(
-            diags.is_empty(),
-            "normal call should not be flagged"
-        );
+        assert!(diags.is_empty(), "normal call should not be flagged");
     }
 }

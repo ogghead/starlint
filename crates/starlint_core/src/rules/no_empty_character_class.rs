@@ -124,11 +124,7 @@ mod tests {
     #[test]
     fn test_flags_empty_character_class() {
         let diags = lint("var re = /abc[]/;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "empty character class should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "empty character class should be flagged");
     }
 
     #[test]
@@ -162,9 +158,6 @@ mod tests {
     #[test]
     fn test_allows_escaped_bracket() {
         let diags = lint("var re = /abc\\[\\]/;");
-        assert!(
-            diags.is_empty(),
-            "escaped brackets should not be flagged"
-        );
+        assert!(diags.is_empty(), "escaped brackets should not be flagged");
     }
 }

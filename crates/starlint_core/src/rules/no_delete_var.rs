@@ -83,10 +83,7 @@ mod tests {
     #[test]
     fn test_allows_delete_computed_property() {
         let diags = lint("delete obj['key'];");
-        assert!(
-            diags.is_empty(),
-            "delete obj['key'] should not be flagged"
-        );
+        assert!(diags.is_empty(), "delete obj['key'] should not be flagged");
     }
 
     #[test]

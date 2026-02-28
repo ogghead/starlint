@@ -74,16 +74,16 @@ fn statement_contains_return(stmt: &Statement<'_>) -> bool {
                     .as_ref()
                     .is_some_and(|alt| statement_contains_return(alt))
         }
-        Statement::SwitchStatement(switch) => switch.cases.iter().any(|case| {
-            case.consequent
-                .iter()
-                .any(|s| statement_contains_return(s))
-        }),
+        Statement::SwitchStatement(switch) => switch
+            .cases
+            .iter()
+            .any(|case| case.consequent.iter().any(|s| statement_contains_return(s))),
         Statement::TryStatement(try_stmt) => {
             statements_contain_return(&try_stmt.block.body)
-                || try_stmt.handler.as_ref().is_some_and(|h| {
-                    statements_contain_return(&h.body.body)
-                })
+                || try_stmt
+                    .handler
+                    .as_ref()
+                    .is_some_and(|h| statements_contain_return(&h.body.body))
         }
         _ => false,
     }

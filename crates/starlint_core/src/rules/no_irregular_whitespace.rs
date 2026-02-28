@@ -128,9 +128,6 @@ mod tests {
     #[test]
     fn test_allows_tabs_and_spaces() {
         let diags = lint("var x\t= 1;  var y = 2;");
-        assert!(
-            diags.is_empty(),
-            "tabs and spaces should not be flagged"
-        );
+        assert!(diags.is_empty(), "tabs and spaces should not be flagged");
     }
 }

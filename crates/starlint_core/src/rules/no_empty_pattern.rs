@@ -90,24 +90,36 @@ mod tests {
     #[test]
     fn test_allows_non_empty_object_pattern() {
         let diags = lint("const { a } = foo;");
-        assert!(diags.is_empty(), "non-empty object pattern should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "non-empty object pattern should not be flagged"
+        );
     }
 
     #[test]
     fn test_allows_non_empty_array_pattern() {
         let diags = lint("const [a] = foo;");
-        assert!(diags.is_empty(), "non-empty array pattern should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "non-empty array pattern should not be flagged"
+        );
     }
 
     #[test]
     fn test_allows_rest_element() {
         let diags = lint("const [...rest] = foo;");
-        assert!(diags.is_empty(), "rest element in array pattern should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "rest element in array pattern should not be flagged"
+        );
     }
 
     #[test]
     fn test_allows_rest_in_object() {
         let diags = lint("const { ...rest } = foo;");
-        assert!(diags.is_empty(), "rest in object pattern should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "rest in object pattern should not be flagged"
+        );
     }
 }

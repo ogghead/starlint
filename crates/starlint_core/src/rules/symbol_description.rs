@@ -92,9 +92,6 @@ mod tests {
     #[test]
     fn test_allows_non_symbol_call() {
         let diags = lint("var x = foo();");
-        assert!(
-            diags.is_empty(),
-            "non-Symbol call should not be flagged"
-        );
+        assert!(diags.is_empty(), "non-Symbol call should not be flagged");
     }
 }

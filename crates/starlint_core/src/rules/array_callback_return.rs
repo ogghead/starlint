@@ -91,9 +91,7 @@ impl NativeRule for ArrayCallbackReturn {
                 if !statements_contain_return(&arrow.body.statements) {
                     ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
                         rule_name: "array-callback-return".to_owned(),
-                        message: format!(
-                            "Expected a return value in `.{method_name}()` callback"
-                        ),
+                        message: format!("Expected a return value in `.{method_name}()` callback"),
                         span: Span::new(arrow.span.start, arrow.span.end),
                         severity: Severity::Error,
                         help: Some(format!(
@@ -191,10 +189,7 @@ mod tests {
     #[test]
     fn test_allows_for_each() {
         let diags = lint("[1,2,3].forEach(function(x) { console.log(x); });");
-        assert!(
-            diags.is_empty(),
-            "forEach callback should not be flagged"
-        );
+        assert!(diags.is_empty(), "forEach callback should not be flagged");
     }
 
     #[test]

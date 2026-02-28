@@ -89,18 +89,12 @@ mod tests {
     #[test]
     fn test_allows_string_plus_variable() {
         let diags = lint("var x = 'a' + b;");
-        assert!(
-            diags.is_empty(),
-            "string + variable should not be flagged"
-        );
+        assert!(diags.is_empty(), "string + variable should not be flagged");
     }
 
     #[test]
     fn test_allows_number_addition() {
         let diags = lint("var x = 1 + 2;");
-        assert!(
-            diags.is_empty(),
-            "number addition should not be flagged"
-        );
+        assert!(diags.is_empty(), "number addition should not be flagged");
     }
 }

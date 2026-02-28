@@ -14,11 +14,7 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Methods from `Object.prototype` that should not be called directly.
-const PROTOTYPE_METHODS: &[&str] = &[
-    "hasOwnProperty",
-    "isPrototypeOf",
-    "propertyIsEnumerable",
-];
+const PROTOTYPE_METHODS: &[&str] = &["hasOwnProperty", "isPrototypeOf", "propertyIsEnumerable"];
 
 /// Flags direct calls to `Object.prototype` methods on objects.
 #[derive(Debug)]
@@ -28,8 +24,7 @@ impl NativeRule for NoPrototypeBuiltins {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-prototype-builtins".to_owned(),
-            description: "Disallow calling Object.prototype methods directly on objects"
-                .to_owned(),
+            description: "Disallow calling Object.prototype methods directly on objects".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
             fix_kind: FixKind::None,
@@ -120,10 +115,7 @@ mod tests {
         let diags = lint("Object.prototype.hasOwnProperty.call(foo, 'bar');");
         // This calls `call` on the result, which is not `hasOwnProperty` directly
         assert!(
-            diags.is_empty()
-                || diags
-                    .iter()
-                    .all(|d| d.message.contains("hasOwnProperty")),
+            diags.is_empty() || diags.iter().all(|d| d.message.contains("hasOwnProperty")),
             "Object.prototype pattern should be fine"
         );
     }

@@ -64,11 +64,7 @@ mod tests {
     #[test]
     fn test_flags_javascript_url() {
         let diags = lint("var url = 'javascript:void(0)';");
-        assert_eq!(
-            diags.len(),
-            1,
-            "javascript: URL should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "javascript: URL should be flagged");
     }
 
     #[test]
@@ -84,18 +80,12 @@ mod tests {
     #[test]
     fn test_allows_normal_url() {
         let diags = lint("var url = 'https://example.com';");
-        assert!(
-            diags.is_empty(),
-            "normal URL should not be flagged"
-        );
+        assert!(diags.is_empty(), "normal URL should not be flagged");
     }
 
     #[test]
     fn test_allows_non_url_string() {
         let diags = lint("var msg = 'hello world';");
-        assert!(
-            diags.is_empty(),
-            "normal string should not be flagged"
-        );
+        assert!(diags.is_empty(), "normal string should not be flagged");
     }
 }

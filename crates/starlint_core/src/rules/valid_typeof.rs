@@ -122,7 +122,11 @@ mod tests {
     #[test]
     fn test_flags_invalid_typeof_reversed() {
         let diags = lint(r#"if ("nubmer" === typeof x) {}"#);
-        assert_eq!(diags.len(), 1, "reversed comparison with typo should be flagged");
+        assert_eq!(
+            diags.len(),
+            1,
+            "reversed comparison with typo should be flagged"
+        );
     }
 
     #[test]
@@ -134,12 +138,18 @@ mod tests {
     #[test]
     fn test_allows_non_equality_operator() {
         let diags = lint(r#"const x = typeof y + "strig";"#);
-        assert!(diags.is_empty(), "non-equality operator should not be checked");
+        assert!(
+            diags.is_empty(),
+            "non-equality operator should not be checked"
+        );
     }
 
     #[test]
     fn test_allows_no_string_literal() {
         let diags = lint("if (typeof x === y) {}");
-        assert!(diags.is_empty(), "comparison against variable should not be checked");
+        assert!(
+            diags.is_empty(),
+            "comparison against variable should not be checked"
+        );
     }
 }

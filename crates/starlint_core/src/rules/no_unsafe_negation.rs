@@ -33,9 +33,7 @@ impl NativeRule for NoUnsafeNegation {
         };
 
         // Only check `in` and `instanceof` operators
-        if expr.operator != BinaryOperator::In
-            && expr.operator != BinaryOperator::Instanceof
-        {
+        if expr.operator != BinaryOperator::In && expr.operator != BinaryOperator::Instanceof {
             return;
         }
 
@@ -112,9 +110,6 @@ mod tests {
     #[test]
     fn test_allows_normal_instanceof() {
         let diags = lint("if (obj instanceof Foo) {}");
-        assert!(
-            diags.is_empty(),
-            "normal instanceof should not be flagged"
-        );
+        assert!(diags.is_empty(), "normal instanceof should not be flagged");
     }
 }

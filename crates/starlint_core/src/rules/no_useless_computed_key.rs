@@ -93,11 +93,7 @@ mod tests {
     #[test]
     fn test_flags_string_computed_key() {
         let diags = lint("var obj = { [\"foo\"]: 1 };");
-        assert_eq!(
-            diags.len(),
-            1,
-            "computed string key should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "computed string key should be flagged");
     }
 
     #[test]
@@ -112,19 +108,12 @@ mod tests {
     #[test]
     fn test_allows_regular_key() {
         let diags = lint("var obj = { foo: 1 };");
-        assert!(
-            diags.is_empty(),
-            "regular key should not be flagged"
-        );
+        assert!(diags.is_empty(), "regular key should not be flagged");
     }
 
     #[test]
     fn test_flags_number_computed_key() {
         let diags = lint("var obj = { [0]: 1 };");
-        assert_eq!(
-            diags.len(),
-            1,
-            "computed number key should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "computed number key should be flagged");
     }
 }

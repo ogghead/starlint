@@ -22,7 +22,9 @@ impl NativeRule for ForDirection {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "for-direction".to_owned(),
-            description: "Enforce `for` loop update clause moving the counter toward the stop condition".to_owned(),
+            description:
+                "Enforce `for` loop update clause moving the counter toward the stop condition"
+                    .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
             fix_kind: FixKind::None,
@@ -151,9 +153,7 @@ fn simple_assignment_target_name<'a>(target: &'a SimpleAssignmentTarget<'a>) -> 
 }
 
 /// Get the name from an `AssignmentTarget` if it's a plain identifier.
-fn assignment_target_name<'a>(
-    target: &'a oxc_ast::ast::AssignmentTarget<'a>,
-) -> Option<&'a str> {
+fn assignment_target_name<'a>(target: &'a oxc_ast::ast::AssignmentTarget<'a>) -> Option<&'a str> {
     match target {
         oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(ident) => {
             Some(ident.name.as_str())
@@ -200,7 +200,10 @@ mod tests {
     #[test]
     fn test_correct_decrement() {
         let diags = lint("for (let i = 10; i > 0; i--) {}");
-        assert!(diags.is_empty(), "correct decrement loop should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "correct decrement loop should not be flagged"
+        );
     }
 
     #[test]

@@ -64,11 +64,7 @@ mod tests {
     #[test]
     fn test_flags_undefined_reference() {
         let diags = lint("var x = undefined;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "use of undefined should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "use of undefined should be flagged");
     }
 
     #[test]
@@ -84,10 +80,7 @@ mod tests {
     #[test]
     fn test_allows_void_zero() {
         let diags = lint("var x = void 0;");
-        assert!(
-            diags.is_empty(),
-            "void 0 should not be flagged"
-        );
+        assert!(diags.is_empty(), "void 0 should not be flagged");
     }
 
     #[test]
@@ -95,9 +88,6 @@ mod tests {
         // typeof undefined is technically an identifier reference but
         // typeof always works safely
         let diags = lint("var x = typeof y;");
-        assert!(
-            diags.is_empty(),
-            "typeof should not be flagged"
-        );
+        assert!(diags.is_empty(), "typeof should not be flagged");
     }
 }

@@ -21,7 +21,9 @@ impl NativeRule for NoUnsafeOptionalChaining {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unsafe-optional-chaining".to_owned(),
-            description: "Disallow use of optional chaining in contexts where undefined is not allowed".to_owned(),
+            description:
+                "Disallow use of optional chaining in contexts where undefined is not allowed"
+                    .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
             fix_kind: FixKind::None,
@@ -42,9 +44,7 @@ impl NativeRule for NoUnsafeOptionalChaining {
             }
             // Arithmetic operations on optional chain: `foo?.bar + 1`
             AstKind::BinaryExpression(bin) => {
-                if bin.operator.is_arithmetic()
-                    || bin.operator.is_bitwise()
-                {
+                if bin.operator.is_arithmetic() || bin.operator.is_bitwise() {
                     if contains_optional_chain(&bin.left) {
                         report_arithmetic(bin.span, ctx);
                     }
@@ -72,9 +72,7 @@ impl NativeRule for NoUnsafeOptionalChaining {
 fn contains_optional_chain(expr: &Expression<'_>) -> bool {
     match expr {
         Expression::ChainExpression(_) => true,
-        Expression::ParenthesizedExpression(paren) => {
-            contains_optional_chain(&paren.expression)
-        }
+        Expression::ParenthesizedExpression(paren) => contains_optional_chain(&paren.expression),
         _ => false,
     }
 }
@@ -111,11 +109,7 @@ mod tests {
     #[test]
     fn test_flags_new_with_optional_chain() {
         let diags = lint("new (foo?.bar)();");
-        assert_eq!(
-            diags.len(),
-            1,
-            "new with optional chain should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "new with optional chain should be flagged");
     }
 
     #[test]

@@ -99,8 +99,13 @@ mod tests {
 
     #[test]
     fn test_flags_multiple_duplicates() {
-        let diags = lint("switch(x) { case 1: break; case 2: break; case 1: break; case 2: break; }");
-        assert_eq!(diags.len(), 2, "two pairs of duplicates should produce two diagnostics");
+        let diags =
+            lint("switch(x) { case 1: break; case 2: break; case 1: break; case 2: break; }");
+        assert_eq!(
+            diags.len(),
+            2,
+            "two pairs of duplicates should produce two diagnostics"
+        );
     }
 
     #[test]
@@ -118,6 +123,9 @@ mod tests {
     #[test]
     fn test_allows_duplicate_identifier_different_names() {
         let diags = lint("switch(x) { case a: break; case b: break; }");
-        assert!(diags.is_empty(), "different identifiers should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "different identifiers should not be flagged"
+        );
     }
 }

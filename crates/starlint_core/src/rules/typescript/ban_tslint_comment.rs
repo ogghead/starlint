@@ -1,0 +1,142 @@
+//! Rule: `typescript/ban-tslint-comment`
+//!
+//! Disallow `// tslint:` comments. `TSLint` has been deprecated in favor of
+//! `ESLint`. Any remaining `tslint:disable` or `tslint:enable` directives
+//! should be removed.
+
+use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+
+use crate::rule::{NativeLintContext, NativeRule};
+
+/// Flags `tslint:disable` and `tslint:enable` comments in source text.
+#[derive(Debug)]
+pub struct BanTslintComment;
+
+impl NativeRule for BanTslintComment {
+    fn meta(&self) -> RuleMeta {
+        RuleMeta {
+            name: "typescript/ban-tslint-comment".to_owned(),
+            description: "Disallow `// tslint:` comments".to_owned(),
+            category: Category::Style,
+            default_severity: Severity::Warning,
+            fix_kind: FixKind::None,
+        }
+    }
+
+    fn needs_traversal(&self) -> bool {
+        false
+    }
+
+    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+        let findings = find_tslint_directives(ctx.source_text());
+
+        for (directive, start, end) in findings {
+            ctx.report_warning(
+                "typescript/ban-tslint-comment",
+                &format!("Do not use `{directive}` — TSLint has been deprecated"),
+                Span::new(start, end),
+            );
+        }
+    }
+}
+
+/// Scan source text for `tslint:disable` and `tslint:enable` directives
+/// inside comments.
+///
+/// Returns a list of `(directive, start_offset, end_offset)` tuples for each
+/// occurrence that should be flagged.
+fn find_tslint_directives(source: &str) -> Vec<(&'static str, u32, u32)> {
+    /// `TSLint` directives to detect.
+    const TSLINT_DIRECTIVES: &[&str] = &["tslint:disable", "tslint:enable"];
+
+    let mut results = Vec::new();
+
+    for directive in TSLINT_DIRECTIVES {
+        let mut search_from: usize = 0;
+        while let Some(pos) = source.get(search_from..).and_then(|s| s.find(directive)) {
+            let absolute_pos = search_from.saturating_add(pos);
+            let after_directive = absolute_pos.saturating_add(directive.len());
+
+            // Only flag when inside a comment context
+            if is_inside_comment(source, absolute_pos) {
+                let start = u32::try_from(absolute_pos).unwrap_or(0);
+                let end = u32::try_from(after_directive).unwrap_or(start);
+                results.push((*directive, start, end));
+            }
+
+            search_from = after_directive;
+        }
+    }
+
+    results
+}
+
+/// Check if a position in source text is inside a comment.
+///
+/// Looks backward from `pos` to find `//` or `/*` indicating the position
+/// is within a comment context.
+fn is_inside_comment(source: &str, pos: usize) -> bool {
+    let before = source.get(..pos).unwrap_or("");
+
+    // Check for line comment: find the last newline before pos
+    if let Some(last_newline) = before.rfind('\n') {
+        let line_before = before.get(last_newline..).unwrap_or("");
+        if line_before.contains("//") {
+            return true;
+        }
+    } else if before.contains("//") {
+        // No newline — entire prefix is the current line
+        return true;
+    }
+
+    // Check for block comment: find last /* and ensure no */ between it and pos
+    if let Some(block_start) = before.rfind("/*") {
+        let between = before.get(block_start..).unwrap_or("");
+        if !between.contains("*/") {
+            return true;
+        }
+    }
+
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use oxc_allocator::Allocator;
+
+    use super::*;
+    use crate::parser::parse_file;
+    use crate::traversal::traverse_and_lint;
+
+    /// Helper to lint source code as TypeScript.
+    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let allocator = Allocator::default();
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(BanTslintComment)];
+            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
+        } else {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_flags_tslint_disable() {
+        let diags = lint("// tslint:disable\nlet x = 1;");
+        assert_eq!(diags.len(), 1, "`tslint:disable` comment should be flagged");
+    }
+
+    #[test]
+    fn test_flags_tslint_enable() {
+        let diags = lint("// tslint:enable\nlet x = 1;");
+        assert_eq!(diags.len(), 1, "`tslint:enable` comment should be flagged");
+    }
+
+    #[test]
+    fn test_allows_regular_comment() {
+        let diags = lint("// regular comment\nlet x = 1;");
+        assert!(diags.is_empty(), "regular comments should not be flagged");
+    }
+}

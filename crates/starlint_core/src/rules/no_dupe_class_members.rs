@@ -44,8 +44,7 @@ impl NativeRule for NoDupeClassMembers {
 
             // Skip getters and setters — a getter/setter pair with the
             // same name is valid.
-            if method.kind == MethodDefinitionKind::Get
-                || method.kind == MethodDefinitionKind::Set
+            if method.kind == MethodDefinitionKind::Get || method.kind == MethodDefinitionKind::Set
             {
                 continue;
             }
@@ -120,20 +119,13 @@ mod tests {
     #[test]
     fn test_allows_getter_setter_pair() {
         let diags = lint("class Foo { get bar() {} set bar(v) {} }");
-        assert!(
-            diags.is_empty(),
-            "getter/setter pair should not be flagged"
-        );
+        assert!(diags.is_empty(), "getter/setter pair should not be flagged");
     }
 
     #[test]
     fn test_flags_duplicate_static_methods() {
         let diags = lint("class Foo { static bar() {} static bar() {} }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "duplicate static methods should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "duplicate static methods should be flagged");
     }
 
     #[test]

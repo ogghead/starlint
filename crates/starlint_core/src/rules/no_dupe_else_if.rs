@@ -103,7 +103,11 @@ mod tests {
     #[test]
     fn test_flags_duplicate_else_if() {
         let diags = lint("if (a) {} else if (b) {} else if (a) {}");
-        assert_eq!(diags.len(), 1, "duplicate else-if condition should be flagged");
+        assert_eq!(
+            diags.len(),
+            1,
+            "duplicate else-if condition should be flagged"
+        );
     }
 
     #[test]

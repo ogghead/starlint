@@ -80,11 +80,7 @@ mod tests {
     #[test]
     fn test_flags_missing_radix() {
         let diags = lint("var n = parseInt('071');");
-        assert_eq!(
-            diags.len(),
-            1,
-            "parseInt without radix should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "parseInt without radix should be flagged");
     }
 
     #[test]
@@ -109,9 +105,6 @@ mod tests {
     #[test]
     fn test_allows_non_parse_int() {
         let diags = lint("var n = parseFloat('3.14');");
-        assert!(
-            diags.is_empty(),
-            "parseFloat should not be flagged"
-        );
+        assert!(diags.is_empty(), "parseFloat should not be flagged");
     }
 }

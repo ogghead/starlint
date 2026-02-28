@@ -127,11 +127,7 @@ mod tests {
     #[test]
     fn test_flags_hex_control_char() {
         let diags = lint("var re = /\\x1f/;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "hex control character should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "hex control character should be flagged");
     }
 
     #[test]
@@ -143,10 +139,7 @@ mod tests {
     #[test]
     fn test_allows_normal_regex() {
         let diags = lint("var re = /foo/;");
-        assert!(
-            diags.is_empty(),
-            "normal regex should not be flagged"
-        );
+        assert!(diags.is_empty(), "normal regex should not be flagged");
     }
 
     #[test]

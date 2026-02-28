@@ -137,7 +137,10 @@ mod tests {
     #[test]
     fn test_allows_computed_keys() {
         let diags = lint("const obj = { [a]: 1, [a]: 2 };");
-        assert!(diags.is_empty(), "computed keys should not be flagged (can't determine statically)");
+        assert!(
+            diags.is_empty(),
+            "computed keys should not be flagged (can't determine statically)"
+        );
     }
 
     #[test]
@@ -145,12 +148,20 @@ mod tests {
         let diags = lint("const obj = { a: 1, ...other, a: 2 };");
         // The spread resets the object — but ESLint still flags this.
         // We flag it too since the static key 'a' appears twice.
-        assert_eq!(diags.len(), 1, "duplicate key across spread should be flagged");
+        assert_eq!(
+            diags.len(),
+            1,
+            "duplicate key across spread should be flagged"
+        );
     }
 
     #[test]
     fn test_flags_multiple_duplicates() {
         let diags = lint("const obj = { a: 1, b: 2, a: 3, b: 4 };");
-        assert_eq!(diags.len(), 2, "two pairs of duplicates should produce two diagnostics");
+        assert_eq!(
+            diags.len(),
+            2,
+            "two pairs of duplicates should produce two diagnostics"
+        );
     }
 }

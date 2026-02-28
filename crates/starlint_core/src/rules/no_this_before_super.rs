@@ -120,12 +120,8 @@ fn find_this_in_expression(expr: &Expression<'_>) -> Option<Span> {
             }
             find_this_in_expression(&call.callee)
         }
-        Expression::StaticMemberExpression(member) => {
-            find_this_in_expression(&member.object)
-        }
-        Expression::ComputedMemberExpression(member) => {
-            find_this_in_expression(&member.object)
-        }
+        Expression::StaticMemberExpression(member) => find_this_in_expression(&member.object),
+        Expression::ComputedMemberExpression(member) => find_this_in_expression(&member.object),
         _ => None,
     }
 }
@@ -133,9 +129,7 @@ fn find_this_in_expression(expr: &Expression<'_>) -> Option<Span> {
 /// Find `this` in an assignment target (left side of assignment).
 fn find_this_in_target(target: &AssignmentTarget<'_>) -> Option<Span> {
     match target {
-        AssignmentTarget::StaticMemberExpression(member) => {
-            find_this_in_expression(&member.object)
-        }
+        AssignmentTarget::StaticMemberExpression(member) => find_this_in_expression(&member.object),
         AssignmentTarget::ComputedMemberExpression(member) => {
             find_this_in_expression(&member.object)
         }
@@ -184,20 +178,13 @@ mod tests {
     #[test]
     fn test_flags_this_before_super() {
         let diags = lint("class B extends A { constructor() { this.x = 1; super(); } }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "this before super() should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "this before super() should be flagged");
     }
 
     #[test]
     fn test_allows_this_after_super() {
         let diags = lint("class B extends A { constructor() { super(); this.x = 1; } }");
-        assert!(
-            diags.is_empty(),
-            "this after super() should not be flagged"
-        );
+        assert!(diags.is_empty(), "this after super() should not be flagged");
     }
 
     #[test]

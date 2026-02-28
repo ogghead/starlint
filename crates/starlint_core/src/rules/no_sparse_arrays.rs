@@ -82,7 +82,11 @@ mod tests {
     #[test]
     fn test_flags_trailing_elision_in_middle() {
         let diags = lint("const a = [1,,,4];");
-        assert_eq!(diags.len(), 1, "multiple elisions should be flagged once per array");
+        assert_eq!(
+            diags.len(),
+            1,
+            "multiple elisions should be flagged once per array"
+        );
     }
 
     #[test]

@@ -51,15 +51,12 @@ impl NativeRule for NoUnusedLabels {
 fn statement_references_label(stmt: &Statement<'_>, label: &str) -> bool {
     match stmt {
         Statement::BreakStatement(brk) => {
-            brk.label
-                .as_ref()
-                .is_some_and(|l| l.name.as_str() == label)
+            brk.label.as_ref().is_some_and(|l| l.name.as_str() == label)
         }
-        Statement::ContinueStatement(cont) => {
-            cont.label
-                .as_ref()
-                .is_some_and(|l| l.name.as_str() == label)
-        }
+        Statement::ContinueStatement(cont) => cont
+            .label
+            .as_ref()
+            .is_some_and(|l| l.name.as_str() == label),
         Statement::BlockStatement(block) => block
             .body
             .iter()
@@ -74,9 +71,7 @@ fn statement_references_label(stmt: &Statement<'_>, label: &str) -> bool {
         Statement::WhileStatement(while_stmt) => {
             statement_references_label(&while_stmt.body, label)
         }
-        Statement::DoWhileStatement(do_while) => {
-            statement_references_label(&do_while.body, label)
-        }
+        Statement::DoWhileStatement(do_while) => statement_references_label(&do_while.body, label),
         Statement::ForStatement(for_stmt) => statement_references_label(&for_stmt.body, label),
         Statement::ForInStatement(for_in) => statement_references_label(&for_in.body, label),
         Statement::ForOfStatement(for_of) => statement_references_label(&for_of.body, label),
@@ -97,15 +92,12 @@ fn statement_references_label(stmt: &Statement<'_>, label: &str) -> bool {
                         .iter()
                         .any(|s| statement_references_label(s, label))
                 })
-                || try_stmt.finalizer.as_ref().is_some_and(|f| {
-                    f.body
-                        .iter()
-                        .any(|s| statement_references_label(s, label))
-                })
+                || try_stmt
+                    .finalizer
+                    .as_ref()
+                    .is_some_and(|f| f.body.iter().any(|s| statement_references_label(s, label)))
         }
-        Statement::LabeledStatement(labeled) => {
-            statement_references_label(&labeled.body, label)
-        }
+        Statement::LabeledStatement(labeled) => statement_references_label(&labeled.body, label),
         _ => false,
     }
 }
@@ -149,7 +141,10 @@ mod tests {
     #[test]
     fn test_allows_used_label_break() {
         let diags = lint("A: for (var i = 0; i < 10; i++) { break A; }");
-        assert!(diags.is_empty(), "label A used in break should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "label A used in break should not be flagged"
+        );
     }
 
     #[test]

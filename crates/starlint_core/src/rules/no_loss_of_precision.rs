@@ -188,11 +188,7 @@ mod tests {
     #[test]
     fn test_flags_large_integer() {
         let diags = lint("var x = 123456789012345678901234567890;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "extremely large integer should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "extremely large integer should be flagged");
     }
 
     #[test]

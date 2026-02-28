@@ -136,7 +136,10 @@ mod tests {
     #[test]
     fn test_allows_no_catch_param() {
         let diags = lint("try {} catch { let x = 1; }");
-        assert!(diags.is_empty(), "catch without param should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "catch without param should not be flagged"
+        );
     }
 
     #[test]

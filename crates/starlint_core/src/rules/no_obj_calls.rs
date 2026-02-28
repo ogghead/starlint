@@ -132,6 +132,9 @@ mod tests {
     #[test]
     fn test_allows_normal_function_call() {
         let diags = lint("var x = foo();");
-        assert!(diags.is_empty(), "normal function call should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "normal function call should not be flagged"
+        );
     }
 }

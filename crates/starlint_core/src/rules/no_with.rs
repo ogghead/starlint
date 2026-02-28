@@ -63,11 +63,7 @@ mod tests {
     fn test_flags_with_statement() {
         // Note: with statement only parses in non-strict (sloppy) mode
         let diags = lint("with (obj) { foo; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "with statement should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "with statement should be flagged");
     }
 
     #[test]

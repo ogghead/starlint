@@ -20,8 +20,7 @@ impl NativeRule for NoNonoctalDecimalEscape {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-nonoctal-decimal-escape".to_owned(),
-            description: "Disallow `\\8` and `\\9` escape sequences in string literals"
-                .to_owned(),
+            description: "Disallow `\\8` and `\\9` escape sequences in string literals".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
             fix_kind: FixKind::None,

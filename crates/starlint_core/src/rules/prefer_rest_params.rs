@@ -64,20 +64,13 @@ mod tests {
     #[test]
     fn test_flags_arguments() {
         let diags = lint("function f() { return arguments.length; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "use of arguments should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "use of arguments should be flagged");
     }
 
     #[test]
     fn test_allows_rest_params() {
         let diags = lint("function f(...args) { return args.length; }");
-        assert!(
-            diags.is_empty(),
-            "rest params should not be flagged"
-        );
+        assert!(diags.is_empty(), "rest params should not be flagged");
     }
 
     #[test]
@@ -86,9 +79,6 @@ mod tests {
         let diags = lint("function f(arguments) { return arguments; }");
         // This will still flag it as an identifier reference — that's OK
         // for simplicity. Full detection would need scope analysis.
-        assert!(
-            !diags.is_empty(),
-            "arguments reference should be flagged"
-        );
+        assert!(!diags.is_empty(), "arguments reference should be flagged");
     }
 }

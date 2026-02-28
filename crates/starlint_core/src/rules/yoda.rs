@@ -82,38 +82,24 @@ mod tests {
     #[test]
     fn test_flags_yoda_condition() {
         let diags = lint("if ('red' === color) {}");
-        assert_eq!(
-            diags.len(),
-            1,
-            "Yoda condition should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "Yoda condition should be flagged");
     }
 
     #[test]
     fn test_allows_normal_condition() {
         let diags = lint("if (color === 'red') {}");
-        assert!(
-            diags.is_empty(),
-            "normal condition should not be flagged"
-        );
+        assert!(diags.is_empty(), "normal condition should not be flagged");
     }
 
     #[test]
     fn test_allows_two_variables() {
         let diags = lint("if (a === b) {}");
-        assert!(
-            diags.is_empty(),
-            "two variables should not be flagged"
-        );
+        assert!(diags.is_empty(), "two variables should not be flagged");
     }
 
     #[test]
     fn test_flags_number_yoda() {
         let diags = lint("if (5 < x) {}");
-        assert_eq!(
-            diags.len(),
-            1,
-            "number yoda condition should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "number yoda condition should be flagged");
     }
 }

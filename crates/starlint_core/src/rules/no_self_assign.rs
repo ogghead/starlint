@@ -102,7 +102,10 @@ mod tests {
     #[test]
     fn test_allows_compound_assignment() {
         let diags = lint("x += x;");
-        assert!(diags.is_empty(), "compound assignment should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "compound assignment should not be flagged"
+        );
     }
 
     #[test]

@@ -5,7 +5,9 @@
 use std::path::Path;
 
 use oxc_allocator::Allocator;
+use oxc_ast::ast::Program;
 use oxc_parser::{ParseOptions, Parser};
+use oxc_semantic::{Semantic, SemanticBuilder};
 use oxc_span::SourceType;
 
 use crate::error::LintError;
@@ -42,6 +44,18 @@ pub fn parse_file<'a>(
         program: ret.program,
         panicked: ret.panicked,
     })
+}
+
+/// Run semantic analysis on an arena-allocated program.
+///
+/// Builds the scope tree, symbol table, and node ancestry. The program must
+/// be arena-allocated (via `allocator.alloc()`) so that the returned
+/// [`Semantic`] can reference it with the same lifetime.
+pub fn build_semantic<'a>(program: &'a Program<'a>) -> Semantic<'a> {
+    let ret = SemanticBuilder::new()
+        .with_check_syntax_error(false)
+        .build(program);
+    ret.semantic
 }
 
 #[cfg(test)]

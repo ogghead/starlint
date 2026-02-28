@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use std::path::Path;
 
 use oxc_ast::AstKind;
+use oxc_semantic::Semantic;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::RuleMeta;
@@ -44,6 +45,15 @@ pub trait NativeRule: Debug + Send + Sync {
         true
     }
 
+    /// Whether this rule requires semantic analysis (scope tree, symbol table).
+    ///
+    /// Return `true` to indicate that the rule needs access to [`Semantic`] data
+    /// via [`NativeLintContext::semantic()`]. When any active rule returns `true`,
+    /// the engine runs a semantic pre-pass before traversal.
+    fn needs_semantic(&self) -> bool {
+        false
+    }
+
     /// Configure this rule from a JSON config value.
     ///
     /// Called during session setup when the config contains options for this rule.
@@ -54,7 +64,8 @@ pub trait NativeRule: Debug + Send + Sync {
 
 /// Context provided to native rules during linting.
 ///
-/// Provides access to source text, file path, and a method to report diagnostics.
+/// Provides access to source text, file path, optional semantic analysis data,
+/// and a method to report diagnostics.
 pub struct NativeLintContext<'a> {
     /// Original source text.
     source_text: &'a str,
@@ -62,16 +73,41 @@ pub struct NativeLintContext<'a> {
     file_path: &'a Path,
     /// Accumulated diagnostics.
     diagnostics: Vec<Diagnostic>,
+    /// Optional semantic analysis (scope tree, symbol table, node ancestry).
+    semantic: Option<&'a Semantic<'a>>,
 }
 
 impl<'a> NativeLintContext<'a> {
-    /// Create a new lint context.
+    /// Create a new lint context without semantic analysis.
     pub const fn new(source_text: &'a str, file_path: &'a Path) -> Self {
         Self {
             source_text,
             file_path,
             diagnostics: Vec::new(),
+            semantic: None,
         }
+    }
+
+    /// Create a new lint context with semantic analysis data.
+    pub const fn with_semantic(
+        source_text: &'a str,
+        file_path: &'a Path,
+        semantic: &'a Semantic<'a>,
+    ) -> Self {
+        Self {
+            source_text,
+            file_path,
+            diagnostics: Vec::new(),
+            semantic: Some(semantic),
+        }
+    }
+
+    /// Get the semantic analysis data, if available.
+    ///
+    /// Returns `None` if no rule in the active set requested semantic analysis.
+    #[must_use]
+    pub const fn semantic(&self) -> Option<&'a Semantic<'a>> {
+        self.semantic
     }
 
     /// Get the source text of the file being linted.

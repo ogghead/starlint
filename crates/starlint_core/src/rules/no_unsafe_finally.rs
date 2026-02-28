@@ -42,20 +42,14 @@ impl NativeRule for NoUnsafeFinally {
 }
 
 /// Scan statements for control flow that would discard try/catch results.
-fn check_statements_for_control_flow(
-    stmts: &[Statement<'_>],
-    ctx: &mut NativeLintContext<'_>,
-) {
+fn check_statements_for_control_flow(stmts: &[Statement<'_>], ctx: &mut NativeLintContext<'_>) {
     for stmt in stmts {
         check_statement_for_control_flow(stmt, ctx);
     }
 }
 
 /// Check a single statement for unsafe control flow.
-fn check_statement_for_control_flow(
-    stmt: &Statement<'_>,
-    ctx: &mut NativeLintContext<'_>,
-) {
+fn check_statement_for_control_flow(stmt: &Statement<'_>, ctx: &mut NativeLintContext<'_>) {
     match stmt {
         Statement::ReturnStatement(ret) => {
             ctx.report_error(
@@ -139,16 +133,16 @@ mod tests {
     #[test]
     fn test_allows_no_finally() {
         let diags = lint("try { return 1; } catch (e) {}");
-        assert!(diags.is_empty(), "try without finally should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "try without finally should not be flagged"
+        );
     }
 
     #[test]
     fn test_allows_safe_finally() {
         let diags = lint("try {} finally { console.log('done'); }");
-        assert!(
-            diags.is_empty(),
-            "safe finally should not be flagged"
-        );
+        assert!(diags.is_empty(), "safe finally should not be flagged");
     }
 
     #[test]

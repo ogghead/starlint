@@ -1,0 +1,126 @@
+//! Rule: `prefer-classlist-toggle`
+//!
+//! Prefer `classList.toggle(class, force)` over `classList.add()` or
+//! `classList.remove()`. The `toggle` method with a second argument is
+//! often cleaner, especially when conditionally adding or removing a class.
+
+use oxc_ast::AstKind;
+use oxc_ast::ast::Expression;
+
+use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+
+use crate::rule::{NativeLintContext, NativeRule};
+
+/// Flags `classList.add()` and `classList.remove()` calls, suggesting `classList.toggle()`.
+#[derive(Debug)]
+pub struct PreferClasslistToggle;
+
+/// Method names on `classList` that could be replaced by `toggle`.
+const TOGGLEABLE_METHODS: &[&str] = &["add", "remove"];
+
+impl NativeRule for PreferClasslistToggle {
+    fn meta(&self) -> RuleMeta {
+        RuleMeta {
+            name: "prefer-classlist-toggle".to_owned(),
+            description: "Prefer `classList.toggle()` over `classList.add()`/`classList.remove()`"
+                .to_owned(),
+            category: Category::Suggestion,
+            default_severity: Severity::Warning,
+            fix_kind: FixKind::None,
+        }
+    }
+
+    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+        let AstKind::CallExpression(call) = kind else {
+            return;
+        };
+
+        // Callee must be a static member expression like `X.classList.add(...)`
+        let Expression::StaticMemberExpression(outer) = &call.callee else {
+            return;
+        };
+
+        let method_name = outer.property.name.as_str();
+
+        if !TOGGLEABLE_METHODS.contains(&method_name) {
+            return;
+        }
+
+        // The object of the outer member must be `?.classList`
+        let Expression::StaticMemberExpression(inner) = &outer.object else {
+            return;
+        };
+
+        if inner.property.name.as_str() != "classList" {
+            return;
+        }
+
+        ctx.report_warning(
+            "prefer-classlist-toggle",
+            &format!("Prefer `classList.toggle()` over `classList.{method_name}()`"),
+            Span::new(call.span.start, call.span.end),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use oxc_allocator::Allocator;
+
+    use super::*;
+    use crate::parser::parse_file;
+    use crate::traversal::traverse_and_lint;
+
+    /// Helper to lint source code.
+    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let allocator = Allocator::default();
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferClasslistToggle)];
+            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
+        } else {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_flags_classlist_add() {
+        let diags = lint("el.classList.add('active');");
+        assert_eq!(diags.len(), 1, "classList.add should be flagged");
+    }
+
+    #[test]
+    fn test_flags_classlist_remove() {
+        let diags = lint("el.classList.remove('active');");
+        assert_eq!(diags.len(), 1, "classList.remove should be flagged");
+    }
+
+    #[test]
+    fn test_allows_classlist_toggle() {
+        let diags = lint("el.classList.toggle('active');");
+        assert!(diags.is_empty(), "classList.toggle should not be flagged");
+    }
+
+    #[test]
+    fn test_allows_classlist_contains() {
+        let diags = lint("el.classList.contains('active');");
+        assert!(diags.is_empty(), "classList.contains should not be flagged");
+    }
+
+    #[test]
+    fn test_allows_non_classlist_add() {
+        let diags = lint("set.add('value');");
+        assert!(diags.is_empty(), "non-classList add should not be flagged");
+    }
+
+    #[test]
+    fn test_allows_non_classlist_remove() {
+        let diags = lint("map.remove('key');");
+        assert!(
+            diags.is_empty(),
+            "non-classList remove should not be flagged"
+        );
+    }
+}

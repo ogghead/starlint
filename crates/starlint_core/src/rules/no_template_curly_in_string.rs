@@ -91,13 +91,21 @@ mod tests {
     #[test]
     fn test_flags_template_in_double_quotes() {
         let diags = lint(r#"var x = "Hello ${name}";"#);
-        assert_eq!(diags.len(), 1, "template placeholder in string should be flagged");
+        assert_eq!(
+            diags.len(),
+            1,
+            "template placeholder in string should be flagged"
+        );
     }
 
     #[test]
     fn test_flags_template_in_single_quotes() {
         let diags = lint("var x = 'Hello ${name}';");
-        assert_eq!(diags.len(), 1, "template placeholder in single-quoted string should be flagged");
+        assert_eq!(
+            diags.len(),
+            1,
+            "template placeholder in single-quoted string should be flagged"
+        );
     }
 
     #[test]
@@ -121,7 +129,11 @@ mod tests {
     #[test]
     fn test_flags_expression_template() {
         let diags = lint(r#"var x = "result: ${a + b}";"#);
-        assert_eq!(diags.len(), 1, "template expression in string should be flagged");
+        assert_eq!(
+            diags.len(),
+            1,
+            "template expression in string should be flagged"
+        );
     }
 
     #[test]

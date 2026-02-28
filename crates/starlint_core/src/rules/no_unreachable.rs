@@ -54,11 +54,7 @@ impl NativeRule for NoUnreachable {
                     continue;
                 }
                 let span = statement_span(stmt);
-                ctx.report_error(
-                    "no-unreachable",
-                    "Unreachable code",
-                    span,
-                );
+                ctx.report_error("no-unreachable", "Unreachable code", span);
                 // Only report the first unreachable statement per block
                 break;
             }

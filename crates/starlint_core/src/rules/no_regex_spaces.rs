@@ -113,11 +113,7 @@ mod tests {
     #[test]
     fn test_flags_multiple_spaces() {
         let diags = lint("var re = /foo  bar/;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "multiple spaces in regex should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "multiple spaces in regex should be flagged");
     }
 
     #[test]
@@ -150,19 +146,12 @@ mod tests {
     #[test]
     fn test_allows_escaped_space() {
         let diags = lint("var re = /foo\\ \\ bar/;");
-        assert!(
-            diags.is_empty(),
-            "escaped spaces should not be flagged"
-        );
+        assert!(diags.is_empty(), "escaped spaces should not be flagged");
     }
 
     #[test]
     fn test_flags_three_spaces() {
         let diags = lint("var re = /foo   bar/;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "three spaces in regex should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "three spaces in regex should be flagged");
     }
 }

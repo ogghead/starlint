@@ -95,11 +95,7 @@ mod tests {
     #[test]
     fn test_flags_async_function_executor() {
         let diags = lint("new Promise(async function(resolve, reject) { resolve(1); });");
-        assert_eq!(
-            diags.len(),
-            1,
-            "async function executor should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "async function executor should be flagged");
     }
 
     #[test]

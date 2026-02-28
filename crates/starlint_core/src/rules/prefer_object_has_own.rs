@@ -112,10 +112,7 @@ mod tests {
     #[test]
     fn test_allows_object_has_own() {
         let diags = lint("Object.hasOwn(obj, 'key');");
-        assert!(
-            diags.is_empty(),
-            "Object.hasOwn() should not be flagged"
-        );
+        assert!(diags.is_empty(), "Object.hasOwn() should not be flagged");
     }
 
     #[test]

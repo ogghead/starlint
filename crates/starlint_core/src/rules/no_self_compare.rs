@@ -56,9 +56,7 @@ impl NativeRule for NoSelfCompare {
                     message: format!("Comparing `{left}` against itself is always predictable"),
                     span: Span::new(expr.span.start, expr.span.end),
                     severity: Severity::Error,
-                    help: Some(
-                        "If testing for NaN, use `Number.isNaN(value)` instead".to_owned(),
-                    ),
+                    help: Some("If testing for NaN, use `Number.isNaN(value)` instead".to_owned()),
                     fix: None,
                     labels: vec![],
                 });
@@ -96,7 +94,11 @@ mod tests {
     #[test]
     fn test_flags_self_inequality() {
         let diags = lint("if (x !== x) {}");
-        assert_eq!(diags.len(), 1, "x !== x should be flagged (use Number.isNaN)");
+        assert_eq!(
+            diags.len(),
+            1,
+            "x !== x should be flagged (use Number.isNaN)"
+        );
     }
 
     #[test]

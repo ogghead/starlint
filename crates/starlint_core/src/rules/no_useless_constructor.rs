@@ -4,9 +4,7 @@
 //! delegates to `super()` with the same arguments is unnecessary.
 
 use oxc_ast::AstKind;
-use oxc_ast::ast::{
-    Argument, ClassElement, Expression, MethodDefinitionKind, Statement,
-};
+use oxc_ast::ast::{Argument, ClassElement, Expression, MethodDefinitionKind, Statement};
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -62,9 +60,7 @@ impl NativeRule for NoUselessConstructor {
 
             // Constructor that only calls super(...args) with same params
             if has_super && body.statements.len() == 1 {
-                if let Some(Statement::ExpressionStatement(expr_stmt)) =
-                    body.statements.first()
-                {
+                if let Some(Statement::ExpressionStatement(expr_stmt)) = body.statements.first() {
                     if is_simple_super_call(&expr_stmt.expression, params) {
                         ctx.report_error(
                             "no-useless-constructor",
@@ -145,11 +141,7 @@ mod tests {
     #[test]
     fn test_flags_empty_constructor() {
         let diags = lint("class A { constructor() {} }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "empty constructor should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "empty constructor should be flagged");
     }
 
     #[test]

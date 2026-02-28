@@ -107,11 +107,7 @@ mod tests {
     #[test]
     fn test_flags_comparison_with_array_literal() {
         let diags = lint("if (x === []) {}");
-        assert_eq!(
-            diags.len(),
-            1,
-            "x === [] should be flagged (always false)"
-        );
+        assert_eq!(diags.len(), 1, "x === [] should be flagged (always false)");
     }
 
     #[test]

@@ -57,9 +57,7 @@ impl NativeRule for NoUselessCall {
         if is_null_or_undefined {
             ctx.report_warning(
                 "no-useless-call",
-                &format!(
-                    "Unnecessary `.{method}()` — call the function directly instead"
-                ),
+                &format!("Unnecessary `.{method}()` — call the function directly instead"),
                 Span::new(call.span.start, call.span.end),
             );
         }
@@ -90,11 +88,7 @@ mod tests {
     #[test]
     fn test_flags_call_with_null() {
         let diags = lint("foo.call(null, 1, 2);");
-        assert_eq!(
-            diags.len(),
-            1,
-            "foo.call(null, ...) should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "foo.call(null, ...) should be flagged");
     }
 
     #[test]
@@ -110,10 +104,7 @@ mod tests {
     #[test]
     fn test_allows_call_with_this_arg() {
         let diags = lint("foo.call(obj, 1, 2);");
-        assert!(
-            diags.is_empty(),
-            "foo.call(obj, ...) should not be flagged"
-        );
+        assert!(diags.is_empty(), "foo.call(obj, ...) should not be flagged");
     }
 
     #[test]

@@ -62,19 +62,12 @@ mod tests {
     #[test]
     fn test_flags_ternary() {
         let diags = lint("var x = a ? b : c;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "ternary expression should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "ternary expression should be flagged");
     }
 
     #[test]
     fn test_allows_if_else() {
         let diags = lint("var x; if (a) { x = b; } else { x = c; }");
-        assert!(
-            diags.is_empty(),
-            "if-else should not be flagged"
-        );
+        assert!(diags.is_empty(), "if-else should not be flagged");
     }
 }

@@ -121,38 +121,24 @@ mod tests {
     #[test]
     fn test_flags_add_assignment() {
         let diags = lint("x = x + 1;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "x = x + 1 should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "x = x + 1 should be flagged");
     }
 
     #[test]
     fn test_allows_shorthand() {
         let diags = lint("x += 1;");
-        assert!(
-            diags.is_empty(),
-            "x += 1 should not be flagged"
-        );
+        assert!(diags.is_empty(), "x += 1 should not be flagged");
     }
 
     #[test]
     fn test_allows_different_variables() {
         let diags = lint("x = y + 1;");
-        assert!(
-            diags.is_empty(),
-            "x = y + 1 should not be flagged"
-        );
+        assert!(diags.is_empty(), "x = y + 1 should not be flagged");
     }
 
     #[test]
     fn test_flags_multiply_assignment() {
         let diags = lint("x = x * 2;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "x = x * 2 should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "x = x * 2 should be flagged");
     }
 }
