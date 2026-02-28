@@ -340,6 +340,7 @@ pub mod node;
 pub mod promise;
 pub mod react;
 pub mod react_perf;
+pub mod storybook;
 pub mod typescript;
 pub mod vitest;
 pub mod vue;
@@ -694,6 +695,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
     rules.extend(promise::category_rules());
     rules.extend(react::category_rules());
     rules.extend(react_perf::category_rules());
+    rules.extend(storybook::category_rules());
     rules.extend(typescript::category_rules());
     rules.extend(vitest::category_rules());
     rules.extend(vue::category_rules());
