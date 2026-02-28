@@ -1,0 +1,130 @@
+//! Rule: `nextjs/no-typos`
+//!
+//! Detect common Next.js API name typos. For example `getStaticPorps` instead
+//! of `getStaticProps`. Uses text-based scanning for fast detection.
+
+use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+
+use crate::rule::{NativeLintContext, NativeRule};
+
+/// Rule name constant.
+const RULE_NAME: &str = "nextjs/no-typos";
+
+/// Known correct Next.js API names and their common typos.
+const TYPO_PAIRS: &[(&str, &[&str])] = &[
+    (
+        "getStaticProps",
+        &[
+            "getStaticPorps",
+            "getStaticprops",
+            "getstaticProps",
+            "getstaticprops",
+            "getStatcProps",
+            "getStaticPrps",
+        ],
+    ),
+    (
+        "getStaticPaths",
+        &[
+            "getStaticPahts",
+            "getStaticpaths",
+            "getstaticPaths",
+            "getstaticpaths",
+            "getStaticPath",
+            "getStatcPaths",
+        ],
+    ),
+    (
+        "getServerSideProps",
+        &[
+            "getServerSidePorps",
+            "getServerSideprops",
+            "getserverSideProps",
+            "getserversideprops",
+            "getServerSidePrps",
+            "getServersdieProps",
+        ],
+    ),
+];
+
+/// Flags common typos of Next.js API names.
+#[derive(Debug)]
+pub struct NoTypos;
+
+impl NativeRule for NoTypos {
+    fn meta(&self) -> RuleMeta {
+        RuleMeta {
+            name: RULE_NAME.to_owned(),
+            description: "Detect common Next.js API typos".to_owned(),
+            category: Category::Correctness,
+            default_severity: Severity::Error,
+            fix_kind: FixKind::None,
+        }
+    }
+
+    fn needs_traversal(&self) -> bool {
+        false
+    }
+
+    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+        let source = ctx.source_text().to_owned();
+
+        for (correct, typos) in TYPO_PAIRS {
+            for typo in *typos {
+                // Find all occurrences of the typo in source
+                let mut search_start = 0;
+                while let Some(pos) = source.get(search_start..).and_then(|s| s.find(typo)) {
+                    let abs_pos = search_start.saturating_add(pos);
+                    let start = u32::try_from(abs_pos).unwrap_or(0);
+                    let end = u32::try_from(abs_pos.saturating_add(typo.len())).unwrap_or(0);
+                    ctx.report_error(
+                        RULE_NAME,
+                        &format!("`{typo}` is a typo -- did you mean `{correct}`?"),
+                        Span::new(start, end),
+                    );
+                    search_start = abs_pos.saturating_add(typo.len());
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use oxc_allocator::Allocator;
+
+    use super::*;
+    use crate::parser::parse_file;
+    use crate::traversal::traverse_and_lint;
+
+    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let allocator = Allocator::default();
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoTypos)];
+            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
+        } else {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_flags_static_props_typo() {
+        let diags = lint("export async function getStaticPorps() { return { props: {} }; }");
+        assert_eq!(diags.len(), 1, "getStaticPorps typo should be flagged");
+    }
+
+    #[test]
+    fn test_flags_server_side_props_typo() {
+        let diags = lint("export async function getServerSidePorps() { return { props: {} }; }");
+        assert_eq!(diags.len(), 1, "getServerSidePorps typo should be flagged");
+    }
+
+    #[test]
+    fn test_allows_correct_api_names() {
+        let diags = lint("export async function getStaticProps() { return { props: {} }; }");
+        assert!(diags.is_empty(), "correct API names should not be flagged");
+    }
+}

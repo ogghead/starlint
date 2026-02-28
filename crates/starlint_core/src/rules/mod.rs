@@ -333,8 +333,11 @@ pub mod yoda;
 // Plugin category submodules (prefixed rule names).
 pub mod import;
 pub mod jest;
+pub mod jsdoc;
 pub mod jsx_a11y;
+pub mod nextjs;
 pub mod node;
+pub mod promise;
 pub mod react;
 pub mod react_perf;
 pub mod typescript;
@@ -683,8 +686,11 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
     // Append prefixed plugin-category rules.
     rules.extend(import::category_rules());
     rules.extend(jest::category_rules());
+    rules.extend(jsdoc::category_rules());
     rules.extend(jsx_a11y::category_rules());
+    rules.extend(nextjs::category_rules());
     rules.extend(node::category_rules());
+    rules.extend(promise::category_rules());
     rules.extend(react::category_rules());
     rules.extend(react_perf::category_rules());
     rules.extend(typescript::category_rules());
