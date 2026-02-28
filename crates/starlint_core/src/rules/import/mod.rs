@@ -5,6 +5,7 @@
 pub mod consistent_type_specifier_style;
 pub mod default;
 pub mod export;
+pub mod exports_last;
 pub mod extensions;
 pub mod first;
 pub mod group_exports;
@@ -45,6 +46,7 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(consistent_type_specifier_style::ConsistentTypeSpecifierStyle),
         Box::new(default::DefaultExport),
         Box::new(export::ExportRule),
+        Box::new(exports_last::ExportsLast),
         Box::new(extensions::Extensions),
         Box::new(first::First),
         Box::new(group_exports::GroupExports),
