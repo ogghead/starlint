@@ -1,0 +1,120 @@
+//! Rule: `import/consistent-type-specifier-style`
+//!
+//! Enforce consistent usage of type specifier style (inline vs top-level).
+//! For example, prefer `import type { Foo } from 'bar'` over
+//! `import { type Foo } from 'bar'` (or vice versa).
+
+use oxc_ast::AstKind;
+use oxc_ast::ast::ImportDeclarationSpecifier;
+
+use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+
+use crate::rule::{NativeLintContext, NativeRule};
+
+/// Flags inconsistent usage of type specifiers in import declarations.
+#[derive(Debug)]
+pub struct ConsistentTypeSpecifierStyle;
+
+impl NativeRule for ConsistentTypeSpecifierStyle {
+    fn meta(&self) -> RuleMeta {
+        RuleMeta {
+            name: "import/consistent-type-specifier-style".to_owned(),
+            description: "Enforce consistent usage of type specifier style (inline vs top-level)"
+                .to_owned(),
+            category: Category::Style,
+            default_severity: Severity::Warning,
+            fix_kind: FixKind::None,
+        }
+    }
+
+    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+        let AstKind::ImportDeclaration(import) = kind else {
+            return;
+        };
+
+        // Skip type-only imports — they are already consistent
+        if import.import_kind.is_type() {
+            return;
+        }
+
+        // Check if any individual specifiers use inline `type` keyword
+        let Some(specifiers) = &import.specifiers else {
+            return;
+        };
+        let has_inline_type = specifiers.iter().any(|spec| {
+            if let ImportDeclarationSpecifier::ImportSpecifier(s) = spec {
+                s.import_kind.is_type()
+            } else {
+                false
+            }
+        });
+
+        if !has_inline_type {
+            return;
+        }
+
+        // All specifiers are type imports — prefer top-level `import type`
+        let all_type = specifiers.iter().all(|spec| {
+            if let ImportDeclarationSpecifier::ImportSpecifier(s) = spec {
+                s.import_kind.is_type()
+            } else {
+                false
+            }
+        });
+
+        if all_type {
+            ctx.report_warning(
+                "import/consistent-type-specifier-style",
+                "Prefer top-level `import type` when all specifiers are type imports",
+                Span::new(import.span.start, import.span.end),
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use oxc_allocator::Allocator;
+
+    use super::*;
+    use crate::parser::parse_file;
+    use crate::traversal::traverse_and_lint;
+
+    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let allocator = Allocator::default();
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentTypeSpecifierStyle)];
+            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
+        } else {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_flags_all_inline_type_specifiers() {
+        let diags = lint(r"import { type Foo, type Bar } from 'mod';");
+        assert_eq!(
+            diags.len(),
+            1,
+            "all inline type specifiers should prefer top-level import type"
+        );
+    }
+
+    #[test]
+    fn test_allows_top_level_type_import() {
+        let diags = lint(r"import type { Foo, Bar } from 'mod';");
+        assert!(diags.is_empty(), "top-level type import should be allowed");
+    }
+
+    #[test]
+    fn test_allows_mixed_inline_and_value() {
+        let diags = lint(r"import { type Foo, bar } from 'mod';");
+        assert!(
+            diags.is_empty(),
+            "mixed inline type and value specifiers should be allowed"
+        );
+    }
+}

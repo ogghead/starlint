@@ -1,0 +1,109 @@
+//! Rule: `import/no-amd`
+//!
+//! Disallow AMD `require` and `define` calls. AMD module syntax is legacy
+//! and should not be used in modern ES module or `CommonJS` codebases.
+
+use oxc_ast::AstKind;
+use oxc_ast::ast::Expression;
+
+use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+
+use crate::rule::{NativeLintContext, NativeRule};
+
+/// Flags AMD-style `define()` and `require()` calls with array dependencies.
+#[derive(Debug)]
+pub struct NoAmd;
+
+impl NativeRule for NoAmd {
+    fn meta(&self) -> RuleMeta {
+        RuleMeta {
+            name: "import/no-amd".to_owned(),
+            description: "Disallow AMD require/define calls".to_owned(),
+            category: Category::Suggestion,
+            default_severity: Severity::Warning,
+            fix_kind: FixKind::None,
+        }
+    }
+
+    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+        let AstKind::CallExpression(call) = kind else {
+            return;
+        };
+
+        // Check if the callee is `define` or `require`
+        let callee_name = match &call.callee {
+            Expression::Identifier(id) => id.name.as_str(),
+            _ => return,
+        };
+
+        if callee_name != "define" && callee_name != "require" {
+            return;
+        }
+
+        // AMD pattern: first argument is an array of dependencies
+        // e.g. define(['dep1', 'dep2'], function(dep1, dep2) { ... })
+        // or   require(['dep1'], function(dep1) { ... })
+        let first_arg = call.arguments.first();
+        let has_array_arg =
+            first_arg.is_some_and(|arg| matches!(arg, oxc_ast::ast::Argument::ArrayExpression(_)));
+
+        if has_array_arg {
+            ctx.report_warning(
+                "import/no-amd",
+                &format!("Expected imports instead of AMD '{callee_name}' with dependency array"),
+                Span::new(call.span.start, call.span.end),
+            );
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use oxc_allocator::Allocator;
+
+    use super::*;
+    use crate::parser::parse_file;
+    use crate::traversal::traverse_and_lint;
+
+    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let allocator = Allocator::default();
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAmd)];
+            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
+        } else {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_flags_amd_define() {
+        let diags = lint(r"define(['dep1', 'dep2'], function(dep1, dep2) {});");
+        assert_eq!(
+            diags.len(),
+            1,
+            "AMD define with dependency array should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_amd_require() {
+        let diags = lint(r"require(['dep1'], function(dep1) {});");
+        assert_eq!(
+            diags.len(),
+            1,
+            "AMD require with dependency array should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_commonjs_require() {
+        let diags = lint(r"const foo = require('foo');");
+        assert!(
+            diags.is_empty(),
+            "CommonJS require without array should not be flagged"
+        );
+    }
+}
