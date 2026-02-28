@@ -33,8 +33,7 @@ impl NativeRule for NoUnnecessaryTypeArguments {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
-            description: "Disallow type arguments that match the default type parameter"
-                .to_owned(),
+            description: "Disallow type arguments that match the default type parameter".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,
@@ -99,7 +98,9 @@ fn collect_generic_defaults(source: &str) -> Vec<GenericDefault> {
             let after_name = after_keyword.saturating_add(type_name.len());
 
             // Check for `<` immediately after the name.
-            let next_char = source.get(after_name..after_name.saturating_add(1)).unwrap_or("");
+            let next_char = source
+                .get(after_name..after_name.saturating_add(1))
+                .unwrap_or("");
             if next_char != "<" {
                 search_start = after_name.saturating_add(1);
                 continue;
@@ -164,8 +165,7 @@ fn find_redundant_type_args(
 
             if !is_definition {
                 let start = u32::try_from(abs_pos).unwrap_or(0);
-                let end =
-                    u32::try_from(abs_pos.saturating_add(pattern.len())).unwrap_or(start);
+                let end = u32::try_from(abs_pos.saturating_add(pattern.len())).unwrap_or(start);
                 results.push((
                     Span::new(start, end),
                     generic.type_name.clone(),
@@ -234,8 +234,7 @@ mod tests {
 
     #[test]
     fn test_flags_interface_default() {
-        let source =
-            "interface Container<T = number> { item: T; }\nlet c: Container<number>;";
+        let source = "interface Container<T = number> { item: T; }\nlet c: Container<number>;";
         let diags = lint(source);
         assert_eq!(
             diags.len(),

@@ -61,8 +61,7 @@ mod tests {
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let allocator = Allocator::default();
         if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> =
-                vec![Box::new(NoUnnecessaryTypeConstraint)];
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnnecessaryTypeConstraint)];
             traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
         } else {
             vec![]
@@ -92,10 +91,7 @@ mod tests {
     #[test]
     fn test_allows_extends_string() {
         let diags = lint("function f<T extends string>() {}");
-        assert!(
-            diags.is_empty(),
-            "`T extends string` should not be flagged"
-        );
+        assert!(diags.is_empty(), "`T extends string` should not be flagged");
     }
 
     #[test]

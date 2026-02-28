@@ -46,10 +46,10 @@ pub mod no_require_imports;
 pub mod no_restricted_types;
 pub mod no_this_alias;
 pub mod no_unnecessary_boolean_literal_compare;
+pub mod no_unnecessary_condition;
 pub mod no_unnecessary_parameter_property_assignment;
 pub mod no_unnecessary_qualifier;
 pub mod no_unnecessary_template_expression;
-pub mod no_unnecessary_condition;
 pub mod no_unnecessary_type_arguments;
 pub mod no_unnecessary_type_assertion;
 pub mod no_unnecessary_type_constraint;
@@ -82,23 +82,23 @@ pub mod prefer_nullish_coalescing;
 pub mod prefer_optional_chain;
 pub mod prefer_promise_reject_errors;
 pub mod prefer_readonly;
+pub mod prefer_readonly_parameter_types;
 pub mod prefer_reduce_type_parameter;
 pub mod prefer_regexp_exec;
-pub mod prefer_readonly_parameter_types;
 pub mod prefer_return_this_type;
 pub mod prefer_string_starts_ends_with;
 pub mod promise_function_async;
+pub mod related_getter_setter_pairs;
+pub mod require_array_sort_compare;
+pub mod require_await;
 pub mod restrict_plus_operands;
+pub mod restrict_template_expressions;
 pub mod return_await;
 pub mod strict_boolean_expressions;
 pub mod strict_void_return;
 pub mod switch_exhaustiveness_check;
-pub mod unbound_method;
-pub mod related_getter_setter_pairs;
-pub mod require_array_sort_compare;
-pub mod require_await;
-pub mod restrict_template_expressions;
 pub mod triple_slash_reference;
+pub mod unbound_method;
 pub mod unified_signatures;
 pub mod use_unknown_in_catch_callback_variable;
 
@@ -153,7 +153,9 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_restricted_types::NoRestrictedTypes),
         Box::new(no_this_alias::NoThisAlias),
         Box::new(no_unnecessary_boolean_literal_compare::NoUnnecessaryBooleanLiteralCompare),
-        Box::new(no_unnecessary_parameter_property_assignment::NoUnnecessaryParameterPropertyAssignment),
+        Box::new(
+            no_unnecessary_parameter_property_assignment::NoUnnecessaryParameterPropertyAssignment,
+        ),
         Box::new(no_unnecessary_qualifier::NoUnnecessaryQualifier),
         Box::new(no_unnecessary_template_expression::NoUnnecessaryTemplateExpression),
         Box::new(no_unnecessary_condition::NoUnnecessaryCondition),

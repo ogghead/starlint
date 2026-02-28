@@ -85,8 +85,7 @@ mod tests {
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let allocator = Allocator::default();
         if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> =
-                vec![Box::new(NoUnnecessaryTemplateExpression)];
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnnecessaryTemplateExpression)];
             traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
         } else {
             vec![]

@@ -91,7 +91,11 @@ mod tests {
     #[test]
     fn test_flags_let_as_any() {
         let diags = lint("let y = getData() as any;");
-        assert_eq!(diags.len(), 1, "`let y = getData() as any` should be flagged");
+        assert_eq!(
+            diags.len(),
+            1,
+            "`let y = getData() as any` should be flagged"
+        );
     }
 
     #[test]

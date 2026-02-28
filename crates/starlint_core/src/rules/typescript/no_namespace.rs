@@ -74,9 +74,6 @@ mod tests {
     #[test]
     fn test_allows_regular_code() {
         let diags = lint("const x = 1;");
-        assert!(
-            diags.is_empty(),
-            "regular code should not be flagged"
-        );
+        assert!(diags.is_empty(), "regular code should not be flagged");
     }
 }

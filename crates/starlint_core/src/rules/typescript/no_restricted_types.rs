@@ -89,10 +89,7 @@ fn check_type_reference(
 
 /// Check if a type literal is an empty `{}` which is equivalent to any
 /// non-nullish value.
-fn check_empty_object_type(
-    lit: &oxc_ast::ast::TSTypeLiteral<'_>,
-    ctx: &mut NativeLintContext<'_>,
-) {
+fn check_empty_object_type(lit: &oxc_ast::ast::TSTypeLiteral<'_>, ctx: &mut NativeLintContext<'_>) {
     if !lit.members.is_empty() {
         return;
     }
@@ -129,11 +126,7 @@ mod tests {
     #[test]
     fn test_flags_object_type() {
         let diags = lint("let x: Object;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "uppercase `Object` type should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "uppercase `Object` type should be flagged");
     }
 
     #[test]
@@ -149,28 +142,18 @@ mod tests {
     #[test]
     fn test_flags_empty_object_type() {
         let diags = lint("let x: {} = y;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "empty object type should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "empty object type should be flagged");
     }
 
     #[test]
     fn test_allows_lowercase_object() {
         let diags = lint("let x: object;");
-        assert!(
-            diags.is_empty(),
-            "lowercase `object` should not be flagged"
-        );
+        assert!(diags.is_empty(), "lowercase `object` should not be flagged");
     }
 
     #[test]
     fn test_allows_record_type() {
         let diags = lint("let x: Record<string, unknown>;");
-        assert!(
-            diags.is_empty(),
-            "`Record` type should not be flagged"
-        );
+        assert!(diags.is_empty(), "`Record` type should not be flagged");
     }
 }

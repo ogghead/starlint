@@ -39,10 +39,7 @@ impl NativeRule for NoDynamicDelete {
 
         // Only flag when the operand is a computed member expression (bracket access).
         // `delete obj.prop` (static access) is fine.
-        if matches!(
-            &expr.argument,
-            Expression::ComputedMemberExpression(_)
-        ) {
+        if matches!(&expr.argument, Expression::ComputedMemberExpression(_)) {
             ctx.report_warning(
                 "typescript/no-dynamic-delete",
                 "Do not `delete` dynamically computed keys — use `Map` or `Set` instead",
@@ -76,11 +73,7 @@ mod tests {
     #[test]
     fn test_flags_delete_with_variable_key() {
         let diags = lint("delete obj[key];");
-        assert_eq!(
-            diags.len(),
-            1,
-            "delete with dynamic key should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "delete with dynamic key should be flagged");
     }
 
     #[test]

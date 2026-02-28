@@ -61,8 +61,7 @@ fn find_non_nullable_assertions(source: &str) -> Vec<(u32, u32)> {
 
         // Find the matching closing `>` to get the full span.
         // Track nesting depth for generics like `NonNullable<Map<K, V>>`.
-        let end = find_matching_angle_bracket(source, pattern_end)
-            .unwrap_or(pattern_end);
+        let end = find_matching_angle_bracket(source, pattern_end).unwrap_or(pattern_end);
 
         let start = u32::try_from(absolute_pos).unwrap_or(0);
         let end_u32 = u32::try_from(end).unwrap_or(start);
@@ -114,8 +113,7 @@ mod tests {
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let allocator = Allocator::default();
         if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> =
-                vec![Box::new(NonNullableTypeAssertionStyle)];
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NonNullableTypeAssertionStyle)];
             traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
         } else {
             vec![]
@@ -125,11 +123,7 @@ mod tests {
     #[test]
     fn test_flags_as_non_nullable() {
         let diags = lint("const x = value as NonNullable<string | null>;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`as NonNullable<...>` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`as NonNullable<...>` should be flagged");
     }
 
     #[test]
@@ -145,7 +139,10 @@ mod tests {
     #[test]
     fn test_allows_non_null_assertion() {
         let diags = lint("const x = value!;");
-        assert!(diags.is_empty(), "non-null assertion operator should not be flagged");
+        assert!(
+            diags.is_empty(),
+            "non-null assertion operator should not be flagged"
+        );
     }
 
     #[test]
@@ -159,9 +156,7 @@ mod tests {
 
     #[test]
     fn test_flags_multiple_occurrences() {
-        let diags = lint(
-            "const a = x as NonNullable<T>;\nconst b = y as NonNullable<U>;",
-        );
+        let diags = lint("const a = x as NonNullable<T>;\nconst b = y as NonNullable<U>;");
         assert_eq!(
             diags.len(),
             2,

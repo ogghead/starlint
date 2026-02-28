@@ -22,7 +22,9 @@ impl NativeRule for NoConfusingNonNullAssertion {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-confusing-non-null-assertion".to_owned(),
-            description: "Disallow non-null assertions in confusing positions next to equality operators".to_owned(),
+            description:
+                "Disallow non-null assertions in confusing positions next to equality operators"
+                    .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,
@@ -61,8 +63,7 @@ mod tests {
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let allocator = Allocator::default();
         if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> =
-                vec![Box::new(NoConfusingNonNullAssertion)];
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConfusingNonNullAssertion)];
             traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
         } else {
             vec![]
@@ -72,31 +73,19 @@ mod tests {
     #[test]
     fn test_flags_non_null_before_equality() {
         let diags = lint("declare const x: number | null; x! == 1;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`x! == 1` should be flagged as confusing"
-        );
+        assert_eq!(diags.len(), 1, "`x! == 1` should be flagged as confusing");
     }
 
     #[test]
     fn test_flags_non_null_before_strict_equality() {
         let diags = lint("declare const x: number | null; x! === 1;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`x! === 1` should be flagged as confusing"
-        );
+        assert_eq!(diags.len(), 1, "`x! === 1` should be flagged as confusing");
     }
 
     #[test]
     fn test_flags_non_null_before_inequality() {
         let diags = lint("declare const x: number | null; x! != 1;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`x! != 1` should be flagged as confusing"
-        );
+        assert_eq!(diags.len(), 1, "`x! != 1` should be flagged as confusing");
     }
 
     #[test]

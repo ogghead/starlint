@@ -90,21 +90,13 @@ mod tests {
     #[test]
     fn test_flags_that_equals_this() {
         let diags = lint("const that = this;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`const that = this` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`const that = this` should be flagged");
     }
 
     #[test]
     fn test_flags_underscore_this() {
         let diags = lint("const _this = this;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`const _this = this` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`const _this = this` should be flagged");
     }
 
     #[test]

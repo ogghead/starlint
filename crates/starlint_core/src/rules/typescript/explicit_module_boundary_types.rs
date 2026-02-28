@@ -25,8 +25,8 @@ impl NativeRule for ExplicitModuleBoundaryTypes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
-            description:
-                "Require explicit types on exported functions and class methods".to_owned(),
+            description: "Require explicit types on exported functions and class methods"
+                .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,

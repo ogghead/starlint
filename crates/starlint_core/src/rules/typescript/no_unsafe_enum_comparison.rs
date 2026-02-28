@@ -148,9 +148,7 @@ fn strip_syntax_noise(s: &str) -> &str {
         .or_else(|| without_leading.strip_prefix("while"))
         .or_else(|| without_leading.strip_prefix("return"))
         .unwrap_or(without_leading);
-    without_keywords
-        .trim_start_matches(['(', ' '])
-        .trim()
+    without_keywords.trim_start_matches(['(', ' ']).trim()
 }
 
 /// Check if a string looks like `EnumName.Member`.
@@ -170,12 +168,7 @@ fn is_primitive_literal(s: &str) -> bool {
         return false;
     }
     // Numeric literal
-    if trimmed
-        .as_bytes()
-        .first()
-        .is_none_or(u8::is_ascii_digit)
-        && trimmed.parse::<f64>().is_ok()
-    {
+    if trimmed.as_bytes().first().is_none_or(u8::is_ascii_digit) && trimmed.parse::<f64>().is_ok() {
         return true;
     }
     // String literal

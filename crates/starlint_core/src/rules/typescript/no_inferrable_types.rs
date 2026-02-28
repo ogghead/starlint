@@ -20,7 +20,9 @@ impl NativeRule for NoInferrableTypes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-inferrable-types".to_owned(),
-            description: "Disallow explicit type annotations on variables with trivially inferred types".to_owned(),
+            description:
+                "Disallow explicit type annotations on variables with trivially inferred types"
+                    .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,
@@ -49,9 +51,7 @@ impl NativeRule for NoInferrableTypes {
             let type_name = annotation_type_name(&type_ann.type_annotation);
             ctx.report_warning(
                 "typescript/no-inferrable-types",
-                &format!(
-                    "Type `{type_name}` is trivially inferred from the initializer"
-                ),
+                &format!("Type `{type_name}` is trivially inferred from the initializer"),
                 Span::new(decl.span.start, decl.span.end),
             );
         }

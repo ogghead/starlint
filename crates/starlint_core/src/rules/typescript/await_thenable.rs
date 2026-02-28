@@ -92,31 +92,19 @@ mod tests {
     #[test]
     fn test_flags_await_string_literal() {
         let diags = lint("async function f() { await \"hello\"; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "await on string literal should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "await on string literal should be flagged");
     }
 
     #[test]
     fn test_flags_await_number_literal() {
         let diags = lint("async function f() { await 42; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "await on number literal should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "await on number literal should be flagged");
     }
 
     #[test]
     fn test_flags_await_boolean_literal() {
         let diags = lint("async function f() { await true; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "await on boolean literal should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "await on boolean literal should be flagged");
     }
 
     #[test]
@@ -128,11 +116,7 @@ mod tests {
     #[test]
     fn test_flags_await_array_literal() {
         let diags = lint("async function f() { await [1, 2, 3]; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "await on array literal should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "await on array literal should be flagged");
     }
 
     #[test]

@@ -92,9 +92,7 @@ mod tests {
         let diags = lint("let x: String;");
         assert_eq!(diags.len(), 1, "`String` wrapper type should be flagged");
         assert!(
-            diags
-                .first()
-                .is_some_and(|d| d.message.contains("string")),
+            diags.first().is_some_and(|d| d.message.contains("string")),
             "message should suggest lowercase `string`"
         );
     }

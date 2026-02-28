@@ -21,7 +21,9 @@ impl NativeRule for ConsistentGenericConstructors {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/consistent-generic-constructors".to_owned(),
-            description: "Prefer generic type arguments on constructor calls rather than type annotations".to_owned(),
+            description:
+                "Prefer generic type arguments on constructor calls rather than type annotations"
+                    .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,
@@ -112,10 +114,9 @@ fn find_inconsistent_generics(source: &str) -> Vec<(u32, u32)> {
         }
 
         // Calculate byte offset for this line in the source
-        let line_start = source
-            .lines()
-            .take(line_idx)
-            .fold(0_usize, |acc, l| acc.saturating_add(l.len()).saturating_add(1));
+        let line_start = source.lines().take(line_idx).fold(0_usize, |acc, l| {
+            acc.saturating_add(l.len()).saturating_add(1)
+        });
         let line_end = line_start.saturating_add(line.len());
 
         let start = u32::try_from(line_start).unwrap_or(0);
@@ -140,8 +141,7 @@ mod tests {
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let allocator = Allocator::default();
         if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> =
-                vec![Box::new(ConsistentGenericConstructors)];
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentGenericConstructors)];
             traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
         } else {
             vec![]
@@ -189,9 +189,6 @@ mod tests {
     #[test]
     fn test_allows_no_generics() {
         let diags = lint("const x = new Map();");
-        assert!(
-            diags.is_empty(),
-            "no generics at all should not be flagged"
-        );
+        assert!(diags.is_empty(), "no generics at all should not be flagged");
     }
 }

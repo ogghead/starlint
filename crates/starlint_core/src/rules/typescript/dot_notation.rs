@@ -107,21 +107,13 @@ mod tests {
     #[test]
     fn test_flags_bracket_with_simple_string() {
         let diags = lint(r#"const x = obj["property"];"#);
-        assert_eq!(
-            diags.len(),
-            1,
-            "`obj[\"property\"]` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`obj[\"property\"]` should be flagged");
     }
 
     #[test]
     fn test_flags_bracket_with_underscore_name() {
         let diags = lint(r#"const x = obj["_private"];"#);
-        assert_eq!(
-            diags.len(),
-            1,
-            "`obj[\"_private\"]` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`obj[\"_private\"]` should be flagged");
     }
 
     #[test]

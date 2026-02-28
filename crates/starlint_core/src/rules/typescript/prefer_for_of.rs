@@ -164,11 +164,7 @@ mod tests {
     #[test]
     fn test_flags_classic_indexed_loop() {
         let diags = lint("const arr = [1]; for (let i = 0; i < arr.length; i++) { arr[i]; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "classic indexed for loop should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "classic indexed for loop should be flagged");
     }
 
     #[test]
@@ -189,10 +185,7 @@ mod tests {
     #[test]
     fn test_allows_non_zero_init() {
         let diags = lint("const arr = [1]; for (let i = 1; i < arr.length; i++) {}");
-        assert!(
-            diags.is_empty(),
-            "loop starting at 1 should not be flagged"
-        );
+        assert!(diags.is_empty(), "loop starting at 1 should not be flagged");
     }
 
     #[test]
@@ -207,10 +200,6 @@ mod tests {
     #[test]
     fn test_flags_prefix_increment() {
         let diags = lint("const arr = [1]; for (let i = 0; i < arr.length; ++i) { arr[i]; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "prefix increment should also be flagged"
-        );
+        assert_eq!(diags.len(), 1, "prefix increment should also be flagged");
     }
 }

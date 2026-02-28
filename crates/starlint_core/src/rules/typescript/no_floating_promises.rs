@@ -103,8 +103,7 @@ fn find_floating_calls(source: &str, async_fn_names: &[String]) -> Vec<Span> {
 
             if trimmed.starts_with(&call_prefix) {
                 // Exclude lines that are awaited, returned, assigned, or chained.
-                let is_handled = trimmed.contains(".then(")
-                    || trimmed.contains(".catch(");
+                let is_handled = trimmed.contains(".then(") || trimmed.contains(".catch(");
 
                 if !is_handled {
                     let offset_in_line =
@@ -157,8 +156,7 @@ mod tests {
 
     #[test]
     fn test_allows_then_chained_call() {
-        let source =
-            "async function fetchData() { return 1; }\nfetchData().then(x => x);";
+        let source = "async function fetchData() { return 1; }\nfetchData().then(x => x);";
         let diags = lint(source);
         assert!(
             diags.is_empty(),
@@ -168,8 +166,7 @@ mod tests {
 
     #[test]
     fn test_allows_catch_chained_call() {
-        let source =
-            "async function fetchData() { return 1; }\nfetchData().catch(e => e);";
+        let source = "async function fetchData() { return 1; }\nfetchData().catch(e => e);";
         let diags = lint(source);
         assert!(
             diags.is_empty(),
@@ -181,10 +178,7 @@ mod tests {
     fn test_allows_awaited_call() {
         let source = "async function fetchData() { return 1; }\nasync function main() { await fetchData(); }";
         let diags = lint(source);
-        assert!(
-            diags.is_empty(),
-            "awaited call should not be flagged"
-        );
+        assert!(diags.is_empty(), "awaited call should not be flagged");
     }
 
     #[test]

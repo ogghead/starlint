@@ -243,10 +243,7 @@ mod tests {
             .filter(|r| r.path == file_a)
             .map(|r| r.diagnostics.len())
             .sum();
-        assert!(
-            a_diags > 0,
-            "file with violations should have diagnostics"
-        );
+        assert!(a_diags > 0, "file with violations should have diagnostics");
 
         // Clean up (best-effort).
         std::fs::remove_file(&file_a).ok();

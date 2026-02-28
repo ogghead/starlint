@@ -129,21 +129,13 @@ mod tests {
     #[test]
     fn test_flags_and_member_access() {
         let diags = lint("declare const foo: any; foo && foo.bar;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`foo && foo.bar` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`foo && foo.bar` should be flagged");
     }
 
     #[test]
     fn test_flags_and_method_call() {
         let diags = lint("declare const foo: any; foo && foo.baz();");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`foo && foo.baz()` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`foo && foo.baz()` should be flagged");
     }
 
     #[test]
@@ -164,18 +156,12 @@ mod tests {
     #[test]
     fn test_allows_or_operator() {
         let diags = lint("declare const foo: any; foo || foo.bar;");
-        assert!(
-            diags.is_empty(),
-            "`||` operator should not be flagged"
-        );
+        assert!(diags.is_empty(), "`||` operator should not be flagged");
     }
 
     #[test]
     fn test_allows_non_member_right() {
         let diags = lint("declare const foo: any; foo && true;");
-        assert!(
-            diags.is_empty(),
-            "`foo && true` should not be flagged"
-        );
+        assert!(diags.is_empty(), "`foo && true` should not be flagged");
     }
 }

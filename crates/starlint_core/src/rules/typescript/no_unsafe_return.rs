@@ -85,11 +85,7 @@ mod tests {
     #[test]
     fn test_flags_return_as_any() {
         let diags = lint("function f() { return value as any; }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`return value as any` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`return value as any` should be flagged");
     }
 
     #[test]

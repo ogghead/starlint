@@ -331,8 +331,12 @@ pub mod vars_on_top;
 pub mod yoda;
 
 // Plugin category submodules (prefixed rule names).
+pub mod jest;
 pub mod node;
+pub mod react;
+pub mod react_perf;
 pub mod typescript;
+pub mod vitest;
 
 use std::collections::{HashMap, HashSet};
 
@@ -675,8 +679,12 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
     ];
 
     // Append prefixed plugin-category rules.
+    rules.extend(jest::category_rules());
     rules.extend(node::category_rules());
+    rules.extend(react::category_rules());
+    rules.extend(react_perf::category_rules());
     rules.extend(typescript::category_rules());
+    rules.extend(vitest::category_rules());
 
     rules
 }
@@ -1102,9 +1110,7 @@ mod tests {
     fn test_prefixed_rules_in_all_rules() {
         let rules = all_rules();
         assert!(
-            rules
-                .iter()
-                .any(|r| r.meta().name == "node/global-require"),
+            rules.iter().any(|r| r.meta().name == "node/global-require"),
             "all_rules should include prefixed node rules"
         );
     }

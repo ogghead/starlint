@@ -141,17 +141,14 @@ fn find_type_only_exports(source: &str) -> Vec<(String, Span)> {
                     let all_are_types = !specifiers.is_empty()
                         && specifiers.iter().all(|spec| {
                             // Handle `Name as Alias` syntax — use the original name
-                            let original_name = spec
-                                .split_whitespace()
-                                .next()
-                                .unwrap_or("");
+                            let original_name = spec.split_whitespace().next().unwrap_or("");
                             type_names.iter().any(|t| t == original_name)
                         });
 
                     if all_are_types {
                         let start = u32::try_from(byte_offset).unwrap_or(0);
-                        let end = u32::try_from(byte_offset.saturating_add(line_len))
-                            .unwrap_or(start);
+                        let end =
+                            u32::try_from(byte_offset.saturating_add(line_len)).unwrap_or(start);
                         let exported_names = specifiers.join(", ");
                         results.push((exported_names, Span::new(start, end)));
                     }
@@ -222,10 +219,7 @@ mod tests {
     fn test_allows_value_export() {
         let source = "const foo = 42;\nexport { foo };";
         let diags = lint(source);
-        assert!(
-            diags.is_empty(),
-            "exporting a value should not be flagged"
-        );
+        assert!(diags.is_empty(), "exporting a value should not be flagged");
     }
 
     #[test]

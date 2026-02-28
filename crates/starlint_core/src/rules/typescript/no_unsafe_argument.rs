@@ -92,22 +92,14 @@ mod tests {
     #[test]
     fn test_flags_as_any_argument() {
         let diags = lint("declare function foo(x: number): void;\nfoo(value as any);");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`as any` argument should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`as any` argument should be flagged");
     }
 
     #[test]
     fn test_flags_multiple_as_any_arguments() {
         let diags =
             lint("declare function bar(a: string, b: number): void;\nbar(x as any, y as any);");
-        assert_eq!(
-            diags.len(),
-            2,
-            "both `as any` arguments should be flagged"
-        );
+        assert_eq!(diags.len(), 2, "both `as any` arguments should be flagged");
     }
 
     #[test]
@@ -122,10 +114,7 @@ mod tests {
     #[test]
     fn test_allows_normal_argument() {
         let diags = lint("declare function foo(x: number): void;\nfoo(42);");
-        assert!(
-            diags.is_empty(),
-            "normal argument should not be flagged"
-        );
+        assert!(diags.is_empty(), "normal argument should not be flagged");
     }
 
     #[test]

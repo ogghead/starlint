@@ -122,10 +122,7 @@ mod tests {
     #[test]
     fn test_allows_dynamic_condition() {
         let diags = lint("const x = Math.random(); if (x > 0.5) { console.log('maybe'); }");
-        assert!(
-            diags.is_empty(),
-            "dynamic condition should not be flagged"
-        );
+        assert!(diags.is_empty(), "dynamic condition should not be flagged");
     }
 
     #[test]

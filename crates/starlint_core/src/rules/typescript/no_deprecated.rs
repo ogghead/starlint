@@ -46,11 +46,7 @@ impl NativeRule for NoDeprecated {
         let violations = find_deprecated_usages(source, &deprecated_names);
 
         for (name, span) in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!("`{name}` is deprecated"),
-                span,
-            );
+            ctx.report_warning(RULE_NAME, &format!("`{name}` is deprecated"), span);
         }
     }
 }
@@ -88,8 +84,9 @@ fn collect_deprecated_names(source: &str) -> Vec<DeprecatedDecl> {
         let trimmed = lines.get(line_idx).copied().unwrap_or("").trim();
 
         // Check for single-line JSDoc: `/** @deprecated */`
-        let is_single_line_deprecated =
-            trimmed.starts_with("/**") && trimmed.contains("@deprecated") && trimmed.ends_with("*/");
+        let is_single_line_deprecated = trimmed.starts_with("/**")
+            && trimmed.contains("@deprecated")
+            && trimmed.ends_with("*/");
 
         // Check for multi-line JSDoc block start
         let is_block_start = trimmed.starts_with("/**") && !trimmed.ends_with("*/");
@@ -208,7 +205,10 @@ fn find_deprecated_usages(source: &str, deprecated: &[DeprecatedDecl]) -> Vec<(S
         let name = &decl.name;
         let mut search_from: usize = 0;
 
-        while let Some(pos) = source.get(search_from..).and_then(|s| s.find(name.as_str())) {
+        while let Some(pos) = source
+            .get(search_from..)
+            .and_then(|s| s.find(name.as_str()))
+        {
             let abs_pos = search_from.saturating_add(pos);
             let after_name = abs_pos.saturating_add(name.len());
 

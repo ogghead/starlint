@@ -81,11 +81,7 @@ mod tests {
     #[test]
     fn test_flags_member_access_on_as_any() {
         let diags = lint("let x = (value as any).foo;");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`(value as any).foo` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`(value as any).foo` should be flagged");
     }
 
     #[test]

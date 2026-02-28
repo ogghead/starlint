@@ -75,9 +75,15 @@ fn find_optional_chain_or_patterns(source: &str) -> Vec<(u32, u32)> {
                     .get(after_or..after_or.saturating_add(1))
                     .is_none_or(|ch| ch == "=");
 
-                if !is_logical_or_assign || source.get(after_or..after_or.saturating_add(1)).is_none_or(|ch| ch != "=") {
+                if !is_logical_or_assign
+                    || source
+                        .get(after_or..after_or.saturating_add(1))
+                        .is_none_or(|ch| ch != "=")
+                {
                     // Re-check: only flag plain `||`, not `||=`
-                    let next_char = source.get(after_or..after_or.saturating_add(1)).unwrap_or("");
+                    let next_char = source
+                        .get(after_or..after_or.saturating_add(1))
+                        .unwrap_or("");
                     if next_char != "=" {
                         let start = u32::try_from(absolute_or).unwrap_or(0);
                         let end = u32::try_from(after_or).unwrap_or(start);
@@ -107,8 +113,7 @@ mod tests {
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let allocator = Allocator::default();
         if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> =
-                vec![Box::new(PreferNullishCoalescing)];
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferNullishCoalescing)];
             traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
         } else {
             vec![]
@@ -118,11 +123,7 @@ mod tests {
     #[test]
     fn test_flags_optional_chain_with_or() {
         let diags = lint("const x = foo?.bar || 'default';");
-        assert_eq!(
-            diags.len(),
-            1,
-            "`foo?.bar || default` should be flagged"
-        );
+        assert_eq!(diags.len(), 1, "`foo?.bar || default` should be flagged");
     }
 
     #[test]
