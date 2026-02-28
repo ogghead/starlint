@@ -1,0 +1,119 @@
+//! Rule: `vue/no-watch-after-await`
+//!
+//! Forbid `watch()` / `watchEffect()` after `await` in `setup()`.
+//! Watchers registered after an `await` may not be properly cleaned up
+//! when the component is unmounted.
+
+use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+
+use crate::rule::{NativeLintContext, NativeRule};
+
+/// Rule name constant.
+const RULE_NAME: &str = "vue/no-watch-after-await";
+
+/// Watch functions from the Vue 3 Composition API.
+const WATCH_FUNCTIONS: &[&str] = &[
+    "watch(",
+    "watchEffect(",
+    "watchPostEffect(",
+    "watchSyncEffect(",
+];
+
+/// Forbid `watch()` after `await` in `setup()`.
+#[derive(Debug)]
+pub struct NoWatchAfterAwait;
+
+impl NativeRule for NoWatchAfterAwait {
+    fn meta(&self) -> RuleMeta {
+        RuleMeta {
+            name: RULE_NAME.to_owned(),
+            description: "Forbid `watch()` after `await` in `setup()`".to_owned(),
+            category: Category::Correctness,
+            default_severity: Severity::Warning,
+            fix_kind: FixKind::None,
+        }
+    }
+
+    fn needs_traversal(&self) -> bool {
+        false
+    }
+
+    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+        let source = ctx.source_text().to_owned();
+
+        // Find setup function
+        let Some(setup_pos) = source.find("setup") else {
+            return;
+        };
+
+        let setup_body = source.get(setup_pos..).unwrap_or_default();
+
+        // Find the first `await` in setup
+        let Some(await_offset) = setup_body.find("await ") else {
+            return;
+        };
+
+        let after_await = setup_body.get(await_offset..).unwrap_or_default();
+
+        for pattern in WATCH_FUNCTIONS {
+            if let Some(watch_offset) = after_await.find(pattern) {
+                let func_name = pattern.trim_end_matches('(');
+                let abs_pos = setup_pos
+                    .saturating_add(await_offset)
+                    .saturating_add(watch_offset);
+                let start = u32::try_from(abs_pos).unwrap_or(0);
+                let end = start.saturating_add(u32::try_from(func_name.len()).unwrap_or(0));
+                ctx.report_warning(
+                    RULE_NAME,
+                    &format!(
+                        "`{func_name}` should not be called after `await` in `setup()` — watchers may not be cleaned up on unmount"
+                    ),
+                    Span::new(start, end),
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+
+    use oxc_allocator::Allocator;
+
+    use super::*;
+    use crate::parser::parse_file;
+    use crate::traversal::traverse_and_lint;
+
+    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let allocator = Allocator::default();
+        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoWatchAfterAwait)];
+            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
+        } else {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_flags_watch_after_await() {
+        let source = r"export default { setup() { await fetchData(); watch(source, cb); } };";
+        let diags = lint(source);
+        assert_eq!(diags.len(), 1, "watch after await should be flagged");
+    }
+
+    #[test]
+    fn test_allows_watch_before_await() {
+        let source = r"export default { setup() { watch(source, cb); await fetchData(); } };";
+        let diags = lint(source);
+        assert!(diags.is_empty(), "watch before await should be allowed");
+    }
+
+    #[test]
+    fn test_flags_watch_effect_after_await() {
+        let source = r"export default { setup() { await fetchData(); watchEffect(() => {}); } };";
+        let diags = lint(source);
+        assert_eq!(diags.len(), 1, "watchEffect after await should be flagged");
+    }
+}

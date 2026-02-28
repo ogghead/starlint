@@ -342,6 +342,7 @@ pub mod react;
 pub mod react_perf;
 pub mod typescript;
 pub mod vitest;
+pub mod vue;
 
 use std::collections::{HashMap, HashSet};
 
@@ -695,6 +696,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
     rules.extend(react_perf::category_rules());
     rules.extend(typescript::category_rules());
     rules.extend(vitest::category_rules());
+    rules.extend(vue::category_rules());
 
     rules
 }
