@@ -8,6 +8,7 @@ edition = "2024"
 rust-version = "1.85"
 license = "MIT"
 repository = "https://github.com/ogghead/starlint"
+publish = false
 
 [workspace.dependencies]
 # Error handling and diagnostics

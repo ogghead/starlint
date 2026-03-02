@@ -21,6 +21,9 @@ ignore = true
 [bans]
 multiple-versions = "warn"
 wildcards = "deny"
+workspace-default-features = "allow"
+external-default-features = "allow"
+allow-wildcard-paths = true
 
 [sources]
 unknown-registry = "deny"
