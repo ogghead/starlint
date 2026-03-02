@@ -17,7 +17,8 @@ jobs:
     name: Run benchmarks
     runs-on: ubuntu-latest
     env:
-      CARGO_BUILD_JOBS: "2"
+      CARGO_BUILD_JOBS: "4"
+      CARGO_PROFILE: bench
     steps:
       - uses: actions/checkout@v4
 
@@ -56,7 +57,7 @@ jobs:
         run: ./benches/setup.sh
 
       - name: Run benchmarks
-        run: ./benches/run.sh
+        run: ./benches/run.sh --warmup 2 --runs 5
 
       - name: Update README with results
         run: ./benches/update-readme.sh

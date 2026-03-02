@@ -13,7 +13,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CORPORA_DIR="$SCRIPT_DIR/corpora"
 CONFIGS_DIR="$SCRIPT_DIR/configs"
 RESULTS_DIR="$SCRIPT_DIR/results"
-STARLINT_BIN="$REPO_ROOT/target/release/starlint"
+STARLINT_BIN="${STARLINT_BIN:-$REPO_ROOT/target/release/starlint}"
 
 WARMUP=3
 MIN_RUNS=10

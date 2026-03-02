@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-exclude = ["examples/plugins/starlint-plugin-example"]
+exclude = ["examples/plugins/starlint-plugin-example", "examples/plugins/starlint-plugin-jsx-example"]
 
 [workspace.package]
 edition = "2024"
@@ -148,3 +148,8 @@ lto = "thin"
 codegen-units = 1
 strip = true
 panic = "abort"
+
+[profile.bench]
+inherits = "release"
+lto = false
+codegen-units = 16

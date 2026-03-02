@@ -60,21 +60,34 @@ echo "Installing eslint and oxlint..."
 
 # ── Build starlint ────────────────────────────────────────────────────────
 
+# CARGO_PROFILE: "release" (default) or "bench" (faster compile, no LTO)
+PROFILE="${CARGO_PROFILE:-release}"
+PROFILE_FLAG="--profile $PROFILE"
+
 JOBS_FLAG=""
 if [ -n "${CARGO_BUILD_JOBS:-}" ]; then
     JOBS_FLAG="-j $CARGO_BUILD_JOBS"
-    echo "Building starlint (release, $CARGO_BUILD_JOBS jobs)..."
+    echo "Building starlint (profile=$PROFILE, $CARGO_BUILD_JOBS jobs)..."
 else
-    echo "Building starlint (release)..."
+    echo "Building starlint (profile=$PROFILE)..."
 fi
 # shellcheck disable=SC2086
-(cd "$REPO_ROOT" && cargo build --release $JOBS_FLAG)
+(cd "$REPO_ROOT" && cargo build $PROFILE_FLAG $JOBS_FLAG)
 
-STARLINT_BIN="$REPO_ROOT/target/release/starlint"
+# Bench profile outputs to target/bench/, release to target/release/
+if [ "$PROFILE" = "release" ]; then
+    STARLINT_BIN="$REPO_ROOT/target/release/starlint"
+else
+    STARLINT_BIN="$REPO_ROOT/target/$PROFILE/starlint"
+fi
+
 if [ ! -f "$STARLINT_BIN" ]; then
     echo "ERROR: starlint binary not found at $STARLINT_BIN" >&2
     exit 1
 fi
+
+# Export for run.sh to pick up
+export STARLINT_BIN
 
 echo ""
 echo "Setup complete!"
