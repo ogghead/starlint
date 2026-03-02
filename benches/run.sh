@@ -13,7 +13,14 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CORPORA_DIR="$SCRIPT_DIR/corpora"
 CONFIGS_DIR="$SCRIPT_DIR/configs"
 RESULTS_DIR="$SCRIPT_DIR/results"
-STARLINT_BIN="${STARLINT_BIN:-$REPO_ROOT/target/release/starlint}"
+# Derive binary path from CARGO_PROFILE (matches setup.sh logic)
+if [ -n "${STARLINT_BIN:-}" ]; then
+    : # explicitly set, use as-is
+elif [ -n "${CARGO_PROFILE:-}" ] && [ "$CARGO_PROFILE" != "release" ]; then
+    STARLINT_BIN="$REPO_ROOT/target/$CARGO_PROFILE/starlint"
+else
+    STARLINT_BIN="$REPO_ROOT/target/release/starlint"
+fi
 
 WARMUP=3
 MIN_RUNS=10
