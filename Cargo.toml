@@ -150,7 +150,7 @@ codegen-units = 1
 strip = true
 panic = "abort"
 
-[profile.bench]
+[profile.ci-bench]
 inherits = "release"
 lto = false
 codegen-units = 16
