@@ -41,13 +41,13 @@ jobs:
           sudo dpkg -i "hyperfine_${HYPERFINE_VERSION}_amd64.deb"
 
       - name: Cache benchmark corpora
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: benches/corpora
           key: bench-corpora-v1
 
       - name: Cache benchmark npm dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: benches/node_modules
           key: bench-npm-v1
