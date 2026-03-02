@@ -90,17 +90,37 @@ starlint_plugin_sdk → serde (NO oxc dependency)
 
 ## Task Tracking (Beads)
 
-This project uses [beads](https://github.com/steveyegge/beads) (`bd`) for task tracking.
+This project uses [beads](https://github.com/steveyegge/beads) (`bd`) for ALL issue tracking. Do NOT use markdown TODOs, task lists, or other tracking methods.
 
 ### Workflow
 1. **Start of session**: `bd prime` runs automatically via hook
 2. **Find ready work**: `bd ready --json`
 3. **Claim a task**: `bd update <id> --status in_progress --claim --json`
 4. **Create new issues**: `bd create "Title" --description "Details" -t <type> -p <priority> --json`
-5. **Close completed work**: `bd close <id> --reason "summary" --json`
-6. **Before ending session**: `bd sync`
+5. **Discover new work?** Link it: `bd create "Found bug" --description "Details" -p 1 --deps discovered-from:<parent-id> --json`
+6. **Close completed work**: `bd close <id> --reason "summary" --json`
+7. **Before ending session**: `bd sync`
+
+### Issue Types & Priorities
+
+Types: `bug`, `feature`, `task`, `epic`, `chore`
+
+Priorities: `0` critical, `1` high, `2` medium (default), `3` low, `4` backlog
 
 ### Rules
 - Always use `--json` flag for machine-readable output
 - Never use `bd edit` (interactive editor)
 - Include issue IDs in commit messages: `git commit -m "Fix X (bd-abc)"`
+- Link discovered work with `discovered-from` dependencies
+- Check `bd ready` before asking "what should I work on?"
+- bd auto-syncs to `.beads/issues.jsonl` — no manual export needed
+
+## Session Completion
+
+Work is NOT complete until `git push` succeeds.
+
+1. **File issues** for remaining work
+2. **Run quality gates** (if code changed): `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+3. **Update issue status**: close finished work, update in-progress items
+4. **Push**: `git pull --rebase && bd sync && git push`
+5. **Verify**: `git status` must show "up to date with origin"
