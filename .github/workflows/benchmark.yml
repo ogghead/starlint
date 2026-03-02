@@ -1,0 +1,78 @@
+name: Benchmarks
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: benchmarks
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    name: Run benchmarks
+    runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: "2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq time
+          # Install hyperfine from GitHub releases (faster than cargo install)
+          HYPERFINE_VERSION="1.20.0"
+          wget -q "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine_${HYPERFINE_VERSION}_amd64.deb"
+          sudo dpkg -i "hyperfine_${HYPERFINE_VERSION}_amd64.deb"
+
+      - name: Cache benchmark corpora
+        uses: actions/cache@v4
+        with:
+          path: benches/corpora
+          key: bench-corpora-v1
+
+      - name: Cache benchmark npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: benches/node_modules
+          key: bench-npm-v1
+
+      - name: Setup benchmarks
+        run: ./benches/setup.sh
+
+      - name: Run benchmarks
+        run: ./benches/run.sh
+
+      - name: Update README with results
+        run: ./benches/update-readme.sh
+
+      - name: Upload raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benches/results/
+          retention-days: 90
+
+      - name: Commit updated README
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          git diff --cached --quiet || git commit -m "Update benchmark results in README"
+          git push
