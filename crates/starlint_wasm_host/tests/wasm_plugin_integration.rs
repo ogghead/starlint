@@ -763,3 +763,151 @@ fn test_react_a11y_click_events_have_key_events() {
         "should flag onClick without keyboard handler, got: {names:?}"
     );
 }
+
+// ---- Modules plugin integration tests ----
+
+/// Path to the pre-built modules plugin component.
+const MODULES_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/modules-plugin.wasm"
+);
+
+fn host_with_modules_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(MODULES_PLUGIN), "")
+        .expect("should load modules plugin");
+    host
+}
+
+#[test]
+fn test_load_modules_plugin() {
+    let host = host_with_modules_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_import_no_duplicates() {
+    let host = host_with_modules_plugin();
+    let allocator = Allocator::default();
+    let source = "import { foo } from 'lodash';\nimport { bar } from 'lodash';\n";
+    let path = Path::new("index.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"import/no-duplicates"),
+        "should flag duplicate imports from 'lodash', got: {names:?}"
+    );
+}
+
+#[test]
+fn test_import_no_default_export() {
+    let host = host_with_modules_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function main() {}";
+    let path = Path::new("utils.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"import/no-default-export"),
+        "should flag default export, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_import_no_namespace() {
+    let host = host_with_modules_plugin();
+    let allocator = Allocator::default();
+    let source = "import * as utils from './utils';";
+    let path = Path::new("app.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"import/no-namespace"),
+        "should flag namespace import, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_node_no_process_exit() {
+    let host = host_with_modules_plugin();
+    let allocator = Allocator::default();
+    let source = "process.exit(1);";
+    let path = Path::new("server.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"node/no-process-exit"),
+        "should flag process.exit(), got: {names:?}"
+    );
+}
+
+#[test]
+fn test_promise_prefer_await_to_then() {
+    let host = host_with_modules_plugin();
+    let allocator = Allocator::default();
+    let source = "fetch('/api').then(data => data.json());";
+    let path = Path::new("api.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"promise/prefer-await-to-then"),
+        "should flag .then() usage, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_promise_no_nesting() {
+    let host = host_with_modules_plugin();
+    let allocator = Allocator::default();
+    let source = "fetch('/a').then(() => { return fetch('/b').then(() => {}); });";
+    let path = Path::new("nested.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"promise/no-nesting"),
+        "should flag nested promise, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_import_no_nodejs_modules() {
+    let host = host_with_modules_plugin();
+    let allocator = Allocator::default();
+    let source = "import punycode from 'punycode';";
+    let path = Path::new("legacy.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"import/no-nodejs-modules"),
+        "should flag bare Node.js module import, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_modules_all_files_no_pattern_skip() {
+    let host = host_with_modules_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function main() {}";
+    let path = Path::new("deeply/nested/component.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        !diags.is_empty(),
+        "modules plugin should lint ALL files (no file pattern filter)"
+    );
+}
