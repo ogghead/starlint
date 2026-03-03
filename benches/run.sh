@@ -22,6 +22,9 @@ else
     STARLINT_BIN="$REPO_ROOT/target/release/starlint"
 fi
 
+OXLINT_BIN="$SCRIPT_DIR/node_modules/.bin/oxlint"
+ESLINT_BIN="$SCRIPT_DIR/node_modules/.bin/eslint"
+
 WARMUP=3
 MIN_RUNS=10
 
@@ -55,6 +58,16 @@ fi
 
 if [ ! -d "$CORPORA_DIR/express" ]; then
     echo "ERROR: corpora not found. Run ./benches/setup.sh first." >&2
+    exit 1
+fi
+
+if [ ! -f "$OXLINT_BIN" ]; then
+    echo "ERROR: oxlint not found at $OXLINT_BIN. Run ./benches/setup.sh first." >&2
+    exit 1
+fi
+
+if [ ! -f "$ESLINT_BIN" ]; then
+    echo "ERROR: eslint not found at $ESLINT_BIN. Run ./benches/setup.sh first." >&2
     exit 1
 fi
 
@@ -147,8 +160,8 @@ run_equivalent() {
 
     run_bench "equivalent-${corpus_name}" \
         "$STARLINT_BIN --config $CONFIGS_DIR/starlint-equivalent.toml --no-plugins $cpath || true" \
-        "npx --prefix $SCRIPT_DIR oxlint --config $CONFIGS_DIR/oxlint-equivalent.json $cpath || true" \
-        "npx --prefix $SCRIPT_DIR eslint --no-config-lookup -c $CONFIGS_DIR/eslint-equivalent.config.mjs $cpath || true"
+        "$OXLINT_BIN --config $CONFIGS_DIR/oxlint-equivalent.json $cpath || true" \
+        "$ESLINT_BIN --no-config-lookup -c $CONFIGS_DIR/eslint-equivalent.config.mjs $cpath || true"
 }
 
 # ── Scenario: Full defaults ───────────────────────────────────────────────
@@ -163,8 +176,8 @@ run_default() {
 
     run_bench "default-${corpus_name}" \
         "$STARLINT_BIN --config $CONFIGS_DIR/starlint-default.toml --no-plugins $cpath || true" \
-        "npx --prefix $SCRIPT_DIR oxlint $cpath || true" \
-        "npx --prefix $SCRIPT_DIR eslint --no-config-lookup -c $CONFIGS_DIR/eslint-default.config.mjs $cpath || true"
+        "$OXLINT_BIN $cpath || true" \
+        "$ESLINT_BIN --no-config-lookup -c $CONFIGS_DIR/eslint-default.config.mjs $cpath || true"
 }
 
 # ── Main ───────────────────────────────────────────────────────────────────

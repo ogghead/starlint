@@ -1,5 +1,9 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicolo-ribaudo/oxlint-config/refs/heads/main/schema.json",
+  "plugins": [],
+  "categories": {
+    "correctness": "off"
+  },
   "rules": {
     "for-direction": "error",
     "getter-return": "error",
