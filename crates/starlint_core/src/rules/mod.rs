@@ -727,7 +727,9 @@ const BUILTIN_PLUGIN_PREFIXES: &[(&str, &[&str])] = &[
 /// `active_builtins` is the set of builtin plugin names that are enabled.
 /// Rules whose names match an active plugin's prefixes are omitted.
 #[must_use]
-pub fn all_rules_excluding(active_builtins: &HashSet<String>) -> Vec<Box<dyn NativeRule>> {
+pub fn all_rules_excluding<S: ::std::hash::BuildHasher>(
+    active_builtins: &HashSet<String, S>,
+) -> Vec<Box<dyn NativeRule>> {
     if active_builtins.is_empty() {
         return all_rules();
     }
@@ -797,10 +799,10 @@ pub struct ConfiguredRules {
 /// Configured severities are returned in [`ConfiguredRules::severity_overrides`]
 /// so the engine can apply them to diagnostics.
 #[must_use]
-pub fn rules_for_config<S: ::std::hash::BuildHasher>(
+pub fn rules_for_config<S: ::std::hash::BuildHasher, S2: ::std::hash::BuildHasher>(
     rule_configs: &HashMap<String, starlint_config::RuleConfig, S>,
     override_configs: &[starlint_config::Override],
-    active_builtins: &HashSet<String>,
+    active_builtins: &HashSet<String, S2>,
 ) -> ConfiguredRules {
     // Collect rule names referenced in any override block.
     let override_rule_names: HashSet<String> = override_configs

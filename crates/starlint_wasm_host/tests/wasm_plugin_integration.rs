@@ -438,12 +438,12 @@ fn test_storybook_file_pattern_skip() {
 fn test_storybook_clean_story() {
     let host = host_with_storybook_plugin();
     let allocator = Allocator::default();
-    let source = r#"
+    let source = r"
 import { Button } from './Button';
 export default { component: Button };
 export const Primary = {};
 export const Secondary = { args: { variant: 'secondary' } };
-"#;
+";
     let path = Path::new("Button.stories.js");
     let parsed = parse_file(&allocator, source, path).expect("parse");
 
@@ -1411,7 +1411,7 @@ fn test_typescript_file_pattern_skip() {
 #[test]
 fn test_load_builtin_storybook() {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
-    let active: HashSet<String> = ["storybook".to_owned()].into_iter().collect();
+    let active = HashSet::from(["storybook".to_owned()]);
     host.load_builtins(&active).expect("load builtins");
     assert_eq!(
         host.plugin_count(),
@@ -1434,7 +1434,7 @@ fn test_load_builtin_storybook() {
 #[test]
 fn test_load_builtin_react() {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
-    let active: HashSet<String> = ["react".to_owned()].into_iter().collect();
+    let active = HashSet::from(["react".to_owned()]);
     host.load_builtins(&active).expect("load builtins");
     assert_eq!(host.plugin_count(), 1);
 
@@ -1470,7 +1470,7 @@ fn test_load_builtin_modules_dedup() {
 #[test]
 fn test_load_builtin_modules_single_name() {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
-    let active: HashSet<String> = ["modules".to_owned()].into_iter().collect();
+    let active = HashSet::from(["modules".to_owned()]);
     host.load_builtins(&active).expect("load builtins");
     assert_eq!(
         host.plugin_count(),
@@ -1482,7 +1482,7 @@ fn test_load_builtin_modules_single_name() {
 #[test]
 fn test_load_builtin_unknown_ignored() {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
-    let active: HashSet<String> = ["nonexistent".to_owned()].into_iter().collect();
+    let active = HashSet::from(["nonexistent".to_owned()]);
     // Unknown names are silently skipped (no error).
     host.load_builtins(&active).expect("load builtins");
     assert_eq!(
@@ -1532,7 +1532,7 @@ fn test_load_all_builtins() {
 #[test]
 fn test_builtins_plus_explicit_plugin() {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
-    let active: HashSet<String> = ["storybook".to_owned()].into_iter().collect();
+    let active = HashSet::from(["storybook".to_owned()]);
     host.load_builtins(&active).expect("load builtins");
     // Also load an explicit plugin on top.
     host.load_plugin(Path::new(EXAMPLE_PLUGIN), "")

@@ -153,26 +153,32 @@ files = ["**/*.stories.tsx"]
 
     #[test]
     fn test_config_deserialize_with_builtin_plugins() {
-        let toml_str = r#"
+        let toml_str = r"
 [builtin_plugins]
 storybook = true
 testing = true
 react = false
-"#;
-        let cfg: Config = toml::from_str(toml_str).expect("should parse builtin_plugins");
-        assert_eq!(cfg.builtin_plugins.len(), 3);
-        assert_eq!(cfg.builtin_plugins.get("storybook"), Some(&true));
-        assert_eq!(cfg.builtin_plugins.get("testing"), Some(&true));
-        assert_eq!(cfg.builtin_plugins.get("react"), Some(&false));
+";
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_ok(), "should parse builtin_plugins");
+        if let Ok(cfg) = result {
+            assert_eq!(cfg.builtin_plugins.len(), 3);
+            assert_eq!(cfg.builtin_plugins.get("storybook"), Some(&true));
+            assert_eq!(cfg.builtin_plugins.get("testing"), Some(&true));
+            assert_eq!(cfg.builtin_plugins.get("react"), Some(&false));
+        }
     }
 
     #[test]
     fn test_config_builtin_plugins_default_empty() {
         let toml_str = "";
-        let cfg: Config = toml::from_str(toml_str).expect("should parse empty config");
-        assert!(
-            cfg.builtin_plugins.is_empty(),
-            "builtin_plugins should default to empty"
-        );
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_ok(), "should parse empty config");
+        if let Ok(cfg) = result {
+            assert!(
+                cfg.builtin_plugins.is_empty(),
+                "builtin_plugins should default to empty"
+            );
+        }
     }
 }

@@ -5,8 +5,8 @@
 //!
 //! Groups:
 //! - **load**: One-time plugin load + compile cost
-//! - **per_file**: Per-file lint cost (store creation, node collection, WASM call)
-//! - **file_pattern_skip**: Cost of skipping a file via glob pattern match
+//! - **`per_file`**: Per-file lint cost (store creation, node collection, WASM call)
+//! - **`file_pattern_skip`**: Cost of skipping a file via glob pattern match
 
 #![allow(
     clippy::expect_used,
@@ -41,7 +41,7 @@ const JSX_EXAMPLE_PLUGIN: &str = concat!(
 const SMALL_JS: &str = "debugger;\n";
 
 /// Medium JS source with imports, functions, and a debugger.
-const MEDIUM_JS: &str = r#"
+const MEDIUM_JS: &str = r"
 import { foo } from 'bar';
 import * as baz from 'qux';
 
@@ -54,13 +54,14 @@ console.log(result);
 debugger;
 
 export default helper;
-"#;
+";
 
 /// Large JS source — many statements but few matching nodes.
 fn large_js() -> String {
+    use std::fmt::Write;
     let mut source = String::from("import { x } from 'y';\n");
     for i in 0..500 {
-        source.push_str(&format!("const v{i} = {i};\n"));
+        writeln!(source, "const v{i} = {i};").unwrap();
     }
     source.push_str("debugger;\n");
     source.push_str("export default v0;\n");
@@ -227,12 +228,12 @@ fn bench_no_matching_nodes(c: &mut Criterion) {
     };
 
     // Source with no debugger statements or imports — node collection finds nothing.
-    let clean_source = r#"
+    let clean_source = r"
 const a = 1;
 const b = 2;
 function add(x, y) { return x + y; }
 const c = add(a, b);
-"#;
+";
 
     group.bench_function("clean_source", |b| {
         let allocator = Allocator::default();
