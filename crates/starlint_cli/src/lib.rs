@@ -99,6 +99,7 @@ pub fn run() -> miette::Result<ExitStatus> {
     tracing::debug!("found {} files to lint", files.len());
 
     // Build lint session with rules from config.
+    let setup_start = Instant::now();
     let active_builtins: std::collections::HashSet<String> = config
         .builtin_plugins
         .iter()
@@ -112,8 +113,10 @@ pub fn run() -> miette::Result<ExitStatus> {
         .with_severity_overrides(configured.severity_overrides)
         .with_override_set(override_set)
         .with_disabled_rules(configured.disabled_rules);
+    let rules_elapsed = setup_start.elapsed();
 
     // Load WASM plugins: builtin plugins + explicit [[plugins]] declarations.
+    let wasm_start = Instant::now();
     if !args.no_plugins && (!active_builtins.is_empty() || !config.plugins.is_empty()) {
         match build_plugin_host(&config.plugins, &active_builtins) {
             Ok(host) => {
@@ -125,6 +128,7 @@ pub fn run() -> miette::Result<ExitStatus> {
             }
         }
     }
+    let wasm_elapsed = wasm_start.elapsed();
 
     // Lint files.
     let lint_start = Instant::now();
@@ -135,10 +139,20 @@ pub fn run() -> miette::Result<ExitStatus> {
         apply_fixes_to_files(&results, fix_dangerous);
     }
 
+    let report_start = Instant::now();
     let counts = report_diagnostics(&results, output_format);
+    let report_elapsed = report_start.elapsed();
 
     if args.timing {
-        print_timing(&total_start, &discover_elapsed, &lint_elapsed, files.len());
+        print_timing_detailed(
+            &total_start,
+            &discover_elapsed,
+            &rules_elapsed,
+            &wasm_elapsed,
+            &lint_elapsed,
+            &report_elapsed,
+            files.len(),
+        );
     }
 
     // Enforce max-warnings threshold.
@@ -303,12 +317,16 @@ fn report_diagnostics(
     }
 }
 
-/// Print timing information to stderr.
+/// Print detailed timing information to stderr.
 #[allow(clippy::print_stderr)] // Timing is metadata, goes to stderr
-fn print_timing(
+#[allow(clippy::too_many_arguments)]
+fn print_timing_detailed(
     total_start: &Instant,
     discover_elapsed: &std::time::Duration,
+    rules_elapsed: &std::time::Duration,
+    wasm_elapsed: &std::time::Duration,
     lint_elapsed: &std::time::Duration,
+    report_elapsed: &std::time::Duration,
     file_count: usize,
 ) {
     let total_elapsed = total_start.elapsed();
@@ -320,9 +338,12 @@ fn print_timing(
         0.0
     };
     eprintln!(
-        "timing: discovery {:.1}ms, lint {:.1}ms, total {:.1}ms ({:.0} files/s)",
+        "timing: discovery {:.1}ms, rules {:.1}ms, wasm-init {:.1}ms, lint {:.1}ms, report {:.1}ms, total {:.1}ms ({:.0} files/s)",
         discover_elapsed.as_secs_f64() * 1000.0,
+        rules_elapsed.as_secs_f64() * 1000.0,
+        wasm_elapsed.as_secs_f64() * 1000.0,
         lint_elapsed.as_secs_f64() * 1000.0,
+        report_elapsed.as_secs_f64() * 1000.0,
         total_secs * 1000.0,
         files_per_sec,
     );

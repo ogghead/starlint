@@ -4,12 +4,10 @@
 //! This is a stub rule — the list of restricted modules would be provided
 //! via configuration.
 
-use oxc_ast::AstKind;
-
 use starlint_plugin_sdk::diagnostic::Severity;
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::rule::NativeRule;
 
 /// Stub: would forbid specific configured modules from being imported.
 #[derive(Debug)]
@@ -26,9 +24,8 @@ impl NativeRule for NoRestrictedImports {
         }
     }
 
-    fn run(&self, _kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
-        // Requires configuration to specify which modules are restricted.
-        // This is a placeholder for future implementation.
+    fn needs_traversal(&self) -> bool {
+        false
     }
 }
 

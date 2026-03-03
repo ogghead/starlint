@@ -66,15 +66,15 @@ pub fn traverse_and_lint_with_semantic<'a>(
         all_diagnostics.extend(visitor.ctx.into_diagnostics());
     }
 
-    // Run run_once for all rules (single pass).
+    // Run run_once for all rules (shared context, single pass).
+    let mut run_once_ctx = match semantic {
+        Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
+        None => NativeLintContext::new(source_text, file_path),
+    };
     for rule in &all_rules {
-        let mut ctx = match semantic {
-            Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
-            None => NativeLintContext::new(source_text, file_path),
-        };
-        rule.run_once(&mut ctx);
-        all_diagnostics.extend(ctx.into_diagnostics());
+        rule.run_once(&mut run_once_ctx);
     }
+    all_diagnostics.extend(run_once_ctx.into_diagnostics());
 
     all_diagnostics
 }

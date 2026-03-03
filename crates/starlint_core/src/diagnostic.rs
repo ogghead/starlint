@@ -38,9 +38,10 @@ pub fn format_diagnostics(
 #[allow(clippy::let_underscore_must_use)] // writeln! to String is infallible
 fn format_pretty(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path) -> String {
     let mut output = String::new();
+    let index = LineIndex::new(source_text);
 
     for diag in diagnostics {
-        let (line, col) = offset_to_line_col(source_text, diag.span.start);
+        let (line, col) = index.offset_to_line_col(source_text, diag.span.start);
         let severity_str = match diag.severity {
             Severity::Error => "error",
             Severity::Warning => "warning",
@@ -122,23 +123,53 @@ fn format_compact(diagnostics: &[Diagnostic], file_path: &Path) -> String {
     output
 }
 
-/// Convert a byte offset to 1-based line and column numbers.
-fn offset_to_line_col(source: &str, offset: u32) -> (usize, usize) {
-    let mut line: usize = 1;
-    let mut col: usize = 1;
-    let offset_usize: usize = offset.try_into().unwrap_or(usize::MAX);
-    for (i, ch) in source.char_indices() {
-        if i >= offset_usize {
-            break;
+/// Pre-computed index of newline byte offsets for O(log N) line/column lookups.
+///
+/// Built once per file, then shared across all diagnostics for that file.
+struct LineIndex {
+    /// Byte offsets of the start of each line. `line_starts[0]` is always 0.
+    line_starts: Vec<u32>,
+}
+
+impl LineIndex {
+    /// Build a line index from source text.
+    fn new(source: &str) -> Self {
+        let mut line_starts = vec![0u32];
+        for (i, byte) in source.bytes().enumerate() {
+            if byte == b'\n' {
+                let offset = u32::try_from(i).unwrap_or(u32::MAX);
+                line_starts.push(offset.saturating_add(1));
+            }
         }
-        if ch == '\n' {
-            line = line.saturating_add(1);
-            col = 1;
-        } else {
-            col = col.saturating_add(1);
-        }
+        Self { line_starts }
     }
-    (line, col)
+
+    /// Convert a byte offset to 1-based (line, column).
+    ///
+    /// Column is measured in UTF-8 characters (not bytes) from the start of the line,
+    /// matching the previous `offset_to_line_col` behavior.
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit platforms
+    fn offset_to_line_col(&self, source: &str, offset: u32) -> (usize, usize) {
+        // Binary search for the line containing this offset.
+        let line_idx = match self.line_starts.binary_search(&offset) {
+            Ok(exact) => exact,
+            Err(insert) => insert.saturating_sub(1),
+        };
+        let line_start = self.line_starts.get(line_idx).copied().unwrap_or(0);
+
+        // Count characters (not bytes) from line start to offset for the column.
+        let start = line_start as usize;
+        let end = (offset as usize).min(source.len());
+        let col = if start <= end {
+            source
+                .get(start..end)
+                .map_or(1, |slice| slice.chars().count().saturating_add(1))
+        } else {
+            1
+        };
+
+        (line_idx.saturating_add(1), col)
+    }
 }
 
 #[cfg(test)]
@@ -147,6 +178,11 @@ mod tests {
     use super::*;
 
     use starlint_plugin_sdk::diagnostic::Span;
+
+    /// Test helper: build a `LineIndex` and look up a single offset.
+    fn offset_to_line_col(source: &str, offset: u32) -> (usize, usize) {
+        LineIndex::new(source).offset_to_line_col(source, offset)
+    }
 
     fn make_diag(rule: &str, message: &str, severity: Severity) -> Diagnostic {
         Diagnostic {

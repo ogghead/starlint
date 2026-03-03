@@ -45,12 +45,15 @@ pub struct LintSession {
     override_set: OverrideSet,
     /// Rules loaded but disabled by default (only active via file-pattern overrides).
     disabled_rules: HashSet<String>,
+    /// Pre-computed: whether any active rule needs semantic analysis.
+    needs_semantic: bool,
 }
 
 impl LintSession {
     /// Create a new lint session with the given rules.
     #[must_use]
     pub fn new(native_rules: Vec<Box<dyn NativeRule>>, output_format: OutputFormat) -> Self {
+        let needs_semantic = native_rules.iter().any(|r| r.needs_semantic());
         Self {
             native_rules,
             plugin_host: None,
@@ -58,6 +61,7 @@ impl LintSession {
             severity_overrides: HashMap::new(),
             override_set: OverrideSet::empty(),
             disabled_rules: HashSet::new(),
+            needs_semantic,
         }
     }
 
@@ -137,8 +141,7 @@ impl LintSession {
                 let program = allocator.alloc(parsed.program);
 
                 // Build semantic data (scope tree, symbol table) if any rule needs it.
-                let needs_semantic = self.native_rules.iter().any(|r| r.needs_semantic());
-                let semantic = needs_semantic.then(|| build_semantic(program));
+                let semantic = self.needs_semantic.then(|| build_semantic(program));
 
                 // Native rules via single-pass traversal.
                 let mut diags = traverse_and_lint_with_semantic(
@@ -180,7 +183,12 @@ impl LintSession {
 
         FileDiagnostics {
             path: file_path.to_path_buf(),
-            source_text: source_text.to_owned(),
+            // Only clone source text when there are diagnostics (needed for line/col formatting).
+            source_text: if diagnostics.is_empty() {
+                String::new()
+            } else {
+                source_text.to_owned()
+            },
             diagnostics,
         }
     }

@@ -7,12 +7,10 @@
 //!
 //! Without full module resolution, this rule is a stub that documents intent.
 
-use oxc_ast::AstKind;
-
 use starlint_plugin_sdk::diagnostic::Severity;
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::rule::NativeRule;
 
 /// Stub: would flag default imports that share a name with a named export.
 #[derive(Debug)]
@@ -29,10 +27,8 @@ impl NativeRule for NoNamedAsDefault {
         }
     }
 
-    fn run(&self, _kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
-        // Requires cross-module resolution to determine whether the default
-        // import identifier matches a named export of the source module.
-        // This is a placeholder for future implementation.
+    fn needs_traversal(&self) -> bool {
+        false
     }
 }
 
