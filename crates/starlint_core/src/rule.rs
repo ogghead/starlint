@@ -65,10 +65,12 @@ pub trait NativeRule: Debug + Send + Sync {
 
     /// Which [`AstType`] variants this rule handles in [`leave`](NativeRule::leave).
     ///
-    /// Return `Some(...)` to only receive matching nodes on leave. Return `None`
-    /// (default) to receive **all** nodes.
+    /// Return `Some(&[...])` to only receive matching nodes on leave.
+    /// Default is `Some(&[])` (no leave events) since most rules don't
+    /// implement [`leave`](NativeRule::leave). Rules that override `leave()`
+    /// must also override this method.
     fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
-        None
+        Some(&[])
     }
 
     /// Configure this rule from a JSON config value.
