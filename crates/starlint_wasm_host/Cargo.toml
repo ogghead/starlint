@@ -29,6 +29,11 @@ oxc_ast_visit = { workspace = true }
 [dev-dependencies]
 pretty_assertions = { workspace = true }
 oxc_allocator = { workspace = true }
+criterion = { workspace = true }
+
+[[bench]]
+name = "wasm_overhead"
+harness = false
 
 [lints]
 workspace = true

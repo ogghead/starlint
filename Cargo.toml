@@ -57,6 +57,7 @@ starlint_lsp = { path = "crates/starlint_lsp" }
 # Testing
 pretty_assertions = "1"
 insta = { version = "1", features = ["yaml"] }
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
