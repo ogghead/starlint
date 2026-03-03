@@ -19,6 +19,10 @@ const RULE_NAME: &str = "jest/no-standalone-expect";
 pub struct NoStandaloneExpect;
 
 impl NativeRule for NoStandaloneExpect {
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("expect(")
+    }
+
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),

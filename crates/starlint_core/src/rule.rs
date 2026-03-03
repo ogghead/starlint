@@ -73,6 +73,15 @@ pub trait NativeRule: Debug + Send + Sync {
         Some(&[])
     }
 
+    /// File-level guard: return `false` to skip this rule for the current file.
+    ///
+    /// Called once per file before traversal/`run_once`. Rules can inspect
+    /// source text or file path to bail out early — e.g. a React-specific rule
+    /// can return `false` when the source doesn't contain `forwardRef`.
+    fn should_run_on_file(&self, _source_text: &str, _file_path: &Path) -> bool {
+        true
+    }
+
     /// Configure this rule from a JSON config value.
     ///
     /// Called during session setup when the config contains options for this rule.

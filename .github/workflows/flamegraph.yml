@@ -1,0 +1,86 @@
+name: Flamegraph
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: flamegraph
+  cancel-in-progress: true
+
+jobs:
+  flamegraph:
+    name: Generate flamegraph
+    runs-on: ubuntu-latest
+    env:
+      CARGO_BUILD_JOBS: "4"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Install perf and inferno
+        run: |
+          sudo apt-get update
+          # Install kernel-matched perf; fall back to generic if unavailable
+          sudo apt-get install -y linux-tools-common \
+            linux-tools-$(uname -r) linux-cloud-tools-$(uname -r) 2>/dev/null \
+            || sudo apt-get install -y linux-tools-generic linux-cloud-tools-generic
+          cargo install inferno --locked
+
+      - name: Allow perf events
+        run: sudo sysctl kernel.perf_event_paranoid=-1
+
+      - name: Cache benchmark corpora
+        uses: actions/cache@v4
+        with:
+          path: benches/corpora
+          key: bench-corpora-v1
+
+      - name: Clone grafana corpus
+        run: |
+          if [ ! -d benches/corpora/grafana ]; then
+            mkdir -p benches/corpora
+            git clone --depth 1 --filter=blob:none --sparse \
+              https://github.com/grafana/grafana.git benches/corpora/grafana
+            cd benches/corpora/grafana && git sparse-checkout set public/app
+          fi
+
+      - name: Build starlint with debug symbols
+        run: |
+          CARGO_PROFILE_RELEASE_DEBUG=1 \
+          CARGO_PROFILE_RELEASE_STRIP=none \
+            cargo build --release -j4
+
+      - name: Record perf profile
+        run: |
+          RAYON_NUM_THREADS=2 perf record \
+            -g --call-graph dwarf,16384 \
+            -F 997 \
+            -o perf.data \
+            -- ./target/release/starlint \
+              --config benches/configs/starlint-default.toml \
+              --no-plugins \
+              benches/corpora/grafana
+
+      - name: Generate flamegraph
+        run: |
+          perf script -i perf.data \
+            | inferno-collapse-perf \
+            | inferno-flamegraph > flamegraph.svg
+          echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
+
+      - name: Upload flamegraph
+        uses: actions/upload-artifact@v4
+        with:
+          name: flamegraph-${{ github.sha }}
+          path: flamegraph.svg
+          retention-days: 90

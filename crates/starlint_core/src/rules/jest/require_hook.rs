@@ -58,6 +58,12 @@ impl NativeRule for RequireHook {
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
         let violations = {
             let source = ctx.source_text();
+
+            // Early exit: skip files without describe blocks.
+            if !source.contains("describe(") {
+                return;
+            }
+
             let needle = "describe(";
             let mut violations: Vec<Span> = Vec::new();
 

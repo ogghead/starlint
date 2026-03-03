@@ -41,7 +41,7 @@ oxc_semantic = "0.114"
 oxc_span = "0.114"
 
 # WASM runtime
-wasmtime = { version = "42", features = ["component-model"] }
+wasmtime = { version = "42", features = ["component-model", "winch"] }
 
 # LSP
 tower-lsp = "0.20"

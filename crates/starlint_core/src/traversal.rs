@@ -224,6 +224,12 @@ pub(crate) fn traverse_with_prebuilt<'a>(
     file_path: &'a Path,
     semantic: Option<&'a Semantic<'a>>,
 ) -> Vec<Diagnostic> {
+    // Per-file active-rule bitmask: call `should_run_on_file` once per rule.
+    let active: Vec<bool> = rules
+        .iter()
+        .map(|r| r.should_run_on_file(source_text, file_path))
+        .collect();
+
     let mut all_diagnostics = Vec::new();
 
     // Run traversal-based rules via single-pass visitor with pre-built dispatch table.
@@ -235,6 +241,7 @@ pub(crate) fn traverse_with_prebuilt<'a>(
         let mut visitor = SessionDispatchVisitor {
             rules,
             table,
+            active: &active,
             ctx,
         };
         visitor.visit_program(program);
@@ -248,8 +255,10 @@ pub(crate) fn traverse_with_prebuilt<'a>(
             None => NativeLintContext::new(source_text, file_path),
         };
         for &idx in run_once_indices {
-            if let Some(rule) = rules.get(idx) {
-                rule.run_once(&mut run_once_ctx);
+            if active.get(idx).copied().unwrap_or(false) {
+                if let Some(rule) = rules.get(idx) {
+                    rule.run_once(&mut run_once_ctx);
+                }
             }
         }
         all_diagnostics.extend(run_once_ctx.into_diagnostics());
@@ -271,6 +280,8 @@ struct SessionDispatchVisitor<'a, 'session> {
     rules: &'session [Box<dyn NativeRule>],
     /// Pre-built interest-based dispatch table.
     table: &'session DispatchTable,
+    /// Per-file bitmask from [`NativeRule::should_run_on_file`].
+    active: &'session [bool],
     /// Shared lint context — all rules push diagnostics into this.
     ctx: NativeLintContext<'a>,
 }
@@ -281,15 +292,19 @@ impl<'a> Visit<'a> for SessionDispatchVisitor<'a, '_> {
 
         if let Some(targeted) = self.table.enter.get(ty) {
             for &idx in targeted {
-                if let Some(rule) = self.rules.get(idx) {
-                    rule.run(&kind, &mut self.ctx);
+                if self.active.get(idx).copied().unwrap_or(false) {
+                    if let Some(rule) = self.rules.get(idx) {
+                        rule.run(&kind, &mut self.ctx);
+                    }
                 }
             }
         }
 
         for &idx in &self.table.enter_all {
-            if let Some(rule) = self.rules.get(idx) {
-                rule.run(&kind, &mut self.ctx);
+            if self.active.get(idx).copied().unwrap_or(false) {
+                if let Some(rule) = self.rules.get(idx) {
+                    rule.run(&kind, &mut self.ctx);
+                }
             }
         }
     }
@@ -299,15 +314,19 @@ impl<'a> Visit<'a> for SessionDispatchVisitor<'a, '_> {
 
         if let Some(targeted) = self.table.leave.get(ty) {
             for &idx in targeted {
-                if let Some(rule) = self.rules.get(idx) {
-                    rule.leave(&kind, &mut self.ctx);
+                if self.active.get(idx).copied().unwrap_or(false) {
+                    if let Some(rule) = self.rules.get(idx) {
+                        rule.leave(&kind, &mut self.ctx);
+                    }
                 }
             }
         }
 
         for &idx in &self.table.leave_all {
-            if let Some(rule) = self.rules.get(idx) {
-                rule.leave(&kind, &mut self.ctx);
+            if self.active.get(idx).copied().unwrap_or(false) {
+                if let Some(rule) = self.rules.get(idx) {
+                    rule.leave(&kind, &mut self.ctx);
+                }
             }
         }
     }

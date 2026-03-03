@@ -38,6 +38,12 @@ impl NativeRule for NoAbusiveEslintDisable {
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
         let source = ctx.source_text();
+
+        // Early exit: skip files without any eslint-disable comment.
+        if !source.contains("eslint-disable") {
+            return;
+        }
+
         let findings = find_abusive_disables(source);
 
         for span in findings {

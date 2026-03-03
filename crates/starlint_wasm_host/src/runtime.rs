@@ -62,6 +62,7 @@ impl Default for ResourceLimits {
 mod host {
     use std::collections::HashSet;
     use std::path::Path;
+    use std::sync::OnceLock;
 
     use globset::{Glob, GlobSet, GlobSetBuilder};
     use oxc_ast::ast::Program;
@@ -116,18 +117,38 @@ mod host {
         limits: ResourceLimits,
     }
 
-    impl WasmPluginHost {
-        /// Create a new WASM plugin host with the given resource limits.
-        pub fn new(limits: ResourceLimits) -> Result<Self, WasmError> {
+    /// Return a process-wide shared wasmtime `Engine`.
+    ///
+    /// wasmtime recommends sharing a single `Engine` across the process.
+    /// `Engine::clone()` is a cheap `Arc` refcount bump.
+    ///
+    /// Uses the Winch baseline compiler instead of Cranelift to avoid
+    /// a Cranelift JIT bug that causes SIGSEGV under concurrent
+    /// compilation (observed with nextest's per-test process model).
+    /// Winch compiles faster and produces correct code; the slight
+    /// runtime overhead is negligible for lint-rule workloads.
+    fn shared_engine() -> Result<Engine, WasmError> {
+        static ENGINE: OnceLock<Result<Engine, String>> = OnceLock::new();
+        let result = ENGINE.get_or_init(|| {
             let mut config = wasmtime::Config::new();
             config.consume_fuel(true);
             config.wasm_component_model(true);
-
-            let engine = Engine::new(&config).map_err(|err| WasmError::CompileFailed {
+            config.strategy(wasmtime::Strategy::Winch);
+            Engine::new(&config).map_err(|err| err.to_string())
+        });
+        match result {
+            Ok(engine) => Ok(engine.clone()),
+            Err(reason) => Err(WasmError::CompileFailed {
                 path: "<engine>".to_owned(),
-                reason: err.to_string(),
-            })?;
+                reason: reason.clone(),
+            }),
+        }
+    }
 
+    impl WasmPluginHost {
+        /// Create a new WASM plugin host with the given resource limits.
+        pub fn new(limits: ResourceLimits) -> Result<Self, WasmError> {
+            let engine = shared_engine()?;
             let linker = Linker::new(&engine);
 
             Ok(Self {

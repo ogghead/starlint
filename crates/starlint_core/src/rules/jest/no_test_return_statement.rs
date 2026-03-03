@@ -18,6 +18,10 @@ const RULE_NAME: &str = "jest/no-test-return-statement";
 pub struct NoTestReturnStatement;
 
 impl NativeRule for NoTestReturnStatement {
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("test(") || source_text.contains("it(")
+    }
+
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),

@@ -57,6 +57,10 @@ fn ref_param_is_used(params: &FormalParameters<'_>, source: &str) -> bool {
 }
 
 impl NativeRule for ForwardRefUsesRef {
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("forwardRef")
+    }
+
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/forward-ref-uses-ref".to_owned(),

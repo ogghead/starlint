@@ -10,26 +10,24 @@ use crate::rule::{NativeLintContext, NativeRule};
 #[derive(Debug)]
 pub struct MatchDescription;
 
-/// Extract the main description from a `JSDoc` block (text before the first tag).
-fn extract_description(block: &str) -> Option<String> {
-    let mut desc_lines = Vec::new();
+/// Check whether the first alphabetic character of the `JSDoc` description
+/// (text before the first tag) is lowercase.  Returns `true` when the
+/// description starts with a lowercase letter.  Avoids allocating by
+/// inspecting characters in-place.
+fn description_starts_lowercase(block: &str) -> bool {
     for line in block.lines() {
         let trimmed = super::trim_jsdoc_line(line);
-        // Skip empty lines
         if trimmed.is_empty() {
             continue;
         }
-        // Stop at first tag
         if trimmed.starts_with('@') {
-            break;
+            return false;
         }
-        desc_lines.push(trimmed.to_owned());
+        // Found the first description line — check first char.
+        let first = trimmed.chars().next().unwrap_or_default();
+        return first.is_alphabetic() && !first.is_uppercase();
     }
-    if desc_lines.is_empty() {
-        None
-    } else {
-        Some(desc_lines.join(" "))
-    }
+    false
 }
 
 impl NativeRule for MatchDescription {
@@ -48,33 +46,44 @@ impl NativeRule for MatchDescription {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let source = ctx.source_text().to_owned();
+        // Collect violation spans while source is borrowed, then report.
+        let violations = {
+            let source = ctx.source_text();
 
-        let mut pos = 0;
-        while let Some(start) = source.get(pos..).and_then(|s| s.find("/**")) {
-            let abs_start = pos.saturating_add(start);
-            let search_from = abs_start.saturating_add(3);
-            if let Some(end) = source.get(search_from..).and_then(|s| s.find("*/")) {
-                let abs_end = search_from.saturating_add(end).saturating_add(2);
-                let block = source.get(abs_start..abs_end).unwrap_or_default();
+            // Early exit: no JSDoc blocks at all.
+            if !source.contains("/**") {
+                return;
+            }
 
-                if let Some(desc) = extract_description(block) {
-                    let first_char = desc.chars().next().unwrap_or_default();
-                    if first_char.is_alphabetic() && !first_char.is_uppercase() {
+            let mut spans: Vec<Span> = Vec::new();
+            let mut pos = 0;
+            while let Some(start) = source.get(pos..).and_then(|s| s.find("/**")) {
+                let abs_start = pos.saturating_add(start);
+                let search_from = abs_start.saturating_add(3);
+                if let Some(end) = source.get(search_from..).and_then(|s| s.find("*/")) {
+                    let abs_end = search_from.saturating_add(end).saturating_add(2);
+                    let block = source.get(abs_start..abs_end).unwrap_or_default();
+
+                    if description_starts_lowercase(block) {
                         let span_start = u32::try_from(abs_start).unwrap_or(0);
                         let span_end = u32::try_from(abs_end).unwrap_or(span_start);
-                        ctx.report_warning(
-                            "jsdoc/match-description",
-                            "JSDoc description should start with an uppercase letter",
-                            Span::new(span_start, span_end),
-                        );
+                        spans.push(Span::new(span_start, span_end));
                     }
-                }
 
-                pos = abs_end;
-            } else {
-                break;
+                    pos = abs_end;
+                } else {
+                    break;
+                }
             }
+            spans
+        };
+
+        for span in violations {
+            ctx.report_warning(
+                "jsdoc/match-description",
+                "JSDoc description should start with an uppercase letter",
+                span,
+            );
         }
     }
 }

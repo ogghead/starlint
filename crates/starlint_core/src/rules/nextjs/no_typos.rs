@@ -68,24 +68,48 @@ impl NativeRule for NoTypos {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let source = ctx.source_text().to_owned();
+        // Collect violations while source is borrowed, then report afterwards.
+        let violations = {
+            let source = ctx.source_text();
 
-        for (correct, typos) in TYPO_PAIRS {
-            for typo in *typos {
-                // Find all occurrences of the typo in source
-                let mut search_start = 0;
-                while let Some(pos) = source.get(search_start..).and_then(|s| s.find(typo)) {
-                    let abs_pos = search_start.saturating_add(pos);
-                    let start = u32::try_from(abs_pos).unwrap_or(0);
-                    let end = u32::try_from(abs_pos.saturating_add(typo.len())).unwrap_or(0);
-                    ctx.report_error(
-                        RULE_NAME,
-                        &format!("`{typo}` is a typo -- did you mean `{correct}`?"),
-                        Span::new(start, end),
-                    );
-                    search_start = abs_pos.saturating_add(typo.len());
+            // Early exit: skip files that don't contain any relevant prefix.
+            // All typos start with one of these case variations.
+            if !source.contains("getStatic")
+                && !source.contains("getstatic")
+                && !source.contains("getStatc")
+                && !source.contains("getServer")
+                && !source.contains("getserver")
+            {
+                return;
+            }
+
+            let mut hits: Vec<(&str, &str, Span)> = Vec::new();
+
+            for (correct, typos) in TYPO_PAIRS {
+                for typo in *typos {
+                    let mut search_start = 0;
+                    while let Some(pos) =
+                        source.get(search_start..).and_then(|s| s.find(typo))
+                    {
+                        let abs_pos = search_start.saturating_add(pos);
+                        let start = u32::try_from(abs_pos).unwrap_or(0);
+                        let end =
+                            u32::try_from(abs_pos.saturating_add(typo.len())).unwrap_or(0);
+                        hits.push((typo, correct, Span::new(start, end)));
+                        search_start = abs_pos.saturating_add(typo.len());
+                    }
                 }
             }
+
+            hits
+        };
+
+        for (typo, correct, span) in violations {
+            ctx.report_error(
+                RULE_NAME,
+                &format!("`{typo}` is a typo -- did you mean `{correct}`?"),
+                span,
+            );
         }
     }
 }

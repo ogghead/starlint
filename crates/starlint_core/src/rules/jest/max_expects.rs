@@ -53,6 +53,12 @@ impl NativeRule for MaxExpects {
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
         let violations = {
             let source = ctx.source_text();
+
+            // Early exit: skip files without test calls.
+            if !source.contains("it(") && !source.contains("test(") {
+                return;
+            }
+
             let test_names = ["it(", "test("];
             let mut violations: Vec<(usize, Span)> = Vec::new();
 
