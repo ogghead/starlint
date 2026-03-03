@@ -717,6 +717,7 @@ const BUILTIN_PLUGIN_PREFIXES: &[(&str, &[&str])] = &[
     ("import", &["import/"]),
     ("node", &["node/"]),
     ("promise", &["promise/"]),
+    ("modules", &["import/", "node/", "promise/"]),
     ("jsdoc", &["jsdoc/"]),
     ("typescript", &["typescript/"]),
 ];

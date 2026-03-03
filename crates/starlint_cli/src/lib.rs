@@ -113,11 +113,11 @@ pub fn run() -> miette::Result<ExitStatus> {
         .with_override_set(override_set)
         .with_disabled_rules(configured.disabled_rules);
 
-    // Load WASM plugins if configured and not disabled.
-    if !args.no_plugins && !config.plugins.is_empty() {
-        match build_plugin_host(&config.plugins) {
+    // Load WASM plugins: builtin plugins + explicit [[plugins]] declarations.
+    if !args.no_plugins && (!active_builtins.is_empty() || !config.plugins.is_empty()) {
+        match build_plugin_host(&config.plugins, &active_builtins) {
             Ok(host) => {
-                tracing::debug!("loaded {} WASM plugin(s)", config.plugins.len());
+                tracing::debug!("loaded {} WASM plugin(s)", host.plugin_count());
                 session = session.with_plugin_host(Box::new(host));
             }
             Err(err) => {
@@ -328,12 +328,21 @@ fn print_timing(
     );
 }
 
-/// Build a WASM plugin host and load all configured plugins.
+/// Build a WASM plugin host with builtin and explicit plugins.
+///
+/// Loads active builtin plugins (embedded WASM) first, then any explicit
+/// `[[plugins]]` declarations from the config file.
 fn build_plugin_host(
     plugins: &[starlint_config::PluginDeclaration],
+    active_builtins: &std::collections::HashSet<String>,
 ) -> std::result::Result<starlint_wasm_host::runtime::WasmPluginHost, Box<dyn std::error::Error>> {
-    let pairs: Vec<_> = plugins.iter().map(|p| (p.path.as_path(), "")).collect();
-    starlint_wasm_host::runtime::WasmPluginHost::with_plugins(&pairs)
+    let mut host =
+        starlint_wasm_host::runtime::WasmPluginHost::new(starlint_wasm_host::runtime::ResourceLimits::default())?;
+    host.load_builtins(active_builtins)?;
+    for p in plugins {
+        host.load_plugin(&p.path, "")?;
+    }
+    Ok(host)
 }
 
 /// Atomic counter for unique temp file names within a process.
@@ -366,9 +375,22 @@ fn run_init() -> Result<(), error::CliError> {
 [settings]
 threads = 0  # 0 = auto-detect
 
+# Enable bundled WASM plugins to replace native framework rules.
+# When enabled, native rules for that category are excluded automatically.
+# [builtin_plugins]
+# react = true       # react + jsx-a11y + react-perf
+# testing = true     # jest + vitest
+# typescript = true  # typescript
+# storybook = true
+# modules = true     # import + node + promise
+# nextjs = true
+# vue = true
+# jsdoc = true
+
+# External WASM plugins (loaded from disk).
 # [[plugins]]
-# name = "storybook"
-# path = "./plugins/starlint-plugin-storybook.wasm"
+# name = "my-plugin"
+# path = "./plugins/my-plugin.wasm"
 
 # Note: Adding any rule here disables all other built-in rules not listed.
 # To keep all defaults, leave the [rules] section empty.

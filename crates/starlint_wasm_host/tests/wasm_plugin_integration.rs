@@ -15,6 +15,8 @@ use std::path::Path;
 
 use oxc_allocator::Allocator;
 
+use std::collections::HashSet;
+
 use starlint_core::parser::parse_file;
 use starlint_core::plugin::PluginHost;
 use starlint_wasm_host::runtime::{ResourceLimits, WasmPluginHost};
@@ -1392,5 +1394,147 @@ fn test_typescript_file_pattern_skip() {
     assert!(
         diags.is_empty(),
         "typescript plugin should skip .js files, got: {diags:?}"
+    );
+}
+
+// ============================================================
+// Builtin plugin auto-loading tests
+// ============================================================
+
+#[test]
+fn test_load_builtin_storybook() {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
+    let active: HashSet<String> = ["storybook".to_owned()].into_iter().collect();
+    host.load_builtins(&active).expect("load builtins");
+    assert_eq!(host.plugin_count(), 1, "should load exactly 1 builtin plugin");
+
+    // Lint a story file — should produce diagnostics.
+    let allocator = Allocator::default();
+    let source = "export const foo = {};";
+    let path = Path::new("Button.stories.tsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        !diags.is_empty(),
+        "storybook builtin should produce diagnostics for a story file"
+    );
+}
+
+#[test]
+fn test_load_builtin_react() {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
+    let active: HashSet<String> = ["react".to_owned()].into_iter().collect();
+    host.load_builtins(&active).expect("load builtins");
+    assert_eq!(host.plugin_count(), 1);
+
+    let allocator = Allocator::default();
+    let source = r#"import React from "react"; function App() { return <img />; }"#;
+    let path = Path::new("App.tsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+    let diags = host.lint_file(path, source, &parsed.program);
+    let rule_names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        rule_names.iter().any(|r| r.starts_with("react/") || r.starts_with("jsx-a11y/")),
+        "react builtin should produce react/ or jsx-a11y/ diagnostics, got: {rule_names:?}"
+    );
+}
+
+#[test]
+fn test_load_builtin_modules_dedup() {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
+    // All three config names map to the same "modules" WASM plugin.
+    let active: HashSet<String> = [
+        "import".to_owned(),
+        "node".to_owned(),
+        "promise".to_owned(),
+    ]
+    .into_iter()
+    .collect();
+    host.load_builtins(&active).expect("load builtins");
+    assert_eq!(
+        host.plugin_count(),
+        1,
+        "import+node+promise should load only 1 modules plugin, not 3"
+    );
+}
+
+#[test]
+fn test_load_builtin_modules_single_name() {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
+    let active: HashSet<String> = ["modules".to_owned()].into_iter().collect();
+    host.load_builtins(&active).expect("load builtins");
+    assert_eq!(
+        host.plugin_count(),
+        1,
+        "modules config name should load the modules plugin"
+    );
+}
+
+#[test]
+fn test_load_builtin_unknown_ignored() {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
+    let active: HashSet<String> = ["nonexistent".to_owned()].into_iter().collect();
+    // Unknown names are silently skipped (no error).
+    host.load_builtins(&active).expect("load builtins");
+    assert_eq!(
+        host.plugin_count(),
+        0,
+        "unknown builtin name should load 0 plugins"
+    );
+}
+
+#[test]
+fn test_load_multiple_builtins() {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
+    let active: HashSet<String> = [
+        "storybook".to_owned(),
+        "react".to_owned(),
+        "typescript".to_owned(),
+    ]
+    .into_iter()
+    .collect();
+    host.load_builtins(&active).expect("load builtins");
+    assert_eq!(
+        host.plugin_count(),
+        3,
+        "should load 3 distinct builtin plugins"
+    );
+}
+
+#[test]
+fn test_load_all_builtins() {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
+    let active: HashSet<String> = [
+        "storybook".to_owned(),
+        "testing".to_owned(),
+        "react".to_owned(),
+        "modules".to_owned(),
+        "nextjs".to_owned(),
+        "vue".to_owned(),
+        "jsdoc".to_owned(),
+        "typescript".to_owned(),
+    ]
+    .into_iter()
+    .collect();
+    host.load_builtins(&active).expect("load all builtins");
+    assert_eq!(
+        host.plugin_count(),
+        8,
+        "should load all 8 builtin plugins"
+    );
+}
+
+#[test]
+fn test_builtins_plus_explicit_plugin() {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
+    let active: HashSet<String> = ["storybook".to_owned()].into_iter().collect();
+    host.load_builtins(&active).expect("load builtins");
+    // Also load an explicit plugin on top.
+    host.load_plugin(Path::new(EXAMPLE_PLUGIN), "")
+        .expect("load explicit plugin");
+    assert_eq!(
+        host.plugin_count(),
+        2,
+        "should have 1 builtin + 1 explicit plugin"
     );
 }

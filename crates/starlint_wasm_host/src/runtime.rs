@@ -60,6 +60,7 @@ impl Default for ResourceLimits {
 #[cfg(feature = "wasm")]
 /// WASM host implementation with wasmtime engine, plugin loading, and linting.
 mod host {
+    use std::collections::HashSet;
     use std::path::Path;
 
     use globset::{Glob, GlobSet, GlobSetBuilder};
@@ -75,6 +76,7 @@ mod host {
     use super::bindings::LinterPluginPre;
     use super::bindings::starlint::plugin::types as wit;
     use crate::bridge::{NodeInterest, WitAstNode};
+    use crate::builtins;
     use crate::collector::NodeCollector;
     use crate::error::WasmError;
 
@@ -163,43 +165,101 @@ mod host {
                 reason: err.to_string(),
             })?;
 
-            let component =
-                Component::new(&self.engine, &bytes).map_err(|err| WasmError::CompileFailed {
-                    path: path.display().to_string(),
-                    reason: err.to_string(),
-                })?;
+            let plugin_name = plugin_name_from_path(path);
+            self.load_plugin_bytes(&plugin_name, &bytes, config_json)
+        }
 
-            let instance_pre = self.linker.instantiate_pre(&component).map_err(|err| {
+        /// Load a WASM component plugin from raw bytes.
+        ///
+        /// Same as [`load_plugin`](Self::load_plugin) but takes pre-read WASM bytes
+        /// instead of a file path. Used by the builtin plugin system to load
+        /// embedded WASM plugins without disk I/O.
+        pub fn load_plugin_from_bytes(
+            &mut self,
+            name: &str,
+            bytes: &[u8],
+            config_json: &str,
+        ) -> Result<(), WasmError> {
+            self.load_plugin_bytes(name, bytes, config_json)
+        }
+
+        /// Shared implementation for loading a plugin from raw WASM bytes.
+        fn load_plugin_bytes(
+            &mut self,
+            plugin_name: &str,
+            bytes: &[u8],
+            config_json: &str,
+        ) -> Result<(), WasmError> {
+            let component = Component::new(&self.engine, bytes).map_err(|err| {
                 WasmError::CompileFailed {
-                    path: path.display().to_string(),
+                    path: plugin_name.to_owned(),
                     reason: err.to_string(),
                 }
             })?;
 
-            let pre =
-                LinterPluginPre::new(instance_pre).map_err(|err| WasmError::CompileFailed {
-                    path: path.display().to_string(),
+            let instance_pre =
+                self.linker
+                    .instantiate_pre(&component)
+                    .map_err(|err| WasmError::CompileFailed {
+                        path: plugin_name.to_owned(),
+                        reason: err.to_string(),
+                    })?;
+
+            let pre = LinterPluginPre::new(instance_pre).map_err(|err| {
+                WasmError::CompileFailed {
+                    path: plugin_name.to_owned(),
                     reason: err.to_string(),
-                })?;
+                }
+            })?;
 
             // Query metadata from the plugin using a temporary store.
-            let plugin_name = plugin_name_from_path(path);
             let (interests, file_patterns, _rules) =
-                query_plugin_metadata(&pre, &self.engine, &plugin_name, &self.limits)?;
+                query_plugin_metadata(&pre, &self.engine, plugin_name, &self.limits)?;
 
             // Validate config eagerly (in a throwaway store) so load_plugin fails fast.
             // The config is then re-applied per-file in the same store as linting.
             if !config_json.is_empty() {
-                validate_config(&pre, &self.engine, &plugin_name, config_json, &self.limits)?;
+                validate_config(&pre, &self.engine, plugin_name, config_json, &self.limits)?;
             }
 
             self.plugins.push(LoadedPlugin {
                 pre,
                 interests,
                 file_patterns,
-                name: plugin_name,
+                name: plugin_name.to_owned(),
                 config_json: config_json.to_owned(),
             });
+
+            Ok(())
+        }
+
+        /// Return the number of loaded plugins.
+        ///
+        /// Useful for verifying deduplication in tests.
+        #[must_use]
+        pub fn plugin_count(&self) -> usize {
+            self.plugins.len()
+        }
+
+        /// Load all active builtin plugins from embedded WASM bytes.
+        ///
+        /// Deduplicates automatically: `import`, `node`, and `promise` all map
+        /// to the single `modules` plugin, so enabling all three loads it once.
+        /// Unknown builtin names are silently skipped with a warning.
+        pub fn load_builtins(&mut self, active: &HashSet<String>) -> Result<(), WasmError> {
+            // Deduplicate config names → WASM plugin names.
+            let wasm_names: HashSet<&str> = active
+                .iter()
+                .filter_map(|name| builtins::config_to_wasm_name(name))
+                .collect();
+
+            for wasm_name in wasm_names {
+                if let Some(bytes) = builtins::get_builtin_bytes(wasm_name) {
+                    self.load_plugin_from_bytes(wasm_name, bytes, "")?;
+                } else {
+                    tracing::warn!("unknown builtin plugin: {wasm_name}");
+                }
+            }
 
             Ok(())
         }

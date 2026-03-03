@@ -94,11 +94,11 @@ impl Backend {
                 .with_override_set(override_set)
                 .with_disabled_rules(configured.disabled_rules);
 
-            // Load WASM plugins if configured.
-            if !config.plugins.is_empty() {
-                match build_plugin_host(&config.plugins) {
+            // Load WASM plugins: builtin plugins + explicit [[plugins]] declarations.
+            if !active_builtins.is_empty() || !config.plugins.is_empty() {
+                match build_plugin_host(&config.plugins, &active_builtins) {
                     Ok(host) => {
-                        tracing::info!("LSP: loaded {} WASM plugin(s)", config.plugins.len());
+                        tracing::info!("LSP: loaded {} WASM plugin(s)", host.plugin_count());
                         session = session.with_plugin_host(Box::new(host));
                     }
                     Err(err) => {
@@ -164,12 +164,18 @@ impl Backend {
     }
 }
 
-/// Build a WASM plugin host from config plugin declarations.
+/// Build a WASM plugin host with builtin and explicit plugins.
 fn build_plugin_host(
     plugins: &[starlint_config::PluginDeclaration],
+    active_builtins: &std::collections::HashSet<String>,
 ) -> std::result::Result<starlint_wasm_host::runtime::WasmPluginHost, Box<dyn std::error::Error>> {
-    let pairs: Vec<_> = plugins.iter().map(|p| (p.path.as_path(), "")).collect();
-    starlint_wasm_host::runtime::WasmPluginHost::with_plugins(&pairs)
+    let mut host =
+        starlint_wasm_host::runtime::WasmPluginHost::new(starlint_wasm_host::runtime::ResourceLimits::default())?;
+    host.load_builtins(active_builtins)?;
+    for p in plugins {
+        host.load_plugin(&p.path, "")?;
+    }
+    Ok(host)
 }
 
 /// Convert a `Url` to a `PathBuf`, falling back to the URL path on error.
