@@ -72,8 +72,7 @@ impl LintSession {
             .filter(|(_, r)| !r.needs_traversal())
             .map(|(i, _)| i)
             .collect();
-        let dispatch_table =
-            DispatchTable::build_from_indices(&native_rules, &traversal_indices);
+        let dispatch_table = DispatchTable::build_from_indices(&native_rules, &traversal_indices);
 
         Self {
             native_rules,

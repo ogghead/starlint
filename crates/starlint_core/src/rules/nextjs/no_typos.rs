@@ -88,13 +88,10 @@ impl NativeRule for NoTypos {
             for (correct, typos) in TYPO_PAIRS {
                 for typo in *typos {
                     let mut search_start = 0;
-                    while let Some(pos) =
-                        source.get(search_start..).and_then(|s| s.find(typo))
-                    {
+                    while let Some(pos) = source.get(search_start..).and_then(|s| s.find(typo)) {
                         let abs_pos = search_start.saturating_add(pos);
                         let start = u32::try_from(abs_pos).unwrap_or(0);
-                        let end =
-                            u32::try_from(abs_pos.saturating_add(typo.len())).unwrap_or(0);
+                        let end = u32::try_from(abs_pos.saturating_add(typo.len())).unwrap_or(0);
                         hits.push((typo, correct, Span::new(start, end)));
                         search_start = abs_pos.saturating_add(typo.len());
                     }
