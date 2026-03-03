@@ -1231,4 +1231,166 @@ fn test_jsdoc_match_description() {
     );
 }
 
+// ---- TypeScript plugin integration tests ----
 
+/// Path to the pre-built typescript plugin component.
+const TYPESCRIPT_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/typescript-plugin.wasm"
+);
+
+fn host_with_typescript_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(TYPESCRIPT_PLUGIN), "")
+        .expect("should load typescript plugin");
+    host
+}
+
+#[test]
+fn test_load_typescript_plugin() {
+    let host = host_with_typescript_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_typescript_ban_ts_comment() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "// @ts-ignore\nconst x = 42;";
+    let path = Path::new("index.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"typescript/ban-ts-comment") || names.contains(&"typescript/prefer-ts-expect-error"),
+        "should flag @ts-ignore, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_typescript_no_explicit_any() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "function process(data: any) { return data; }";
+    let path = Path::new("utils.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"typescript/no-explicit-any"),
+        "should flag : any, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_typescript_no_var_requires() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "const fs = require('fs');";
+    let path = Path::new("legacy.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"typescript/no-var-requires"),
+        "should flag require(), got: {names:?}"
+    );
+}
+
+#[test]
+fn test_typescript_no_empty_interface() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "interface Foo {}";
+    let path = Path::new("types.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"typescript/no-empty-interface"),
+        "should flag empty interface, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_typescript_triple_slash_reference() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "/// <reference path=\"global.d.ts\" />\nconst x = 1;";
+    let path = Path::new("app.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"typescript/triple-slash-reference"),
+        "should flag /// <reference>, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_typescript_no_unsafe_declaration_merging() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "interface Foo { x: number; }\nclass Foo { y: string = ''; }";
+    let path = Path::new("merge.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"typescript/no-unsafe-declaration-merging"),
+        "should flag interface+class merging, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_typescript_prefer_includes() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "const found = arr.indexOf(item);";
+    let path = Path::new("search.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"typescript/prefer-includes"),
+        "should flag .indexOf(), got: {names:?}"
+    );
+}
+
+#[test]
+fn test_typescript_require_sort_compare() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "const sorted = items.sort();";
+    let path = Path::new("sort.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"typescript/require-array-sort-compare"),
+        "should flag .sort() without comparator, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_typescript_file_pattern_skip() {
+    let host = host_with_typescript_plugin();
+    let allocator = Allocator::default();
+    let source = "const x: any = 42;";
+    let path = Path::new("script.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "typescript plugin should skip .js files, got: {diags:?}"
+    );
+}
