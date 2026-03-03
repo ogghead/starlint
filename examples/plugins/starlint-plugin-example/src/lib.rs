@@ -38,6 +38,11 @@ impl Guest for ExamplePlugin {
         NodeInterest::DEBUGGER_STATEMENT | NodeInterest::IMPORT_DECLARATION
     }
 
+    fn get_file_patterns() -> Vec<String> {
+        // Empty = match all files (this example plugin has no file scope restriction).
+        Vec::new()
+    }
+
     fn configure(_config: PluginConfig) -> Vec<String> {
         Vec::new()
     }

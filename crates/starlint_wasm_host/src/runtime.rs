@@ -62,6 +62,7 @@ impl Default for ResourceLimits {
 mod host {
     use std::path::Path;
 
+    use globset::{Glob, GlobSet, GlobSetBuilder};
     use oxc_ast::ast::Program;
     use oxc_ast_visit::Visit;
     use wasmtime::component::{Component, Linker};
@@ -89,6 +90,9 @@ mod host {
         pre: LinterPluginPre<HostData>,
         /// Cached node interests from `get-node-interests()`.
         interests: NodeInterest,
+        /// Cached file-pattern filter from `get-file-patterns()`.
+        /// `None` means the plugin applies to all files.
+        file_patterns: Option<GlobSet>,
         /// Plugin name (derived from filename).
         name: String,
         /// Plugin configuration JSON (applied per-file in the same store as linting).
@@ -180,7 +184,7 @@ mod host {
 
             // Query metadata from the plugin using a temporary store.
             let plugin_name = plugin_name_from_path(path);
-            let (interests, _rules) =
+            let (interests, file_patterns, _rules) =
                 query_plugin_metadata(&pre, &self.engine, &plugin_name, &self.limits)?;
 
             // Validate config eagerly (in a throwaway store) so load_plugin fails fast.
@@ -192,6 +196,7 @@ mod host {
             self.plugins.push(LoadedPlugin {
                 pre,
                 interests,
+                file_patterns,
                 name: plugin_name,
                 config_json: config_json.to_owned(),
             });
@@ -253,13 +258,13 @@ mod host {
             .to_owned()
     }
 
-    /// Query a plugin's rules and node interests using a temporary store.
+    /// Query a plugin's rules, node interests, and file patterns using a temporary store.
     fn query_plugin_metadata(
         pre: &LinterPluginPre<HostData>,
         engine: &Engine,
         plugin_name: &str,
         limits: &ResourceLimits,
-    ) -> Result<(NodeInterest, Vec<wit::RuleMeta>), WasmError> {
+    ) -> Result<(NodeInterest, Option<GlobSet>, Vec<wit::RuleMeta>), WasmError> {
         let mut store = create_store(engine, limits);
         let instance = pre
             .instantiate(&mut store)
@@ -285,9 +290,49 @@ mod host {
                 reason: err.to_string(),
             })?;
 
-        let interests = wit_interests_to_bridge(interests_wit);
+        let file_patterns_raw =
+            guest
+                .call_get_file_patterns(&mut store)
+                .map_err(|err| WasmError::RuntimeError {
+                    plugin_name: plugin_name.to_owned(),
+                    reason: err.to_string(),
+                })?;
 
-        Ok((interests, rules))
+        let interests = wit_interests_to_bridge(interests_wit);
+        let file_patterns = compile_file_patterns(&file_patterns_raw, plugin_name);
+
+        Ok((interests, file_patterns, rules))
+    }
+
+    /// Compile glob patterns from a plugin into a `GlobSet`.
+    /// Returns `None` if the pattern list is empty (matches all files).
+    fn compile_file_patterns(patterns: &[String], plugin_name: &str) -> Option<GlobSet> {
+        if patterns.is_empty() {
+            return None;
+        }
+
+        let mut builder = GlobSetBuilder::new();
+        for pattern in patterns {
+            match Glob::new(pattern) {
+                Ok(glob) => {
+                    builder.add(glob);
+                }
+                Err(err) => {
+                    tracing::warn!(
+                        "plugin '{plugin_name}': invalid file pattern '{pattern}': {err}"
+                    );
+                }
+            }
+        }
+
+        match builder.build() {
+            Ok(set) if !set.is_empty() => Some(set),
+            Ok(_) => None,
+            Err(err) => {
+                tracing::warn!("plugin '{plugin_name}': failed to compile file patterns: {err}");
+                None
+            }
+        }
     }
 
     /// Validate plugin config eagerly so `load_plugin` fails fast on bad config.
@@ -337,6 +382,13 @@ mod host {
         source_text: &str,
         program: &Program<'_>,
     ) -> Result<Vec<Diagnostic>, WasmError> {
+        // Skip if plugin declares file patterns and this file doesn't match.
+        if let Some(ref patterns) = plugin.file_patterns {
+            if !patterns.is_match(file_path) {
+                return Ok(Vec::new());
+            }
+        }
+
         // Skip if plugin has no relevant interests.
         if !plugin.interests.any() {
             return Ok(Vec::new());
@@ -423,6 +475,7 @@ mod host {
             object_expression: wit.contains(wit::NodeInterest::OBJECT_EXPRESSION),
             array_expression: wit.contains(wit::NodeInterest::ARRAY_EXPRESSION),
             debugger_statement: wit.contains(wit::NodeInterest::DEBUGGER_STATEMENT),
+            jsx_opening_element: wit.contains(wit::NodeInterest::JSX_OPENING_ELEMENT),
         }
     }
 
@@ -543,6 +596,21 @@ mod host {
                 span: to_wit_span(arr.span),
                 element_count: arr.element_count,
             }),
+            WitAstNode::JsxElement(el) => wit::AstNode::JsxElement(wit::JsxOpeningElementNode {
+                span: to_wit_span(el.span),
+                name: el.name.clone(),
+                attributes: el
+                    .attributes
+                    .iter()
+                    .map(|a| wit::JsxAttribute {
+                        name: a.name.clone(),
+                        value: a.value.clone(),
+                        is_spread: a.is_spread,
+                    })
+                    .collect(),
+                self_closing: el.self_closing,
+                children_count: el.children_count,
+            }),
         }
     }
 
@@ -618,8 +686,8 @@ mod tests {
     fn test_bindings_types_exist() {
         // Verify the generated WIT types compile and are accessible.
         use bindings::starlint::plugin::types::{
-            AstNode, Category, FileContext, LintDiagnostic, NodeBatch, NodeInterest, RuleMeta,
-            Severity, Span,
+            AstNode, Category, FileContext, JsxAttribute, JsxOpeningElementNode, LintDiagnostic,
+            NodeBatch, NodeInterest, RuleMeta, Severity, Span,
         };
         use bindings::{LinterPlugin, LinterPluginPre};
         let _ = (
@@ -634,6 +702,8 @@ mod tests {
             core::any::type_name::<AstNode>(),
             core::any::type_name::<NodeBatch>(),
             core::any::type_name::<FileContext>(),
+            core::any::type_name::<JsxAttribute>(),
+            core::any::type_name::<JsxOpeningElementNode>(),
         );
     }
 }

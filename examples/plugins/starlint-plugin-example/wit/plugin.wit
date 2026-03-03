@@ -60,6 +60,7 @@ interface types {
         object-expression,
         array-expression,
         debugger-statement,
+        jsx-opening-element,
     }
 
     /// Simplified AST node representations for the WASM boundary.
@@ -77,6 +78,7 @@ interface types {
         string-lit(string-literal-node),
         object-expr(object-expression-node),
         array-expr(array-expression-node),
+        jsx-element(jsx-opening-element-node),
     }
 
     /// Import declaration.
@@ -178,6 +180,22 @@ interface types {
         element-count: u32,
     }
 
+    /// A JSX attribute (name/value pair or spread).
+    record jsx-attribute {
+        name: string,
+        value: option<string>,
+        is-spread: bool,
+    }
+
+    /// JSX opening element (collected from `<Tag ...>` or `<Tag ... />`).
+    record jsx-opening-element-node {
+        span: span,
+        name: string,
+        attributes: list<jsx-attribute>,
+        self-closing: bool,
+        children-count: u32,
+    }
+
     /// Context about the file being linted.
     record file-context {
         file-path: string,
@@ -203,6 +221,10 @@ interface plugin {
 
     /// Declare which AST node types this plugin needs.
     get-node-interests: func() -> node-interest;
+
+    /// Declare file-path glob patterns this plugin applies to.
+    /// Empty list = all files (default). Example: ["*.stories.*", "*.test.*"]
+    get-file-patterns: func() -> list<string>;
 
     /// Configure the plugin. Returns a list of validation errors (empty = OK).
     configure: func(config: plugin-config) -> list<string>;

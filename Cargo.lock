@@ -2180,6 +2180,7 @@ dependencies = [
 name = "starlint_wasm_host"
 version = "0.1.0"
 dependencies = [
+ "globset",
  "miette",
  "oxc_allocator",
  "oxc_ast",

@@ -15,6 +15,7 @@ wasm = ["dep:wasmtime"]
 starlint_plugin_sdk = { workspace = true }
 starlint_core = { workspace = true }
 
+globset = { workspace = true }
 miette = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
