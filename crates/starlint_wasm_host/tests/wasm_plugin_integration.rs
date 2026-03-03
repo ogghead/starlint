@@ -25,11 +25,25 @@ const EXAMPLE_PLUGIN: &str = concat!(
     "/../../tests/fixtures/plugins/example-plugin.wasm"
 );
 
+/// Path to the pre-built JSX example plugin component.
+const JSX_EXAMPLE_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/jsx-example-plugin.wasm"
+);
+
 /// Helper to create a host with the example plugin loaded.
 fn host_with_example_plugin() -> WasmPluginHost {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
     host.load_plugin(Path::new(EXAMPLE_PLUGIN), "")
         .expect("should load example plugin");
+    host
+}
+
+/// Helper to create a host with the JSX example plugin loaded.
+fn host_with_jsx_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(JSX_EXAMPLE_PLUGIN), "")
+        .expect("should load JSX example plugin");
     host
 }
 
@@ -178,5 +192,109 @@ fn test_fuel_exhaustion() {
     assert!(
         result.is_err(),
         "loading plugin with 1 fuel should fail during metadata query"
+    );
+}
+
+// ---- JSX plugin integration tests ----
+
+#[test]
+fn test_load_jsx_plugin() {
+    let host = host_with_jsx_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_jsx_img_missing_alt() {
+    let host = host_with_jsx_plugin();
+    let allocator = Allocator::default();
+    let source = r#"const el = <img src="photo.jpg" />;"#;
+    let path = Path::new("test.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert_eq!(diags.len(), 1, "should detect missing alt on img");
+
+    let first = diags.first().expect("should have a diagnostic");
+    assert_eq!(first.rule_name, "jsx-example/img-alt-text");
+    assert!(first.message.contains("alt"), "message should mention alt");
+}
+
+#[test]
+fn test_jsx_img_with_alt_ok() {
+    let host = host_with_jsx_plugin();
+    let allocator = Allocator::default();
+    let source = r#"const el = <img src="photo.jpg" alt="A photo" />;"#;
+    let path = Path::new("test.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "img with alt should not be flagged, got: {diags:?}"
+    );
+}
+
+#[test]
+fn test_jsx_img_with_spread_ok() {
+    let host = host_with_jsx_plugin();
+    let allocator = Allocator::default();
+    let source = r#"const el = <img src="photo.jpg" {...props} />;"#;
+    let path = Path::new("test.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "img with spread should not be flagged (spread may include alt), got: {diags:?}"
+    );
+}
+
+#[test]
+fn test_jsx_target_blank_without_noreferrer() {
+    let host = host_with_jsx_plugin();
+    let allocator = Allocator::default();
+    let source = r#"const el = <a href="https://example.com" target="_blank">Link</a>;"#;
+    let path = Path::new("test.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert_eq!(
+        diags.len(),
+        1,
+        "should detect target=_blank without noreferrer"
+    );
+
+    let first = diags.first().expect("should have a diagnostic");
+    assert_eq!(first.rule_name, "jsx-example/no-target-blank");
+}
+
+#[test]
+fn test_jsx_target_blank_with_noreferrer_ok() {
+    let host = host_with_jsx_plugin();
+    let allocator = Allocator::default();
+    let source =
+        r#"const el = <a href="https://example.com" target="_blank" rel="noreferrer">Link</a>;"#;
+    let path = Path::new("test.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "target=_blank with noreferrer should not be flagged, got: {diags:?}"
+    );
+}
+
+#[test]
+fn test_jsx_non_img_not_flagged() {
+    let host = host_with_jsx_plugin();
+    let allocator = Allocator::default();
+    let source = r#"const el = <div className="container"><span>Hello</span></div>;"#;
+    let path = Path::new("test.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "non-img elements should not be flagged, got: {diags:?}"
     );
 }

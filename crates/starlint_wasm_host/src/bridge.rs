@@ -37,6 +37,8 @@ pub struct NodeInterest {
     pub array_expression: bool,
     /// Debugger statements.
     pub debugger_statement: bool,
+    /// JSX opening elements.
+    pub jsx_opening_element: bool,
 }
 
 impl NodeInterest {
@@ -56,6 +58,7 @@ impl NodeInterest {
             || self.object_expression
             || self.array_expression
             || self.debugger_statement
+            || self.jsx_opening_element
     }
 
     /// Compute the union of two interest sets.
@@ -78,6 +81,7 @@ impl NodeInterest {
             object_expression: self.object_expression || other.object_expression,
             array_expression: self.array_expression || other.array_expression,
             debugger_statement: self.debugger_statement || other.debugger_statement,
+            jsx_opening_element: self.jsx_opening_element || other.jsx_opening_element,
         }
     }
 }
@@ -111,6 +115,8 @@ pub enum WitAstNode {
     ObjectExpr(ObjectExpressionNode),
     /// An array expression.
     ArrayExpr(ArrayExpressionNode),
+    /// A JSX opening element.
+    JsxElement(JsxOpeningElementNode),
 }
 
 /// Simplified import declaration for WASM plugins.
@@ -264,6 +270,32 @@ pub struct ArrayExpressionNode {
     pub span: Span,
     /// Number of elements.
     pub element_count: u32,
+}
+
+/// A JSX attribute (name/value pair or spread).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsxAttributeNode {
+    /// Attribute name (or `"<spread>"` for spread attributes).
+    pub name: String,
+    /// Attribute value as a string literal, or `None` for expressions/absent.
+    pub value: Option<String>,
+    /// Whether this is a spread attribute (`{...props}`).
+    pub is_spread: bool,
+}
+
+/// Simplified JSX opening element for WASM plugins.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct JsxOpeningElementNode {
+    /// Source span.
+    pub span: Span,
+    /// Element name (e.g. `"img"`, `"MyComponent"`, `"Ns:Tag"`).
+    pub name: String,
+    /// Attributes on the element.
+    pub attributes: Vec<JsxAttributeNode>,
+    /// Whether the element is self-closing (`<br />`).
+    pub self_closing: bool,
+    /// Number of children in the parent JSX element.
+    pub children_count: u32,
 }
 
 /// File context provided to WASM plugins.

@@ -685,7 +685,8 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(yoda::Yoda),
     ];
 
-    // Append prefixed plugin-category rules.
+    // Append prefixed plugin-category rules, skipping categories handled by
+    // active builtin plugins.
     rules.extend(import::category_rules());
     rules.extend(jest::category_rules());
     rules.extend(jsdoc::category_rules());
@@ -701,6 +702,49 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
     rules.extend(vue::category_rules());
 
     rules
+}
+
+/// Mapping from builtin plugin name to the native rule‐name prefixes it replaces.
+///
+/// When a builtin plugin is active, rules whose names start with any of these
+/// prefixes are excluded from `all_rules_excluding`.
+const BUILTIN_PLUGIN_PREFIXES: &[(&str, &[&str])] = &[
+    ("storybook", &["storybook/"]),
+    ("testing", &["jest/", "vitest/"]),
+    ("react", &["react/", "jsx-a11y/", "react-perf/"]),
+    ("nextjs", &["nextjs/"]),
+    ("vue", &["vue/"]),
+    ("import", &["import/"]),
+    ("node", &["node/"]),
+    ("promise", &["promise/"]),
+    ("jsdoc", &["jsdoc/"]),
+    ("typescript", &["typescript/"]),
+];
+
+/// Return all built-in native rules, excluding categories handled by active builtin plugins.
+///
+/// `active_builtins` is the set of builtin plugin names that are enabled.
+/// Rules whose names match an active plugin's prefixes are omitted.
+#[must_use]
+pub fn all_rules_excluding(active_builtins: &HashSet<String>) -> Vec<Box<dyn NativeRule>> {
+    if active_builtins.is_empty() {
+        return all_rules();
+    }
+
+    // Collect all prefixes to exclude.
+    let excluded_prefixes: Vec<&str> = BUILTIN_PLUGIN_PREFIXES
+        .iter()
+        .filter(|(name, _)| active_builtins.contains(*name))
+        .flat_map(|(_, prefixes)| prefixes.iter().copied())
+        .collect();
+
+    all_rules()
+        .into_iter()
+        .filter(|rule| {
+            let name = rule.meta().name;
+            !excluded_prefixes.iter().any(|prefix| name.starts_with(prefix))
+        })
+        .collect()
 }
 
 /// Return metadata for all built-in native rules.
@@ -744,12 +788,16 @@ pub struct ConfiguredRules {
 /// [`ConfiguredRules::disabled_rules`] — their diagnostics are suppressed
 /// by default and only activated for files matching an override pattern.
 ///
+/// `active_builtins` lists builtin plugin names whose corresponding native
+/// rules should be excluded (they will be handled by the WASM plugin instead).
+///
 /// Configured severities are returned in [`ConfiguredRules::severity_overrides`]
 /// so the engine can apply them to diagnostics.
 #[must_use]
 pub fn rules_for_config<S: ::std::hash::BuildHasher>(
     rule_configs: &HashMap<String, starlint_config::RuleConfig, S>,
     override_configs: &[starlint_config::Override],
+    active_builtins: &HashSet<String>,
 ) -> ConfiguredRules {
     // Collect rule names referenced in any override block.
     let override_rule_names: HashSet<String> = override_configs
@@ -759,13 +807,13 @@ pub fn rules_for_config<S: ::std::hash::BuildHasher>(
 
     if rule_configs.is_empty() {
         return ConfiguredRules {
-            rules: all_rules(),
+            rules: all_rules_excluding(active_builtins),
             severity_overrides: HashMap::new(),
             disabled_rules: HashSet::new(),
         };
     }
 
-    let available = all_rules();
+    let available = all_rules_excluding(active_builtins);
     let mut enabled: Vec<Box<dyn NativeRule>> = Vec::new();
     let mut severity_overrides: HashMap<String, Severity> = HashMap::new();
     let mut disabled_rules: HashSet<String> = HashSet::new();
@@ -908,7 +956,7 @@ mod tests {
     #[test]
     fn test_rules_for_empty_config() {
         let configs = HashMap::new();
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert!(
             configured.rules.len() >= 2,
             "empty config should return all default rules"
@@ -926,7 +974,7 @@ mod tests {
             "no-debugger".to_owned(),
             starlint_config::RuleConfig::Severity("error".to_owned()),
         );
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert_eq!(
             configured.rules.len(),
             1,
@@ -946,7 +994,7 @@ mod tests {
             "no-debugger".to_owned(),
             starlint_config::RuleConfig::Severity("off".to_owned()),
         );
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert!(
             configured.rules.is_empty(),
             "rule set to 'off' should not be enabled"
@@ -960,7 +1008,7 @@ mod tests {
             "no-debugger".to_owned(),
             starlint_config::RuleConfig::Severity("warn".to_owned()),
         );
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert_eq!(configured.rules.len(), 1, "should enable the rule");
         assert_eq!(
             configured.severity_overrides.get("no-debugger"),
@@ -977,7 +1025,7 @@ mod tests {
             "no-debugger".to_owned(),
             starlint_config::RuleConfig::Severity("error".to_owned()),
         );
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert!(
             configured.severity_overrides.is_empty(),
             "no override when severity matches default"
@@ -987,7 +1035,7 @@ mod tests {
     #[test]
     fn test_empty_overrides_no_disabled_rules() {
         let configs = HashMap::new();
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert!(
             configured.disabled_rules.is_empty(),
             "empty overrides should produce no disabled rules"
@@ -1010,7 +1058,7 @@ mod tests {
             ))
             .collect(),
         }];
-        let configured = rules_for_config(&configs, &overrides);
+        let configured = rules_for_config(&configs, &overrides, &HashSet::new());
 
         let names: Vec<String> = configured.rules.iter().map(|r| r.meta().name).collect();
         assert!(
@@ -1047,7 +1095,7 @@ mod tests {
             ))
             .collect(),
         }];
-        let configured = rules_for_config(&configs, &overrides);
+        let configured = rules_for_config(&configs, &overrides, &HashSet::new());
 
         assert_eq!(
             configured.rules.len(),
@@ -1068,7 +1116,7 @@ mod tests {
             "no-debugger".to_owned(),
             starlint_config::RuleConfig::Severity("off".to_owned()),
         );
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert!(
             configured.rules.is_empty(),
             "off rule with no override should be skipped"
@@ -1083,7 +1131,7 @@ mod tests {
             "node/*".to_owned(),
             starlint_config::RuleConfig::Severity("error".to_owned()),
         );
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         let names: Vec<String> = configured.rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.iter().any(|n| n.starts_with("node/")),
@@ -1108,7 +1156,7 @@ mod tests {
             "node/no-process-env".to_owned(),
             starlint_config::RuleConfig::Severity("off".to_owned()),
         );
-        let configured = rules_for_config(&configs, &[]);
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         let names: Vec<String> = configured.rules.iter().map(|r| r.meta().name).collect();
         assert!(
             !names.contains(&"node/no-process-env".to_owned()),
@@ -1135,6 +1183,54 @@ mod tests {
         assert!(
             metas.iter().any(|m| m.name.starts_with("node/")),
             "all_rule_metas should include node/ prefixed rules"
+        );
+    }
+
+    #[test]
+    fn test_all_rules_excluding_filters_by_builtin() {
+        let all = all_rules();
+        let has_jest = all.iter().any(|r| r.meta().name.starts_with("jest/"));
+        assert!(has_jest, "all_rules should include jest/ rules");
+
+        let mut active = HashSet::new();
+        active.insert("testing".to_owned());
+        let filtered = all_rules_excluding(&active);
+        let has_jest_after = filtered.iter().any(|r| r.meta().name.starts_with("jest/"));
+        let has_vitest_after = filtered
+            .iter()
+            .any(|r| r.meta().name.starts_with("vitest/"));
+        assert!(!has_jest_after, "jest/ rules should be excluded");
+        assert!(!has_vitest_after, "vitest/ rules should be excluded");
+        assert!(
+            filtered.len() < all.len(),
+            "excluding testing plugin should reduce rule count"
+        );
+        // Core rules should still be present.
+        assert!(
+            filtered.iter().any(|r| r.meta().name == "no-debugger"),
+            "core rules should remain"
+        );
+    }
+
+    #[test]
+    fn test_rules_for_config_with_active_builtin() {
+        let configs = HashMap::new();
+        let mut active = HashSet::new();
+        active.insert("react".to_owned());
+        let configured = rules_for_config(&configs, &[], &active);
+        assert!(
+            !configured
+                .rules
+                .iter()
+                .any(|r| r.meta().name.starts_with("react/")),
+            "react/ rules should be excluded when react builtin is active"
+        );
+        assert!(
+            !configured
+                .rules
+                .iter()
+                .any(|r| r.meta().name.starts_with("jsx-a11y/")),
+            "jsx-a11y/ rules should be excluded when react builtin is active"
         );
     }
 }

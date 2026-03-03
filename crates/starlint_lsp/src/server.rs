@@ -79,7 +79,13 @@ impl Backend {
                 })
                 .unwrap_or_default();
 
-            let configured = rules_for_config(&config.rules, &config.overrides);
+            let active_builtins: std::collections::HashSet<String> = config
+                .builtin_plugins
+                .iter()
+                .filter(|(_, enabled)| **enabled)
+                .map(|(name, _)| name.clone())
+                .collect();
+            let configured = rules_for_config(&config.rules, &config.overrides, &active_builtins);
             tracing::info!("LSP: {} native rule(s) enabled", configured.rules.len());
 
             let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);

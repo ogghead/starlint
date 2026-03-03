@@ -99,7 +99,13 @@ pub fn run() -> miette::Result<ExitStatus> {
     tracing::debug!("found {} files to lint", files.len());
 
     // Build lint session with rules from config.
-    let configured = rules_for_config(&config.rules, &config.overrides);
+    let active_builtins: std::collections::HashSet<String> = config
+        .builtin_plugins
+        .iter()
+        .filter(|(_, enabled)| **enabled)
+        .map(|(name, _)| name.clone())
+        .collect();
+    let configured = rules_for_config(&config.rules, &config.overrides, &active_builtins);
     tracing::debug!("enabled {} native rule(s)", configured.rules.len());
     let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);
     let mut session = LintSession::new(configured.rules, output_format)

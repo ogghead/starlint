@@ -5,7 +5,10 @@
 //! simplified [`WitAstNode`] representation for the WASM boundary.
 
 use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
+use oxc_ast::ast::{
+    Expression, JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName,
+    JSXMemberExpressionObject,
+};
 use oxc_ast_visit::Visit;
 
 use starlint_plugin_sdk::diagnostic::Span;
@@ -13,9 +16,9 @@ use starlint_plugin_sdk::diagnostic::Span;
 use crate::bridge::{
     ArrayExpressionNode, ArrowFunctionExpressionNode, CallExpressionNode, DebuggerStatementNode,
     ExportDefaultNode, ExportNamedNode, FunctionDeclarationNode, IdentifierReferenceNode,
-    ImportDeclarationNode, ImportSpecifierNode, MemberExpressionNode, NodeInterest,
-    ObjectExpressionNode, StringLiteralNode, VariableDeclarationNode, VariableDeclaratorNode,
-    WitAstNode,
+    ImportDeclarationNode, ImportSpecifierNode, JsxAttributeNode, JsxOpeningElementNode,
+    MemberExpressionNode, NodeInterest, ObjectExpressionNode, StringLiteralNode,
+    VariableDeclarationNode, VariableDeclaratorNode, WitAstNode,
 };
 
 /// Collects matching AST nodes during a single-pass traversal.
@@ -246,9 +249,97 @@ impl<'a> Visit<'a> for NodeCollector {
                 }));
             }
 
+            AstKind::JSXElement(element) if self.interests.jsx_opening_element => {
+                let opening = &element.opening_element;
+
+                let name = extract_jsx_element_name(&opening.name);
+
+                let attributes = opening
+                    .attributes
+                    .iter()
+                    .map(|item| match item {
+                        JSXAttributeItem::Attribute(attr) => {
+                            let attr_name = match &attr.name {
+                                JSXAttributeName::Identifier(ident) => ident.name.to_string(),
+                                JSXAttributeName::NamespacedName(ns) => {
+                                    format!("{}:{}", ns.namespace.name, ns.name.name)
+                                }
+                            };
+                            let value = attr.value.as_ref().and_then(|v| match v {
+                                JSXAttributeValue::StringLiteral(lit) => {
+                                    Some(lit.value.to_string())
+                                }
+                                _ => None,
+                            });
+                            JsxAttributeNode {
+                                name: attr_name,
+                                value,
+                                is_spread: false,
+                            }
+                        }
+                        JSXAttributeItem::SpreadAttribute(_) => JsxAttributeNode {
+                            name: "<spread>".to_owned(),
+                            value: None,
+                            is_spread: true,
+                        },
+                    })
+                    .collect();
+
+                let children_count = u32::try_from(element.children.len()).unwrap_or(u32::MAX);
+
+                self.nodes
+                    .push(WitAstNode::JsxElement(JsxOpeningElementNode {
+                        span: Span::new(opening.span.start, opening.span.end),
+                        name,
+                        attributes,
+                        self_closing: element.closing_element.is_none(),
+                        children_count,
+                    }));
+            }
+
             _ => {}
         }
     }
+}
+
+/// Extract a JSX element name as a string.
+///
+/// Handles `Identifier` (`div`), `MemberExpression` (`React.Fragment`),
+/// and `NamespacedName` (`svg:rect`).
+fn extract_jsx_element_name(name: &JSXElementName<'_>) -> String {
+    match name {
+        JSXElementName::Identifier(ident) => ident.name.to_string(),
+        JSXElementName::IdentifierReference(ident) => ident.name.to_string(),
+        JSXElementName::NamespacedName(ns) => {
+            format!("{}:{}", ns.namespace.name, ns.name.name)
+        }
+        JSXElementName::MemberExpression(member) => extract_jsx_member_path(member),
+        JSXElementName::ThisExpression(_) => "this".to_owned(),
+    }
+}
+
+/// Recursively build a dot-separated path from a JSX member expression.
+fn extract_jsx_member_path(member: &oxc_ast::ast::JSXMemberExpression<'_>) -> String {
+    let mut parts = vec![member.property.name.to_string()];
+    let mut current = &member.object;
+    loop {
+        match current {
+            JSXMemberExpressionObject::IdentifierReference(id) => {
+                parts.push(id.name.to_string());
+                break;
+            }
+            JSXMemberExpressionObject::MemberExpression(inner) => {
+                parts.push(inner.property.name.to_string());
+                current = &inner.object;
+            }
+            JSXMemberExpressionObject::ThisExpression(_) => {
+                parts.push("this".to_owned());
+                break;
+            }
+        }
+    }
+    parts.reverse();
+    parts.join(".")
 }
 
 /// Extract a dot-separated callee path from an expression.
@@ -653,6 +744,166 @@ mod tests {
                 matches!(nodes.first(), Some(WitAstNode::ArrayExpr(a)) if a.element_count == 4),
                 "should be ArrayExpr with 4 elements"
             );
+        }
+    }
+
+    #[test]
+    fn test_collect_jsx_self_closing() {
+        let allocator = Allocator::default();
+        let source = r#"const el = <img src="photo.jpg" alt="A photo" />;"#;
+        let parsed = parse_file(&allocator, source, Path::new("test.jsx"));
+        assert!(parsed.is_ok(), "parse should succeed");
+
+        if let Ok(result) = parsed {
+            let interest = NodeInterest {
+                jsx_opening_element: true,
+                ..NodeInterest::default()
+            };
+            let mut collector = NodeCollector::new(interest);
+            collector.visit_program(&result.program);
+            let nodes = collector.into_nodes();
+            assert_eq!(nodes.len(), 1, "should collect one JSX element");
+            assert!(
+                matches!(
+                    nodes.first(),
+                    Some(WitAstNode::JsxElement(el))
+                        if el.name == "img"
+                            && el.attributes.len() == 2
+                            && el.self_closing
+                            && el.children_count == 0
+                ),
+                "should be a self-closing img with 2 attributes"
+            );
+        }
+    }
+
+    #[test]
+    fn test_collect_jsx_attribute_values() {
+        let allocator = Allocator::default();
+        let source = r#"const el = <img src="photo.jpg" alt="A photo" />;"#;
+        let parsed = parse_file(&allocator, source, Path::new("test.jsx"));
+        assert!(parsed.is_ok(), "parse should succeed");
+
+        if let Ok(result) = parsed {
+            let interest = NodeInterest {
+                jsx_opening_element: true,
+                ..NodeInterest::default()
+            };
+            let mut collector = NodeCollector::new(interest);
+            collector.visit_program(&result.program);
+            let nodes = collector.into_nodes();
+            assert_eq!(nodes.len(), 1, "should collect one JSX element");
+
+            // Check attribute names and values via first()
+            assert!(
+                matches!(
+                    nodes.first(),
+                    Some(WitAstNode::JsxElement(el))
+                        if el.attributes.first().map(|a| a.name.as_str()) == Some("src")
+                            && el.attributes.first().and_then(|a| a.value.as_deref()) == Some("photo.jpg")
+                ),
+                "first attribute should be src='photo.jpg'"
+            );
+        }
+    }
+
+    #[test]
+    fn test_collect_jsx_with_children() {
+        let allocator = Allocator::default();
+        let source = "const el = <div><span /><span /></div>;";
+        let parsed = parse_file(&allocator, source, Path::new("test.jsx"));
+        assert!(parsed.is_ok(), "parse should succeed");
+
+        if let Ok(result) = parsed {
+            let interest = NodeInterest {
+                jsx_opening_element: true,
+                ..NodeInterest::default()
+            };
+            let mut collector = NodeCollector::new(interest);
+            collector.visit_program(&result.program);
+            let nodes = collector.into_nodes();
+            // Should collect: div (2 children), span (0), span (0)
+            assert_eq!(nodes.len(), 3, "should collect three JSX elements");
+            assert!(
+                matches!(
+                    nodes.first(),
+                    Some(WitAstNode::JsxElement(div))
+                        if div.name == "div"
+                            && div.children_count == 2
+                            && !div.self_closing
+                ),
+                "first element should be a non-self-closing div with 2 children"
+            );
+        }
+    }
+
+    #[test]
+    fn test_collect_jsx_spread_attribute() {
+        let allocator = Allocator::default();
+        let source = r#"const el = <div {...props} className="test" />;"#;
+        let parsed = parse_file(&allocator, source, Path::new("test.jsx"));
+        assert!(parsed.is_ok(), "parse should succeed");
+
+        if let Ok(result) = parsed {
+            let interest = NodeInterest {
+                jsx_opening_element: true,
+                ..NodeInterest::default()
+            };
+            let mut collector = NodeCollector::new(interest);
+            collector.visit_program(&result.program);
+            let nodes = collector.into_nodes();
+            assert_eq!(nodes.len(), 1, "should collect one JSX element");
+            assert!(
+                matches!(
+                    nodes.first(),
+                    Some(WitAstNode::JsxElement(el))
+                        if el.attributes.len() == 2
+                            && el.attributes.first().is_some_and(|a| a.is_spread && a.name == "<spread>")
+                            && el.attributes.get(1).is_some_and(|a| !a.is_spread && a.name == "className" && a.value.as_deref() == Some("test"))
+                ),
+                "should have spread + className attributes"
+            );
+        }
+    }
+
+    #[test]
+    fn test_collect_jsx_component_name() {
+        let allocator = Allocator::default();
+        let source = r#"const el = <MyComponent foo="bar" />;"#;
+        let parsed = parse_file(&allocator, source, Path::new("test.jsx"));
+        assert!(parsed.is_ok(), "parse should succeed");
+
+        if let Ok(result) = parsed {
+            let interest = NodeInterest {
+                jsx_opening_element: true,
+                ..NodeInterest::default()
+            };
+            let mut collector = NodeCollector::new(interest);
+            collector.visit_program(&result.program);
+            let nodes = collector.into_nodes();
+            assert_eq!(nodes.len(), 1, "should collect one JSX element");
+            assert!(
+                matches!(
+                    nodes.first(),
+                    Some(WitAstNode::JsxElement(el)) if el.name == "MyComponent"
+                ),
+                "should be JsxElement with name 'MyComponent'"
+            );
+        }
+    }
+
+    #[test]
+    fn test_no_jsx_collection_without_interest() {
+        let allocator = Allocator::default();
+        let source = "const el = <div />;";
+        let parsed = parse_file(&allocator, source, Path::new("test.jsx"));
+        assert!(parsed.is_ok(), "parse should succeed");
+
+        if let Ok(result) = parsed {
+            let mut collector = NodeCollector::new(NodeInterest::default());
+            collector.visit_program(&result.program);
+            let nodes = collector.into_nodes();
+            assert!(nodes.is_empty(), "no interests should collect nothing");
         }
     }
 }

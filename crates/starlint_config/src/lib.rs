@@ -25,6 +25,20 @@ pub struct Config {
     #[serde(default)]
     pub plugins: Vec<PluginDeclaration>,
 
+    /// Builtin plugin toggles (category name -> enabled).
+    ///
+    /// When a builtin plugin is enabled, its corresponding native rules are
+    /// excluded from `all_rules()` and the bundled WASM plugin is loaded instead.
+    ///
+    /// ```toml
+    /// [builtin_plugins]
+    /// storybook = true
+    /// testing = true    # jest + vitest
+    /// react = true      # react + jsx_a11y + react_perf
+    /// ```
+    #[serde(default)]
+    pub builtin_plugins: HashMap<String, bool>,
+
     /// Rule configurations: rule name -> severity or detailed config.
     #[serde(default)]
     pub rules: HashMap<String, RuleConfig>,
@@ -135,5 +149,30 @@ files = ["**/*.stories.tsx"]
 "#;
         let result: Result<Config, _> = toml::from_str(toml_str);
         assert!(result.is_ok(), "config with overrides should deserialize");
+    }
+
+    #[test]
+    fn test_config_deserialize_with_builtin_plugins() {
+        let toml_str = r#"
+[builtin_plugins]
+storybook = true
+testing = true
+react = false
+"#;
+        let cfg: Config = toml::from_str(toml_str).expect("should parse builtin_plugins");
+        assert_eq!(cfg.builtin_plugins.len(), 3);
+        assert_eq!(cfg.builtin_plugins.get("storybook"), Some(&true));
+        assert_eq!(cfg.builtin_plugins.get("testing"), Some(&true));
+        assert_eq!(cfg.builtin_plugins.get("react"), Some(&false));
+    }
+
+    #[test]
+    fn test_config_builtin_plugins_default_empty() {
+        let toml_str = "";
+        let cfg: Config = toml::from_str(toml_str).expect("should parse empty config");
+        assert!(
+            cfg.builtin_plugins.is_empty(),
+            "builtin_plugins should default to empty"
+        );
     }
 }
