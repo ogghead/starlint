@@ -1,7 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*"]
-exclude = ["examples/plugins/starlint-plugin-example", "examples/plugins/starlint-plugin-jsx-example"]
+exclude = ["examples/plugins/starlint-plugin-example", "examples/plugins/starlint-plugin-jsx-example", "examples/plugins/starlint-plugin-storybook"]
 
 [workspace.package]
 edition = "2024"

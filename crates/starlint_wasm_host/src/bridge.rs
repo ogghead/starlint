@@ -39,6 +39,8 @@ pub struct NodeInterest {
     pub debugger_statement: bool,
     /// JSX opening elements.
     pub jsx_opening_element: bool,
+    /// Source text access (plugin receives file even with no matching AST nodes).
+    pub source_text: bool,
 }
 
 impl NodeInterest {
@@ -59,6 +61,7 @@ impl NodeInterest {
             || self.array_expression
             || self.debugger_statement
             || self.jsx_opening_element
+            || self.source_text
     }
 
     /// Compute the union of two interest sets.
@@ -82,6 +85,7 @@ impl NodeInterest {
             array_expression: self.array_expression || other.array_expression,
             debugger_statement: self.debugger_statement || other.debugger_statement,
             jsx_opening_element: self.jsx_opening_element || other.jsx_opening_element,
+            source_text: self.source_text || other.source_text,
         }
     }
 }

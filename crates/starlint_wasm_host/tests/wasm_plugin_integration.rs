@@ -31,6 +31,12 @@ const JSX_EXAMPLE_PLUGIN: &str = concat!(
     "/../../tests/fixtures/plugins/jsx-example-plugin.wasm"
 );
 
+/// Path to the pre-built storybook plugin component.
+const STORYBOOK_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/storybook-plugin.wasm"
+);
+
 /// Helper to create a host with the example plugin loaded.
 fn host_with_example_plugin() -> WasmPluginHost {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
@@ -296,5 +302,152 @@ fn test_jsx_non_img_not_flagged() {
     assert!(
         diags.is_empty(),
         "non-img elements should not be flagged, got: {diags:?}"
+    );
+}
+
+// ---- Storybook plugin integration tests ----
+
+fn host_with_storybook_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(STORYBOOK_PLUGIN), "")
+        .expect("should load storybook plugin");
+    host
+}
+
+#[test]
+fn test_load_storybook_plugin() {
+    let host = host_with_storybook_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_storybook_default_exports_missing() {
+    let host = host_with_storybook_plugin();
+    let allocator = Allocator::default();
+    let source = "export const Primary = {};";
+    let path = Path::new("Button.stories.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"storybook/default-exports"),
+        "should flag missing default export, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_storybook_default_exports_present() {
+    let host = host_with_storybook_plugin();
+    let allocator = Allocator::default();
+    let source = "export default { component: Button };\nexport const Primary = {};";
+    let path = Path::new("Button.stories.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        !names.contains(&"storybook/default-exports"),
+        "should NOT flag when default export present, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_storybook_story_exports_missing() {
+    let host = host_with_storybook_plugin();
+    let allocator = Allocator::default();
+    let source = "export default { component: Button };";
+    let path = Path::new("Button.stories.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"storybook/story-exports"),
+        "should flag missing named exports, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_storybook_no_stories_of() {
+    let host = host_with_storybook_plugin();
+    let allocator = Allocator::default();
+    let source = "export default {};\nexport const Primary = {};\nstoriesOf('Button', module);";
+    let path = Path::new("Button.stories.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"storybook/no-stories-of"),
+        "should flag storiesOf usage, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_storybook_use_storybook_testing_library() {
+    let host = host_with_storybook_plugin();
+    let allocator = Allocator::default();
+    let source = "import { render } from '@testing-library/react';\nexport default { component: Button };\nexport const Primary = {};";
+    let path = Path::new("Button.stories.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"storybook/use-storybook-testing-library"),
+        "should flag @testing-library import, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_storybook_hierarchy_separator() {
+    let host = host_with_storybook_plugin();
+    let allocator = Allocator::default();
+    let source = "export default { component: Button, title: 'Components|Button' };\nexport const Primary = {};";
+    let path = Path::new("Button.stories.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"storybook/hierarchy-separator"),
+        "should flag | separator in title, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_storybook_file_pattern_skip() {
+    let host = host_with_storybook_plugin();
+    let allocator = Allocator::default();
+    // Same source but NOT a stories file — should be skipped.
+    let source = "storiesOf('Button', module);";
+    let path = Path::new("Button.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "non-story files should be skipped entirely, got: {diags:?}"
+    );
+}
+
+#[test]
+fn test_storybook_clean_story() {
+    let host = host_with_storybook_plugin();
+    let allocator = Allocator::default();
+    let source = r#"
+import { Button } from './Button';
+export default { component: Button };
+export const Primary = {};
+export const Secondary = { args: { variant: 'secondary' } };
+"#;
+    let path = Path::new("Button.stories.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "clean story should have no diagnostics, got: {diags:?}"
     );
 }

@@ -46,6 +46,10 @@ interface types {
     }
 
     /// Flags declaring which node types a plugin is interested in.
+    ///
+    /// `source-text` is special: when set, the plugin receives the full
+    /// source text even when no AST nodes match — enabling text-based
+    /// scanning rules (e.g. pattern matching on raw source).
     flags node-interest {
         import-declaration,
         export-default-declaration,
@@ -61,6 +65,7 @@ interface types {
         array-expression,
         debugger-statement,
         jsx-opening-element,
+        source-text,
     }
 
     /// Simplified AST node representations for the WASM boundary.

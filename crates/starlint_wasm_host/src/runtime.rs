@@ -399,8 +399,9 @@ mod host {
         collector.visit_program(program);
         let bridge_nodes = collector.into_nodes();
 
-        // Skip calling the plugin if no matching nodes were found.
-        if bridge_nodes.is_empty() {
+        // Skip calling the plugin if no matching nodes were found
+        // AND the plugin doesn't need source-text access.
+        if bridge_nodes.is_empty() && !plugin.interests.source_text {
             return Ok(Vec::new());
         }
 
@@ -476,6 +477,7 @@ mod host {
             array_expression: wit.contains(wit::NodeInterest::ARRAY_EXPRESSION),
             debugger_statement: wit.contains(wit::NodeInterest::DEBUGGER_STATEMENT),
             jsx_opening_element: wit.contains(wit::NodeInterest::JSX_OPENING_ELEMENT),
+            source_text: wit.contains(wit::NodeInterest::SOURCE_TEXT),
         }
     }
 
