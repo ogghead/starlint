@@ -14,7 +14,7 @@ use crate::overrides::OverrideSet;
 use crate::parser::{build_semantic, parse_file};
 use crate::plugin::PluginHost;
 use crate::rule::NativeRule;
-use crate::traversal::traverse_and_lint_with_semantic;
+use crate::traversal::{DispatchTable, traverse_with_prebuilt};
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
 
 /// Diagnostics collected for a single file.
@@ -47,6 +47,10 @@ pub struct LintSession {
     disabled_rules: HashSet<String>,
     /// Pre-computed: whether any active rule needs semantic analysis.
     needs_semantic: bool,
+    /// Pre-built dispatch table mapping `AstType` → rule indices.
+    dispatch_table: DispatchTable,
+    /// Indices of rules that only run via `run_once` (no traversal).
+    run_once_indices: Vec<usize>,
 }
 
 impl LintSession {
@@ -54,6 +58,23 @@ impl LintSession {
     #[must_use]
     pub fn new(native_rules: Vec<Box<dyn NativeRule>>, output_format: OutputFormat) -> Self {
         let needs_semantic = native_rules.iter().any(|r| r.needs_semantic());
+
+        // Pre-compute traversal vs run_once partitions (file-invariant).
+        let traversal_indices: Vec<usize> = native_rules
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.needs_traversal())
+            .map(|(i, _)| i)
+            .collect();
+        let run_once_indices: Vec<usize> = native_rules
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| !r.needs_traversal())
+            .map(|(i, _)| i)
+            .collect();
+        let dispatch_table =
+            DispatchTable::build_from_indices(&native_rules, &traversal_indices);
+
         Self {
             native_rules,
             plugin_host: None,
@@ -62,6 +83,8 @@ impl LintSession {
             override_set: OverrideSet::empty(),
             disabled_rules: HashSet::new(),
             needs_semantic,
+            dispatch_table,
+            run_once_indices,
         }
     }
 
@@ -143,10 +166,12 @@ impl LintSession {
                 // Build semantic data (scope tree, symbol table) if any rule needs it.
                 let semantic = self.needs_semantic.then(|| build_semantic(program));
 
-                // Native rules via single-pass traversal.
-                let mut diags = traverse_and_lint_with_semantic(
+                // Native rules via single-pass traversal with pre-built dispatch table.
+                let mut diags = traverse_with_prebuilt(
                     program,
                     &self.native_rules,
+                    &self.dispatch_table,
+                    &self.run_once_indices,
                     source_text,
                     file_path,
                     semantic.as_ref(),

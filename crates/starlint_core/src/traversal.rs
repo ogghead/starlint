@@ -94,10 +94,14 @@ fn ast_type_index(ty: AstType) -> usize {
 
 /// Maps [`AstType`] discriminants to the rule indices that handle them.
 ///
-/// Built once per file from rule interest declarations. Rules that return
+/// Built once from rule interest declarations. Rules that return
 /// `None` from `run_on_kinds()` / `leave_on_kinds()` go into the wildcard
 /// lists and receive every node.
-struct DispatchTable {
+///
+/// Indices stored in the table refer to positions in the **original** rules
+/// slice (e.g. `LintSession::native_rules`), so the visitor can look up
+/// rules by index without an intermediate filtered vec.
+pub(crate) struct DispatchTable {
     /// Per-AstType rule indices for `enter_node`. Index = `AstType as usize`.
     enter: Vec<Vec<usize>>,
     /// Per-AstType rule indices for `leave_node`.
@@ -109,7 +113,61 @@ struct DispatchTable {
 }
 
 impl DispatchTable {
-    /// Build the dispatch table from a set of traversal rules.
+    /// Build the dispatch table from a subset of rules identified by index.
+    ///
+    /// `rules` is the full rule set (e.g. `LintSession::native_rules`).
+    /// `traversal_indices` lists the indices of rules that need AST traversal.
+    /// The stored indices point into `rules`, so the visitor can look up rules
+    /// directly without an intermediate filtered vec.
+    pub(crate) fn build_from_indices(
+        rules: &[Box<dyn NativeRule>],
+        traversal_indices: &[usize],
+    ) -> Self {
+        let size = usize::from(AST_TYPE_MAX).saturating_add(1);
+        let mut table = Self {
+            enter: vec![Vec::new(); size],
+            leave: vec![Vec::new(); size],
+            enter_all: Vec::new(),
+            leave_all: Vec::new(),
+        };
+
+        for &idx in traversal_indices {
+            let Some(rule) = rules.get(idx) else {
+                continue;
+            };
+
+            match rule.run_on_kinds() {
+                Some(kinds) => {
+                    for &kind in kinds {
+                        let slot = ast_type_index(kind);
+                        if let Some(entry) = table.enter.get_mut(slot) {
+                            entry.push(idx);
+                        }
+                    }
+                }
+                None => table.enter_all.push(idx),
+            }
+
+            match rule.leave_on_kinds() {
+                Some(kinds) => {
+                    for &kind in kinds {
+                        let slot = ast_type_index(kind);
+                        if let Some(entry) = table.leave.get_mut(slot) {
+                            entry.push(idx);
+                        }
+                    }
+                }
+                None => table.leave_all.push(idx),
+            }
+        }
+
+        table
+    }
+
+    /// Build the dispatch table from a filtered slice of rule refs.
+    ///
+    /// Used by `traverse_and_lint_with_semantic` (backwards compat for tests).
+    /// Indices stored refer to positions in the `rules` slice.
     fn build(rules: &[&dyn NativeRule]) -> Self {
         let size = usize::from(AST_TYPE_MAX).saturating_add(1);
         let mut table = Self {
@@ -150,13 +208,116 @@ impl DispatchTable {
 }
 
 // ---------------------------------------------------------------------------
-// Visitor
+// Pre-built traversal (session-level, zero per-file allocation)
 // ---------------------------------------------------------------------------
+
+/// Traverse the AST using a pre-built [`DispatchTable`] from `LintSession`.
+///
+/// Unlike [`traverse_and_lint_with_semantic`], this borrows session-level
+/// structures and avoids per-file allocation of rule vecs and dispatch tables.
+pub(crate) fn traverse_with_prebuilt<'a>(
+    program: &Program<'a>,
+    rules: &[Box<dyn NativeRule>],
+    table: &DispatchTable,
+    run_once_indices: &[usize],
+    source_text: &'a str,
+    file_path: &'a Path,
+    semantic: Option<&'a Semantic<'a>>,
+) -> Vec<Diagnostic> {
+    let mut all_diagnostics = Vec::new();
+
+    // Run traversal-based rules via single-pass visitor with pre-built dispatch table.
+    {
+        let ctx = match semantic {
+            Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
+            None => NativeLintContext::new(source_text, file_path),
+        };
+        let mut visitor = SessionDispatchVisitor {
+            rules,
+            table,
+            ctx,
+        };
+        visitor.visit_program(program);
+        all_diagnostics.extend(visitor.ctx.into_diagnostics());
+    }
+
+    // Run run_once for only the rules that override it (shared context, single pass).
+    if !run_once_indices.is_empty() {
+        let mut run_once_ctx = match semantic {
+            Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
+            None => NativeLintContext::new(source_text, file_path),
+        };
+        for &idx in run_once_indices {
+            if let Some(rule) = rules.get(idx) {
+                rule.run_once(&mut run_once_ctx);
+            }
+        }
+        all_diagnostics.extend(run_once_ctx.into_diagnostics());
+    }
+
+    all_diagnostics
+}
+
+// ---------------------------------------------------------------------------
+// Visitors
+// ---------------------------------------------------------------------------
+
+/// Visitor that borrows session-level data (used by [`traverse_with_prebuilt`]).
+///
+/// Indices in the dispatch table point directly into the `rules` slice,
+/// avoiding any per-file allocation of filtered rule vecs.
+struct SessionDispatchVisitor<'a, 'session> {
+    /// Active rules (indexed by dispatch table entries).
+    rules: &'session [Box<dyn NativeRule>],
+    /// Pre-built interest-based dispatch table.
+    table: &'session DispatchTable,
+    /// Shared lint context — all rules push diagnostics into this.
+    ctx: NativeLintContext<'a>,
+}
+
+impl<'a> Visit<'a> for SessionDispatchVisitor<'a, '_> {
+    fn enter_node(&mut self, kind: AstKind<'a>) {
+        let ty = ast_type_index(kind.ty());
+
+        if let Some(targeted) = self.table.enter.get(ty) {
+            for &idx in targeted {
+                if let Some(rule) = self.rules.get(idx) {
+                    rule.run(&kind, &mut self.ctx);
+                }
+            }
+        }
+
+        for &idx in &self.table.enter_all {
+            if let Some(rule) = self.rules.get(idx) {
+                rule.run(&kind, &mut self.ctx);
+            }
+        }
+    }
+
+    fn leave_node(&mut self, kind: AstKind<'a>) {
+        let ty = ast_type_index(kind.ty());
+
+        if let Some(targeted) = self.table.leave.get(ty) {
+            for &idx in targeted {
+                if let Some(rule) = self.rules.get(idx) {
+                    rule.leave(&kind, &mut self.ctx);
+                }
+            }
+        }
+
+        for &idx in &self.table.leave_all {
+            if let Some(rule) = self.rules.get(idx) {
+                rule.leave(&kind, &mut self.ctx);
+            }
+        }
+    }
+}
 
 /// Visitor that dispatches AST nodes to interested rules only.
 ///
 /// Uses a [`DispatchTable`] to route each node to the subset of rules that
 /// declared interest, plus wildcard rules that receive everything.
+/// Used by [`traverse_and_lint_with_semantic`] (backwards compat for tests).
 struct RuleDispatchVisitor<'a, 'rules> {
     /// Active rules (indexed by dispatch table entries).
     rules: &'rules [&'rules dyn NativeRule],
@@ -170,7 +331,6 @@ impl<'a> Visit<'a> for RuleDispatchVisitor<'a, '_> {
     fn enter_node(&mut self, kind: AstKind<'a>) {
         let ty = ast_type_index(kind.ty());
 
-        // Dispatch to rules that declared interest in this specific node type.
         if let Some(targeted) = self.table.enter.get(ty) {
             for &idx in targeted {
                 if let Some(rule) = self.rules.get(idx) {
@@ -179,7 +339,6 @@ impl<'a> Visit<'a> for RuleDispatchVisitor<'a, '_> {
             }
         }
 
-        // Dispatch to wildcard rules (backwards compat / catch-all).
         for &idx in &self.table.enter_all {
             if let Some(rule) = self.rules.get(idx) {
                 rule.run(&kind, &mut self.ctx);
