@@ -336,8 +336,9 @@ fn build_plugin_host(
     plugins: &[starlint_config::PluginDeclaration],
     active_builtins: &std::collections::HashSet<String>,
 ) -> std::result::Result<starlint_wasm_host::runtime::WasmPluginHost, Box<dyn std::error::Error>> {
-    let mut host =
-        starlint_wasm_host::runtime::WasmPluginHost::new(starlint_wasm_host::runtime::ResourceLimits::default())?;
+    let mut host = starlint_wasm_host::runtime::WasmPluginHost::new(
+        starlint_wasm_host::runtime::ResourceLimits::default(),
+    )?;
     host.load_builtins(active_builtins)?;
     for p in plugins {
         host.load_plugin(&p.path, "")?;

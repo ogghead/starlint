@@ -743,7 +743,9 @@ pub fn all_rules_excluding(active_builtins: &HashSet<String>) -> Vec<Box<dyn Nat
         .into_iter()
         .filter(|rule| {
             let name = rule.meta().name;
-            !excluded_prefixes.iter().any(|prefix| name.starts_with(prefix))
+            !excluded_prefixes
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
         })
         .collect()
 }

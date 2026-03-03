@@ -90,8 +90,7 @@ fn bench_plugin_load(c: &mut Criterion) {
 
     group.bench_function("example_plugin", |b| {
         b.iter(|| {
-            let mut host =
-                WasmPluginHost::new(ResourceLimits::default()).expect("create host");
+            let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("create host");
             host.load_plugin(Path::new(EXAMPLE_PLUGIN), "")
                 .expect("load plugin");
             black_box(host);
@@ -100,8 +99,7 @@ fn bench_plugin_load(c: &mut Criterion) {
 
     group.bench_function("jsx_plugin", |b| {
         b.iter(|| {
-            let mut host =
-                WasmPluginHost::new(ResourceLimits::default()).expect("create host");
+            let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("create host");
             host.load_plugin(Path::new(JSX_EXAMPLE_PLUGIN), "")
                 .expect("load plugin");
             black_box(host);
@@ -161,8 +159,7 @@ fn bench_file_pattern_skip(c: &mut Criterion) {
         let path = Path::new("bench.js");
         let parsed = parse_file(&allocator, MEDIUM_JS, path).expect("parse");
         b.iter(|| {
-            let diags =
-                host.lint_file(black_box(path), black_box(MEDIUM_JS), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(MEDIUM_JS), &parsed.program);
             black_box(diags);
         });
     });
@@ -173,8 +170,7 @@ fn bench_file_pattern_skip(c: &mut Criterion) {
         let path = Path::new("bench.jsx");
         let parsed = parse_file(&allocator, JSX_SOURCE, path).expect("parse");
         b.iter(|| {
-            let diags =
-                host.lint_file(black_box(path), black_box(JSX_SOURCE), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(JSX_SOURCE), &parsed.program);
             black_box(diags);
         });
     });
@@ -201,8 +197,7 @@ fn bench_multi_plugin(c: &mut Criterion) {
         let path = Path::new("bench.js");
         let parsed = parse_file(&allocator, MEDIUM_JS, path).expect("parse");
         b.iter(|| {
-            let diags =
-                host.lint_file(black_box(path), black_box(MEDIUM_JS), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(MEDIUM_JS), &parsed.program);
             black_box(diags);
         });
     });
@@ -213,8 +208,7 @@ fn bench_multi_plugin(c: &mut Criterion) {
         let path = Path::new("bench.jsx");
         let parsed = parse_file(&allocator, JSX_SOURCE, path).expect("parse");
         b.iter(|| {
-            let diags =
-                host.lint_file(black_box(path), black_box(JSX_SOURCE), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(JSX_SOURCE), &parsed.program);
             black_box(diags);
         });
     });
@@ -245,8 +239,7 @@ const c = add(a, b);
         let path = Path::new("bench.js");
         let parsed = parse_file(&allocator, clean_source, path).expect("parse");
         b.iter(|| {
-            let diags =
-                host.lint_file(black_box(path), black_box(clean_source), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(clean_source), &parsed.program);
             black_box(diags);
         });
     });

@@ -190,27 +190,24 @@ mod host {
             bytes: &[u8],
             config_json: &str,
         ) -> Result<(), WasmError> {
-            let component = Component::new(&self.engine, bytes).map_err(|err| {
+            let component =
+                Component::new(&self.engine, bytes).map_err(|err| WasmError::CompileFailed {
+                    path: plugin_name.to_owned(),
+                    reason: err.to_string(),
+                })?;
+
+            let instance_pre = self.linker.instantiate_pre(&component).map_err(|err| {
                 WasmError::CompileFailed {
                     path: plugin_name.to_owned(),
                     reason: err.to_string(),
                 }
             })?;
 
-            let instance_pre =
-                self.linker
-                    .instantiate_pre(&component)
-                    .map_err(|err| WasmError::CompileFailed {
-                        path: plugin_name.to_owned(),
-                        reason: err.to_string(),
-                    })?;
-
-            let pre = LinterPluginPre::new(instance_pre).map_err(|err| {
-                WasmError::CompileFailed {
+            let pre =
+                LinterPluginPre::new(instance_pre).map_err(|err| WasmError::CompileFailed {
                     path: plugin_name.to_owned(),
                     reason: err.to_string(),
-                }
-            })?;
+                })?;
 
             // Query metadata from the plugin using a temporary store.
             let (interests, file_patterns, _rules) =

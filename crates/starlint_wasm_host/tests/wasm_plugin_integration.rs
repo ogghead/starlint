@@ -606,7 +606,8 @@ fn test_testing_consistent_test_it() {
 fn test_testing_vitest_prefer_to_be_truthy() {
     let host = host_with_testing_plugin();
     let allocator = Allocator::default();
-    let source = "describe('suite', () => {\n  it('checks true', () => { expect(foo).toBe(true); });\n});";
+    let source =
+        "describe('suite', () => {\n  it('checks true', () => { expect(foo).toBe(true); });\n});";
     let path = Path::new("foo.test.js");
     let parsed = parse_file(&allocator, source, path).expect("parse");
 
@@ -691,7 +692,8 @@ fn test_react_a11y_html_has_lang() {
 fn test_react_button_has_type() {
     let host = host_with_react_plugin();
     let allocator = Allocator::default();
-    let source = "export default function App() { return <button onClick={handleClick}>Click</button>; }";
+    let source =
+        "export default function App() { return <button onClick={handleClick}>Click</button>; }";
     let path = Path::new("App.jsx");
     let parsed = parse_file(&allocator, source, path).expect("parse");
 
@@ -754,7 +756,8 @@ fn test_react_iframe_missing_sandbox() {
 fn test_react_a11y_click_events_have_key_events() {
     let host = host_with_react_plugin();
     let allocator = Allocator::default();
-    let source = "export default function App() { return <div onClick={handleClick}>Click me</div>; }";
+    let source =
+        "export default function App() { return <div onClick={handleClick}>Click me</div>; }";
     let path = Path::new("App.jsx");
     let parsed = parse_file(&allocator, source, path).expect("parse");
 
@@ -987,7 +990,8 @@ fn test_nextjs_no_html_link_for_pages() {
 fn test_nextjs_no_sync_scripts() {
     let host = host_with_nextjs_plugin();
     let allocator = Allocator::default();
-    let source = "export default function Page() { return <script src=\"/analytics.js\"></script>; }";
+    let source =
+        "export default function Page() { return <script src=\"/analytics.js\"></script>; }";
     let path = Path::new("page.jsx");
     let parsed = parse_file(&allocator, source, path).expect("parse");
 
@@ -1003,7 +1007,8 @@ fn test_nextjs_no_sync_scripts() {
 fn test_nextjs_no_document_import_in_page() {
     let host = host_with_nextjs_plugin();
     let allocator = Allocator::default();
-    let source = "import Document from 'next/document';\nexport default function Page() { return <div />; }";
+    let source =
+        "import Document from 'next/document';\nexport default function Page() { return <div />; }";
     let path = Path::new("page.jsx");
     let parsed = parse_file(&allocator, source, path).expect("parse");
 
@@ -1072,7 +1077,8 @@ fn test_vue_no_arrow_functions_in_watch() {
 fn test_vue_no_async_in_computed() {
     let host = host_with_vue_plugin();
     let allocator = Allocator::default();
-    let source = "export default { computed: { async fetchedData() { return await fetch('/api'); } } }";
+    let source =
+        "export default { computed: { async fetchedData() { return await fetch('/api'); } } }";
     let path = Path::new("Data.js");
     let parsed = parse_file(&allocator, source, path).expect("parse");
 
@@ -1265,7 +1271,8 @@ fn test_typescript_ban_ts_comment() {
     let diags = host.lint_file(path, source, &parsed.program);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
-        names.contains(&"typescript/ban-ts-comment") || names.contains(&"typescript/prefer-ts-expect-error"),
+        names.contains(&"typescript/ban-ts-comment")
+            || names.contains(&"typescript/prefer-ts-expect-error"),
         "should flag @ts-ignore, got: {names:?}"
     );
 }
@@ -1406,7 +1413,11 @@ fn test_load_builtin_storybook() {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
     let active: HashSet<String> = ["storybook".to_owned()].into_iter().collect();
     host.load_builtins(&active).expect("load builtins");
-    assert_eq!(host.plugin_count(), 1, "should load exactly 1 builtin plugin");
+    assert_eq!(
+        host.plugin_count(),
+        1,
+        "should load exactly 1 builtin plugin"
+    );
 
     // Lint a story file — should produce diagnostics.
     let allocator = Allocator::default();
@@ -1434,7 +1445,9 @@ fn test_load_builtin_react() {
     let diags = host.lint_file(path, source, &parsed.program);
     let rule_names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
-        rule_names.iter().any(|r| r.starts_with("react/") || r.starts_with("jsx-a11y/")),
+        rule_names
+            .iter()
+            .any(|r| r.starts_with("react/") || r.starts_with("jsx-a11y/")),
         "react builtin should produce react/ or jsx-a11y/ diagnostics, got: {rule_names:?}"
     );
 }
@@ -1443,13 +1456,9 @@ fn test_load_builtin_react() {
 fn test_load_builtin_modules_dedup() {
     let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("host");
     // All three config names map to the same "modules" WASM plugin.
-    let active: HashSet<String> = [
-        "import".to_owned(),
-        "node".to_owned(),
-        "promise".to_owned(),
-    ]
-    .into_iter()
-    .collect();
+    let active: HashSet<String> = ["import".to_owned(), "node".to_owned(), "promise".to_owned()]
+        .into_iter()
+        .collect();
     host.load_builtins(&active).expect("load builtins");
     assert_eq!(
         host.plugin_count(),
@@ -1517,11 +1526,7 @@ fn test_load_all_builtins() {
     .into_iter()
     .collect();
     host.load_builtins(&active).expect("load all builtins");
-    assert_eq!(
-        host.plugin_count(),
-        8,
-        "should load all 8 builtin plugins"
-    );
+    assert_eq!(host.plugin_count(), 8, "should load all 8 builtin plugins");
 }
 
 #[test]
