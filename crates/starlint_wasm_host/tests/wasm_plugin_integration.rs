@@ -615,3 +615,151 @@ fn test_testing_vitest_prefer_to_be_truthy() {
         "should flag toBe(true), got: {names:?}"
     );
 }
+
+// ---- React plugin integration tests ----
+
+/// Path to the pre-built react plugin component.
+const REACT_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/react-plugin.wasm"
+);
+
+fn host_with_react_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(REACT_PLUGIN), "")
+        .expect("should load react plugin");
+    host
+}
+
+#[test]
+fn test_load_react_plugin() {
+    let host = host_with_react_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_react_jsx_no_target_blank() {
+    let host = host_with_react_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function App() { return <a href=\"https://example.com\" target=\"_blank\">Link</a>; }";
+    let path = Path::new("App.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"react/jsx-no-target-blank"),
+        "should flag target=_blank without rel, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_react_a11y_alt_text() {
+    let host = host_with_react_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function App() { return <img src=\"photo.jpg\" />; }";
+    let path = Path::new("App.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jsx-a11y/alt-text"),
+        "should flag img without alt, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_react_a11y_html_has_lang() {
+    let host = host_with_react_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function Page() { return <html><body>Hello</body></html>; }";
+    let path = Path::new("Page.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jsx-a11y/html-has-lang"),
+        "should flag html without lang, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_react_button_has_type() {
+    let host = host_with_react_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function App() { return <button onClick={handleClick}>Click</button>; }";
+    let path = Path::new("App.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"react/button-has-type"),
+        "should flag button without type, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_react_no_danger() {
+    let host = host_with_react_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function App() { return <div dangerouslySetInnerHTML={{__html: '<b>hi</b>'}} />; }";
+    let path = Path::new("App.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"react/no-danger"),
+        "should flag dangerouslySetInnerHTML, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_react_file_pattern_skip() {
+    let host = host_with_react_plugin();
+    let allocator = Allocator::default();
+    let source = "const x = 1;";
+    let path = Path::new("utils.js"); // Not a .jsx/.tsx file
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "non-JSX file should have no diagnostics, got: {diags:?}"
+    );
+}
+
+#[test]
+fn test_react_iframe_missing_sandbox() {
+    let host = host_with_react_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function App() { return <iframe src=\"https://example.com\" />; }";
+    let path = Path::new("App.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"react/iframe-missing-sandbox"),
+        "should flag iframe without sandbox, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_react_a11y_click_events_have_key_events() {
+    let host = host_with_react_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function App() { return <div onClick={handleClick}>Click me</div>; }";
+    let path = Path::new("App.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jsx-a11y/click-events-have-key-events"),
+        "should flag onClick without keyboard handler, got: {names:?}"
+    );
+}
