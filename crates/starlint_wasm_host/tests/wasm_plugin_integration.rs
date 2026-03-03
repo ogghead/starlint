@@ -451,3 +451,167 @@ export const Secondary = { args: { variant: 'secondary' } };
         "clean story should have no diagnostics, got: {diags:?}"
     );
 }
+
+// ---- Testing plugin integration tests ----
+
+/// Path to the pre-built testing plugin component.
+const TESTING_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/testing-plugin.wasm"
+);
+
+fn host_with_testing_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(TESTING_PLUGIN), "")
+        .expect("should load testing plugin");
+    host
+}
+
+#[test]
+fn test_load_testing_plugin() {
+    let host = host_with_testing_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_testing_no_disabled_tests() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "describe('suite', () => { xit('should work', () => {}); });";
+    let path = Path::new("foo.test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jest/no-disabled-tests"),
+        "should flag disabled test (xit), got: {names:?}"
+    );
+}
+
+#[test]
+fn test_testing_no_focused_tests() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "describe.only('suite', () => { it('focused', () => { expect(1).toBe(1); }); });";
+    let path = Path::new("foo.test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jest/no-focused-tests"),
+        "should flag focused test (describe.only), got: {names:?}"
+    );
+}
+
+#[test]
+fn test_testing_no_mocks_import() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "import foo from './__mocks__/bar';\ndescribe('test', () => { it('works', () => { expect(foo).toBe(1); }); });";
+    let path = Path::new("foo.test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jest/no-mocks-import"),
+        "should flag __mocks__ import, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_testing_vitest_no_import_node_test() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "import { test } from 'node:test';\ndescribe('suite', () => { it('works', () => { expect(1).toBe(1); }); });";
+    let path = Path::new("foo.test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"vitest/no-import-node-test"),
+        "should flag node:test import, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_testing_no_commented_out_tests() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "// it('should work', () => {});\ndescribe('suite', () => { it('works', () => { expect(1).toBe(1); }); });";
+    let path = Path::new("foo.test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jest/no-commented-out-tests"),
+        "should flag commented out test, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_testing_no_export() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "const helper = () => {};\nexport { helper };\ndescribe('suite', () => { it('works', () => { expect(helper()).toBe(1); }); });";
+    let path = Path::new("foo.test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jest/no-export"),
+        "should flag exports from test file, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_testing_file_pattern_skip() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "const x = 1;";
+    let path = Path::new("src/utils.js"); // Not a test file
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    assert!(
+        diags.is_empty(),
+        "non-test file should have no diagnostics, got: {diags:?}"
+    );
+}
+
+#[test]
+fn test_testing_consistent_test_it() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "describe('suite', () => {\n  it('one', () => { expect(1).toBe(1); });\n  test('two', () => { expect(2).toBe(2); });\n});";
+    let path = Path::new("foo.test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jest/consistent-test-it"),
+        "should flag inconsistent test/it usage, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_testing_vitest_prefer_to_be_truthy() {
+    let host = host_with_testing_plugin();
+    let allocator = Allocator::default();
+    let source = "describe('suite', () => {\n  it('checks true', () => { expect(foo).toBe(true); });\n});";
+    let path = Path::new("foo.test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"vitest/prefer-to-be-truthy"),
+        "should flag toBe(true), got: {names:?}"
+    );
+}
