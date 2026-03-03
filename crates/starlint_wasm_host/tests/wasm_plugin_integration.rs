@@ -911,3 +911,324 @@ fn test_modules_all_files_no_pattern_skip() {
         "modules plugin should lint ALL files (no file pattern filter)"
     );
 }
+
+// ---- Next.js plugin integration tests ----
+
+/// Path to the pre-built nextjs plugin component.
+const NEXTJS_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/nextjs-plugin.wasm"
+);
+
+fn host_with_nextjs_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(NEXTJS_PLUGIN), "")
+        .expect("should load nextjs plugin");
+    host
+}
+
+#[test]
+fn test_load_nextjs_plugin() {
+    let host = host_with_nextjs_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_nextjs_no_img_element() {
+    let host = host_with_nextjs_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function Page() { return <img src=\"/photo.jpg\" />; }";
+    let path = Path::new("page.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"nextjs/no-img-element"),
+        "should flag <img> element, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_nextjs_no_head_element() {
+    let host = host_with_nextjs_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function Page() { return <head><title>Hi</title></head>; }";
+    let path = Path::new("page.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"nextjs/no-head-element"),
+        "should flag <head> element, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_nextjs_no_html_link_for_pages() {
+    let host = host_with_nextjs_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function Nav() { return <a href=\"/about\">About</a>; }";
+    let path = Path::new("nav.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"nextjs/no-html-link-for-pages"),
+        "should flag <a href='/about'>, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_nextjs_no_sync_scripts() {
+    let host = host_with_nextjs_plugin();
+    let allocator = Allocator::default();
+    let source = "export default function Page() { return <script src=\"/analytics.js\"></script>; }";
+    let path = Path::new("page.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"nextjs/no-sync-scripts"),
+        "should flag sync script, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_nextjs_no_document_import_in_page() {
+    let host = host_with_nextjs_plugin();
+    let allocator = Allocator::default();
+    let source = "import Document from 'next/document';\nexport default function Page() { return <div />; }";
+    let path = Path::new("page.jsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"nextjs/no-document-import-in-page"),
+        "should flag next/document import outside _document, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_nextjs_no_async_client_component() {
+    let host = host_with_nextjs_plugin();
+    let allocator = Allocator::default();
+    let source = "\"use client\";\nexport default async function Page() { return <div />; }";
+    let path = Path::new("page.tsx");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"nextjs/no-async-client-component"),
+        "should flag async client component, got: {names:?}"
+    );
+}
+
+// ---- Vue plugin integration tests ----
+
+/// Path to the pre-built vue plugin component.
+const VUE_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/vue-plugin.wasm"
+);
+
+fn host_with_vue_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(VUE_PLUGIN), "")
+        .expect("should load vue plugin");
+    host
+}
+
+#[test]
+fn test_load_vue_plugin() {
+    let host = host_with_vue_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_vue_no_arrow_functions_in_watch() {
+    let host = host_with_vue_plugin();
+    let allocator = Allocator::default();
+    let source = "export default { watch: { count: (val) => console.log(val) } }";
+    let path = Path::new("Counter.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"vue/no-arrow-functions-in-watch"),
+        "should flag arrow function in watch, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_vue_no_async_in_computed() {
+    let host = host_with_vue_plugin();
+    let allocator = Allocator::default();
+    let source = "export default { computed: { async fetchedData() { return await fetch('/api'); } } }";
+    let path = Path::new("Data.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"vue/no-async-in-computed-properties"),
+        "should flag async in computed, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_vue_no_child_content_with_v_html() {
+    let host = host_with_vue_plugin();
+    let allocator = Allocator::default();
+    let source = "const template = `<div v-html=\"rawHtml\">Some text</div>`;";
+    let path = Path::new("Unsafe.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"vue/no-child-content"),
+        "should flag v-html with child content, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_vue_no_ref_reactivity_loss() {
+    let host = host_with_vue_plugin();
+    let allocator = Allocator::default();
+    let source = "import { ref } from 'vue';\nconst { value } = ref(42);";
+    let path = Path::new("setup.ts");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"vue/no-ref-object-reactivity-loss"),
+        "should flag ref destructuring, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_vue_no_component_options_typo() {
+    let host = host_with_vue_plugin();
+    let allocator = Allocator::default();
+    let source = "export default { methdos: { fetchData() {} } }";
+    let path = Path::new("Component.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"vue/no-component-options-typo"),
+        "should flag 'methdos' typo, got: {names:?}"
+    );
+}
+
+// ---- JSDoc plugin integration tests ----
+
+/// Path to the pre-built jsdoc plugin component.
+const JSDOC_PLUGIN: &str = concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../tests/fixtures/plugins/jsdoc-plugin.wasm"
+);
+
+fn host_with_jsdoc_plugin() -> WasmPluginHost {
+    let mut host = WasmPluginHost::new(ResourceLimits::default()).expect("should create WASM host");
+    host.load_plugin(Path::new(JSDOC_PLUGIN), "")
+        .expect("should load jsdoc plugin");
+    host
+}
+
+#[test]
+fn test_load_jsdoc_plugin() {
+    let host = host_with_jsdoc_plugin();
+    drop(host);
+}
+
+#[test]
+fn test_jsdoc_check_tag_names() {
+    let host = host_with_jsdoc_plugin();
+    let allocator = Allocator::default();
+    let source = "/** @foobar This is a test */\nfunction test() {}";
+    let path = Path::new("utils.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jsdoc/check-tag-names"),
+        "should flag unknown @foobar tag, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_jsdoc_check_types() {
+    let host = host_with_jsdoc_plugin();
+    let allocator = Allocator::default();
+    let source = "/** @param {String} name The name */\nfunction greet(name) {}";
+    let path = Path::new("greet.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jsdoc/check-types"),
+        "should flag {{String}} -> use {{string}}, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_jsdoc_require_param_type() {
+    let host = host_with_jsdoc_plugin();
+    let allocator = Allocator::default();
+    let source = "/** @param name The name */\nfunction greet(name) {}";
+    let path = Path::new("greet.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jsdoc/require-param-type"),
+        "should flag missing type in @param, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_jsdoc_no_defaults() {
+    let host = host_with_jsdoc_plugin();
+    let allocator = Allocator::default();
+    let source = "/** @default 42 */\nconst ANSWER = 42;";
+    let path = Path::new("constants.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jsdoc/no-defaults"),
+        "should flag @default tag, got: {names:?}"
+    );
+}
+
+#[test]
+fn test_jsdoc_match_description() {
+    let host = host_with_jsdoc_plugin();
+    let allocator = Allocator::default();
+    let source = "/** lowercase description */\nfunction test() {}";
+    let path = Path::new("test.js");
+    let parsed = parse_file(&allocator, source, path).expect("parse");
+
+    let diags = host.lint_file(path, source, &parsed.program);
+    let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
+    assert!(
+        names.contains(&"jsdoc/match-description"),
+        "should flag lowercase description, got: {names:?}"
+    );
+}
+
+
