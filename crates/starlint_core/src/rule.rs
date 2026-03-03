@@ -8,6 +8,7 @@ use std::fmt::Debug;
 use std::path::Path;
 
 use oxc_ast::AstKind;
+use oxc_ast::ast_kind::AstType;
 use oxc_semantic::Semantic;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
@@ -52,6 +53,22 @@ pub trait NativeRule: Debug + Send + Sync {
     /// the engine runs a semantic pre-pass before traversal.
     fn needs_semantic(&self) -> bool {
         false
+    }
+
+    /// Which [`AstType`] variants this rule handles in [`run`](NativeRule::run).
+    ///
+    /// Return `Some(&[AstType::CallExpression, ...])` to only receive those node
+    /// types during traversal. Return `None` (default) to receive **all** nodes.
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        None
+    }
+
+    /// Which [`AstType`] variants this rule handles in [`leave`](NativeRule::leave).
+    ///
+    /// Return `Some(...)` to only receive matching nodes on leave. Return `None`
+    /// (default) to receive **all** nodes.
+    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+        None
     }
 
     /// Configure this rule from a JSON config value.

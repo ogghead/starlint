@@ -12,6 +12,7 @@ use std::sync::RwLock;
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::{BindingPattern, Expression};
+use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -60,6 +61,26 @@ impl NativeRule for ConsistentDestructuring {
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::BlockStatement,
+            AstType::Function,
+            AstType::Program,
+            AstType::StaticMemberExpression,
+            AstType::VariableDeclarator,
+        ])
+    }
+
+    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::BlockStatement,
+            AstType::Function,
+            AstType::Program,
+            AstType::StaticMemberExpression,
+            AstType::VariableDeclarator,
+        ])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

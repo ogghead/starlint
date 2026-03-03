@@ -1,13 +1,15 @@
-//! Single-pass AST traversal with multi-rule dispatch.
+//! Single-pass AST traversal with interest-based rule dispatch.
 //!
-//! Traverses the oxc AST once, dispatching each node to all registered rules
-//! that implement [`NativeRule::run`]. A missed pattern match is essentially
-//! free (single branch prediction).
+//! Traverses the oxc AST once, dispatching each node **only** to rules that
+//! declared interest in that [`AstType`] via [`NativeRule::run_on_kinds`].
+//! Rules that return `None` (the default) receive all nodes for backwards
+//! compatibility.
 
 use std::path::Path;
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::Program;
+use oxc_ast::ast_kind::{AST_TYPE_MAX, AstType};
 use oxc_ast_visit::Visit;
 use oxc_semantic::Semantic;
 
@@ -38,45 +40,34 @@ pub fn traverse_and_lint_with_semantic<'a>(
     file_path: &'a Path,
     semantic: Option<&'a Semantic<'a>>,
 ) -> Vec<Diagnostic> {
-    let traversal_rules: Vec<&dyn NativeRule> = rules
+    let all_rules: Vec<&dyn NativeRule> = rules.iter().map(std::convert::AsRef::as_ref).collect();
+
+    let traversal_rules: Vec<&dyn NativeRule> = all_rules
         .iter()
+        .copied()
         .filter(|r| r.needs_traversal())
-        .map(std::convert::AsRef::as_ref)
-        .collect();
-    let once_rules: Vec<&dyn NativeRule> = rules
-        .iter()
-        .filter(|r| !r.needs_traversal())
-        .map(std::convert::AsRef::as_ref)
         .collect();
 
     let mut all_diagnostics = Vec::new();
 
-    // Run traversal-based rules via single-pass visitor.
+    // Run traversal-based rules via single-pass visitor with dispatch table.
     if !traversal_rules.is_empty() {
+        let table = DispatchTable::build(&traversal_rules);
         let ctx = match semantic {
             Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
             None => NativeLintContext::new(source_text, file_path),
         };
         let mut visitor = RuleDispatchVisitor {
             rules: &traversal_rules,
+            table,
             ctx,
         };
         visitor.visit_program(program);
         all_diagnostics.extend(visitor.ctx.into_diagnostics());
     }
 
-    // Run file-level rules (run_once).
-    for rule in &once_rules {
-        let mut ctx = match semantic {
-            Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
-            None => NativeLintContext::new(source_text, file_path),
-        };
-        rule.run_once(&mut ctx);
-        all_diagnostics.extend(ctx.into_diagnostics());
-    }
-
-    // Run run_once for traversal rules too (they may have both).
-    for rule in &traversal_rules {
+    // Run run_once for all rules (single pass).
+    for rule in &all_rules {
         let mut ctx = match semantic {
             Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
             None => NativeLintContext::new(source_text, file_path),
@@ -88,27 +79,129 @@ pub fn traverse_and_lint_with_semantic<'a>(
     all_diagnostics
 }
 
-/// Visitor that dispatches AST nodes to multiple rules.
+// ---------------------------------------------------------------------------
+// Dispatch table
+// ---------------------------------------------------------------------------
+
+/// Convert an `AstType` to a `usize` index for the dispatch table.
 ///
-/// Uses a single shared [`NativeLintContext`] for the entire traversal to
-/// avoid allocating a new `Vec<Diagnostic>` per node per rule.
+/// `AstType` is `#[repr(u8)]`, so the cast is lossless.
+#[allow(clippy::as_conversions)]
+#[inline]
+fn ast_type_index(ty: AstType) -> usize {
+    usize::from(ty as u8)
+}
+
+/// Maps [`AstType`] discriminants to the rule indices that handle them.
+///
+/// Built once per file from rule interest declarations. Rules that return
+/// `None` from `run_on_kinds()` / `leave_on_kinds()` go into the wildcard
+/// lists and receive every node.
+struct DispatchTable {
+    /// Per-AstType rule indices for `enter_node`. Index = `AstType as usize`.
+    enter: Vec<Vec<usize>>,
+    /// Per-AstType rule indices for `leave_node`.
+    leave: Vec<Vec<usize>>,
+    /// Rules that receive ALL nodes on enter (wildcard / backwards compat).
+    enter_all: Vec<usize>,
+    /// Rules that receive ALL nodes on leave.
+    leave_all: Vec<usize>,
+}
+
+impl DispatchTable {
+    /// Build the dispatch table from a set of traversal rules.
+    fn build(rules: &[&dyn NativeRule]) -> Self {
+        let size = usize::from(AST_TYPE_MAX).saturating_add(1);
+        let mut table = Self {
+            enter: vec![Vec::new(); size],
+            leave: vec![Vec::new(); size],
+            enter_all: Vec::new(),
+            leave_all: Vec::new(),
+        };
+
+        for (idx, rule) in rules.iter().enumerate() {
+            match rule.run_on_kinds() {
+                Some(kinds) => {
+                    for &kind in kinds {
+                        let slot = ast_type_index(kind);
+                        if let Some(entry) = table.enter.get_mut(slot) {
+                            entry.push(idx);
+                        }
+                    }
+                }
+                None => table.enter_all.push(idx),
+            }
+
+            match rule.leave_on_kinds() {
+                Some(kinds) => {
+                    for &kind in kinds {
+                        let slot = ast_type_index(kind);
+                        if let Some(entry) = table.leave.get_mut(slot) {
+                            entry.push(idx);
+                        }
+                    }
+                }
+                None => table.leave_all.push(idx),
+            }
+        }
+
+        table
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Visitor
+// ---------------------------------------------------------------------------
+
+/// Visitor that dispatches AST nodes to interested rules only.
+///
+/// Uses a [`DispatchTable`] to route each node to the subset of rules that
+/// declared interest, plus wildcard rules that receive everything.
 struct RuleDispatchVisitor<'a, 'rules> {
-    /// Active rules to dispatch to.
+    /// Active rules (indexed by dispatch table entries).
     rules: &'rules [&'rules dyn NativeRule],
+    /// Interest-based dispatch table.
+    table: DispatchTable,
     /// Shared lint context — all rules push diagnostics into this.
     ctx: NativeLintContext<'a>,
 }
 
 impl<'a> Visit<'a> for RuleDispatchVisitor<'a, '_> {
     fn enter_node(&mut self, kind: AstKind<'a>) {
-        for rule in self.rules {
-            rule.run(&kind, &mut self.ctx);
+        let ty = ast_type_index(kind.ty());
+
+        // Dispatch to rules that declared interest in this specific node type.
+        if let Some(targeted) = self.table.enter.get(ty) {
+            for &idx in targeted {
+                if let Some(rule) = self.rules.get(idx) {
+                    rule.run(&kind, &mut self.ctx);
+                }
+            }
+        }
+
+        // Dispatch to wildcard rules (backwards compat / catch-all).
+        for &idx in &self.table.enter_all {
+            if let Some(rule) = self.rules.get(idx) {
+                rule.run(&kind, &mut self.ctx);
+            }
         }
     }
 
     fn leave_node(&mut self, kind: AstKind<'a>) {
-        for rule in self.rules {
-            rule.leave(&kind, &mut self.ctx);
+        let ty = ast_type_index(kind.ty());
+
+        if let Some(targeted) = self.table.leave.get(ty) {
+            for &idx in targeted {
+                if let Some(rule) = self.rules.get(idx) {
+                    rule.leave(&kind, &mut self.ctx);
+                }
+            }
+        }
+
+        for &idx in &self.table.leave_all {
+            if let Some(rule) = self.rules.get(idx) {
+                rule.leave(&kind, &mut self.ctx);
+            }
         }
     }
 }
@@ -119,6 +212,7 @@ mod tests {
     use super::*;
 
     use oxc_allocator::Allocator;
+    use oxc_ast::ast_kind::AstType;
     use starlint_plugin_sdk::diagnostic::Span;
     use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
@@ -150,6 +244,36 @@ mod tests {
         }
     }
 
+    /// Same as `NoDebuggerRule` but declares interest via `run_on_kinds`.
+    #[derive(Debug)]
+    struct TargetedNoDebuggerRule;
+
+    impl NativeRule for TargetedNoDebuggerRule {
+        fn meta(&self) -> RuleMeta {
+            RuleMeta {
+                name: "targeted-no-debugger".to_owned(),
+                description: "Disallow debugger statements (targeted)".to_owned(),
+                category: Category::Correctness,
+                default_severity: starlint_plugin_sdk::diagnostic::Severity::Error,
+                fix_kind: FixKind::SafeFix,
+            }
+        }
+
+        fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+            if let AstKind::DebuggerStatement(stmt) = kind {
+                ctx.report_error(
+                    "targeted-no-debugger",
+                    "Unexpected `debugger` statement",
+                    Span::new(stmt.span.start, stmt.span.end),
+                );
+            }
+        }
+
+        fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+            Some(&[AstType::DebuggerStatement])
+        }
+    }
+
     #[test]
     fn test_traverse_finds_debugger() {
         let allocator = Allocator::default();
@@ -172,6 +296,45 @@ mod tests {
             let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDebuggerRule)];
             let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
             assert_eq!(diags.len(), 0, "clean file should have no diagnostics");
+        }
+    }
+
+    #[test]
+    fn test_targeted_rule_finds_debugger() {
+        let allocator = Allocator::default();
+        let source = "debugger;\nconst x = 1;";
+        let result = parse_file(&allocator, source, Path::new("test.js"));
+        assert!(result.is_ok(), "parse should succeed");
+        if let Ok(parsed) = result {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(TargetedNoDebuggerRule)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(diags.len(), 1, "targeted rule should find debugger");
+        }
+    }
+
+    #[test]
+    fn test_targeted_rule_clean_file() {
+        let allocator = Allocator::default();
+        let source = "const x = 1;";
+        let result = parse_file(&allocator, source, Path::new("test.js"));
+        if let Ok(parsed) = result {
+            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(TargetedNoDebuggerRule)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(diags.len(), 0, "targeted rule on clean file = no diags");
+        }
+    }
+
+    #[test]
+    fn test_mixed_wildcard_and_targeted_rules() {
+        let allocator = Allocator::default();
+        let source = "debugger;";
+        let result = parse_file(&allocator, source, Path::new("test.js"));
+        assert!(result.is_ok(), "parse should succeed");
+        if let Ok(parsed) = result {
+            let rules: Vec<Box<dyn NativeRule>> =
+                vec![Box::new(NoDebuggerRule), Box::new(TargetedNoDebuggerRule)];
+            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
+            assert_eq!(diags.len(), 2, "both wildcard and targeted should fire");
         }
     }
 }

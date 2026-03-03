@@ -5,6 +5,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::ModuleExportName;
+use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
@@ -25,6 +26,10 @@ impl NativeRule for NoUselessRename {
             default_severity: Severity::Warning,
             fix_kind: FixKind::SafeFix,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::ExportSpecifier, AstType::ImportSpecifier])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

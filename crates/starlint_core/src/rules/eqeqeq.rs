@@ -6,6 +6,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::BinaryOperator;
+use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
@@ -26,6 +27,10 @@ impl NativeRule for Eqeqeq {
             default_severity: Severity::Error,
             fix_kind: FixKind::SuggestionFix,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::BinaryExpression])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

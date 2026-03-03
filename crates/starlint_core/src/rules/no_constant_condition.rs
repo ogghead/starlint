@@ -5,6 +5,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
+use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
@@ -63,6 +64,17 @@ impl NativeRule for NoConstantCondition {
     }
 
     #[allow(clippy::too_many_lines)] // Five AstKind arms with similar structure
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::ConditionalExpression,
+            AstType::DoWhileStatement,
+            AstType::ForStatement,
+            AstType::IfStatement,
+            AstType::WhileStatement,
+        ])
+    }
+
+    #[allow(clippy::too_many_lines)]
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         match kind {
             AstKind::IfStatement(stmt) => {

@@ -5,6 +5,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
+use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
@@ -25,6 +26,10 @@ impl NativeRule for NoUnusedLabels {
             default_severity: Severity::Error,
             fix_kind: FixKind::SafeFix,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::LabeledStatement])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

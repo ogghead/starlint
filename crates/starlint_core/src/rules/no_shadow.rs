@@ -5,6 +5,7 @@
 //! being referenced.
 
 use oxc_ast::AstKind;
+use oxc_ast::ast_kind::AstType;
 use oxc_span::Ident;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
@@ -30,6 +31,10 @@ impl NativeRule for NoShadow {
 
     fn needs_semantic(&self) -> bool {
         true
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::VariableDeclaration])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

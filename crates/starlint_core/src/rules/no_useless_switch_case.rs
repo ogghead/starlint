@@ -5,6 +5,7 @@
 //! (falling through), is unnecessary complexity.
 
 use oxc_ast::AstKind;
+use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
@@ -25,6 +26,10 @@ impl NativeRule for NoUselessSwitchCase {
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::SwitchStatement])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

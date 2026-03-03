@@ -8,6 +8,7 @@ use std::sync::RwLock;
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::LogicalOperator;
+use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -87,6 +88,40 @@ impl NativeRule for MaxComplexity {
     }
 
     #[allow(clippy::too_many_lines)]
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::ArrowFunctionExpression,
+            AstType::CatchClause,
+            AstType::ConditionalExpression,
+            AstType::DoWhileStatement,
+            AstType::ForInStatement,
+            AstType::ForOfStatement,
+            AstType::ForStatement,
+            AstType::Function,
+            AstType::IfStatement,
+            AstType::LogicalExpression,
+            AstType::SwitchCase,
+            AstType::WhileStatement,
+        ])
+    }
+
+    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::ArrowFunctionExpression,
+            AstType::CatchClause,
+            AstType::ConditionalExpression,
+            AstType::DoWhileStatement,
+            AstType::ForInStatement,
+            AstType::ForOfStatement,
+            AstType::ForStatement,
+            AstType::Function,
+            AstType::IfStatement,
+            AstType::LogicalExpression,
+            AstType::SwitchCase,
+            AstType::WhileStatement,
+        ])
+    }
+
     fn run(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
         match kind {
             // Push a new scope for function boundaries.

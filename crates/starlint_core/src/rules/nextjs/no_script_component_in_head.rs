@@ -5,6 +5,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXChild, JSXElementName};
+use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -37,6 +38,10 @@ impl NativeRule for NoScriptComponentInHead {
             default_severity: Severity::Error,
             fix_kind: FixKind::None,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::JSXElement])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

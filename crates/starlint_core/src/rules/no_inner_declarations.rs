@@ -10,6 +10,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::VariableDeclarationKind;
+use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
 use starlint_plugin_sdk::diagnostic::Severity;
@@ -80,6 +81,27 @@ impl NativeRule for NoInnerDeclarations {
 
     fn needs_semantic(&self) -> bool {
         true
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::ArrowFunctionExpression,
+            AstType::CatchClause,
+            AstType::DoWhileStatement,
+            AstType::ForInStatement,
+            AstType::ForOfStatement,
+            AstType::ForStatement,
+            AstType::Function,
+            AstType::IfStatement,
+            AstType::Program,
+            AstType::StaticBlock,
+            AstType::SwitchCase,
+            AstType::SwitchStatement,
+            AstType::TryStatement,
+            AstType::VariableDeclaration,
+            AstType::WhileStatement,
+            AstType::WithStatement,
+        ])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

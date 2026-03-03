@@ -3,6 +3,7 @@
 //! Disallow `debugger` statements. These should never appear in production code.
 
 use oxc_ast::AstKind;
+use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -22,6 +23,10 @@ impl NativeRule for NoDebugger {
             default_severity: Severity::Error,
             fix_kind: FixKind::SafeFix,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::DebuggerStatement])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

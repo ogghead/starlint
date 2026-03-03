@@ -14,6 +14,7 @@ use std::sync::RwLock;
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::VariableDeclarationKind;
+use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -88,6 +89,40 @@ impl NativeRule for BlockScopedVar {
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::ArrowFunctionExpression,
+            AstType::DoWhileStatement,
+            AstType::ForInStatement,
+            AstType::ForOfStatement,
+            AstType::ForStatement,
+            AstType::Function,
+            AstType::IfStatement,
+            AstType::LabeledStatement,
+            AstType::SwitchStatement,
+            AstType::TryStatement,
+            AstType::VariableDeclaration,
+            AstType::WhileStatement,
+        ])
+    }
+
+    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::ArrowFunctionExpression,
+            AstType::DoWhileStatement,
+            AstType::ForInStatement,
+            AstType::ForOfStatement,
+            AstType::ForStatement,
+            AstType::Function,
+            AstType::IfStatement,
+            AstType::LabeledStatement,
+            AstType::SwitchStatement,
+            AstType::TryStatement,
+            AstType::VariableDeclaration,
+            AstType::WhileStatement,
+        ])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

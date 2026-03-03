@@ -5,6 +5,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::ImportDeclarationSpecifier;
+use oxc_ast::ast_kind::AstType;
 use oxc_semantic::SymbolFlags;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
@@ -29,6 +30,10 @@ impl NativeRule for NoImportAssign {
 
     fn needs_semantic(&self) -> bool {
         true
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::ImportDeclaration])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

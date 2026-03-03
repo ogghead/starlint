@@ -8,6 +8,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::TSTypeName;
+use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -40,6 +41,10 @@ impl NativeRule for NoWrapperObjectTypes {
             default_severity: Severity::Error,
             fix_kind: FixKind::None,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::TSTypeReference])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

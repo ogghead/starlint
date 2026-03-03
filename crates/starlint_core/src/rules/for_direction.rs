@@ -8,6 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{
     AssignmentOperator, BinaryOperator, Expression, SimpleAssignmentTarget, UpdateOperator,
 };
+use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
@@ -29,6 +30,10 @@ impl NativeRule for ForDirection {
             default_severity: Severity::Error,
             fix_kind: FixKind::None,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::ForStatement])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

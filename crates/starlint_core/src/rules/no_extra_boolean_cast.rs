@@ -6,6 +6,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
+use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -25,6 +26,16 @@ impl NativeRule for NoExtraBooleanCast {
             default_severity: Severity::Warning,
             fix_kind: FixKind::SafeFix,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[
+            AstType::ConditionalExpression,
+            AstType::DoWhileStatement,
+            AstType::ForStatement,
+            AstType::IfStatement,
+            AstType::WhileStatement,
+        ])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {

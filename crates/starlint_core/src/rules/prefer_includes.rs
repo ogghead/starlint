@@ -6,6 +6,7 @@
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression, UnaryOperator};
+use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
@@ -80,6 +81,10 @@ impl NativeRule for PreferIncludes {
     }
 
     #[allow(clippy::too_many_lines)]
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::BinaryExpression])
+    }
+
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::BinaryExpression(expr) = kind else {
             return;

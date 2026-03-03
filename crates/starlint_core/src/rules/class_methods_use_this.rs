@@ -8,6 +8,7 @@ use std::sync::RwLock;
 
 use oxc_ast::AstKind;
 use oxc_ast::ast::MethodDefinitionKind;
+use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
@@ -54,6 +55,14 @@ impl NativeRule for ClassMethodsUseThis {
             default_severity: Severity::Warning,
             fix_kind: FixKind::None,
         }
+    }
+
+    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::MethodDefinition, AstType::ThisExpression])
+    }
+
+    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+        Some(&[AstType::MethodDefinition, AstType::ThisExpression])
     }
 
     fn run(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
