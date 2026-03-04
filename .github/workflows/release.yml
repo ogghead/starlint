@@ -189,9 +189,60 @@ jobs:
       - name: Publish root package
         run: npm publish npm/starlint/ --provenance --access public
 
+  vscode-publish:
+    name: Publish VS Code extension
+    needs: [version, publish]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Verify version
+        working-directory: editors/vscode
+        run: |
+          VERSION="${{ needs.version.outputs.version }}"
+          EXT_VERSION=$(node -p "require('./package.json').version")
+          if [ "$EXT_VERSION" != "$VERSION" ]; then
+            echo "::error::VS Code extension version ($EXT_VERSION) does not match tag ($VERSION)"
+            exit 1
+          fi
+          echo "Version verified: $VERSION"
+
+      - name: Install dependencies
+        working-directory: editors/vscode
+        run: npm ci
+
+      - name: Package extension
+        working-directory: editors/vscode
+        run: npx @vscode/vsce package --no-git-tag-version -o starlint-${{ needs.version.outputs.version }}.vsix
+
+      - name: Publish to VS Code Marketplace
+        working-directory: editors/vscode
+        if: env.VSCE_PAT != ''
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --no-git-tag-version -p "$VSCE_PAT"
+
+      - name: Publish to OpenVSX
+        working-directory: editors/vscode
+        if: env.OVSX_PAT != ''
+        env:
+          OVSX_PAT: ${{ secrets.OVSX_PAT }}
+        run: npx ovsx publish starlint-${{ needs.version.outputs.version }}.vsix -p "$OVSX_PAT"
+
+      - name: Upload vsix artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vscode-extension
+          path: editors/vscode/starlint-${{ needs.version.outputs.version }}.vsix
+          if-no-files-found: error
+
   github-release:
     name: Create GitHub Release
-    needs: [version, build, publish]
+    needs: [version, build, publish, vscode-publish]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -221,6 +272,9 @@ jobs:
           cd artifacts/binary-win32-x64-msvc
           zip "../../release-assets/starlint-v${VERSION}-win32-x64-msvc.zip" starlint.exe
           cd ../..
+
+          # VS Code extension
+          cp artifacts/vscode-extension/starlint-${VERSION}.vsix release-assets/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

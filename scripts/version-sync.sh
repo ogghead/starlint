@@ -14,6 +14,7 @@ PACKAGES=(
   "npm/cli-darwin-x64/package.json"
   "npm/cli-darwin-arm64/package.json"
   "npm/cli-win32-x64-msvc/package.json"
+  "editors/vscode/package.json"
 )
 
 for pkg in "${PACKAGES[@]}"; do

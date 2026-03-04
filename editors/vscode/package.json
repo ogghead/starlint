@@ -2,9 +2,25 @@
   "name": "starlint",
   "displayName": "starlint",
   "description": "Fast JS/TS linter with WASM plugin support",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "ogghead",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ogghead/starlint",
+    "directory": "editors/vscode"
+  },
+  "homepage": "https://github.com/ogghead/starlint",
+  "bugs": {
+    "url": "https://github.com/ogghead/starlint/issues"
+  },
+  "keywords": [
+    "linter",
+    "javascript",
+    "typescript",
+    "lint",
+    "static-analysis"
+  ],
   "engines": {
     "vscode": "^1.85.0"
   },
@@ -36,6 +52,7 @@
     }
   },
   "scripts": {
+    "vscode:prepublish": "npm run build",
     "build": "tsc -p .",
     "watch": "tsc -watch -p ."
   },
