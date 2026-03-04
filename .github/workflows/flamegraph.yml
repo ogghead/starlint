@@ -38,9 +38,6 @@ jobs:
       - name: Allow perf events
         run: sudo sysctl kernel.perf_event_paranoid=-1
 
-      - name: Verify perf works
-        run: perf stat -- sleep 0.1
-
       - name: Cache benchmark corpora
         uses: actions/cache@v4
         with:
@@ -62,6 +59,7 @@ jobs:
             cargo flamegraph --release -j4 \
               --bin starlint \
               --ignore-status \
+              -c "record -e cpu-clock:u -F 997 --call-graph dwarf,16384 -g" \
               -o flamegraph.svg \
               -- --config benches/configs/starlint-default.toml \
                  --no-plugins \
