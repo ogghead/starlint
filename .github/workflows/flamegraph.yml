@@ -53,28 +53,30 @@ jobs:
             cd benches/corpora/grafana && git sparse-checkout set public/app
           fi
 
-      - name: Generate flamegraph
+      - name: Build release binary
         env:
           RUSTFLAGS: "-C force-frame-pointers=yes"
+          CARGO_PROFILE_RELEASE_DEBUG: "true"
+        run: cargo build --release --bin starlint
+
+      - name: Generate flamegraph
         run: |
           set +e
-          RAYON_NUM_THREADS=2 CARGO_PROFILE_RELEASE_DEBUG=true \
-            cargo flamegraph --release \
-              --bin starlint \
-              --ignore-status \
-              -o flamegraph.svg \
-              -- --config benches/configs/starlint-default.toml \
-                 --no-plugins \
-                 benches/corpora/grafana
+          RAYON_NUM_THREADS=2 flamegraph \
+            --cmd "record -e cpu-clock -F 997 -g" \
+            --ignore-status \
+            -o flamegraph.svg \
+            -- target/release/starlint \
+               --config benches/configs/starlint-default.toml \
+               --no-plugins \
+               benches/corpora/grafana
           exit_code=$?
           set -e
-          echo "cargo flamegraph exit code: $exit_code"
-          ls -la flamegraph.svg 2>/dev/null || echo "flamegraph.svg does not exist"
-          ls -la perf.data 2>/dev/null || echo "perf.data does not exist"
+          echo "flamegraph exit code: $exit_code"
           if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
             echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
           else
-            echo "::error::flamegraph.svg not generated (cargo flamegraph exit code: $exit_code)"
+            echo "::error::flamegraph.svg not generated (flamegraph exit code: $exit_code)"
             exit 1
           fi
 
