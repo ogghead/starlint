@@ -35,12 +35,12 @@ jobs:
             || sudo apt-get install -y linux-tools-generic
           # Workaround: ubuntu-latest kernel 6.14 lacks matching linux-tools package.
           # The /usr/bin/perf wrapper fails with "perf not found for kernel X.Y.Z".
-          # Symlink whatever perf binary was installed to the expected path.
+          # Bypass wrapper by putting the actual perf binary dir first in PATH.
           PERF_BIN=$(find /usr/lib/linux-tools/ -name perf -type f 2>/dev/null | head -1)
           if [ -n "$PERF_BIN" ]; then
-            KVER=$(uname -r)
-            sudo mkdir -p "/usr/lib/linux-tools/$KVER"
-            sudo ln -sf "$PERF_BIN" "/usr/lib/linux-tools/$KVER/perf"
+            PERF_DIR=$(dirname "$PERF_BIN")
+            echo "$PERF_DIR" >> "$GITHUB_PATH"
+            echo "::notice::Using perf from $PERF_DIR"
           fi
           cargo install flamegraph --locked
 
