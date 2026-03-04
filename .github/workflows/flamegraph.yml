@@ -61,8 +61,16 @@ jobs:
 
       - name: Generate flamegraph
         run: |
+          echo "=== Diagnostics ==="
+          which flamegraph && flamegraph --version || echo "flamegraph not found"
+          which perf && perf --version || echo "perf not found"
+          ls -la target/release/starlint || echo "binary not found"
+          echo "=== Testing perf record ==="
+          perf record -e cpu-clock -g -o /tmp/test.perf -- sleep 0.1 2>&1 && echo "perf record works" || echo "perf record failed: $?"
+          echo "=== Running flamegraph ==="
           set +e
           RAYON_NUM_THREADS=2 flamegraph \
+            -v \
             --cmd "record -e cpu-clock -F 997 -g" \
             --ignore-status \
             -o flamegraph.svg \
@@ -73,6 +81,7 @@ jobs:
           exit_code=$?
           set -e
           echo "flamegraph exit code: $exit_code"
+          ls -la flamegraph.svg perf.data 2>/dev/null || echo "no output files"
           if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
             echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
           else
