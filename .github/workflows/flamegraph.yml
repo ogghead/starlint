@@ -38,6 +38,9 @@ jobs:
       - name: Allow perf events
         run: sudo sysctl kernel.perf_event_paranoid=-1
 
+      - name: Verify perf works
+        run: perf stat -- sleep 0.1
+
       - name: Cache benchmark corpora
         uses: actions/cache@v4
         with:
@@ -61,9 +64,14 @@ jobs:
               -o flamegraph.svg \
               -- --config benches/configs/starlint-default.toml \
                  --no-plugins \
-                 benches/corpora/grafana \
-            || true
-          echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
+                 benches/corpora/grafana;
+          exit_code=$?
+          if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
+            echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
+          else
+            echo "::error::flamegraph.svg not generated (cargo flamegraph exit code: $exit_code)"
+            exit 1
+          fi
 
       - name: Upload flamegraph
         uses: actions/upload-artifact@v4
