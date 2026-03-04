@@ -33,6 +33,15 @@ jobs:
           sudo apt-get install -y linux-tools-$(uname -r) 2>/dev/null \
             || sudo apt-get install -y linux-tools-azure 2>/dev/null \
             || sudo apt-get install -y linux-tools-generic
+          # Workaround: ubuntu-latest kernel 6.14 lacks matching linux-tools package.
+          # The /usr/bin/perf wrapper fails with "perf not found for kernel X.Y.Z".
+          # Symlink whatever perf binary was installed to the expected path.
+          PERF_BIN=$(find /usr/lib/linux-tools/ -name perf -type f 2>/dev/null | head -1)
+          if [ -n "$PERF_BIN" ]; then
+            KVER=$(uname -r)
+            sudo mkdir -p "/usr/lib/linux-tools/$KVER"
+            sudo ln -sf "$PERF_BIN" "/usr/lib/linux-tools/$KVER/perf"
+          fi
           cargo install flamegraph --locked
 
       - name: Allow perf events
@@ -61,26 +70,21 @@ jobs:
 
       - name: Generate flamegraph
         run: |
-          echo "::warning::flamegraph=$(which flamegraph 2>&1) perf=$(which perf 2>&1)"
-          echo "::warning::binary=$(ls -la target/release/starlint 2>&1)"
-          perf_test=$(perf record -e cpu-clock -g -o /tmp/test.perf -- sleep 0.1 2>&1) && echo "::warning::perf-test=OK" || echo "::warning::perf-test=FAILED: $perf_test"
           set +e
-          fg_output=$(RAYON_NUM_THREADS=2 flamegraph \
-            -v \
+          RAYON_NUM_THREADS=2 flamegraph \
             --cmd "record -e cpu-clock -F 997 -g" \
             --ignore-status \
             -o flamegraph.svg \
             -- target/release/starlint \
                --config benches/configs/starlint-default.toml \
                --no-plugins \
-               benches/corpora/grafana 2>&1)
+               benches/corpora/grafana
           exit_code=$?
           set -e
-          echo "::warning::flamegraph-exit=$exit_code output=$fg_output"
           if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
-            echo "::notice::Flamegraph generated: $(du -h flamegraph.svg | cut -f1)"
+            echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
           else
-            echo "::error::flamegraph.svg not generated (exit $exit_code)"
+            echo "::error::flamegraph.svg not generated (flamegraph exit code: $exit_code)"
             exit 1
           fi
 
