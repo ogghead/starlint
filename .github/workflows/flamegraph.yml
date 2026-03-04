@@ -61,15 +61,11 @@ jobs:
 
       - name: Generate flamegraph
         run: |
-          echo "=== Diagnostics ==="
-          which flamegraph && flamegraph --version || echo "flamegraph not found"
-          which perf && perf --version || echo "perf not found"
-          ls -la target/release/starlint || echo "binary not found"
-          echo "=== Testing perf record ==="
-          perf record -e cpu-clock -g -o /tmp/test.perf -- sleep 0.1 2>&1 && echo "perf record works" || echo "perf record failed: $?"
-          echo "=== Running flamegraph ==="
+          echo "::warning::flamegraph=$(which flamegraph 2>&1) perf=$(which perf 2>&1)"
+          echo "::warning::binary=$(ls -la target/release/starlint 2>&1)"
+          perf_test=$(perf record -e cpu-clock -g -o /tmp/test.perf -- sleep 0.1 2>&1) && echo "::warning::perf-test=OK" || echo "::warning::perf-test=FAILED: $perf_test"
           set +e
-          RAYON_NUM_THREADS=2 flamegraph \
+          fg_output=$(RAYON_NUM_THREADS=2 flamegraph \
             -v \
             --cmd "record -e cpu-clock -F 997 -g" \
             --ignore-status \
@@ -77,15 +73,14 @@ jobs:
             -- target/release/starlint \
                --config benches/configs/starlint-default.toml \
                --no-plugins \
-               benches/corpora/grafana
+               benches/corpora/grafana 2>&1)
           exit_code=$?
           set -e
-          echo "flamegraph exit code: $exit_code"
-          ls -la flamegraph.svg perf.data 2>/dev/null || echo "no output files"
+          echo "::warning::flamegraph-exit=$exit_code output=$fg_output"
           if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
-            echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
+            echo "::notice::Flamegraph generated: $(du -h flamegraph.svg | cut -f1)"
           else
-            echo "::error::flamegraph.svg not generated (flamegraph exit code: $exit_code)"
+            echo "::error::flamegraph.svg not generated (exit $exit_code)"
             exit 1
           fi
 
