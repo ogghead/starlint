@@ -61,6 +61,7 @@ jobs:
           RAYON_NUM_THREADS=2 CARGO_PROFILE_RELEASE_DEBUG=true \
             cargo flamegraph --release -j4 \
               --bin starlint \
+              --ignore-status \
               -o flamegraph.svg \
               -- --config benches/configs/starlint-default.toml \
                  --no-plugins \
