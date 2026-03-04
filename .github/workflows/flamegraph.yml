@@ -54,17 +54,21 @@ jobs:
           fi
 
       - name: Generate flamegraph
+        env:
+          RUSTFLAGS: "-C force-frame-pointers=yes"
         run: |
+          set +e
           RAYON_NUM_THREADS=2 CARGO_PROFILE_RELEASE_DEBUG=true \
             cargo flamegraph --release -j4 \
               --bin starlint \
               --ignore-status \
-              -c "record -e cpu-clock:u -F 997 --call-graph dwarf,16384 -g" \
+              -c "record -e cpu-clock -g" \
               -o flamegraph.svg \
               -- --config benches/configs/starlint-default.toml \
                  --no-plugins \
-                 benches/corpora/grafana;
+                 benches/corpora/grafana
           exit_code=$?
+          set -e
           if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
             echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
           else
