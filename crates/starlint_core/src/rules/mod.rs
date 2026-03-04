@@ -391,14 +391,14 @@ fn is_nextjs_file(source: &str, _path: &std::path::Path) -> bool {
 /// Storybook story files: skip unless the path or source matches story patterns.
 fn is_storybook_file(source: &str, path: &std::path::Path) -> bool {
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    file_name.contains(".stories.") || file_name.contains(".story.") || source.contains("@storybook")
+    file_name.contains(".stories.")
+        || file_name.contains(".story.")
+        || source.contains("@storybook")
 }
 
 /// Vue files: skip unless the source uses Vue APIs.
 fn is_vue_file(source: &str, _path: &std::path::Path) -> bool {
-    source.contains("defineComponent")
-        || source.contains("createApp")
-        || source.contains("vue")
+    source.contains("defineComponent") || source.contains("createApp") || source.contains("vue")
 }
 
 /// Return all built-in native rules with their default configuration.

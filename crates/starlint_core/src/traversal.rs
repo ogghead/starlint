@@ -211,11 +211,7 @@ impl DispatchTable {
     /// Resolves indices to direct `&dyn NativeRule` references and excludes
     /// inactive rules. The resulting table needs no bounds checks or active
     /// mask lookups in the per-node hot loop.
-    fn compact<'s>(
-        &self,
-        rules: &'s [Box<dyn NativeRule>],
-        active: &[bool],
-    ) -> CompactTable<'s> {
+    fn compact<'s>(&self, rules: &'s [Box<dyn NativeRule>], active: &[bool]) -> CompactTable<'s> {
         // Pre-resolve the wildcard lists once (they're merged into every slot).
         let enter_all_resolved: Vec<&'s dyn NativeRule> = self
             .enter_all
