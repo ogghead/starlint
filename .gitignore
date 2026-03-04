@@ -18,5 +18,10 @@ Thumbs.db
 # Environment
 .env
 
+# npm platform binaries (built in CI)
+npm/cli-*/starlint
+npm/cli-*/starlint.exe
+npm/*.tgz
+
 # Claude
 .claude/

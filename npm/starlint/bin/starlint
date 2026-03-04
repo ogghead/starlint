@@ -1,0 +1,78 @@
+#!/usr/bin/env node
+
+const { spawnSync } = require("child_process");
+const { platform, arch } = require("os");
+const { join } = require("path");
+
+const PLATFORMS = {
+  "linux-x64": {
+    package: "@starlint/cli-linux-x64-gnu",
+    binary: "starlint",
+  },
+  "linux-arm64": {
+    package: "@starlint/cli-linux-arm64-gnu",
+    binary: "starlint",
+  },
+  "darwin-x64": {
+    package: "@starlint/cli-darwin-x64",
+    binary: "starlint",
+  },
+  "darwin-arm64": {
+    package: "@starlint/cli-darwin-arm64",
+    binary: "starlint",
+  },
+  "win32-x64": {
+    package: "@starlint/cli-win32-x64-msvc",
+    binary: "starlint.exe",
+  },
+};
+
+function getBinaryPath() {
+  const key = `${platform()}-${arch()}`;
+  const config = PLATFORMS[key];
+
+  if (!config) {
+    console.error(
+      `Error: starlint does not have a prebuilt binary for ${platform()} ${arch()}.\n` +
+        `Supported platforms: ${Object.keys(PLATFORMS).join(", ")}.\n` +
+        `You can build from source: https://github.com/ogghead/starlint`
+    );
+    process.exit(1);
+  }
+
+  try {
+    const packageDir = require.resolve(`${config.package}/package.json`);
+    return join(packageDir, "..", config.binary);
+  } catch {
+    console.error(
+      `Error: The platform-specific package "${config.package}" is not installed.\n` +
+        `This usually means your package manager did not install the optional dependency.\n\n` +
+        `Try reinstalling:\n` +
+        `  npm install starlint\n\n` +
+        `If the problem persists, install the platform package directly:\n` +
+        `  npm install ${config.package}\n\n` +
+        `Or build from source: https://github.com/ogghead/starlint`
+    );
+    process.exit(1);
+  }
+}
+
+const binaryPath = getBinaryPath();
+const result = spawnSync(binaryPath, process.argv.slice(2), {
+  stdio: "inherit",
+  shell: platform() === "win32",
+});
+
+if (result.error) {
+  if (result.error.code === "ENOENT") {
+    console.error(
+      `Error: Could not find the starlint binary at ${binaryPath}.\n` +
+        `The platform package may be corrupted. Try reinstalling:\n` +
+        `  npm install starlint`
+    );
+    process.exit(1);
+  }
+  throw result.error;
+}
+
+process.exit(result.status ?? 1);

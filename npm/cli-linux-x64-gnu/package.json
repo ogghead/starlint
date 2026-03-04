@@ -1,0 +1,20 @@
+{
+  "name": "@starlint/cli-linux-x64-gnu",
+  "version": "0.1.0",
+  "description": "starlint CLI binary for Linux x64 (glibc)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ogghead/starlint"
+  },
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "starlint"
+  ],
+  "preferUnplugged": true
+}

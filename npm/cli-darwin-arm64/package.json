@@ -1,0 +1,20 @@
+{
+  "name": "@starlint/cli-darwin-arm64",
+  "version": "0.1.0",
+  "description": "starlint CLI binary for macOS ARM64 (Apple Silicon)",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ogghead/starlint"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "files": [
+    "starlint"
+  ],
+  "preferUnplugged": true
+}

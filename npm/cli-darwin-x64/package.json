@@ -1,0 +1,20 @@
+{
+  "name": "@starlint/cli-darwin-x64",
+  "version": "0.1.0",
+  "description": "starlint CLI binary for macOS x64",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ogghead/starlint"
+  },
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "files": [
+    "starlint"
+  ],
+  "preferUnplugged": true
+}
