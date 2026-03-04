@@ -179,10 +179,7 @@ jobs:
           npx starlint --version
           echo "Smoke test passed"
 
-      # TODO: Remove NODE_AUTH_TOKEN after configuring trusted publishing on npmjs.com
       - name: Publish platform packages
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           for dir in npm/cli-*/; do
             echo "Publishing $(node -p "require('./$dir/package.json').name")..."
@@ -190,8 +187,6 @@ jobs:
           done
 
       - name: Publish root package
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish npm/starlint/ --provenance --access public
 
   github-release:
