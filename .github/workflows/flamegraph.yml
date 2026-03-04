@@ -1,6 +1,8 @@
 name: Flamegraph
 
 on:
+  push:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -61,6 +63,7 @@ jobs:
       - name: Record perf profile
         run: |
           RAYON_NUM_THREADS=2 perf record \
+            -e cpu-clock:u \
             -g --call-graph dwarf,16384 \
             -F 997 \
             -o perf.data \
