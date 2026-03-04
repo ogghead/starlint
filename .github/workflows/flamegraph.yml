@@ -30,10 +30,9 @@ jobs:
       - name: Install perf and inferno
         run: |
           sudo apt-get update
-          # Install kernel-matched perf; fall back to generic if unavailable
-          sudo apt-get install -y linux-tools-common \
-            linux-tools-$(uname -r) linux-cloud-tools-$(uname -r) 2>/dev/null \
-            || sudo apt-get install -y linux-tools-generic linux-cloud-tools-generic
+          # linux-perf provides a version-independent perf binary
+          # that works regardless of the runner's kernel version.
+          sudo apt-get install -y linux-perf
           cargo install inferno --locked
 
       - name: Allow perf events
