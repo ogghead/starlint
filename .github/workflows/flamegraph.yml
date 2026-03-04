@@ -27,15 +27,13 @@ jobs:
         with:
           cache-on-failure: true
 
-      - name: Install perf and inferno
+      - name: Install perf and cargo-flamegraph
         run: |
           sudo apt-get update
-          # Try kernel-matched tools first, then the azure meta-package,
-          # then generic as last resort.
           sudo apt-get install -y linux-tools-$(uname -r) 2>/dev/null \
             || sudo apt-get install -y linux-tools-azure 2>/dev/null \
             || sudo apt-get install -y linux-tools-generic
-          cargo install inferno --locked
+          cargo install flamegraph --locked
 
       - name: Allow perf events
         run: sudo sysctl kernel.perf_event_paranoid=-1
@@ -55,38 +53,16 @@ jobs:
             cd benches/corpora/grafana && git sparse-checkout set public/app
           fi
 
-      - name: Build starlint with debug symbols
-        run: |
-          CARGO_PROFILE_RELEASE_DEBUG=1 \
-          CARGO_PROFILE_RELEASE_STRIP=none \
-          RUSTFLAGS="-C force-frame-pointers=yes" \
-            cargo build --release -j4
-
-      - name: Record perf profile
-        run: |
-          # starlint exits non-zero when it finds lint errors, so ignore its
-          # exit code.  Use frame-pointer unwinding (fp) which works reliably
-          # in GitHub Actions VMs where DWARF unwinding may fail.
-          RAYON_NUM_THREADS=2 perf record \
-            -e cpu-clock:u \
-            -g --call-graph fp \
-            -F 997 \
-            -o perf.data \
-            -- ./target/release/starlint \
-              --config benches/configs/starlint-default.toml \
-              --no-plugins \
-              benches/corpora/grafana \
-            || true
-
       - name: Generate flamegraph
         run: |
-          if [ ! -f perf.data ]; then
-            echo "::error::perf.data not found — perf record likely failed"
-            exit 1
-          fi
-          perf script -i perf.data \
-            | inferno-collapse-perf \
-            | inferno-flamegraph > flamegraph.svg
+          RAYON_NUM_THREADS=2 CARGO_PROFILE_RELEASE_DEBUG=true \
+            cargo flamegraph --release -j4 \
+              --bin starlint \
+              -o flamegraph.svg \
+              -- --config benches/configs/starlint-default.toml \
+                 --no-plugins \
+                 benches/corpora/grafana \
+            || true
           echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
 
       - name: Upload flamegraph
