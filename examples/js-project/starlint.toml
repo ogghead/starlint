@@ -1,0 +1,9 @@
+[rules]
+"no-debugger" = "error"
+"no-console" = "warn"
+"no-eval" = "error"
+
+[[overrides]]
+files = ["**/*.test.js"]
+[overrides.rules]
+"no-console" = "off"
