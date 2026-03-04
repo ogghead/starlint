@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: flamegraph
@@ -79,9 +79,23 @@ jobs:
             exit 1
           fi
 
-      - name: Upload flamegraph
+      - name: Upload flamegraph artifact
         uses: actions/upload-artifact@v4
         with:
           name: flamegraph-${{ github.sha }}
           path: flamegraph.svg
           retention-days: 90
+
+      - name: Publish flamegraph to assets branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Save SVG outside the working tree before resetting
+          cp flamegraph.svg /tmp/flamegraph.svg
+          # Create orphan branch with only the SVG
+          git checkout --orphan flamegraph-assets-tmp
+          git rm -rf .
+          cp /tmp/flamegraph.svg flamegraph.svg
+          git add flamegraph.svg
+          git commit -m "Update flamegraph from ${{ github.sha }}"
+          git push origin flamegraph-assets-tmp:flamegraph-assets --force

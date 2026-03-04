@@ -33,6 +33,14 @@ Compared against [oxlint](https://oxc.rs) and [eslint](https://eslint.org) on re
 *Last updated: 2026-03-04. Benchmarked with [hyperfine](https://github.com/sharkdp/hyperfine) (3 warmup, 10+ runs).*
 <!-- BENCHMARKS_END -->
 
+## Flamegraph
+
+Profiling starlint on the [Grafana](https://github.com/grafana/grafana) codebase (~6k files) with default rules:
+
+[![Flamegraph](https://raw.githubusercontent.com/ogghead/starlint/flamegraph-assets/flamegraph.svg)](https://raw.githubusercontent.com/ogghead/starlint/flamegraph-assets/flamegraph.svg)
+
+<sub>Click for interactive view. Auto-generated on each push to master.</sub>
+
 ## Status
 
 **Early development** — the framework is being built. The first plugin (Storybook rules) will be ported from [oxlint-plugin-storybook](https://github.com/ogghead/oxlint-plugin-storybook).
