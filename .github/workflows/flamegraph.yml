@@ -15,7 +15,9 @@ concurrency:
 jobs:
   flamegraph:
     name: Generate flamegraph
-    runs-on: ubuntu-latest
+    # Pin to ubuntu-22.04: ubuntu-latest (24.04) runs kernel 6.14 which
+    # lacks matching linux-tools packages (Ubuntu bug #2117159).
+    runs-on: ubuntu-22.04
     env:
       CARGO_BUILD_JOBS: "4"
     steps:
@@ -30,18 +32,8 @@ jobs:
       - name: Install perf and cargo-flamegraph
         run: |
           sudo apt-get update
-          sudo apt-get install -y linux-tools-$(uname -r) 2>/dev/null \
-            || sudo apt-get install -y linux-tools-azure 2>/dev/null \
+          sudo apt-get install -y linux-tools-$(uname -r) \
             || sudo apt-get install -y linux-tools-generic
-          # Workaround: ubuntu-latest kernel 6.14 lacks matching linux-tools package.
-          # The /usr/bin/perf wrapper fails with "perf not found for kernel X.Y.Z".
-          # Bypass wrapper by putting the actual perf binary dir first in PATH.
-          PERF_BIN=$(find /usr/lib/linux-tools/ -name perf -type f 2>/dev/null | head -1)
-          if [ -n "$PERF_BIN" ]; then
-            PERF_DIR=$(dirname "$PERF_BIN")
-            echo "$PERF_DIR" >> "$GITHUB_PATH"
-            echo "::notice::Using perf from $PERF_DIR"
-          fi
           cargo install flamegraph --locked
 
       - name: Allow perf events
@@ -68,26 +60,22 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: "true"
         run: cargo build --release --bin starlint
 
-      - name: Verify perf works
-        run: perf stat -e cpu-clock -- sleep 0.1
-
       - name: Generate flamegraph
         run: |
           set +e
-          fg_err=$(RAYON_NUM_THREADS=2 flamegraph \
+          RAYON_NUM_THREADS=2 flamegraph \
             --ignore-status \
             -o flamegraph.svg \
             -- target/release/starlint \
                --config benches/configs/starlint-default.toml \
                --no-plugins \
-               benches/corpora/grafana 2>&1)
+               benches/corpora/grafana 2>&1
           exit_code=$?
           set -e
           if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
             echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
           else
-            echo "::warning::flamegraph stderr: $fg_err"
-            echo "::error::flamegraph.svg not generated (exit $exit_code)"
+            echo "::error::flamegraph.svg not generated (flamegraph exit code: $exit_code)"
             exit 1
           fi
 
