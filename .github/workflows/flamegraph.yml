@@ -68,23 +68,26 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: "true"
         run: cargo build --release --bin starlint
 
+      - name: Verify perf works
+        run: perf stat -e cpu-clock -- sleep 0.1
+
       - name: Generate flamegraph
         run: |
           set +e
-          RAYON_NUM_THREADS=2 flamegraph \
-            --cmd "record -e cpu-clock -F 997 -g" \
+          fg_err=$(RAYON_NUM_THREADS=2 flamegraph \
             --ignore-status \
             -o flamegraph.svg \
             -- target/release/starlint \
                --config benches/configs/starlint-default.toml \
                --no-plugins \
-               benches/corpora/grafana
+               benches/corpora/grafana 2>&1)
           exit_code=$?
           set -e
           if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
             echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
           else
-            echo "::error::flamegraph.svg not generated (flamegraph exit code: $exit_code)"
+            echo "::warning::flamegraph stderr: $fg_err"
+            echo "::error::flamegraph.svg not generated (exit $exit_code)"
             exit 1
           fi
 
