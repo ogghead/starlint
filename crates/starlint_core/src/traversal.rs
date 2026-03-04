@@ -205,6 +205,74 @@ impl DispatchTable {
 
         table
     }
+
+    /// Build a compact per-file table from the session table + active mask.
+    ///
+    /// Resolves indices to direct `&dyn NativeRule` references and excludes
+    /// inactive rules. The resulting table needs no bounds checks or active
+    /// mask lookups in the per-node hot loop.
+    fn compact<'s>(
+        &self,
+        rules: &'s [Box<dyn NativeRule>],
+        active: &[bool],
+    ) -> CompactTable<'s> {
+        // Pre-resolve the wildcard lists once (they're merged into every slot).
+        let enter_all_resolved: Vec<&'s dyn NativeRule> = self
+            .enter_all
+            .iter()
+            .filter(|&&idx| active.get(idx).copied().unwrap_or(false))
+            .filter_map(|&idx| rules.get(idx).map(AsRef::as_ref))
+            .collect();
+        let leave_all_resolved: Vec<&'s dyn NativeRule> = self
+            .leave_all
+            .iter()
+            .filter(|&&idx| active.get(idx).copied().unwrap_or(false))
+            .filter_map(|&idx| rules.get(idx).map(AsRef::as_ref))
+            .collect();
+
+        let mut has_rules = false;
+
+        let enter: Vec<Vec<&'s dyn NativeRule>> = self
+            .enter
+            .iter()
+            .map(|indices| {
+                let mut resolved: Vec<&'s dyn NativeRule> = indices
+                    .iter()
+                    .filter(|&&idx| active.get(idx).copied().unwrap_or(false))
+                    .filter_map(|&idx| rules.get(idx).map(AsRef::as_ref))
+                    .collect();
+                // Merge wildcard rules into each slot.
+                resolved.extend_from_slice(&enter_all_resolved);
+                if !resolved.is_empty() {
+                    has_rules = true;
+                }
+                resolved
+            })
+            .collect();
+
+        let leave: Vec<Vec<&'s dyn NativeRule>> = self
+            .leave
+            .iter()
+            .map(|indices| {
+                let mut resolved: Vec<&'s dyn NativeRule> = indices
+                    .iter()
+                    .filter(|&&idx| active.get(idx).copied().unwrap_or(false))
+                    .filter_map(|&idx| rules.get(idx).map(AsRef::as_ref))
+                    .collect();
+                resolved.extend_from_slice(&leave_all_resolved);
+                if !resolved.is_empty() {
+                    has_rules = true;
+                }
+                resolved
+            })
+            .collect();
+
+        CompactTable {
+            enter,
+            leave,
+            has_rules,
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -232,16 +300,18 @@ pub(crate) fn traverse_with_prebuilt<'a>(
 
     let mut all_diagnostics = Vec::new();
 
-    // Run traversal-based rules via single-pass visitor with pre-built dispatch table.
-    {
+    // Build a compact per-file dispatch table that stores direct rule
+    // references, eliminating per-node active-mask checks and bounds checks.
+    let compact = table.compact(rules, &active);
+
+    // Run traversal-based rules via single-pass visitor with compact table.
+    if !compact.is_empty() {
         let ctx = match semantic {
             Some(sem) => NativeLintContext::with_semantic(source_text, file_path, sem),
             None => NativeLintContext::new(source_text, file_path),
         };
-        let mut visitor = SessionDispatchVisitor {
-            rules,
-            table,
-            active: &active,
+        let mut visitor = CompactDispatchVisitor {
+            table: &compact,
             ctx,
         };
         visitor.visit_program(program);
@@ -268,65 +338,67 @@ pub(crate) fn traverse_with_prebuilt<'a>(
 }
 
 // ---------------------------------------------------------------------------
+// Compact per-file dispatch table
+// ---------------------------------------------------------------------------
+
+/// Per-file dispatch table storing direct rule references.
+///
+/// Built from the session-level [`DispatchTable`] by filtering out inactive
+/// rules (those whose [`should_run_on_file`](NativeRule::should_run_on_file)
+/// returned `false`). This eliminates per-node active-mask lookups and bounds
+/// checks from the hot loop.
+struct CompactTable<'s> {
+    /// Per-AstType rule refs for `enter_node`. Index = `AstType as usize`.
+    enter: Vec<Vec<&'s dyn NativeRule>>,
+    /// Per-AstType rule refs for `leave_node`.
+    leave: Vec<Vec<&'s dyn NativeRule>>,
+    /// Whether any rules exist (avoid visiting the tree when nothing is active).
+    has_rules: bool,
+}
+
+impl CompactTable<'_> {
+    /// Returns `true` if no rules are active for this file.
+    const fn is_empty(&self) -> bool {
+        !self.has_rules
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Visitors
 // ---------------------------------------------------------------------------
 
-/// Visitor that borrows session-level data (used by [`traverse_with_prebuilt`]).
+/// Visitor using a compact per-file dispatch table (used by [`traverse_with_prebuilt`]).
 ///
-/// Indices in the dispatch table point directly into the `rules` slice,
-/// avoiding any per-file allocation of filtered rule vecs.
-struct SessionDispatchVisitor<'a, 'session> {
-    /// Active rules (indexed by dispatch table entries).
-    rules: &'session [Box<dyn NativeRule>],
-    /// Pre-built interest-based dispatch table.
-    table: &'session DispatchTable,
-    /// Per-file bitmask from [`NativeRule::should_run_on_file`].
-    active: &'session [bool],
+/// All filtering (active mask, rule lookup) is done once at table construction;
+/// the per-node loop is a simple iterate-and-call with no checks.
+struct CompactDispatchVisitor<'a, 'file> {
+    /// Compact per-file dispatch table with direct rule references.
+    table: &'file CompactTable<'file>,
     /// Shared lint context — all rules push diagnostics into this.
     ctx: NativeLintContext<'a>,
 }
 
-impl<'a> Visit<'a> for SessionDispatchVisitor<'a, '_> {
+impl<'a> Visit<'a> for CompactDispatchVisitor<'a, '_> {
+    #[inline]
     fn enter_node(&mut self, kind: AstKind<'a>) {
         let ty = ast_type_index(kind.ty());
-
-        if let Some(targeted) = self.table.enter.get(ty) {
-            for &idx in targeted {
-                if self.active.get(idx).copied().unwrap_or(false) {
-                    if let Some(rule) = self.rules.get(idx) {
-                        rule.run(&kind, &mut self.ctx);
-                    }
-                }
-            }
-        }
-
-        for &idx in &self.table.enter_all {
-            if self.active.get(idx).copied().unwrap_or(false) {
-                if let Some(rule) = self.rules.get(idx) {
-                    rule.run(&kind, &mut self.ctx);
-                }
+        // SAFETY of indexing: `ty` is always < AST_TYPE_MAX+1 since `AstType`
+        // is `#[repr(u8)]` and the table was built with that size. We use
+        // `.get()` for bounds safety but expect the compiler to elide the
+        // check in release builds.
+        if let Some(rules) = self.table.enter.get(ty) {
+            for rule in rules {
+                rule.run(&kind, &mut self.ctx);
             }
         }
     }
 
+    #[inline]
     fn leave_node(&mut self, kind: AstKind<'a>) {
         let ty = ast_type_index(kind.ty());
-
-        if let Some(targeted) = self.table.leave.get(ty) {
-            for &idx in targeted {
-                if self.active.get(idx).copied().unwrap_or(false) {
-                    if let Some(rule) = self.rules.get(idx) {
-                        rule.leave(&kind, &mut self.ctx);
-                    }
-                }
-            }
-        }
-
-        for &idx in &self.table.leave_all {
-            if self.active.get(idx).copied().unwrap_or(false) {
-                if let Some(rule) = self.rules.get(idx) {
-                    rule.leave(&kind, &mut self.ctx);
-                }
+        if let Some(rules) = self.table.leave.get(ty) {
+            for rule in rules {
+                rule.leave(&kind, &mut self.ctx);
             }
         }
     }

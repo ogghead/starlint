@@ -3,6 +3,8 @@
 //! All rules are registered in [`all_rules`]. The [`rules_for_config`] function
 //! filters and configures rules based on a rule config map.
 
+pub(crate) mod category_guard;
+
 pub mod accessor_pairs;
 pub mod approx_constant;
 pub mod array_callback_return;
@@ -352,6 +354,53 @@ use starlint_plugin_sdk::rule::RuleMeta;
 
 use crate::rule::NativeRule;
 
+// ---------------------------------------------------------------------------
+// Category-level file predicates
+// ---------------------------------------------------------------------------
+
+/// Test-runner files (jest / vitest): skip unless the source contains test globals.
+fn is_test_file(source: &str, _path: &std::path::Path) -> bool {
+    source.contains("describe(")
+        || source.contains("test(")
+        || source.contains("it(")
+        || source.contains("expect(")
+}
+
+/// `JSDoc`-annotated files: skip unless the source contains a `JSDoc` comment opener.
+fn is_jsdoc_file(source: &str, _path: &std::path::Path) -> bool {
+    source.contains("/**")
+}
+
+/// JSX files: skip unless the source contains JSX syntax.
+fn is_jsx_file(source: &str, _path: &std::path::Path) -> bool {
+    // Fast heuristic: JSX always uses `<` followed by an uppercase letter or
+    // a lowercase tag name. Checking for `<` alone would match `<` in
+    // comparisons, but combined with the file going through the JSX parser
+    // path (tsx/jsx extensions), this is sufficient.
+    source.contains("jsx") || source.contains("JSX") || source.contains("React")
+}
+
+/// Next.js files: skip unless the source references Next.js-specific APIs.
+fn is_nextjs_file(source: &str, _path: &std::path::Path) -> bool {
+    source.contains("next/")
+        || source.contains("getServerSideProps")
+        || source.contains("getStaticProps")
+        || source.contains("getStaticPaths")
+}
+
+/// Storybook story files: skip unless the path or source matches story patterns.
+fn is_storybook_file(source: &str, path: &std::path::Path) -> bool {
+    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    file_name.contains(".stories.") || file_name.contains(".story.") || source.contains("@storybook")
+}
+
+/// Vue files: skip unless the source uses Vue APIs.
+fn is_vue_file(source: &str, _path: &std::path::Path) -> bool {
+    source.contains("defineComponent")
+        || source.contains("createApp")
+        || source.contains("vue")
+}
+
 /// Return all built-in native rules with their default configuration.
 #[must_use]
 #[allow(clippy::too_many_lines, clippy::large_stack_frames)]
@@ -687,19 +736,46 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
 
     // Append prefixed plugin-category rules, skipping categories handled by
     // active builtin plugins.
+    //
+    // Categories with file-level guards skip irrelevant files entirely
+    // (e.g. jest rules skip non-test files), reducing per-node dispatch cost.
     rules.extend(import::category_rules());
-    rules.extend(jest::category_rules());
-    rules.extend(jsdoc::category_rules());
-    rules.extend(jsx_a11y::category_rules());
-    rules.extend(nextjs::category_rules());
+    rules.extend(category_guard::guard_all(
+        jest::category_rules(),
+        is_test_file,
+    ));
+    rules.extend(category_guard::guard_all(
+        jsdoc::category_rules(),
+        is_jsdoc_file,
+    ));
+    rules.extend(category_guard::guard_all(
+        jsx_a11y::category_rules(),
+        is_jsx_file,
+    ));
+    rules.extend(category_guard::guard_all(
+        nextjs::category_rules(),
+        is_nextjs_file,
+    ));
     rules.extend(node::category_rules());
     rules.extend(promise::category_rules());
     rules.extend(react::category_rules());
-    rules.extend(react_perf::category_rules());
-    rules.extend(storybook::category_rules());
+    rules.extend(category_guard::guard_all(
+        react_perf::category_rules(),
+        is_jsx_file,
+    ));
+    rules.extend(category_guard::guard_all(
+        storybook::category_rules(),
+        is_storybook_file,
+    ));
     rules.extend(typescript::category_rules());
-    rules.extend(vitest::category_rules());
-    rules.extend(vue::category_rules());
+    rules.extend(category_guard::guard_all(
+        vitest::category_rules(),
+        is_test_file,
+    ));
+    rules.extend(category_guard::guard_all(
+        vue::category_rules(),
+        is_vue_file,
+    ));
 
     rules
 }
