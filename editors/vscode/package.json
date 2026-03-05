@@ -2,7 +2,7 @@
   "name": "starlint",
   "displayName": "starlint",
   "description": "Fast JS/TS linter with WASM plugin support",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "ogghead",
   "license": "MIT",
   "repository": {
