@@ -221,14 +221,12 @@ jobs:
 
       - name: Publish to VS Code Marketplace
         working-directory: editors/vscode
-        if: ${{ secrets.VSCE_PAT != '' }}
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
         run: npx @vscode/vsce publish --no-git-tag-version -p "$VSCE_PAT"
 
       - name: Publish to OpenVSX
         working-directory: editors/vscode
-        if: ${{ secrets.OVSX_PAT != '' }}
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: npx ovsx publish starlint-${{ needs.version.outputs.version }}.vsix -p "$OVSX_PAT"
