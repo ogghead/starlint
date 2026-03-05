@@ -17,17 +17,17 @@ Compared against [oxlint](https://oxc.rs) and [eslint](https://eslint.org) on re
 
 | Corpus | Files | starlint | oxlint | eslint |
 |--------|------:|----------|--------|--------|
-| express | 141 | **14ms (11 MB)** | 110ms (114 MB) | 1.61s (247 MB) |
-| date-fns | 1562 | **74ms (12 MB)** | 94ms (112 MB) | 4.87s (467 MB) |
-| grafana | 6201 | **312ms (18 MB)** | 393ms (133 MB) | 32.23s (578 MB) |
+| express | 141 | **13ms (12 MB)** | 108ms (110 MB) | 1.61s (256 MB) |
+| date-fns | 1562 | **72ms (11 MB)** | 91ms (113 MB) | 4.79s (469 MB) |
+| grafana | 6201 | **310ms (19 MB)** | 389ms (138 MB) | 31.31s (561 MB) |
 <details>
 <summary>Full defaults (all rules enabled per tool)</summary>
 
 | Corpus | Files | starlint | oxlint | eslint |
 |--------|------:|----------|--------|--------|
-| express | 141 | 91ms (18 MB) | **72ms (108 MB)** | 1.81s (255 MB) |
-| date-fns | 1562 | 539ms (36 MB) | **139ms (111 MB)** | 6.10s (456 MB) |
-| grafana | 6201 | 3.28s (271 MB) | **691ms (155 MB)** | 4.85s (526 MB) |
+| express | 141 | 90ms (18 MB) | **71ms (108 MB)** | 1.79s (253 MB) |
+| date-fns | 1562 | 513ms (36 MB) | **138ms (110 MB)** | 5.89s (460 MB) |
+| grafana | 6201 | 3.26s (271 MB) | **690ms (154 MB)** | 4.79s (518 MB) |
 </details>
 
 *Last updated: 2026-03-05. Benchmarked with [hyperfine](https://github.com/sharkdp/hyperfine) (3 warmup, 10+ runs).*
