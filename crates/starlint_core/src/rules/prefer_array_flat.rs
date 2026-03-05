@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for PreferArrayFlat {
             description: "Prefer `.flat()` over `.reduce()` with `.concat()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -58,11 +58,23 @@ impl NativeRule for PreferArrayFlat {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-array-flat",
-            "Prefer `.flat()` over `.reduce()` with `.concat()` for flattening arrays",
-            Span::new(call.span.start, call.span.end),
-        );
+        // Autofix: replace `reduce(...)` with `flat()` (from property name to end of call)
+        ctx.report(Diagnostic {
+            rule_name: "prefer-array-flat".to_owned(),
+            message: "Prefer `.flat()` over `.reduce()` with `.concat()` for flattening arrays"
+                .to_owned(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace with `.flat()`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace with `.flat()`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(member.property.span.start, call.span.end),
+                    replacement: "flat()".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

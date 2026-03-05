@@ -6,7 +6,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -17,6 +19,25 @@ const RULE_NAME: &str = "vue/custom-event-name-casing";
 /// Enforce camelCase for custom event names in `$emit()`.
 #[derive(Debug)]
 pub struct CustomEventNameCasing;
+
+/// Convert a string to `camelCase`.
+fn to_camel_case(s: &str) -> String {
+    let mut result = String::new();
+    let mut capitalize_next = false;
+    for (i, ch) in s.chars().enumerate() {
+        if ch == '-' || ch == '_' || ch == ' ' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            result.extend(ch.to_uppercase());
+            capitalize_next = false;
+        } else if i == 0 {
+            result.extend(ch.to_lowercase());
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
 
 /// Check if a string is `camelCase`.
 fn is_camel_case(s: &str) -> bool {
@@ -31,7 +52,7 @@ impl NativeRule for CustomEventNameCasing {
             description: "Enforce camelCase for custom event names in `$emit()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -66,11 +87,32 @@ impl NativeRule for CustomEventNameCasing {
         };
 
         if !event_name.is_empty() && !is_camel_case(event_name) {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!("Custom event name `{event_name}` should be camelCase"),
-                Span::new(call.span.start, call.span.end),
-            );
+            // Fix: convert event name to camelCase
+            let camel = to_camel_case(event_name);
+            let fix = (camel != event_name).then(|| {
+                // Replace just the string content (inside the quotes)
+                let arg_span = first_arg.span();
+                // The string literal span includes quotes, so skip them
+                let inner_start = arg_span.start.saturating_add(1);
+                let inner_end = arg_span.end.saturating_sub(1);
+                Fix {
+                    message: format!("Rename to `{camel}`"),
+                    edits: vec![Edit {
+                        span: Span::new(inner_start, inner_end),
+                        replacement: camel.clone(),
+                    }],
+                }
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!("Custom event name `{event_name}` should be camelCase"),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Rename to `{camel}`")),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

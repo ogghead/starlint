@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +26,7 @@ impl NativeRule for PreferRegexpTest {
             description: "Prefer RegExp#test() over String#match()".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -32,6 +34,7 @@ impl NativeRule for PreferRegexpTest {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         // Look for `something.match(arg)` used in a boolean context
         let AstKind::CallExpression(call) = kind else {
@@ -59,11 +62,28 @@ impl NativeRule for PreferRegexpTest {
         let is_regex_arg = matches!(arg, oxc_ast::ast::Argument::RegExpLiteral(_));
 
         if is_regex_arg {
-            ctx.report_warning(
-                "prefer-regexp-test",
-                "Prefer `RegExp#test()` over `String#match()`",
-                Span::new(call.span.start, call.span.end),
-            );
+            let source = ctx.source_text();
+            let obj_span = member.object.span();
+            let str_text = source[obj_span.start as usize..obj_span.end as usize].to_owned();
+            let regex_span = arg.span();
+            let regex_text = source[regex_span.start as usize..regex_span.end as usize].to_owned();
+            let replacement = format!("{regex_text}.test({str_text})");
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-regexp-test".to_owned(),
+                message: "Prefer `RegExp#test()` over `String#match()`".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace with `{replacement}`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

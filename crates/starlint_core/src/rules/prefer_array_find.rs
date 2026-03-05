@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for PreferArrayFind {
             description: "Prefer .find() over .filter()[0]".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,11 +55,33 @@ impl NativeRule for PreferArrayFind {
         };
 
         if member.property.name == "filter" {
-            ctx.report_warning(
-                "prefer-array-find",
-                "Prefer `.find()` over `.filter()[0]`",
-                Span::new(computed.span.start, computed.span.end),
-            );
+            // Two edits: rename .filter → .find, and delete [0]
+            let prop_span = Span::new(member.property.span.start, member.property.span.end);
+            // Delete from end of call expression to end of computed member (the `[0]`)
+            let call_end = call.span.end;
+            let computed_end = computed.span.end;
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-array-find".to_owned(),
+                message: "Prefer `.find()` over `.filter()[0]`".to_owned(),
+                span: Span::new(computed.span.start, computed.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace `.filter()[0]` with `.find()`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace `.filter()[0]` with `.find()`".to_owned(),
+                    edits: vec![
+                        Edit {
+                            span: prop_span,
+                            replacement: "find".to_owned(),
+                        },
+                        Edit {
+                            span: Span::new(call_end, computed_end),
+                            replacement: String::new(),
+                        },
+                    ],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

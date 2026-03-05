@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoJasmineGlobals {
             description: "Disallow Jasmine globals — use Jest equivalents".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,6 +36,7 @@ impl NativeRule for NoJasmineGlobals {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -44,14 +45,32 @@ impl NativeRule for NoJasmineGlobals {
         match &call.callee {
             // Direct calls to spyOn, fail, pending, etc.
             Expression::Identifier(id) if JASMINE_GLOBALS.contains(&id.name.as_str()) => {
-                ctx.report_error(
-                    RULE_NAME,
-                    &format!(
+                // Fix: `spyOn(x, y)` → `jest.spyOn(x, y)`
+                let fix = (id.name.as_str() == "spyOn").then(|| {
+                    let source = ctx.source_text();
+                    let call_text = &source[call.span.start as usize..call.span.end as usize];
+                    let replacement = format!("jest.{call_text}");
+                    Fix {
+                        message: format!("Replace with `jest.{}`", id.name),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement,
+                        }],
+                    }
+                });
+
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
                         "`{}` is a Jasmine global — use the Jest equivalent instead",
                         id.name
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Error,
+                    help: Some(format!("Replace `{}` with Jest equivalent", id.name)),
+                    fix,
+                    labels: vec![],
+                });
             }
             // jasmine.createSpy(), jasmine.createSpyObj(), jasmine.any(), etc.
             Expression::StaticMemberExpression(member) => {
@@ -60,14 +79,27 @@ impl NativeRule for NoJasmineGlobals {
                     Expression::Identifier(id) if id.name.as_str() == "jasmine"
                 );
                 if is_jasmine {
-                    ctx.report_error(
-                        RULE_NAME,
-                        &format!(
+                    // Fix: `jasmine.createSpy(...)` → `jest.fn()`
+                    let fix = (member.property.name.as_str() == "createSpy").then(|| Fix {
+                        message: "Replace with `jest.fn()`".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement: "jest.fn()".to_owned(),
+                        }],
+                    });
+
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!(
                             "`jasmine.{}` is a Jasmine API — use Jest equivalents like `jest.fn()` instead",
                             member.property.name
                         ),
-                        Span::new(call.span.start, call.span.end),
-                    );
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Error,
+                        help: Some("Use Jest equivalent".to_owned()),
+                        fix,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

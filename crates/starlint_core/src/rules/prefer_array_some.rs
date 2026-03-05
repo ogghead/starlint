@@ -9,7 +9,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for PreferArraySome {
             description: "Prefer .some() over .find() for existence checks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -39,28 +39,39 @@ impl NativeRule for PreferArraySome {
             return;
         };
 
-        if is_find_call(&if_stmt.test) {
+        if let Some(prop_span) = find_property_span(&if_stmt.test) {
             let span = if_stmt.test.span();
-            ctx.report_warning(
-                "prefer-array-some",
-                "Prefer `.some()` over `.find()` when checking for existence",
-                Span::new(span.start, span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "prefer-array-some".to_owned(),
+                message: "Prefer `.some()` over `.find()` when checking for existence".to_owned(),
+                span: Span::new(span.start, span.end),
+                severity: Severity::Warning,
+                help: Some("Replace `.find()` with `.some()`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace `.find()` with `.some()`".to_owned(),
+                    edits: vec![Edit {
+                        span: prop_span,
+                        replacement: "some".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
 
-/// Check if an expression is a `.find(...)` call.
-fn is_find_call(expr: &Expression<'_>) -> bool {
+/// Check if an expression is a `.find(...)` call and return the property name span.
+fn find_property_span(expr: &Expression<'_>) -> Option<Span> {
     let Expression::CallExpression(call) = expr else {
-        return false;
+        return None;
     };
 
     let Expression::StaticMemberExpression(member) = &call.callee else {
-        return false;
+        return None;
     };
 
-    member.property.name == "find"
+    (member.property.name == "find")
+        .then(|| Span::new(member.property.span.start, member.property.span.end))
 }
 
 #[cfg(test)]

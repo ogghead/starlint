@@ -15,7 +15,7 @@
 //! - `.indexOf(x) == -1` (negated check)
 //! - `.indexOf(x) < 0`
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -31,7 +31,7 @@ impl NativeRule for PreferIncludes {
             description: "Prefer `.includes()` over `.indexOf()` comparison".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -39,18 +39,64 @@ impl NativeRule for PreferIncludes {
         false
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
         let source = ctx.source_text();
         let findings = find_indexof_comparisons(source);
 
-        for (start, end) in findings {
-            ctx.report_warning(
-                "typescript/prefer-includes",
-                "Use `.includes()` instead of `.indexOf()` comparison",
-                Span::new(start, end),
-            );
+        // Collect fixes into owned data to satisfy borrow checker
+        let fixes: Vec<_> = findings
+            .into_iter()
+            .map(|(start, end)| {
+                let match_text = source.get(start as usize..end as usize).unwrap_or("");
+                let fix = build_includes_fix(match_text, start, end);
+                (start, end, fix)
+            })
+            .collect();
+
+        for (start, end, fix) in fixes {
+            ctx.report(Diagnostic {
+                rule_name: "typescript/prefer-includes".to_owned(),
+                message: "Use `.includes()` instead of `.indexOf()` comparison".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: Some("Replace with `.includes()`".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
+}
+
+/// Build a fix for `.indexOf(x) OP VALUE` → `.includes(x)` or `!.includes(x)`.
+fn build_includes_fix(match_text: &str, start: u32, end: u32) -> Option<Fix> {
+    // Pattern: `.indexOf(arg) OP VALUE`
+    let index_of_start = match_text.find(".indexOf(")?;
+    let prefix = match_text.get(..index_of_start)?;
+    let after_index_of = match_text.get(index_of_start.saturating_add(".indexOf(".len())..)?;
+    // Find the closing paren
+    let close_paren = after_index_of.find(')')?;
+    let arg = after_index_of.get(..close_paren)?;
+    let after_close = after_index_of.get(close_paren.saturating_add(1)..)?.trim();
+
+    // Determine if this is a negated check (=== -1, == -1, < 0) vs positive (!== -1, != -1, >= 0, > -1)
+    let negated = after_close.starts_with("=== -1")
+        || after_close.starts_with("== -1")
+        || after_close.starts_with("< 0");
+
+    let replacement = if negated {
+        format!("!{prefix}.includes({arg})")
+    } else {
+        format!("{prefix}.includes({arg})")
+    };
+
+    Some(Fix {
+        message: format!("Replace with `{replacement}`"),
+        edits: vec![Edit {
+            span: Span::new(start, end),
+            replacement,
+        }],
+    })
 }
 
 /// Comparison patterns that follow `.indexOf(...)`.

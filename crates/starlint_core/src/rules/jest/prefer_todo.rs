@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, FunctionBody, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +26,7 @@ impl NativeRule for PreferTodo {
             description: "Suggest using `test.todo()` for empty test cases".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -32,6 +34,7 @@ impl NativeRule for PreferTodo {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -67,11 +70,29 @@ impl NativeRule for PreferTodo {
         };
 
         if is_empty {
-            ctx.report_warning(
-                "jest/prefer-todo",
-                "Use `test.todo()` instead of an empty test callback",
-                Span::new(call.span.start, call.span.end),
-            );
+            let source = ctx.source_text();
+            let fix = call.arguments.first().map(|a| {
+                let sp = a.span();
+                let title = source[sp.start as usize..sp.end as usize].to_owned();
+                let replacement = format!("{callee_name}.todo({title})");
+                Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement,
+                    }],
+                }
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "jest/prefer-todo".to_owned(),
+                message: "Use `test.todo()` instead of an empty test callback".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace with `test.todo()`".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

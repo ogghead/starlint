@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +28,7 @@ impl NativeRule for ConsistentExistenceIndexCheck {
             description: "Enforce consistent style for checking if an index exists".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -46,28 +47,52 @@ impl NativeRule for ConsistentExistenceIndexCheck {
             return;
         }
 
-        let suggestion = match expr.operator {
+        // (message, fix_description, replacement_operator, replacement_value)
+        let fix_info = match expr.operator {
             // `indexOf(x) >= 0` → prefer `indexOf(x) !== -1`
-            BinaryOperator::GreaterEqualThan if is_numeric_literal(&expr.right, 0.0) => {
-                Some("Use `!== -1` instead of `>= 0` for index existence check")
-            }
+            BinaryOperator::GreaterEqualThan if is_numeric_literal(&expr.right, 0.0) => Some((
+                "Use `!== -1` instead of `>= 0` for index existence check",
+                "Replace `>= 0` with `!== -1`",
+                "!==",
+                "-1",
+            )),
             // `indexOf(x) > -1` → prefer `indexOf(x) !== -1`
-            BinaryOperator::GreaterThan if is_numeric_literal(&expr.right, -1.0) => {
-                Some("Use `!== -1` instead of `> -1` for index existence check")
-            }
+            BinaryOperator::GreaterThan if is_numeric_literal(&expr.right, -1.0) => Some((
+                "Use `!== -1` instead of `> -1` for index existence check",
+                "Replace `> -1` with `!== -1`",
+                "!==",
+                "-1",
+            )),
             // `indexOf(x) < 0` → prefer `indexOf(x) === -1`
-            BinaryOperator::LessThan if is_numeric_literal(&expr.right, 0.0) => {
-                Some("Use `=== -1` instead of `< 0` for index non-existence check")
-            }
+            BinaryOperator::LessThan if is_numeric_literal(&expr.right, 0.0) => Some((
+                "Use `=== -1` instead of `< 0` for index non-existence check",
+                "Replace `< 0` with `=== -1`",
+                "===",
+                "-1",
+            )),
             _ => None,
         };
 
-        if let Some(message) = suggestion {
-            ctx.report_warning(
-                "consistent-existence-index-check",
-                message,
-                Span::new(expr.span.start, expr.span.end),
-            );
+        if let Some((message, fix_desc, new_op, new_val)) = fix_info {
+            // Find the operator span between left and right expressions
+            let left_end = expr.left.span().end;
+            let right_end = expr.right.span().end;
+
+            ctx.report(Diagnostic {
+                rule_name: "consistent-existence-index-check".to_owned(),
+                message: message.to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some(fix_desc.to_owned()),
+                fix: Some(Fix {
+                    message: fix_desc.to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(left_end, right_end),
+                        replacement: format!(" {new_op} {new_val}"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

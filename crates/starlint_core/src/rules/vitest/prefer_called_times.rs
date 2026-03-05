@@ -4,7 +4,7 @@
 //! Using the built-in matcher is more expressive and produces better error
 //! messages when assertions fail.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for PreferCalledTimes {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,17 @@ impl NativeRule for PreferCalledTimes {
         let violations = find_mock_calls_length(ctx.source_text());
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "Prefer `toHaveBeenCalledTimes(n)` over checking `.mock.calls.length` manually",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message:
+                    "Prefer `toHaveBeenCalledTimes(n)` over checking `.mock.calls.length` manually"
+                        .to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: Some("Use `toHaveBeenCalledTimes()` matcher instead".to_owned()),
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

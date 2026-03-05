@@ -3,7 +3,7 @@
 //! Enforce `PascalCase` or kebab-case for component definition names.
 //! Scans for `name:` inside `defineComponent()` or `export default { name: }`.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -19,6 +19,24 @@ pub struct ComponentDefinitionNameCasing;
 fn is_pascal_case(s: &str) -> bool {
     let first = s.chars().next();
     matches!(first, Some('A'..='Z')) && !s.contains('-')
+}
+
+/// Convert a string to `PascalCase`.
+fn to_pascal_case(s: &str) -> String {
+    s.split(['-', '_', ' '])
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            let mut chars = part.chars();
+            match chars.next() {
+                Some(first) => {
+                    let upper: String = first.to_uppercase().collect();
+                    let rest: String = chars.collect();
+                    format!("{upper}{rest}")
+                }
+                None => String::new(),
+            }
+        })
+        .collect()
 }
 
 /// Check if a string is kebab-case (all lowercase with hyphens).
@@ -37,7 +55,7 @@ impl NativeRule for ComponentDefinitionNameCasing {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -74,11 +92,42 @@ impl NativeRule for ComponentDefinitionNameCasing {
                 let end = start.saturating_add(
                     u32::try_from(5_usize.saturating_add(2).saturating_add(end_quote)).unwrap_or(0),
                 );
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!("Component name `{name_value}` should be PascalCase or kebab-case"),
-                    Span::new(start, end),
-                );
+
+                // Fix: convert to PascalCase
+                let pascal = to_pascal_case(name_value);
+                let fix = (pascal != name_value).then(|| {
+                    // Find the name value span (inside the quotes)
+                    let name_offset = abs_pos
+                        .saturating_add(5)
+                        .saturating_add(
+                            source
+                                .get(abs_pos.saturating_add(5)..)
+                                .map_or(0, |s| s.len().saturating_sub(s.trim_start().len())),
+                        )
+                        .saturating_add(1); // skip opening quote
+                    let name_start = u32::try_from(name_offset).unwrap_or(0);
+                    let name_end =
+                        name_start.saturating_add(u32::try_from(name_value.len()).unwrap_or(0));
+                    Fix {
+                        message: format!("Rename to `{pascal}`"),
+                        edits: vec![Edit {
+                            span: Span::new(name_start, name_end),
+                            replacement: pascal.clone(),
+                        }],
+                    }
+                });
+
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
+                        "Component name `{name_value}` should be PascalCase or kebab-case"
+                    ),
+                    span: Span::new(start, end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Rename to `{pascal}`")),
+                    fix,
+                    labels: vec![],
+                });
             }
 
             search_start = abs_pos.saturating_add(5);

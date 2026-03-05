@@ -11,7 +11,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +32,7 @@ impl NativeRule for ReturnAwait {
             description: "Disallow unnecessary `return await`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -47,24 +49,40 @@ impl NativeRule for ReturnAwait {
             return;
         };
 
-        if is_await_expression(arg) {
-            ctx.report_warning(
-                RULE_NAME,
-                "Redundant `return await` — the enclosing async function already wraps the \
-                 return value in a promise",
-                Span::new(ret.span.start, ret.span.end),
-            );
+        if let Some(inner_text) = get_await_inner_text(arg, ctx.source_text()) {
+            let inner_owned = inner_text.to_owned();
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Redundant `return await` — the enclosing async function already wraps the return value in a promise".to_owned(),
+                span: Span::new(ret.span.start, ret.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove the `await` keyword".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove redundant `await`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(arg.span().start, arg.span().end),
+                        replacement: inner_owned,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
 
-/// Returns `true` if the expression is an `AwaitExpression`, possibly wrapped
-/// in parentheses.
-fn is_await_expression(expr: &Expression<'_>) -> bool {
+/// If the expression is an `AwaitExpression` (possibly parenthesized), return
+/// the source text of the inner (awaited) expression.
+#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
+fn get_await_inner_text<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
     match expr {
-        Expression::AwaitExpression(_) => true,
-        Expression::ParenthesizedExpression(paren) => is_await_expression(&paren.expression),
-        _ => false,
+        Expression::AwaitExpression(await_expr) => {
+            let inner = await_expr.argument.span();
+            source.get(inner.start as usize..inner.end as usize)
+        }
+        Expression::ParenthesizedExpression(paren) => {
+            get_await_inner_text(&paren.expression, source)
+        }
+        _ => None,
     }
 }
 

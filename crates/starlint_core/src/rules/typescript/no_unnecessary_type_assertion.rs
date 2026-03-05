@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, TSType};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +29,7 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -35,6 +37,7 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
         Some(&[AstType::TSAsExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::TSAsExpression(expr) = kind else {
             return;
@@ -42,11 +45,28 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
 
         if let Some(description) = is_unnecessary_assertion(&expr.expression, &expr.type_annotation)
         {
-            ctx.report_warning(
-                "typescript/no-unnecessary-type-assertion",
-                &format!("Unnecessary type assertion: {description}"),
-                Span::new(expr.span.start, expr.span.end),
-            );
+            // Fix: replace `expr as T` with just `expr`
+            let inner_span = expr.expression.span();
+            let inner_text =
+                ctx.source_text()[inner_span.start as usize..inner_span.end as usize].to_owned();
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-unnecessary-type-assertion".to_owned(),
+                message: format!("Unnecessary type assertion: {description}"),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some(format!(
+                    "Remove the `as` assertion — replace with `{inner_text}`"
+                )),
+                fix: Some(Fix {
+                    message: "Remove unnecessary type assertion".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement: inner_text,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

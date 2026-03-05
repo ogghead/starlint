@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for PreferAt {
             description: "Prefer `.at()` for index access from the end".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -31,6 +31,7 @@ impl NativeRule for PreferAt {
         Some(&[AstType::ComputedMemberExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::ComputedMemberExpression(computed) = kind else {
             return;
@@ -55,21 +56,42 @@ impl NativeRule for PreferAt {
         }
 
         // Right side should be a numeric literal
-        let Expression::NumericLiteral(_) = &bin.right else {
+        let Expression::NumericLiteral(num_lit) = &bin.right else {
             return;
         };
 
         // The object being accessed and the `.length` owner should be the same
-        // (We do a simple name check for identifiers)
         if let (Expression::Identifier(obj_id), Expression::Identifier(len_obj_id)) =
             (&computed.object, &member.object)
         {
             if obj_id.name == len_obj_id.name {
-                ctx.report_warning(
-                    "prefer-at",
-                    "Prefer `.at()` for index access from the end of an array or string",
-                    Span::new(computed.span.start, computed.span.end),
-                );
+                let obj_name = obj_id.name.as_str();
+                // Format the negative index value
+                let n = num_lit.value;
+                #[allow(clippy::cast_possible_truncation)]
+                let neg_index = if (n - n.round()).abs() < f64::EPSILON {
+                    format!("-{}", n as i64)
+                } else {
+                    format!("-{n}")
+                };
+                let replacement = format!("{obj_name}.at({neg_index})");
+
+                ctx.report(Diagnostic {
+                    rule_name: "prefer-at".to_owned(),
+                    message: "Prefer `.at()` for index access from the end of an array or string"
+                        .to_owned(),
+                    span: Span::new(computed.span.start, computed.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Replace with `{replacement}`")),
+                    fix: Some(Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(computed.span.start, computed.span.end),
+                            replacement,
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

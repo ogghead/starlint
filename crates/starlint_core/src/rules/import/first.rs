@@ -4,7 +4,7 @@
 //! should be at the top of the file (after comments and directives) to
 //! make dependencies immediately visible.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -20,7 +20,7 @@ impl NativeRule for First {
             description: "Ensure all imports appear before other statements".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::DangerousFix,
         }
     }
 
@@ -86,11 +86,15 @@ impl NativeRule for First {
         };
 
         for (start, end) in findings {
-            ctx.report_warning(
-                "import/first",
-                "Import declarations must appear before other statements",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/first".to_owned(),
+                message: "Import declarations must appear before other statements".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: Some("Move this import to the top of the file".to_owned()),
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

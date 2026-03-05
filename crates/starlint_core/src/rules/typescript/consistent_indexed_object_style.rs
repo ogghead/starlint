@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::TSSignature;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for ConsistentIndexedObjectStyle {
             description: "Enforce `Record<K, V>` over index signature syntax".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -34,6 +34,7 @@ impl NativeRule for ConsistentIndexedObjectStyle {
         Some(&[AstType::TSTypeLiteral])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::TSTypeLiteral(lit) = kind else {
             return;
@@ -54,12 +55,47 @@ impl NativeRule for ConsistentIndexedObjectStyle {
             return;
         }
 
-        ctx.report_warning(
-            "typescript/consistent-indexed-object-style",
-            "Use `Record<K, V>` instead of an index signature — it is more concise and conventional",
-            Span::new(lit.span.start, lit.span.end),
-        );
+        // Try to extract K and V from `{ [key: K]: V }` to produce `Record<K, V>`
+        let source = ctx.source_text();
+        let lit_text = &source[lit.span.start as usize..lit.span.end as usize];
+        let fix = extract_index_sig_types(lit_text).map(|(k, v)| {
+            let replacement = format!("Record<{k}, {v}>");
+            Fix {
+                message: format!("Replace with `{replacement}`"),
+                edits: vec![Edit {
+                    span: Span::new(lit.span.start, lit.span.end),
+                    replacement,
+                }],
+            }
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: "typescript/consistent-indexed-object-style".to_owned(),
+            message: "Use `Record<K, V>` instead of an index signature — it is more concise and conventional".to_owned(),
+            span: Span::new(lit.span.start, lit.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace with `Record<K, V>`".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
+}
+
+/// Extract key type `K` and value type `V` from `{ [key: K]: V }` text.
+fn extract_index_sig_types(text: &str) -> Option<(&str, &str)> {
+    // Find `: K]: V` pattern inside the braces
+    let colon_pos = text.find(": ")?;
+    let bracket_close = text.find("]:")?;
+    let key_type = text.get(colon_pos.saturating_add(2)..bracket_close)?.trim();
+    let after_bracket_colon = text.get(bracket_close.saturating_add(2)..)?;
+    // Value type is everything after `]: ` up to the closing `}`
+    let value_part = after_bracket_colon.trim();
+    let mut value_type = value_part.strip_suffix('}')?.trim();
+    value_type = value_type.strip_suffix(';').unwrap_or(value_type).trim();
+    if value_type.is_empty() {
+        return None;
+    }
+    Some((key_type, value_type))
 }
 
 #[cfg(test)]

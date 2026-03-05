@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +25,7 @@ impl NativeRule for PreferSpread {
             description: "Require spread operator instead of `.apply()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -31,6 +33,7 @@ impl NativeRule for PreferSpread {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -44,12 +47,49 @@ impl NativeRule for PreferSpread {
             return;
         }
 
-        // Any .apply() call can potentially use spread
-        ctx.report_warning(
-            "prefer-spread",
-            "Use the spread operator instead of `.apply()`",
-            Span::new(call.span.start, call.span.end),
-        );
+        // Only autofix `fn.apply(null, args)` or `fn.apply(undefined, args)` patterns
+        let source = ctx.source_text();
+        let obj_span = member.object.span();
+        let fn_text = &source[obj_span.start as usize..obj_span.end as usize];
+
+        // Try to extract autofix for the 2-arg pattern: fn.apply(null/undefined, args)
+        let fix = if call.arguments.len() == 2 {
+            let first_arg = call.arguments.first();
+            let second_arg = call.arguments.get(1);
+            let is_null_or_undefined = first_arg.is_some_and(|a| {
+                let text = &source[a.span().start as usize..a.span().end as usize];
+                text == "null" || text == "undefined"
+            });
+            if is_null_or_undefined {
+                second_arg.map(|args_arg| {
+                    let args_text =
+                        &source[args_arg.span().start as usize..args_arg.span().end as usize];
+                    let replacement = format!("{fn_text}(...{args_text})");
+                    Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement,
+                        }],
+                    }
+                })
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let message = "Use the spread operator instead of `.apply()`".to_owned();
+        ctx.report(Diagnostic {
+            rule_name: "prefer-spread".to_owned(),
+            message: message.clone(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: Some(message),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

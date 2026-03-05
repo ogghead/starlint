@@ -9,7 +9,7 @@ use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
             description: "Prefer `??` / `||` over ternary for truthiness/nullish checks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,24 +41,53 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
         let source = ctx.source_text();
 
         // Pattern 1: `a ? a : b` => `a || b`
-        // The test is a simple expression and the consequent is the same expression.
-        if let Some(suggestion) = check_simple_truthiness(&cond.test, &cond.consequent, source) {
-            ctx.report_warning(
-                "prefer-logical-operator-over-ternary",
-                &format!("Use `{suggestion}` instead of a ternary expression"),
-                Span::new(cond.span.start, cond.span.end),
-            );
+        if let Some(operator) = check_simple_truthiness(&cond.test, &cond.consequent, source) {
+            let test_text = expr_text(&cond.test, source).unwrap_or_default().to_owned();
+            let alt_text = expr_text(&cond.alternate, source)
+                .unwrap_or_default()
+                .to_owned();
+            let replacement = format!("{test_text} {operator} {alt_text}");
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-logical-operator-over-ternary".to_owned(),
+                message: format!("Use `{operator}` instead of a ternary expression"),
+                span: Span::new(cond.span.start, cond.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace with `{operator}`")),
+                fix: Some(Fix {
+                    message: format!("Replace ternary with `{operator}`"),
+                    edits: vec![Edit {
+                        span: Span::new(cond.span.start, cond.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
             return;
         }
 
-        // Pattern 2: `a != null ? a : b` / `a !== null ? a : b` /
-        //            `a !== undefined ? a : b` => `a ?? b`
-        if check_nullish(&cond.test, &cond.consequent, source) {
-            ctx.report_warning(
-                "prefer-logical-operator-over-ternary",
-                "Use `??` instead of a ternary expression for nullish checks",
-                Span::new(cond.span.start, cond.span.end),
-            );
+        // Pattern 2: `a !== null ? a : b` => `a ?? b`
+        if let Some(value_text) = check_nullish_value(&cond.test, &cond.consequent, source) {
+            let alt_text = expr_text(&cond.alternate, source)
+                .unwrap_or_default()
+                .to_owned();
+            let replacement = format!("{value_text} ?? {alt_text}");
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-logical-operator-over-ternary".to_owned(),
+                message: "Use `??` instead of a ternary expression for nullish checks".to_owned(),
+                span: Span::new(cond.span.start, cond.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace with `??`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace ternary with `??`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(cond.span.start, cond.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
@@ -98,9 +127,14 @@ fn is_nullish_literal(expr: &Expression<'_>) -> bool {
 }
 
 /// Check `a !== null ? a : b` or `a !== undefined ? a : b` or `a != null ? a : b`.
-fn check_nullish(test: &Expression<'_>, consequent: &Expression<'_>, source: &str) -> bool {
+/// Returns the value expression text if the pattern matches.
+fn check_nullish_value<'s>(
+    test: &Expression<'_>,
+    consequent: &Expression<'_>,
+    source: &'s str,
+) -> Option<&'s str> {
     let Expression::BinaryExpression(binary) = test else {
-        return false;
+        return None;
     };
 
     // Must be `!==` or `!=`
@@ -108,7 +142,7 @@ fn check_nullish(test: &Expression<'_>, consequent: &Expression<'_>, source: &st
         binary.operator,
         BinaryOperator::StrictInequality | BinaryOperator::Inequality
     ) {
-        return false;
+        return None;
     }
 
     // Determine which side is the value and which is null/undefined
@@ -117,18 +151,14 @@ fn check_nullish(test: &Expression<'_>, consequent: &Expression<'_>, source: &st
     } else if is_nullish_literal(&binary.left) {
         &binary.right
     } else {
-        return false;
+        return None;
     };
 
     // The value side should match the consequent
-    let Some(value_text) = expr_text(value_expr, source) else {
-        return false;
-    };
-    let Some(cons_text) = expr_text(consequent, source) else {
-        return false;
-    };
+    let value_text = expr_text(value_expr, source)?;
+    let cons_text = expr_text(consequent, source)?;
 
-    !value_text.is_empty() && value_text == cons_text
+    (!value_text.is_empty() && value_text == cons_text).then_some(value_text)
 }
 
 #[cfg(test)]

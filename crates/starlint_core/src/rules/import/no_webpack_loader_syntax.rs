@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoWebpackLoaderSyntax {
             description: "Forbid webpack loader syntax in imports".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -38,11 +38,34 @@ impl NativeRule for NoWebpackLoaderSyntax {
 
         let source_value = import.source.value.as_str();
         if source_value.contains('!') {
-            ctx.report_warning(
-                "import/no-webpack-loader-syntax",
-                "Unexpected use of webpack loader syntax in import source",
-                Span::new(import.span.start, import.span.end),
-            );
+            // Fix: remove loader prefix(es) — everything before and including last `!`
+            let fix = source_value.rfind('!').and_then(|bang_pos| {
+                let clean_path = source_value.get(bang_pos.saturating_add(1)..)?;
+                if clean_path.is_empty() {
+                    return None;
+                }
+                // Replace just the string content (inside quotes)
+                let str_span = import.source.span;
+                let inner_start = str_span.start.saturating_add(1);
+                let inner_end = str_span.end.saturating_sub(1);
+                Some(Fix {
+                    message: format!("Remove loader syntax, keep `{clean_path}`"),
+                    edits: vec![Edit {
+                        span: Span::new(inner_start, inner_end),
+                        replacement: clean_path.to_owned(),
+                    }],
+                })
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "import/no-webpack-loader-syntax".to_owned(),
+                message: "Unexpected use of webpack loader syntax in import source".to_owned(),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove webpack loader syntax from import path".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

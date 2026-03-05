@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for ButtonHasType {
             description: "Require explicit type attribute on button elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -32,6 +32,7 @@ impl NativeRule for ButtonHasType {
         Some(&[AstType::JSXOpeningElement])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::JSXOpeningElement(opening) = kind else {
             return;
@@ -57,11 +58,35 @@ impl NativeRule for ButtonHasType {
         });
 
         if !has_type {
-            ctx.report_warning(
-                "react/button-has-type",
-                "Missing explicit `type` attribute on `<button>`. Buttons default to type=\"submit\"",
-                Span::new(opening.span.start, opening.span.end),
-            );
+            // Fix: insert ` type="button"` after `<button`
+            // The opening element name ends right after "button"
+            let source = ctx.source_text();
+            let tag_start = opening.span.start as usize;
+            // Find the end of `<button` — skip `<` then the tag name
+            let fix = source.get(tag_start..).and_then(|s| {
+                // Find first space, `>`, or `/` after `<button`
+                let after_lt = s.strip_prefix('<')?;
+                let name_end = after_lt.find([' ', '>', '/'])?;
+                let insert_pos =
+                    u32::try_from(tag_start.saturating_add(1).saturating_add(name_end)).ok()?;
+                Some(Fix {
+                    message: "Add `type=\"button\"`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(insert_pos, insert_pos),
+                        replacement: " type=\"button\"".to_owned(),
+                    }],
+                })
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "react/button-has-type".to_owned(),
+                message: "Missing explicit `type` attribute on `<button>`. Buttons default to type=\"submit\"".to_owned(),
+                span: Span::new(opening.span.start, opening.span.end),
+                severity: Severity::Warning,
+                help: Some("Add an explicit `type` attribute".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

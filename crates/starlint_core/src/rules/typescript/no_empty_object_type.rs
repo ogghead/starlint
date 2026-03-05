@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoEmptyObjectType {
             description: "Disallow empty object type `{}`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,11 +41,21 @@ impl NativeRule for NoEmptyObjectType {
             return;
         }
 
-        ctx.report_warning(
-            "typescript/no-empty-object-type",
-            "Empty object type `{}` is equivalent to any non-nullish value — use `object` or a more specific type instead",
-            Span::new(lit.span.start, lit.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "typescript/no-empty-object-type".to_owned(),
+            message: "Empty object type `{}` is equivalent to any non-nullish value — use `object` or a more specific type instead".to_owned(),
+            span: Span::new(lit.span.start, lit.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace `{}` with `object`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace `{}` with `object`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(lit.span.start, lit.span.end),
+                    replacement: "object".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

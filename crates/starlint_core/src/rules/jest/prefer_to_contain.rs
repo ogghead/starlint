@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +28,7 @@ impl NativeRule for PreferToContain {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -34,6 +36,7 @@ impl NativeRule for PreferToContain {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -89,11 +92,42 @@ impl NativeRule for PreferToContain {
             return;
         }
 
-        ctx.report_warning(
-            "jest/prefer-to-contain",
-            "Use `toContain()` instead of `expect(arr.includes(x)).toBe(true/false)`",
-            Span::new(call.span.start, call.span.end),
-        );
+        // Try to build fix: `expect(arr.includes(x)).toBe(true)` → `expect(arr).toContain(x)`
+        let source = ctx.source_text();
+        let arr_span = includes_member.object.span();
+        let arr_text = source[arr_span.start as usize..arr_span.end as usize].to_owned();
+        let includes_arg_text = includes_call.arguments.first().map(|a| {
+            let sp = a.span();
+            source[sp.start as usize..sp.end as usize].to_owned()
+        });
+        let is_negated = matches!(arg_expr, Expression::BooleanLiteral(b) if !b.value);
+
+        let fix = includes_arg_text.map(|val| {
+            let matcher = if is_negated {
+                "not.toContain"
+            } else {
+                "toContain"
+            };
+            let replacement = format!("expect({arr_text}).{matcher}({val})");
+            Fix {
+                message: format!("Replace with `{replacement}`"),
+                edits: vec![Edit {
+                    span: Span::new(call.span.start, call.span.end),
+                    replacement,
+                }],
+            }
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: "jest/prefer-to-contain".to_owned(),
+            message: "Use `toContain()` instead of `expect(arr.includes(x)).toBe(true/false)`"
+                .to_owned(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace with `toContain()`".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

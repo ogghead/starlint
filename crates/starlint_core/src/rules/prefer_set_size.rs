@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::{ArrayExpressionElement, Expression};
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +26,7 @@ impl NativeRule for PreferSetSize {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,61 +44,94 @@ impl NativeRule for PreferSetSize {
         }
 
         // Pattern 1: `[...x].length` — array with a single spread element
-        if is_spread_into_array(&member.object) {
-            ctx.report_warning(
-                "prefer-set-size",
-                "Use `Set#size` instead of spreading into an array and checking `.length`",
-                Span::new(member.span.start, member.span.end),
-            );
+        if let Some(set_name) = get_spread_arg_name(&member.object, ctx.source_text()) {
+            let replacement = format!("{set_name}.size");
+            ctx.report(Diagnostic {
+                rule_name: "prefer-set-size".to_owned(),
+                message: "Use `Set#size` instead of spreading into an array and checking `.length`"
+                    .to_owned(),
+                span: Span::new(member.span.start, member.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace with `{replacement}`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(member.span.start, member.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
             return;
         }
 
         // Pattern 2: `Array.from(x).length` — call to Array.from with one argument
-        if is_array_from_call(&member.object) {
-            ctx.report_warning(
-                "prefer-set-size",
-                "Use `Set#size` instead of `Array.from()` and `.length`",
-                Span::new(member.span.start, member.span.end),
-            );
+        if let Some(set_name) = get_array_from_arg_name(&member.object, ctx.source_text()) {
+            let replacement = format!("{set_name}.size");
+            ctx.report(Diagnostic {
+                rule_name: "prefer-set-size".to_owned(),
+                message: "Use `Set#size` instead of `Array.from()` and `.length`".to_owned(),
+                span: Span::new(member.span.start, member.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace with `{replacement}`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(member.span.start, member.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
 
-/// Check if expression is `[...something]` (array literal with a single spread element).
-fn is_spread_into_array(expr: &Expression<'_>) -> bool {
+/// Extract the spread argument name from `[...something]` (array with a single spread element).
+#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
+fn get_spread_arg_name<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
     let Expression::ArrayExpression(array) = expr else {
-        return false;
+        return None;
     };
 
     if array.elements.len() != 1 {
-        return false;
+        return None;
     }
 
-    matches!(
-        array.elements.first(),
-        Some(ArrayExpressionElement::SpreadElement(_))
-    )
+    let Some(ArrayExpressionElement::SpreadElement(spread)) = array.elements.first() else {
+        return None;
+    };
+
+    let span = spread.argument.span();
+    Some(&source[span.start as usize..span.end as usize])
 }
 
-/// Check if expression is `Array.from(something)` (single-argument call to `Array.from`).
-fn is_array_from_call(expr: &Expression<'_>) -> bool {
+/// Extract the argument name from `Array.from(something)` (single-argument call).
+#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
+fn get_array_from_arg_name<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
     let Expression::CallExpression(call) = expr else {
-        return false;
+        return None;
     };
 
     if call.arguments.len() != 1 {
-        return false;
+        return None;
     }
 
     let Expression::StaticMemberExpression(member) = &call.callee else {
-        return false;
+        return None;
     };
 
     if member.property.name.as_str() != "from" {
-        return false;
+        return None;
     }
 
-    matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Array")
+    if !matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Array") {
+        return None;
+    }
+
+    let arg = call.arguments.first()?;
+    let span = arg.span();
+    Some(&source[span.start as usize..span.end as usize])
 }
 
 #[cfg(test)]

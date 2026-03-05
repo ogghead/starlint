@@ -5,7 +5,7 @@
 //! type-testing utility that gives better error messages and is more
 //! maintainable than `@ts-expect-error`-based type tests.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for PreferExpectTypeOf {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -37,11 +37,17 @@ impl NativeRule for PreferExpectTypeOf {
         let violations = find_ts_expect_error_in_comments(ctx.source_text());
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "Prefer `expectTypeOf()` for type assertions instead of `@ts-expect-error`",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message:
+                    "Prefer `expectTypeOf()` for type assertions instead of `@ts-expect-error`"
+                        .to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: Some("Use `expectTypeOf()` for type-level assertions".to_owned()),
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

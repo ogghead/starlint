@@ -13,7 +13,7 @@
 //! - `.slice(0,` followed by `) ===` / `) ==`
 //! - `.substring(0,` followed by `) ===` / `) ==`
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +30,7 @@ impl NativeRule for PreferStringStartsEndsWith {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,11 +43,15 @@ impl NativeRule for PreferStringStartsEndsWith {
         let findings = find_starts_ends_with_patterns(source);
 
         for (msg, start, end) in findings {
-            ctx.report_warning(
-                "typescript/prefer-string-starts-ends-with",
-                msg,
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/prefer-string-starts-ends-with".to_owned(),
+                message: msg.to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: Some("Use `startsWith()` or `endsWith()` instead".to_owned()),
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoDuplicates {
             description: "Report duplicate imports from the same module".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::DangerousFix,
         }
     }
 
@@ -61,13 +61,17 @@ impl NativeRule for NoDuplicates {
         for (module_source, positions) in &import_sources {
             if positions.len() > 1 {
                 for &(start, end) in positions.iter().skip(1) {
-                    ctx.report_warning(
-                        "import/no-duplicates",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "import/no-duplicates".to_owned(),
+                        message: format!(
                             "'{module_source}' is imported multiple times; merge into a single import"
                         ),
-                        Span::new(start, end),
-                    );
+                        span: Span::new(start, end),
+                        severity: Severity::Warning,
+                        help: Some("Merge duplicate imports into one statement".to_owned()),
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

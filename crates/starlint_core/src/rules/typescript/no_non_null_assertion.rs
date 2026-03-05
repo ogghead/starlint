@@ -8,7 +8,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +26,7 @@ impl NativeRule for NoNonNullAssertion {
             description: "Disallow non-null assertions using the `!` postfix operator".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -32,16 +34,34 @@ impl NativeRule for NoNonNullAssertion {
         Some(&[AstType::TSNonNullExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::TSNonNullExpression(expr) = kind else {
             return;
         };
 
-        ctx.report_warning(
-            "typescript/no-non-null-assertion",
-            "Avoid non-null assertions — use optional chaining or explicit null checks instead",
-            Span::new(expr.span.start, expr.span.end),
-        );
+        // Fix: replace `x!` with `x`
+        let inner_span = expr.expression.span();
+        let inner_text =
+            ctx.source_text()[inner_span.start as usize..inner_span.end as usize].to_owned();
+
+        ctx.report(Diagnostic {
+            rule_name: "typescript/no-non-null-assertion".to_owned(),
+            message:
+                "Avoid non-null assertions — use optional chaining or explicit null checks instead"
+                    .to_owned(),
+            span: Span::new(expr.span.start, expr.span.end),
+            severity: Severity::Warning,
+            help: Some("Remove the `!` non-null assertion".to_owned()),
+            fix: Some(Fix {
+                message: "Remove non-null assertion".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(expr.span.start, expr.span.end),
+                    replacement: inner_text,
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

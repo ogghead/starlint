@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::TSType;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for ConsistentTypeDefinitions {
             description: "Prefer `interface` over `type` for object type definitions".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -34,6 +34,7 @@ impl NativeRule for ConsistentTypeDefinitions {
         Some(&[AstType::TSTypeAliasDeclaration])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::TSTypeAliasDeclaration(decl) = kind else {
             return;
@@ -45,11 +46,30 @@ impl NativeRule for ConsistentTypeDefinitions {
             return;
         }
 
-        ctx.report_warning(
-            "typescript/consistent-type-definitions",
-            "Use an `interface` instead of a `type` alias for this object type",
-            Span::new(decl.span.start, decl.span.end),
-        );
+        // Fix: `type Foo = { ... }` → `interface Foo { ... }`
+        // Replace full declaration span with rewritten text
+        let source = ctx.source_text();
+        let decl_text = &source[decl.span.start as usize..decl.span.end as usize];
+        // Replace "type " with "interface " and remove " = "
+        let replacement = decl_text
+            .replacen("type ", "interface ", 1)
+            .replacen(" = ", " ", 1);
+
+        ctx.report(Diagnostic {
+            rule_name: "typescript/consistent-type-definitions".to_owned(),
+            message: "Use an `interface` instead of a `type` alias for this object type".to_owned(),
+            span: Span::new(decl.span.start, decl.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace `type` with `interface`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace `type` with `interface`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(decl.span.start, decl.span.end),
+                    replacement,
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

@@ -6,7 +6,7 @@
 //! `this.x = x` in the constructor body is therefore redundant and should
 //! be removed.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoUnnecessaryParameterPropertyAssignment {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -32,18 +32,58 @@ impl NativeRule for NoUnnecessaryParameterPropertyAssignment {
         false
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
         let source = ctx.source_text();
         let findings = find_redundant_param_assignments(source);
 
-        for (name, start, end) in findings {
-            ctx.report_warning(
-                "typescript/no-unnecessary-parameter-property-assignment",
-                &format!(
+        // Collect fix data into owned values to satisfy borrow checker
+        let fixes: Vec<_> = findings
+            .into_iter()
+            .map(|(name, start, end)| {
+                let after_end = end as usize;
+                let mut delete_end = after_end;
+                let remaining = source.get(after_end..).unwrap_or("");
+                for ch in remaining.chars() {
+                    if ch == ';' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' {
+                        delete_end = delete_end.saturating_add(ch.len_utf8());
+                    } else {
+                        break;
+                    }
+                }
+                let mut delete_start = start as usize;
+                let before = source.get(..delete_start).unwrap_or("");
+                for ch in before.chars().rev() {
+                    if ch == ' ' || ch == '\t' {
+                        delete_start = delete_start.saturating_sub(ch.len_utf8());
+                    } else {
+                        break;
+                    }
+                }
+                let fix_start = u32::try_from(delete_start).unwrap_or(start);
+                let fix_end = u32::try_from(delete_end).unwrap_or(end);
+                (name, start, end, fix_start, fix_end)
+            })
+            .collect();
+
+        for (name, start, end, fix_start, fix_end) in fixes {
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-unnecessary-parameter-property-assignment".to_owned(),
+                message: format!(
                     "Unnecessary assignment `this.{name} = {name}` — parameter property already assigns it"
                 ),
-                Span::new(start, end),
-            );
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: Some(format!("Remove `this.{name} = {name};`")),
+                fix: Some(Fix {
+                    message: format!("Remove redundant `this.{name} = {name};`"),
+                    edits: vec![Edit {
+                        span: Span::new(fix_start, fix_end),
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

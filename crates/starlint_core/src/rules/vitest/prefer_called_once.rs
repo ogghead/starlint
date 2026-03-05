@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +30,7 @@ impl NativeRule for PreferCalledOnce {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -36,6 +38,7 @@ impl NativeRule for PreferCalledOnce {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -70,11 +73,32 @@ impl NativeRule for PreferCalledOnce {
         };
 
         if is_one {
-            ctx.report_warning(
-                RULE_NAME,
-                "Prefer `toHaveBeenCalledOnce()` over `toHaveBeenCalledTimes(1)`",
-                Span::new(call.span.start, call.span.end),
-            );
+            // Build fix: replace `.toHaveBeenCalledTimes(1)` with `.toHaveBeenCalledOnce()`
+            let source = ctx.source_text();
+            let obj_span = member.object.span();
+            let obj_text = source
+                .get(obj_span.start as usize..obj_span.end as usize)
+                .unwrap_or("")
+                .to_owned();
+            let replacement = format!("{obj_text}.toHaveBeenCalledOnce()");
+            let fix = Some(Fix {
+                message: "Replace with `toHaveBeenCalledOnce()`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(call.span.start, call.span.end),
+                    replacement,
+                }],
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Prefer `toHaveBeenCalledOnce()` over `toHaveBeenCalledTimes(1)`"
+                    .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace with `toHaveBeenCalledOnce()`".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

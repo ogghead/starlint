@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for PreferNegativeIndex {
             description: "Prefer negative index over .length - index".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -34,6 +34,7 @@ impl NativeRule for PreferNegativeIndex {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -69,7 +70,7 @@ impl NativeRule for PreferNegativeIndex {
             }
 
             // Right side should be a numeric literal
-            let Expression::NumericLiteral(_) = &bin.right else {
+            let Expression::NumericLiteral(num_lit) = &bin.right else {
                 continue;
             };
 
@@ -78,13 +79,31 @@ impl NativeRule for PreferNegativeIndex {
                 (&member.object, &len_member.object)
             {
                 if obj_id.name == len_obj_id.name {
-                    ctx.report_warning(
-                        "prefer-negative-index",
-                        &format!(
+                    let n = num_lit.value;
+                    #[allow(clippy::cast_possible_truncation)]
+                    let neg_val = if (n - n.round()).abs() < f64::EPSILON {
+                        format!("-{}", n as i64)
+                    } else {
+                        format!("-{n}")
+                    };
+
+                    ctx.report(Diagnostic {
+                        rule_name: "prefer-negative-index".to_owned(),
+                        message: format!(
                             "Use a negative index instead of `.length` subtraction in `.{method_name}()`"
                         ),
-                        Span::new(call.span.start, call.span.end),
-                    );
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Warning,
+                        help: Some(format!("Replace with `{neg_val}`")),
+                        fix: Some(Fix {
+                            message: format!("Replace `{obj_id}.length - {n}` with `{neg_val}`", obj_id = obj_id.name),
+                            edits: vec![Edit {
+                                span: Span::new(bin.span.start, bin.span.end),
+                                replacement: neg_val,
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                     return;
                 }
             }

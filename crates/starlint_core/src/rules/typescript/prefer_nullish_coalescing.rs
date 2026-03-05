@@ -10,7 +10,7 @@
 //! (e.g. `foo?.bar || default`), because optional chaining already signals
 //! null-awareness and `??` is almost always the correct operator in that context.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for PreferNullishCoalescing {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -39,11 +39,21 @@ impl NativeRule for PreferNullishCoalescing {
         let findings = find_optional_chain_or_patterns(ctx.source_text());
 
         for (start, end) in findings {
-            ctx.report_warning(
-                "typescript/prefer-nullish-coalescing",
-                "Prefer `??` over `||` after optional chaining — `||` also catches falsy values like `0`, `\"\"`, and `false`",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/prefer-nullish-coalescing".to_owned(),
+                message: "Prefer `??` over `||` after optional chaining — `||` also catches falsy values like `0`, `\"\"`, and `false`".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: Some("Replace `||` with `??`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace `||` with `??`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(start, end),
+                        replacement: "??".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

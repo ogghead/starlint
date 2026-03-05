@@ -9,7 +9,7 @@
 //! form `<T = SomeType>` and then flags usage sites that pass `SomeType` as
 //! the type argument (e.g. `Foo<SomeType>`) when it matches the default.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -36,7 +36,7 @@ impl NativeRule for NoUnnecessaryTypeArguments {
             description: "Disallow type arguments that match the default type parameter".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -57,14 +57,23 @@ impl NativeRule for NoUnnecessaryTypeArguments {
         let violations = find_redundant_type_args(source, &generics);
 
         for (span, type_name, default_type) in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
-                    "Type argument `{default_type}` is the default for `{type_name}` \
-                     and can be omitted"
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
+                    "Type argument `{default_type}` is the default for `{type_name}` and can be omitted"
                 ),
                 span,
-            );
+                severity: Severity::Warning,
+                help: Some(format!("Replace `{type_name}<{default_type}>` with `{type_name}`")),
+                fix: Some(Fix {
+                    message: format!("Remove redundant type argument `<{default_type}>`"),
+                    edits: vec![Edit {
+                        span,
+                        replacement: type_name.clone(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

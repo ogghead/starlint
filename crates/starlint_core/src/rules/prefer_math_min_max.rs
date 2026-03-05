@@ -9,7 +9,7 @@ use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for PreferMathMinMax {
             description: "Prefer Math.min()/Math.max() over ternary expressions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,12 +62,23 @@ impl NativeRule for PreferMathMinMax {
             _ => None,
         };
 
-        if let Some(func_name) = suggestion {
-            ctx.report_warning(
-                "prefer-math-min-max",
-                &format!("Use `{func_name}()` instead of a ternary expression"),
-                Span::new(cond.span.start, cond.span.end),
-            );
+        if let Some((func_name, a_text, b_text)) = suggestion {
+            let replacement = format!("{func_name}({a_text}, {b_text})");
+            ctx.report(Diagnostic {
+                rule_name: "prefer-math-min-max".to_owned(),
+                message: format!("Use `{func_name}()` instead of a ternary expression"),
+                span: Span::new(cond.span.start, cond.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace with `{replacement}`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(cond.span.start, cond.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
@@ -83,22 +94,23 @@ fn span_text<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
 /// For `a > b` (or `a >= b`):
 ///   consequent=a, alternate=b  =>  Math.max
 ///   consequent=b, alternate=a  =>  Math.min
-fn classify_greater(
+/// Returns (`func_name`, `first_arg_text`, `second_arg_text`).
+fn classify_greater<'s>(
     left: &Expression<'_>,
     right: &Expression<'_>,
     consequent: &Expression<'_>,
     alternate: &Expression<'_>,
-    source: &str,
-) -> Option<&'static str> {
+    source: &'s str,
+) -> Option<(&'static str, &'s str, &'s str)> {
     let left_text = span_text(left, source)?;
     let right_text = span_text(right, source)?;
     let cons_text = span_text(consequent, source)?;
     let alt_text = span_text(alternate, source)?;
 
     if left_text == cons_text && right_text == alt_text {
-        Some("Math.max")
+        Some(("Math.max", left_text, right_text))
     } else if left_text == alt_text && right_text == cons_text {
-        Some("Math.min")
+        Some(("Math.min", left_text, right_text))
     } else {
         None
     }
@@ -107,22 +119,23 @@ fn classify_greater(
 /// For `a < b` (or `a <= b`):
 ///   consequent=a, alternate=b  =>  Math.min
 ///   consequent=b, alternate=a  =>  Math.max
-fn classify_less(
+/// Returns (`func_name`, `first_arg_text`, `second_arg_text`).
+fn classify_less<'s>(
     left: &Expression<'_>,
     right: &Expression<'_>,
     consequent: &Expression<'_>,
     alternate: &Expression<'_>,
-    source: &str,
-) -> Option<&'static str> {
+    source: &'s str,
+) -> Option<(&'static str, &'s str, &'s str)> {
     let left_text = span_text(left, source)?;
     let right_text = span_text(right, source)?;
     let cons_text = span_text(consequent, source)?;
     let alt_text = span_text(alternate, source)?;
 
     if left_text == cons_text && right_text == alt_text {
-        Some("Math.min")
+        Some(("Math.min", left_text, right_text))
     } else if left_text == alt_text && right_text == cons_text {
-        Some("Math.max")
+        Some(("Math.max", left_text, right_text))
     } else {
         None
     }

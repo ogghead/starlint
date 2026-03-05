@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +27,7 @@ impl NativeRule for PreferMockPromiseShorthand {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -83,13 +85,19 @@ impl NativeRule for PreferMockPromiseShorthand {
                     "reject" => "mockRejectedValue",
                     _ => return,
                 };
-                ctx.report_warning(
-                    "jest/prefer-mock-promise-shorthand",
-                    &format!(
+                let fix =
+                    build_mock_shorthand_fix(call, member, suggestion, ret, ctx.source_text());
+                ctx.report(Diagnostic {
+                    rule_name: "jest/prefer-mock-promise-shorthand".to_owned(),
+                    message: format!(
                         "Use `.{suggestion}()` instead of `.mockImplementation(() => Promise.{promise_method}(...))`"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Replace with `.{suggestion}()`")),
+                    fix,
+                    labels: vec![],
+                });
             }
         } else if method == "mockReturnValue" {
             // Check if the argument is `Promise.resolve(x)` or `Promise.reject(x)`
@@ -99,16 +107,55 @@ impl NativeRule for PreferMockPromiseShorthand {
                     "reject" => "mockRejectedValue",
                     _ => return,
                 };
-                ctx.report_warning(
-                    "jest/prefer-mock-promise-shorthand",
-                    &format!(
+                let fix =
+                    build_mock_shorthand_fix(call, member, suggestion, arg_expr, ctx.source_text());
+                ctx.report(Diagnostic {
+                    rule_name: "jest/prefer-mock-promise-shorthand".to_owned(),
+                    message: format!(
                         "Use `.{suggestion}()` instead of `.mockReturnValue(Promise.{promise_method}(...))`"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Replace with `.{suggestion}()`")),
+                    fix,
+                    labels: vec![],
+                });
             }
         }
     }
+}
+
+/// Build fix: replace `.mockImplementation(() => Promise.resolve(x))` with `.mockResolvedValue(x)`.
+#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
+fn build_mock_shorthand_fix(
+    call: &oxc_ast::ast::CallExpression<'_>,
+    member: &oxc_ast::ast::StaticMemberExpression<'_>,
+    suggestion: &str,
+    promise_expr: &Expression<'_>,
+    source: &str,
+) -> Option<Fix> {
+    // Extract the object before `.mockImplementation(...)` / `.mockReturnValue(...)`
+    let obj_span = member.object.span();
+    let obj_text = source.get(obj_span.start as usize..obj_span.end as usize)?;
+
+    // Extract the argument from Promise.resolve(x) / Promise.reject(x)
+    let Expression::CallExpression(promise_call) = promise_expr else {
+        return None;
+    };
+    let inner_arg_text = promise_call.arguments.first().map(|a| {
+        let sp = a.span();
+        source.get(sp.start as usize..sp.end as usize).unwrap_or("")
+    });
+    let arg_text = inner_arg_text.unwrap_or("");
+
+    let replacement = format!("{obj_text}.{suggestion}({arg_text})");
+    Some(Fix {
+        message: format!("Replace with `.{suggestion}()`"),
+        edits: vec![Edit {
+            span: Span::new(call.span.start, call.span.end),
+            replacement,
+        }],
+    })
 }
 
 /// Check if an expression is `Promise.resolve(...)` or `Promise.reject(...)`.

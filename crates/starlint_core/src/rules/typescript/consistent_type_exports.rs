@@ -9,7 +9,7 @@
 //! This text-based heuristic scans for `interface` and `type` declarations,
 //! then checks whether named exports of those identifiers use `export type`.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for ConsistentTypeExports {
             description: "Require `export type` for type-only exports".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -37,16 +37,39 @@ impl NativeRule for ConsistentTypeExports {
         false
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
         let source = ctx.source_text();
         let violations = find_type_only_exports(source);
 
-        for (name, span) in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!("Use `export type {{ {name} }}` instead of `export {{ {name} }}` — `{name}` is a type"),
+        // Collect fix data into owned values to satisfy borrow checker
+        let fixes: Vec<_> = violations
+            .into_iter()
+            .map(|(name, span)| {
+                let line_text = source
+                    .get(span.start as usize..span.end as usize)
+                    .unwrap_or("");
+                let replacement = line_text.replacen("export {", "export type {", 1);
+                (name, span, replacement)
+            })
+            .collect();
+
+        for (name, span, replacement) in fixes {
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!("Use `export type {{ {name} }}` instead of `export {{ {name} }}` — `{name}` is a type"),
                 span,
-            );
+                severity: Severity::Warning,
+                help: Some("Add `type` keyword to export".to_owned()),
+                fix: Some(Fix {
+                    message: "Add `type` keyword to export".to_owned(),
+                    edits: vec![Edit {
+                        span,
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

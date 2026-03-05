@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for ReactInJsxScope {
             description: "Require `React` in scope when using JSX".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,11 +50,24 @@ impl NativeRule for ReactInJsxScope {
             || source.contains("require(\"react\")");
 
         if !has_react_import {
-            ctx.report_warning(
-                "react/react-in-jsx-scope",
-                "`React` must be in scope when using JSX",
-                Span::new(element.span.start, element.span.end),
-            );
+            // Fix: insert `import React from 'react';\n` at file start
+            let fix = Some(Fix {
+                message: "Add `import React from 'react'`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(0, 0),
+                    replacement: "import React from 'react';\n".to_owned(),
+                }],
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "react/react-in-jsx-scope".to_owned(),
+                message: "`React` must be in scope when using JSX".to_owned(),
+                span: Span::new(element.span.start, element.span.end),
+                severity: Severity::Warning,
+                help: Some("Import React at the top of the file".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

@@ -5,7 +5,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoUnescapedEntities {
             description: "Disallow unescaped HTML entities in JSX text".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -32,6 +32,7 @@ impl NativeRule for NoUnescapedEntities {
         Some(&[AstType::JSXText])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::JSXText(text) = kind else {
             return;
@@ -48,11 +49,32 @@ impl NativeRule for NoUnescapedEntities {
                     '}' => "&#125;",
                     _ => continue,
                 };
-                ctx.report_warning(
-                    "react/no-unescaped-entities",
-                    &format!("Unescaped character `{ch}` in JSX text — use `{entity}` instead"),
-                    Span::new(text.span.start, text.span.end),
-                );
+
+                // Build fix: replace each occurrence of the char in the JSX text span
+                let source = ctx.source_text();
+                let text_str = source
+                    .get(text.span.start as usize..text.span.end as usize)
+                    .unwrap_or("");
+                let replaced = text_str.replace(*ch, entity);
+                let fix = (replaced != text_str).then(|| Fix {
+                    message: format!("Replace `{ch}` with `{entity}`"),
+                    edits: vec![Edit {
+                        span: Span::new(text.span.start, text.span.end),
+                        replacement: replaced,
+                    }],
+                });
+
+                ctx.report(Diagnostic {
+                    rule_name: "react/no-unescaped-entities".to_owned(),
+                    message: format!(
+                        "Unescaped character `{ch}` in JSX text — use `{entity}` instead"
+                    ),
+                    span: Span::new(text.span.start, text.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Replace `{ch}` with `{entity}`")),
+                    fix,
+                    labels: vec![],
+                });
             }
         }
     }

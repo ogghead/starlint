@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +27,7 @@ impl NativeRule for PreferExpectResolves {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -33,6 +35,7 @@ impl NativeRule for PreferExpectResolves {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -54,16 +57,42 @@ impl NativeRule for PreferExpectResolves {
         let Some(arg_expr) = first_arg.as_expression() else {
             return;
         };
-        let is_await = matches!(arg_expr, Expression::AwaitExpression(_));
-        if !is_await {
+        let Expression::AwaitExpression(await_expr) = arg_expr else {
             return;
-        }
+        };
 
-        ctx.report_warning(
-            "jest/prefer-expect-resolves",
-            "Use `expect(promise).resolves` instead of `expect(await promise)`",
-            Span::new(call.span.start, call.span.end),
-        );
+        // Build fix: `expect(await expr)` → `await expect(expr).resolves`
+        let source = ctx.source_text();
+        let inner_span = await_expr.argument.span();
+        let inner_text = source
+            .get(inner_span.start as usize..inner_span.end as usize)
+            .unwrap_or("")
+            .to_owned();
+
+        let fix = if inner_text.is_empty() {
+            None
+        } else {
+            // We need the full outer context to figure out what comes after expect(await expr)
+            // e.g. `.toBe(1)` — keep that suffix by only replacing the expect call itself
+            let replacement = format!("await expect({inner_text}).resolves");
+            Some(Fix {
+                message: format!("Replace with `{replacement}`"),
+                edits: vec![Edit {
+                    span: Span::new(call.span.start, call.span.end),
+                    replacement,
+                }],
+            })
+        };
+
+        ctx.report(Diagnostic {
+            rule_name: "jest/prefer-expect-resolves".to_owned(),
+            message: "Use `expect(promise).resolves` instead of `expect(await promise)`".to_owned(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: Some("Use `.resolves` matcher instead of awaiting inside `expect()`".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 
