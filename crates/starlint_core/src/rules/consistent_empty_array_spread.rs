@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{ArrayExpressionElement, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -33,7 +35,7 @@ impl NativeRule for ConsistentEmptyArraySpread {
             description: "Disallow spreading an empty array literal".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -41,6 +43,7 @@ impl NativeRule for ConsistentEmptyArraySpread {
         Some(&[AstType::ArrayExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::ArrayExpression(arr) = kind else {
             return;
@@ -49,11 +52,36 @@ impl NativeRule for ConsistentEmptyArraySpread {
         let has_empty_spread = arr.elements.iter().any(is_empty_array_spread);
 
         if has_empty_spread {
-            ctx.report_warning(
-                "consistent-empty-array-spread",
-                "Spreading an empty array literal is unnecessary",
-                Span::new(arr.span.start, arr.span.end),
-            );
+            // Build fix: reconstruct array without empty spreads
+            let source = ctx.source_text();
+            let non_empty: Vec<&str> = arr
+                .elements
+                .iter()
+                .filter(|el| !is_empty_array_spread(el))
+                .filter_map(|el| {
+                    let s = el.span();
+                    source.get(s.start as usize..s.end as usize)
+                })
+                .collect();
+            let replacement = format!("[{}]", non_empty.join(", "));
+
+            let fix = Some(Fix {
+                message: "Remove empty array spread".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(arr.span.start, arr.span.end),
+                    replacement,
+                }],
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "consistent-empty-array-spread".to_owned(),
+                message: "Spreading an empty array literal is unnecessary".to_owned(),
+                span: Span::new(arr.span.start, arr.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove the empty array spread".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

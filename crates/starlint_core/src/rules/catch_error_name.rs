@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::BindingPattern;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -46,7 +46,7 @@ impl NativeRule for CatchErrorName {
             description: "Enforce a consistent parameter name in catch clauses".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -87,13 +87,20 @@ impl NativeRule for CatchErrorName {
             return;
         }
 
+        let expected = self.expected_name.clone();
         ctx.report(Diagnostic {
             rule_name: "catch-error-name".to_owned(),
-            message: format!("Catch parameter should be named `{}`", self.expected_name),
+            message: format!("Catch parameter should be named `{expected}`"),
             span: Span::new(id.span.start, id.span.end),
             severity: Severity::Warning,
-            help: Some(format!("Rename `{name}` to `{}`", self.expected_name)),
-            fix: None,
+            help: Some(format!("Rename `{name}` to `{expected}`")),
+            fix: Some(Fix {
+                message: format!("Rename to `{expected}`"),
+                edits: vec![Edit {
+                    span: Span::new(id.span.start, id.span.end),
+                    replacement: expected,
+                }],
+            }),
             labels: vec![],
         });
     }

@@ -5,7 +5,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +30,7 @@ impl NativeRule for NoExport {
             description: "Disallow exports from test files".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,30 +48,22 @@ impl NativeRule for NoExport {
             return;
         }
 
-        match kind {
-            AstKind::ExportNamedDeclaration(decl) => {
-                ctx.report_error(
-                    RULE_NAME,
-                    "Test files should not export anything",
-                    Span::new(decl.span.start, decl.span.end),
-                );
-            }
-            AstKind::ExportDefaultDeclaration(decl) => {
-                ctx.report_error(
-                    RULE_NAME,
-                    "Test files should not export anything",
-                    Span::new(decl.span.start, decl.span.end),
-                );
-            }
-            AstKind::ExportAllDeclaration(decl) => {
-                ctx.report_error(
-                    RULE_NAME,
-                    "Test files should not export anything",
-                    Span::new(decl.span.start, decl.span.end),
-                );
-            }
-            _ => {}
-        }
+        let span = match kind {
+            AstKind::ExportNamedDeclaration(decl) => Span::new(decl.span.start, decl.span.end),
+            AstKind::ExportDefaultDeclaration(decl) => Span::new(decl.span.start, decl.span.end),
+            AstKind::ExportAllDeclaration(decl) => Span::new(decl.span.start, decl.span.end),
+            _ => return,
+        };
+
+        ctx.report(Diagnostic {
+            rule_name: RULE_NAME.to_owned(),
+            message: "Test files should not export anything".to_owned(),
+            span,
+            severity: Severity::Error,
+            help: Some("Remove the export from this test file".to_owned()),
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

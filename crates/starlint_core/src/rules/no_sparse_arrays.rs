@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::ArrayExpressionElement;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +26,7 @@ impl NativeRule for NoSparseArrays {
             description: "Disallow sparse arrays".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -32,6 +34,7 @@ impl NativeRule for NoSparseArrays {
         Some(&[AstType::ArrayExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::ArrayExpression(arr) = kind else {
             return;
@@ -43,11 +46,36 @@ impl NativeRule for NoSparseArrays {
             .any(|el| matches!(el, ArrayExpressionElement::Elision(_)));
 
         if has_elision {
-            ctx.report_error(
-                "no-sparse-arrays",
-                "Unexpected comma in middle of array (sparse array)",
-                Span::new(arr.span.start, arr.span.end),
-            );
+            // Build fix: replace each elision with `undefined`
+            let source = ctx.source_text();
+            let parts: Vec<&str> = arr
+                .elements
+                .iter()
+                .map(|el| match el {
+                    ArrayExpressionElement::Elision(_) => "undefined",
+                    other => {
+                        let s = other.span();
+                        source.get(s.start as usize..s.end as usize).unwrap_or("")
+                    }
+                })
+                .collect();
+            let replacement = format!("[{}]", parts.join(", "));
+
+            ctx.report(Diagnostic {
+                rule_name: "no-sparse-arrays".to_owned(),
+                message: "Unexpected comma in middle of array (sparse array)".to_owned(),
+                span: Span::new(arr.span.start, arr.span.end),
+                severity: Severity::Error,
+                help: Some("Replace empty slots with explicit `undefined`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace elisions with `undefined`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(arr.span.start, arr.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

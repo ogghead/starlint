@@ -6,8 +6,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::UpdateOperator;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +24,7 @@ impl NativeRule for NoPlusplus {
             description: "Disallow the unary operators `++` and `--`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -31,6 +32,7 @@ impl NativeRule for NoPlusplus {
         Some(&[AstType::UpdateExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::UpdateExpression(update) = kind else {
             return;
@@ -41,11 +43,35 @@ impl NativeRule for NoPlusplus {
             UpdateOperator::Decrement => "--",
         };
 
-        ctx.report_warning(
-            "no-plusplus",
-            &format!("Unary operator `{op_str}` used"),
-            Span::new(update.span.start, update.span.end),
-        );
+        let assign_op = match update.operator {
+            UpdateOperator::Increment => "+= 1",
+            UpdateOperator::Decrement => "-= 1",
+        };
+
+        // Extract the argument source text for the fix
+        let source = ctx.source_text();
+        let arg_start = update.argument.span().start as usize;
+        let arg_end = update.argument.span().end as usize;
+        let arg_text = source.get(arg_start..arg_end).unwrap_or("").to_owned();
+
+        let replacement = format!("{arg_text} {assign_op}");
+        let fix = (!arg_text.is_empty()).then(|| Fix {
+            message: format!("Replace `{op_str}` with `{assign_op}`"),
+            edits: vec![Edit {
+                span: Span::new(update.span.start, update.span.end),
+                replacement,
+            }],
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: "no-plusplus".to_owned(),
+            message: format!("Unary operator `{op_str}` used"),
+            span: Span::new(update.span.start, update.span.end),
+            severity: Severity::Warning,
+            help: Some(format!("Use `{assign_op}` instead")),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

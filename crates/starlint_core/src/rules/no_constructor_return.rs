@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{MethodDefinitionKind, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoConstructorReturn {
             description: "Disallow returning a value from a constructor".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,11 +61,21 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
     match stmt {
         Statement::ReturnStatement(ret) => {
             if ret.argument.is_some() {
-                ctx.report_error(
-                    "no-constructor-return",
-                    "Unexpected return statement in constructor",
-                    Span::new(ret.span.start, ret.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-constructor-return".to_owned(),
+                    message: "Unexpected return statement in constructor".to_owned(),
+                    span: Span::new(ret.span.start, ret.span.end),
+                    severity: Severity::Error,
+                    help: Some("Remove the return value or use a bare `return;`".to_owned()),
+                    fix: Some(Fix {
+                        message: "Remove the return value".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(ret.span.start, ret.span.end),
+                            replacement: "return;".to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
         Statement::BlockStatement(block) => {

@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for RelativeUrlStyle {
             description: "Enforce `./` prefix for relative URL paths".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -72,11 +72,30 @@ impl NativeRule for RelativeUrlStyle {
             .any(|prefix| path.starts_with(prefix));
 
         if !is_explicit && !path.is_empty() {
-            ctx.report_warning(
-                "relative-url-style",
-                &format!("Relative URL '{path}' should start with `./` — use './{path}' instead"),
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+            // Fix: replace string content with `./` prefix
+            // String literal span includes quotes, so skip them
+            let inner_start = path_lit.span.start.saturating_add(1);
+            let inner_end = path_lit.span.end.saturating_sub(1);
+            let path_owned = path.to_owned();
+            let fix = Some(Fix {
+                message: "Add `./` prefix".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(inner_start, inner_end),
+                    replacement: format!("./{path_owned}"),
+                }],
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "relative-url-style".to_owned(),
+                message: format!(
+                    "Relative URL '{path_owned}' should start with `./` — use './{path_owned}' instead"
+                ),
+                span: Span::new(new_expr.span.start, new_expr.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Use './{path_owned}' instead")),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

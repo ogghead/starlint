@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoSelfAssign {
             description: "Disallow self-assignment".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,15 @@ impl NativeRule for NoSelfAssign {
 
         if let (Some(left), Some(right)) = (left_name, right_name) {
             if left == right {
-                ctx.report_error(
-                    "no-self-assign",
-                    &format!("`{left}` is assigned to itself"),
-                    Span::new(assign.span.start, assign.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-self-assign".to_owned(),
+                    message: format!("`{left}` is assigned to itself"),
+                    span: Span::new(assign.span.start, assign.span.end),
+                    severity: Severity::Error,
+                    help: Some("Remove this self-assignment".to_owned()),
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

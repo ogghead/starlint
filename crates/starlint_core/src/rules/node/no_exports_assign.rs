@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::AssignmentTarget;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoExportsAssign {
             description: "Disallow direct assignment to `exports`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -51,11 +51,21 @@ impl NativeRule for NoExportsAssign {
             return;
         }
 
-        ctx.report_error(
-            "node/no-exports-assign",
-            "Direct assignment to `exports` breaks the module reference \u{2014} use `module.exports` or `exports.prop` instead",
-            Span::new(assign.span.start, assign.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "node/no-exports-assign".to_owned(),
+            message: "Direct assignment to `exports` breaks the module reference \u{2014} use `module.exports` or `exports.prop` instead".to_owned(),
+            span: Span::new(assign.span.start, assign.span.end),
+            severity: Severity::Error,
+            help: Some("Replace `exports` with `module.exports`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace `exports` with `module.exports`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(id.span.start, id.span.end),
+                    replacement: "module.exports".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

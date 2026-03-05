@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{MethodDefinitionKind, PropertyKind, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for GetterReturn {
             description: "Enforce `return` statements in getters".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,15 @@ impl NativeRule for GetterReturn {
             AstKind::MethodDefinition(method) if method.kind == MethodDefinitionKind::Get => {
                 if let Some(body) = &method.value.body {
                     if !statements_contain_return(&body.statements) {
-                        ctx.report_error(
-                            "getter-return",
-                            "Expected a return value in getter",
-                            Span::new(method.span.start, method.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "getter-return".to_owned(),
+                            message: "Expected a return value in getter".to_owned(),
+                            span: Span::new(method.span.start, method.span.end),
+                            severity: Severity::Error,
+                            help: Some("Add a `return` statement to this getter".to_owned()),
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }
@@ -48,11 +52,15 @@ impl NativeRule for GetterReturn {
                 if let oxc_ast::ast::Expression::FunctionExpression(func) = &prop.value {
                     if let Some(body) = &func.body {
                         if !statements_contain_return(&body.statements) {
-                            ctx.report_error(
-                                "getter-return",
-                                "Expected a return value in getter",
-                                Span::new(prop.span.start, prop.span.end),
-                            );
+                            ctx.report(Diagnostic {
+                                rule_name: "getter-return".to_owned(),
+                                message: "Expected a return value in getter".to_owned(),
+                                span: Span::new(prop.span.start, prop.span.end),
+                                severity: Severity::Error,
+                                help: Some("Add a `return` statement to this getter".to_owned()),
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                 }

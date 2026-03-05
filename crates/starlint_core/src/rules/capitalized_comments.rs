@@ -3,7 +3,7 @@
 //! Flag comments that start with a lowercase letter. Comments should begin
 //! with a capital letter for consistency and readability.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,8 +32,8 @@ const PRAGMAS: &[&str] = &[
 
 /// Scan source text for comments that start with a lowercase letter.
 ///
-/// Returns a list of spans for each offending comment.
-fn find_bad_comments(source: &str) -> Vec<Span> {
+/// Returns a list of `(comment_span, first_char_offset)` for each offending comment.
+fn find_bad_comments(source: &str) -> Vec<(Span, usize)> {
     let bytes = source.as_bytes();
     let len = bytes.len();
     let mut pos: usize = 0;
@@ -54,7 +54,12 @@ fn find_bad_comments(source: &str) -> Vec<Span> {
             if check_comment_text(comment_text) {
                 let span_start = u32::try_from(comment_start).unwrap_or(0);
                 let span_end = u32::try_from(line_end).unwrap_or(0);
-                results.push(Span::new(span_start, span_end));
+                let first_alpha_offset = content_start.saturating_add(
+                    comment_text
+                        .len()
+                        .saturating_sub(comment_text.trim_start().len()),
+                );
+                results.push((Span::new(span_start, span_end), first_alpha_offset));
             }
             pos = line_end;
             continue;
@@ -76,7 +81,12 @@ fn find_bad_comments(source: &str) -> Vec<Span> {
             if check_comment_text(comment_text) {
                 let span_start = u32::try_from(comment_start).unwrap_or(0);
                 let span_end = u32::try_from(block_end).unwrap_or(0);
-                results.push(Span::new(span_start, span_end));
+                let first_alpha_offset = content_start.saturating_add(
+                    comment_text
+                        .len()
+                        .saturating_sub(comment_text.trim_start().len()),
+                );
+                results.push((Span::new(span_start, span_end), first_alpha_offset));
             }
             pos = block_end;
             continue;
@@ -162,7 +172,7 @@ impl NativeRule for CapitalizedComments {
             description: "Require comments to begin with a capital letter".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -171,14 +181,35 @@ impl NativeRule for CapitalizedComments {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let flagged_spans = find_bad_comments(ctx.source_text());
+        let source = ctx.source_text().to_owned();
+        let flagged = find_bad_comments(&source);
 
-        for span in flagged_spans {
-            ctx.report_warning(
-                "capitalized-comments",
-                "Comments should start with an uppercase letter",
+        for (span, first_alpha_offset) in flagged {
+            // Build fix: capitalize the first letter
+            let fix = source.get(first_alpha_offset..).and_then(|s| {
+                let ch = s.chars().next()?;
+                let upper: String = ch.to_uppercase().collect();
+                let char_end = first_alpha_offset.saturating_add(ch.len_utf8());
+                let fix_start = u32::try_from(first_alpha_offset).ok()?;
+                let fix_end = u32::try_from(char_end).ok()?;
+                Some(Fix {
+                    message: format!("Capitalize `{ch}` to `{upper}`"),
+                    edits: vec![Edit {
+                        span: Span::new(fix_start, fix_end),
+                        replacement: upper,
+                    }],
+                })
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "capitalized-comments".to_owned(),
+                message: "Comments should start with an uppercase letter".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: Some("Capitalize the first letter of the comment".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

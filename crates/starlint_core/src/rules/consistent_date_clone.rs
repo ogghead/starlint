@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +26,7 @@ impl NativeRule for ConsistentDateClone {
             description: "Prefer `new Date(date)` over `new Date(date.getTime())`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -32,6 +34,7 @@ impl NativeRule for ConsistentDateClone {
         Some(&[AstType::NewExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::NewExpression(new_expr) = kind else {
             return;
@@ -72,11 +75,32 @@ impl NativeRule for ConsistentDateClone {
             return;
         }
 
-        ctx.report_warning(
-            "consistent-date-clone",
-            "Use `new Date(date)` instead of `new Date(date.getTime())`",
-            Span::new(new_expr.span.start, new_expr.span.end),
-        );
+        // Fix: replace the argument `d.getTime()` with just `d`
+        let source = ctx.source_text();
+        let obj_span = member.object.span();
+        let obj_start = obj_span.start as usize;
+        let obj_end = obj_span.end as usize;
+        let obj_text = source.get(obj_start..obj_end).unwrap_or("").to_owned();
+
+        // Replace the entire first argument (the call expression) with just the object
+        let arg_span = first_arg.span();
+        let fix = (!obj_text.is_empty()).then(|| Fix {
+            message: format!("Replace `{obj_text}.getTime()` with `{obj_text}`"),
+            edits: vec![Edit {
+                span: Span::new(arg_span.start, arg_span.end),
+                replacement: obj_text.clone(),
+            }],
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: "consistent-date-clone".to_owned(),
+            message: "Use `new Date(date)` instead of `new Date(date.getTime())`".to_owned(),
+            span: Span::new(new_expr.span.start, new_expr.span.end),
+            severity: Severity::Warning,
+            help: Some(format!("Replace `{obj_text}.getTime()` with `{obj_text}`")),
+            fix,
+            labels: vec![],
+        });
     }
 }
 
