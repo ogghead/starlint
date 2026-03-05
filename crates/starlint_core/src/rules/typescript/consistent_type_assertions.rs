@@ -8,7 +8,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +26,7 @@ impl NativeRule for ConsistentTypeAssertions {
             description: "Prefer `as` syntax for type assertions".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -32,16 +34,43 @@ impl NativeRule for ConsistentTypeAssertions {
         Some(&[AstType::TSTypeAssertion])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::TSTypeAssertion(expr) = kind else {
             return;
         };
 
-        ctx.report_warning(
-            "typescript/consistent-type-assertions",
-            "Use `as` syntax instead of angle-bracket syntax for type assertions",
-            Span::new(expr.span.start, expr.span.end),
-        );
+        // Build fix: rewrite <Type>expression to expression as Type
+        let source = ctx.source_text();
+        let type_span = expr.type_annotation.span();
+        let expr_span = expr.expression.span();
+        let type_text = source
+            .get(type_span.start as usize..type_span.end as usize)
+            .unwrap_or("")
+            .to_owned();
+        let expr_text = source
+            .get(expr_span.start as usize..expr_span.end as usize)
+            .unwrap_or("")
+            .to_owned();
+
+        let fix = (!type_text.is_empty() && !expr_text.is_empty()).then(|| Fix {
+            message: format!("Rewrite to `{expr_text} as {type_text}`"),
+            edits: vec![Edit {
+                span: Span::new(expr.span.start, expr.span.end),
+                replacement: format!("{expr_text} as {type_text}"),
+            }],
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: "typescript/consistent-type-assertions".to_owned(),
+            message: "Use `as` syntax instead of angle-bracket syntax for type assertions"
+                .to_owned(),
+            span: Span::new(expr.span.start, expr.span.end),
+            severity: Severity::Warning,
+            help: Some("Use `as` syntax instead".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

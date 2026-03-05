@@ -12,7 +12,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +31,7 @@ impl NativeRule for DotNotation {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -37,6 +39,7 @@ impl NativeRule for DotNotation {
         Some(&[AstType::ComputedMemberExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::ComputedMemberExpression(computed) = kind else {
             return;
@@ -49,13 +52,34 @@ impl NativeRule for DotNotation {
         let property_name = lit.value.as_str();
 
         if is_valid_js_identifier(property_name) {
-            ctx.report_warning(
-                "typescript/dot-notation",
-                &format!(
-                    "Use dot notation `obj.{property_name}` instead of bracket notation `obj[\"{property_name}\"]`"
+            // Build fix: replace obj["prop"] with obj.prop
+            let source = ctx.source_text();
+            let obj_span = computed.object.span();
+            let obj_text = source
+                .get(obj_span.start as usize..obj_span.end as usize)
+                .unwrap_or("")
+                .to_owned();
+            let prop_owned = property_name.to_owned();
+
+            let fix = (!obj_text.is_empty()).then(|| Fix {
+                message: format!("Use `{obj_text}.{prop_owned}`"),
+                edits: vec![Edit {
+                    span: Span::new(computed.span.start, computed.span.end),
+                    replacement: format!("{obj_text}.{prop_owned}"),
+                }],
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/dot-notation".to_owned(),
+                message: format!(
+                    "Use dot notation `obj.{prop_owned}` instead of bracket notation `obj[\"{prop_owned}\"]`"
                 ),
-                Span::new(computed.span.start, computed.span.end),
-            );
+                span: Span::new(computed.span.start, computed.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Use `.{prop_owned}` instead")),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

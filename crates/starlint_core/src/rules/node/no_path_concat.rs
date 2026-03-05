@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -34,7 +36,7 @@ impl NativeRule for NoPathConcat {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,6 +44,7 @@ impl NativeRule for NoPathConcat {
         Some(&[AstType::BinaryExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::BinaryExpression(expr) = kind else {
             return;
@@ -55,11 +58,35 @@ impl NativeRule for NoPathConcat {
             return;
         }
 
-        ctx.report_warning(
-            "node/no-path-concat",
-            "Do not concatenate paths with `+` \u{2014} use `path.join()` or `path.resolve()` instead",
-            Span::new(expr.span.start, expr.span.end),
-        );
+        // Build suggestion fix: __dirname + '/foo' → path.join(__dirname, '/foo')
+        let source = ctx.source_text();
+        let left_span = expr.left.span();
+        let right_span = expr.right.span();
+        let left_text = source
+            .get(left_span.start as usize..left_span.end as usize)
+            .unwrap_or("")
+            .to_owned();
+        let right_text = source
+            .get(right_span.start as usize..right_span.end as usize)
+            .unwrap_or("")
+            .to_owned();
+        let fix = (!left_text.is_empty() && !right_text.is_empty()).then(|| Fix {
+            message: format!("Replace with `path.join({left_text}, {right_text})`"),
+            edits: vec![Edit {
+                span: Span::new(expr.span.start, expr.span.end),
+                replacement: format!("path.join({left_text}, {right_text})"),
+            }],
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: "node/no-path-concat".to_owned(),
+            message: "Do not concatenate paths with `+` \u{2014} use `path.join()` or `path.resolve()` instead".to_owned(),
+            span: Span::new(expr.span.start, expr.span.end),
+            severity: Severity::Warning,
+            help: Some("Use `path.join()` or `path.resolve()` instead".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

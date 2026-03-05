@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoNewRequire {
             description: "Disallow `new require(...)`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,11 +43,15 @@ impl NativeRule for NoNewRequire {
         );
 
         if is_require {
-            ctx.report_error(
-                "node/no-new-require",
-                "`require` is not a constructor \u{2014} use `new (require('module'))()` to instantiate the export",
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "node/no-new-require".to_owned(),
+                message: "`require` is not a constructor \u{2014} use `new (require('module'))()` to instantiate the export".to_owned(),
+                span: Span::new(new_expr.span.start, new_expr.span.end),
+                severity: Severity::Error,
+                help: Some("Wrap the require call: `new (require('module'))()`".to_owned()),
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

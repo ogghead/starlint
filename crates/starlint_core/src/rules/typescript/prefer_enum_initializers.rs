@@ -10,7 +10,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for PreferEnumInitializers {
             description: "Require explicit initializers for enum members".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -39,16 +39,33 @@ impl NativeRule for PreferEnumInitializers {
             return;
         };
 
+        let mut index: u32 = 0;
         for member in &decl.body.members {
             if member.initializer.is_none() {
                 let member_name = member.id.static_name();
 
-                ctx.report_warning(
-                    "typescript/prefer-enum-initializers",
-                    &format!("Enum member `{member_name}` should have an explicit initializer"),
-                    Span::new(member.span.start, member.span.end),
-                );
+                // Insert ` = <index>` right after the member identifier (at end of member span)
+                let fix = Some(Fix {
+                    message: format!("Add initializer `= {index}`"),
+                    edits: vec![Edit {
+                        span: Span::new(member.span.end, member.span.end),
+                        replacement: format!(" = {index}"),
+                    }],
+                });
+
+                ctx.report(Diagnostic {
+                    rule_name: "typescript/prefer-enum-initializers".to_owned(),
+                    message: format!(
+                        "Enum member `{member_name}` should have an explicit initializer"
+                    ),
+                    span: Span::new(member.span.start, member.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Add `= {index}` to `{member_name}`")),
+                    fix,
+                    labels: vec![],
+                });
             }
+            index = index.saturating_add(1);
         }
     }
 }

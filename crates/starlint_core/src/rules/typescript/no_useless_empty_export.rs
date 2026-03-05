@@ -5,7 +5,7 @@
 //! a module. When the file already has `import` or `export` statements, the
 //! empty export is redundant and should be removed.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,11 +45,23 @@ impl NativeRule for NoUselessEmptyExport {
         // Check if there are other export/import statements besides the empty ones
         if has_other_module_statements(source) {
             for (start, end) in empty_exports {
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Empty `export {}` is unnecessary when the file already has exports or imports",
-                    Span::new(start, end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message:
+                        "Empty `export {}` is unnecessary when the file already has exports or imports"
+                            .to_owned(),
+                    span: Span::new(start, end),
+                    severity: Severity::Warning,
+                    help: Some("Remove the empty `export {}`".to_owned()),
+                    fix: Some(Fix {
+                        message: "Remove empty `export {}`".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(start, end),
+                            replacement: String::new(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

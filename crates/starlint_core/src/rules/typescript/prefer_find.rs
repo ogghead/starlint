@@ -11,7 +11,7 @@
 //! - `.filter(...).at(0)`
 //! - `.filter(...)?.at(0)`
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +30,7 @@ impl NativeRule for PreferFind {
             description: "Prefer `.find()` over `.filter()[0]` or `.filter().at(0)`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -38,18 +38,51 @@ impl NativeRule for PreferFind {
         false
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let source = ctx.source_text();
-        let findings = find_filter_first_access(source);
+        let source = ctx.source_text().to_owned();
+        let findings = find_filter_first_access(&source);
 
         for (start, end) in findings {
-            ctx.report_warning(
-                RULE_NAME,
-                "Use `.find()` instead of `.filter()` followed by index access",
-                Span::new(start, end),
-            );
+            // Build fix: replace .filter(cb)[0] with .find(cb)
+            let span_text = source
+                .get(start as usize..end as usize)
+                .unwrap_or("")
+                .to_owned();
+            let fix = build_filter_to_find_fix(&span_text, start, end);
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Use `.find()` instead of `.filter()` followed by index access".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: Some("Replace `.filter(...)` with `.find(...)`".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
+}
+
+/// Build a fix that replaces `.filter(cb)[0]` with `.find(cb)`.
+#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
+fn build_filter_to_find_fix(span_text: &str, start: u32, end: u32) -> Option<Fix> {
+    // Replace `.filter(` with `.find(` and strip the suffix ([0], .at(0), ?.at(0))
+    let mut replacement = span_text.replacen(".filter(", ".find(", 1);
+    for suffix in FIRST_ACCESS_PATTERNS {
+        if replacement.ends_with(suffix) {
+            let new_len = replacement.len().saturating_sub(suffix.len());
+            replacement.truncate(new_len);
+            return Some(Fix {
+                message: "Replace `.filter(...)` with `.find(...)`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(start, end),
+                    replacement,
+                }],
+            });
+        }
+    }
+    None
 }
 
 /// Suffix patterns that indicate first-element access after `.filter(...)`.
