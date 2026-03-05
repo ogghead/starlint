@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoEmptyStaticBlock {
             description: "Disallow empty static initialization blocks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,21 @@ impl NativeRule for NoEmptyStaticBlock {
         };
 
         if block.body.is_empty() {
-            ctx.report_error(
-                "no-empty-static-block",
-                "Unexpected empty static block",
-                Span::new(block.span.start, block.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-empty-static-block".to_owned(),
+                message: "Unexpected empty static block".to_owned(),
+                span: Span::new(block.span.start, block.span.end),
+                severity: Severity::Error,
+                help: Some("Remove the empty `static {}` block".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove empty static block".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(block.span.start, block.span.end),
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

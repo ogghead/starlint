@@ -8,7 +8,7 @@
 //! patterns in source text as a proxy for the broader class of assertions that
 //! could be replaced with `!`.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NonNullableTypeAssertionStyle {
             description: "Prefer `!` non-null assertion over `as NonNullable<...>`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -32,15 +32,36 @@ impl NativeRule for NonNullableTypeAssertionStyle {
         false
     }
 
+    #[allow(clippy::as_conversions)]
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let findings = find_non_nullable_assertions(ctx.source_text());
+        let source = ctx.source_text().to_owned();
+        let findings = find_non_nullable_assertions(&source);
 
         for (start, end) in findings {
-            ctx.report_warning(
-                "typescript/non-nullable-type-assertion-style",
-                "Use non-null assertion (`!`) instead of `as NonNullable<...>`",
-                Span::new(start, end),
-            );
+            let fix = source
+                .get(start as usize..end as usize)
+                .and_then(|as_text| {
+                    // Extract the type inside NonNullable<...>
+                    let inner_start = "as NonNullable<".len();
+                    let inner = as_text.get(inner_start..as_text.len().saturating_sub(1))?;
+                    (!inner.is_empty()).then(|| Fix {
+                        message: "Use non-null assertion (`!`) instead".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(start, end),
+                            replacement: format!("as {inner}!"),
+                        }],
+                    })
+                });
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/non-nullable-type-assertion-style".to_owned(),
+                message: "Use non-null assertion (`!`) instead of `as NonNullable<...>`".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: Some("Replace with non-null assertion operator".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

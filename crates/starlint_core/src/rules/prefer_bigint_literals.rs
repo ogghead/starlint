@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for PreferBigintLiterals {
             description: "Prefer `BigInt` literals over `BigInt()` constructor calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -54,25 +54,42 @@ impl NativeRule for PreferBigintLiterals {
             return;
         }
 
-        if is_literal_bigint_candidate(first_arg) {
-            ctx.report_warning(
-                "prefer-bigint-literals",
-                "Prefer `BigInt` literal syntax (e.g. `123n`) over `BigInt()` with a literal argument",
-                Span::new(call.span.start, call.span.end),
-            );
+        if let Some(literal_value) = get_bigint_literal_value(first_arg) {
+            ctx.report(Diagnostic {
+                rule_name: "prefer-bigint-literals".to_owned(),
+                message:
+                    "Prefer `BigInt` literal syntax (e.g. `123n`) over `BigInt()` with a literal argument"
+                        .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace with `{literal_value}n`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `{literal_value}n`"),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement: format!("{literal_value}n"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
 
-/// Check if an argument is a numeric literal or a string literal containing only digits.
-fn is_literal_bigint_candidate(arg: &Argument<'_>) -> bool {
+/// Extract the literal value from a `BigInt()` argument, if it is a numeric or
+/// pure-digit string literal suitable for `BigInt` literal syntax.
+fn get_bigint_literal_value<'a>(arg: &'a Argument<'a>) -> Option<String> {
     match arg {
-        Argument::NumericLiteral(_) => true,
+        Argument::NumericLiteral(num) => {
+            // Format without trailing `.0` for integers
+            let raw = num.raw.as_ref()?.as_str();
+            Some(raw.to_owned())
+        }
         Argument::StringLiteral(lit) => {
             let val = lit.value.as_str();
-            !val.is_empty() && val.chars().all(|c| c.is_ascii_digit())
+            (!val.is_empty() && val.chars().all(|c| c.is_ascii_digit())).then(|| val.to_owned())
         }
-        _ => false,
+        _ => None,
     }
 }
 

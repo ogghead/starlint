@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +27,7 @@ impl NativeRule for PreferResponseStaticJson {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -58,6 +60,39 @@ impl NativeRule for PreferResponseStaticJson {
         };
 
         if is_json_stringify {
+            // Extract the argument to JSON.stringify to build the fix
+            #[allow(clippy::as_conversions)]
+            let fix = if let oxc_ast::ast::Argument::CallExpression(stringify_call) = first_arg {
+                stringify_call.arguments.first().and_then(|inner_arg| {
+                    let inner_span = inner_arg.span();
+                    let source = ctx.source_text();
+                    let arg_text = source
+                        .get(inner_span.start as usize..inner_span.end as usize)?
+                        .to_owned();
+                    // Check for second argument (options) to new Response
+                    let options_text = new_expr.arguments.get(1).and_then(|opts| {
+                        let opts_span = opts.span();
+                        source
+                            .get(opts_span.start as usize..opts_span.end as usize)
+                            .map(ToOwned::to_owned)
+                    });
+                    let replacement = if let Some(opts) = options_text {
+                        format!("Response.json({arg_text}, {opts})")
+                    } else {
+                        format!("Response.json({arg_text})")
+                    };
+                    Some(Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(new_expr.span.start, new_expr.span.end),
+                            replacement,
+                        }],
+                    })
+                })
+            } else {
+                None
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "prefer-response-static-json".to_owned(),
                 message: "Prefer `Response.json()` over `new Response(JSON.stringify())`"
@@ -68,7 +103,7 @@ impl NativeRule for PreferResponseStaticJson {
                     "Use `Response.json(data)` — it is cleaner and sets Content-Type automatically"
                         .to_owned(),
                 ),
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

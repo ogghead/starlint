@@ -8,8 +8,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +26,7 @@ impl NativeRule for PreferModernMathApis {
             description: "Prefer modern Math APIs".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -33,6 +34,7 @@ impl NativeRule for PreferModernMathApis {
         Some(&[AstType::BinaryExpression, AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)]
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         match kind {
             // Check for Math.log(x) / Math.log(base)
@@ -42,17 +44,33 @@ impl NativeRule for PreferModernMathApis {
                 }
 
                 if is_math_method_call(&bin.left, "log") && is_math_method_call(&bin.right, "log") {
-                    // Check the divisor for known bases
-                    if let Some(suggestion) = get_log_suggestion(&bin.right) {
-                        ctx.report_warning(
-                            "prefer-modern-math-apis",
-                            &format!("Prefer `{suggestion}` over `Math.log(x) / Math.log(base)`"),
-                            Span::new(bin.span.start, bin.span.end),
+                    if let Some((method, suggestion)) = get_log_suggestion_with_method(&bin.right) {
+                        // Extract the argument from the numerator Math.log(x)
+                        let fix = extract_math_log_arg_text(ctx.source_text(), &bin.left).map(
+                            |arg_text| Fix {
+                                message: format!("Replace with `Math.{method}({arg_text})`"),
+                                edits: vec![Edit {
+                                    span: Span::new(bin.span.start, bin.span.end),
+                                    replacement: format!("Math.{method}({arg_text})"),
+                                }],
+                            },
                         );
+
+                        ctx.report(Diagnostic {
+                            rule_name: "prefer-modern-math-apis".to_owned(),
+                            message: format!(
+                                "Prefer `{suggestion}` over `Math.log(x) / Math.log(base)`"
+                            ),
+                            span: Span::new(bin.span.start, bin.span.end),
+                            severity: Severity::Warning,
+                            help: Some(format!("Replace with `{suggestion}`")),
+                            fix,
+                            labels: vec![],
+                        });
                     }
                 }
             }
-            // Check for Math.pow(x, 0.5) or Math.pow(x, 1/3)
+            // Check for Math.pow(x, 0.5)
             AstKind::CallExpression(call) => {
                 if !is_math_member_callee(&call.callee, "pow") {
                     return;
@@ -69,11 +87,31 @@ impl NativeRule for PreferModernMathApis {
                 if let oxc_ast::ast::Argument::NumericLiteral(num) = second_arg {
                     #[allow(clippy::float_cmp)]
                     if num.value == 0.5 {
-                        ctx.report_warning(
-                            "prefer-modern-math-apis",
-                            "Prefer `Math.sqrt(x)` over `Math.pow(x, 0.5)`",
-                            Span::new(call.span.start, call.span.end),
-                        );
+                        // Extract the first argument source text
+                        let fix = call.arguments.first().and_then(|first_arg| {
+                            let arg_span = first_arg.span();
+                            let arg_text = ctx
+                                .source_text()
+                                .get(arg_span.start as usize..arg_span.end as usize)?
+                                .to_owned();
+                            (!arg_text.is_empty()).then(|| Fix {
+                                message: format!("Replace with `Math.sqrt({arg_text})`"),
+                                edits: vec![Edit {
+                                    span: Span::new(call.span.start, call.span.end),
+                                    replacement: format!("Math.sqrt({arg_text})"),
+                                }],
+                            })
+                        });
+
+                        ctx.report(Diagnostic {
+                            rule_name: "prefer-modern-math-apis".to_owned(),
+                            message: "Prefer `Math.sqrt(x)` over `Math.pow(x, 0.5)`".to_owned(),
+                            span: Span::new(call.span.start, call.span.end),
+                            severity: Severity::Warning,
+                            help: Some("Replace with `Math.sqrt(x)`".to_owned()),
+                            fix,
+                            labels: vec![],
+                        });
                     }
                 }
             }
@@ -112,8 +150,11 @@ fn is_math_member_callee(expr: &Expression<'_>, method: &str) -> bool {
     obj.name == "Math" && member.property.name == method
 }
 
-/// Get the suggestion for `Math.log(x) / Math.log(base)` patterns.
-fn get_log_suggestion(divisor: &Expression<'_>) -> Option<&'static str> {
+/// Get the method name and suggestion for `Math.log(x) / Math.log(base)` patterns.
+/// Returns `(method_name, full_suggestion)`.
+fn get_log_suggestion_with_method(
+    divisor: &Expression<'_>,
+) -> Option<(&'static str, &'static str)> {
     let Expression::CallExpression(call) = divisor else {
         return None;
     };
@@ -126,12 +167,24 @@ fn get_log_suggestion(divisor: &Expression<'_>) -> Option<&'static str> {
 
     #[allow(clippy::float_cmp)]
     if num.value == 2.0 {
-        Some("Math.log2(x)")
+        Some(("log2", "Math.log2(x)"))
     } else if num.value == 10.0 {
-        Some("Math.log10(x)")
+        Some(("log10", "Math.log10(x)"))
     } else {
         None
     }
+}
+
+/// Extract the argument source text from a `Math.log(x)` call expression.
+#[allow(clippy::as_conversions)]
+fn extract_math_log_arg_text(source: &str, expr: &Expression<'_>) -> Option<String> {
+    let Expression::CallExpression(call) = expr else {
+        return None;
+    };
+    let arg = call.arguments.first()?;
+    let arg_span = arg.span();
+    let text = source.get(arg_span.start as usize..arg_span.end as usize)?;
+    (!text.is_empty()).then(|| text.to_owned())
 }
 
 #[cfg(test)]

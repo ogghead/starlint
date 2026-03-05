@@ -11,7 +11,7 @@ use std::sync::RwLock;
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -50,7 +50,7 @@ impl NativeRule for NoInvalidVoidType {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -104,11 +104,22 @@ impl NativeRule for NoInvalidVoidType {
                     .unwrap_or(false);
 
                 if !in_return_type {
-                    ctx.report_warning(
-                        "typescript/no-invalid-void-type",
-                        "`void` is only valid as a return type — use `undefined` instead",
-                        Span::new(void_start, void_end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "typescript/no-invalid-void-type".to_owned(),
+                        message: "`void` is only valid as a return type — use `undefined` instead"
+                            .to_owned(),
+                        span: Span::new(void_start, void_end),
+                        severity: Severity::Warning,
+                        help: Some("Replace `void` with `undefined`".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace with `undefined`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(void_start, void_end),
+                                replacement: "undefined".to_owned(),
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

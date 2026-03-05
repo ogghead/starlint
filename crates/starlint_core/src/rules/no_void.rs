@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::UnaryOperator;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoVoid {
             description: "Disallow the `void` operator".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -37,11 +37,21 @@ impl NativeRule for NoVoid {
         };
 
         if unary.operator == UnaryOperator::Void {
-            ctx.report_warning(
-                "no-void",
-                "Expected `undefined` instead of `void`",
-                Span::new(unary.span.start, unary.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-void".to_owned(),
+                message: "Expected `undefined` instead of `void`".to_owned(),
+                span: Span::new(unary.span.start, unary.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace `void` expression with `undefined`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace with `undefined`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(unary.span.start, unary.span.end),
+                        replacement: "undefined".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for BadReplaceAllArg {
             description: "Catch `.replaceAll()` with a regex missing the `g` flag".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -53,12 +53,35 @@ impl NativeRule for BadReplaceAllArg {
         };
 
         if !re.regex.flags.contains(oxc_ast::ast::RegExpFlags::G) {
-            ctx.report_error(
-                "bad-replace-all-arg",
-                "`.replaceAll()` with a regex requires the global (`g`) flag — \
-                 this will throw a TypeError at runtime",
-                Span::new(call.span.start, call.span.end),
-            );
+            // Build fix: insert `g` flag by replacing regex span with regex+g
+            #[allow(clippy::as_conversions)]
+            let fix = ctx
+                .source_text()
+                .get(re.span.start as usize..re.span.end as usize)
+                .map(|regex_text| {
+                    // Regex source looks like `/pattern/flags`
+                    // Insert `g` at the end
+                    let replacement = format!("{regex_text}g");
+                    Fix {
+                        message: "Add the `g` flag".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(re.span.start, re.span.end),
+                            replacement,
+                        }],
+                    }
+                });
+
+            ctx.report(Diagnostic {
+                rule_name: "bad-replace-all-arg".to_owned(),
+                message: "`.replaceAll()` with a regex requires the global (`g`) flag — \
+                     this will throw a TypeError at runtime"
+                    .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Error,
+                help: Some("Add the `g` flag to the regex".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

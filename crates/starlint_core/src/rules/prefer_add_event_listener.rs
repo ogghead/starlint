@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::AssignmentTarget;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +25,7 @@ impl NativeRule for PreferAddEventListener {
             description: "Prefer `addEventListener` over `on*` property assignment".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,11 +45,45 @@ impl NativeRule for PreferAddEventListener {
         let prop_name = member.property.name.as_str();
 
         if is_event_handler_property(prop_name) {
-            ctx.report_warning(
-                "prefer-add-event-listener",
-                &format!("Prefer `addEventListener` over assigning to `.{prop_name}`"),
-                Span::new(assign.span.start, assign.span.end),
-            );
+            // Extract event name: "onclick" -> "click"
+            let event_name = prop_name.strip_prefix("on").unwrap_or(prop_name);
+
+            // Build fix: el.onclick = handler -> el.addEventListener('click', handler)
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let obj_span = member.object.span();
+                let rhs_span = assign.right.span();
+                let obj_text = source
+                    .get(obj_span.start as usize..obj_span.end as usize)
+                    .unwrap_or("");
+                let rhs_text = source
+                    .get(rhs_span.start as usize..rhs_span.end as usize)
+                    .unwrap_or("");
+                (!obj_text.is_empty() && !rhs_text.is_empty()).then(|| Fix {
+                    message: format!(
+                        "Replace with `{obj_text}.addEventListener('{event_name}', {rhs_text})`"
+                    ),
+                    edits: vec![Edit {
+                        span: Span::new(assign.span.start, assign.span.end),
+                        replacement: format!(
+                            "{obj_text}.addEventListener('{event_name}', {rhs_text})"
+                        ),
+                    }],
+                })
+            };
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-add-event-listener".to_owned(),
+                message: format!("Prefer `addEventListener` over assigning to `.{prop_name}`"),
+                span: Span::new(assign.span.start, assign.span.end),
+                severity: Severity::Warning,
+                help: Some(format!(
+                    "Use `addEventListener('{event_name}', handler)` instead"
+                )),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

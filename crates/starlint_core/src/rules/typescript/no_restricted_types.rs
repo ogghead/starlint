@@ -8,32 +8,37 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
-/// Default banned type names.
-const BANNED_TYPE_NAMES: &[(&str, &str)] = &[
+/// Default banned type names: (`banned_name`, message, replacement).
+const BANNED_TYPE_NAMES: &[(&str, &str, &str)] = &[
     (
         "Object",
         "The `Object` type is too broad — use `object` or `Record<string, unknown>` instead",
+        "object",
     ),
     (
         "Boolean",
         "Use lowercase `boolean` instead of the `Boolean` wrapper type",
+        "boolean",
     ),
     (
         "Number",
         "Use lowercase `number` instead of the `Number` wrapper type",
+        "number",
     ),
     (
         "String",
         "Use lowercase `string` instead of the `String` wrapper type",
+        "string",
     ),
     (
         "Symbol",
         "Use lowercase `symbol` instead of the `Symbol` wrapper type",
+        "symbol",
     ),
 ];
 
@@ -48,7 +53,7 @@ impl NativeRule for NoRestrictedTypes {
             description: "Disallow specific types from being used".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -80,13 +85,23 @@ fn check_type_reference(
 
     let name = ident.name.as_str();
 
-    for &(banned, message) in BANNED_TYPE_NAMES {
+    for &(banned, message, replacement) in BANNED_TYPE_NAMES {
         if name == banned {
-            ctx.report_warning(
-                "typescript/no-restricted-types",
-                message,
-                Span::new(reference.span.start, reference.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-restricted-types".to_owned(),
+                message: message.to_owned(),
+                span: Span::new(reference.span.start, reference.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace `{banned}` with `{replacement}`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(reference.span.start, reference.span.end),
+                        replacement: replacement.to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
             return;
         }
     }
@@ -100,11 +115,23 @@ fn check_empty_object_type(lit: &oxc_ast::ast::TSTypeLiteral<'_>, ctx: &mut Nati
     }
 
     // Only flag truly empty `{}` — not index signature types
-    ctx.report_warning(
-        "typescript/no-restricted-types",
-        "The `{}` type means any non-nullish value — use `object` or `Record<string, unknown>` instead",
-        Span::new(lit.span.start, lit.span.end),
-    );
+    ctx.report(Diagnostic {
+        rule_name: "typescript/no-restricted-types".to_owned(),
+        message:
+            "The `{}` type means any non-nullish value — use `object` or `Record<string, unknown>` instead"
+                .to_owned(),
+        span: Span::new(lit.span.start, lit.span.end),
+        severity: Severity::Warning,
+        help: Some("Replace `{}` with `object` or `Record<string, unknown>`".to_owned()),
+        fix: Some(Fix {
+            message: "Replace with `object`".to_owned(),
+            edits: vec![Edit {
+                span: Span::new(lit.span.start, lit.span.end),
+                replacement: "object".to_owned(),
+            }],
+        }),
+        labels: vec![],
+    });
 }
 
 #[cfg(test)]

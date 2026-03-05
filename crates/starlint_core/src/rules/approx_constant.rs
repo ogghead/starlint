@@ -10,7 +10,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -71,7 +71,7 @@ impl NativeRule for ApproxConstant {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -94,14 +94,24 @@ impl NativeRule for ApproxConstant {
 
         for constant in KNOWN_CONSTANTS {
             if raw_str.starts_with(constant.prefix) {
-                ctx.report_warning(
-                    "approx-constant",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "approx-constant".to_owned(),
+                    message: format!(
                         "Approximate value of `{}` found — consider using `{}`",
                         raw_str, constant.name,
                     ),
-                    Span::new(lit.span.start, lit.span.end),
-                );
+                    span: Span::new(lit.span.start, lit.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Replace with `{}`", constant.name)),
+                    fix: Some(Fix {
+                        message: format!("Replace with `{}`", constant.name),
+                        edits: vec![Edit {
+                            span: Span::new(lit.span.start, lit.span.end),
+                            replacement: constant.name.to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
                 // Only report the first matching constant.
                 return;
             }

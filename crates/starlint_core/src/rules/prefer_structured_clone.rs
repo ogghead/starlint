@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +25,7 @@ impl NativeRule for PreferStructuredClone {
             description: "Prefer structuredClone over JSON.parse(JSON.stringify())".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -32,6 +33,7 @@ impl NativeRule for PreferStructuredClone {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::as_conversions)] // u32→usize is lossless
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -61,11 +63,41 @@ impl NativeRule for PreferStructuredClone {
         };
 
         if is_json_stringify {
-            ctx.report_warning(
-                "prefer-structured-clone",
-                "Prefer `structuredClone(x)` over `JSON.parse(JSON.stringify(x))`",
-                Span::new(call.span.start, call.span.end),
-            );
+            // Extract the inner argument text for the fix
+            let fix = if let Some(oxc_ast::ast::Argument::CallExpression(inner_call)) =
+                call.arguments.first()
+            {
+                if let Some(inner_arg) = inner_call.arguments.first() {
+                    let inner_span = inner_arg.span();
+                    let source = ctx.source_text();
+                    let arg_text = source
+                        .get(inner_span.start as usize..inner_span.end as usize)
+                        .unwrap_or("")
+                        .to_owned();
+                    (!arg_text.is_empty()).then(|| Fix {
+                        message: format!("Replace with `structuredClone({arg_text})`"),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement: format!("structuredClone({arg_text})"),
+                        }],
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-structured-clone".to_owned(),
+                message: "Prefer `structuredClone(x)` over `JSON.parse(JSON.stringify(x))`"
+                    .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Use `structuredClone()` instead".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

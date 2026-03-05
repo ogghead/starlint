@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoExplicitAny {
             description: "Disallow the `any` type annotation".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,22 @@ impl NativeRule for NoExplicitAny {
             return;
         };
 
-        ctx.report_warning(
-            "typescript/no-explicit-any",
-            "Unexpected `any` type annotation — use `unknown` or a specific type instead",
-            Span::new(keyword.span.start, keyword.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "typescript/no-explicit-any".to_owned(),
+            message: "Unexpected `any` type annotation — use `unknown` or a specific type instead"
+                .to_owned(),
+            span: Span::new(keyword.span.start, keyword.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace `any` with `unknown`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace with `unknown`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(keyword.span.start, keyword.span.end),
+                    replacement: "unknown".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,7 +37,7 @@ impl NativeRule for ConsistentAssert {
             description: "Prefer strict assertion methods".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -68,7 +68,7 @@ impl NativeRule for ConsistentAssert {
             return;
         };
 
-        ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
+        ctx.report(Diagnostic {
             rule_name: "consistent-assert".to_owned(),
             message: format!("Use `assert.{replacement}()` instead of `assert.{method}()`"),
             span: Span::new(call.span.start, call.span.end),
@@ -76,7 +76,13 @@ impl NativeRule for ConsistentAssert {
             help: Some(format!(
                 "Replace `assert.{method}` with `assert.{replacement}` for strict comparison"
             )),
-            fix: None,
+            fix: Some(Fix {
+                message: format!("Replace `{method}` with `{replacement}`"),
+                edits: vec![Edit {
+                    span: Span::new(member.property.span.start, member.property.span.end),
+                    replacement: replacement.to_owned(),
+                }],
+            }),
             labels: vec![],
         });
     }

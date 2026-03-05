@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoConstEnum {
             description: "Disallow TypeScript `const enum` declarations".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -36,11 +36,25 @@ impl NativeRule for NoConstEnum {
         };
 
         if decl.r#const {
-            ctx.report_warning(
-                "no-const-enum",
-                "Do not use `const enum`. Use a regular `enum` or a union type instead",
-                Span::new(decl.span.start, decl.span.end),
-            );
+            // Fix: remove "const " prefix — the enum keyword starts 6 bytes after the const keyword
+            let fix = Some(Fix {
+                message: "Remove `const` keyword".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(decl.span.start, decl.span.start.saturating_add(6)),
+                    replacement: String::new(),
+                }],
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "no-const-enum".to_owned(),
+                message: "Do not use `const enum`. Use a regular `enum` or a union type instead"
+                    .to_owned(),
+                span: Span::new(decl.span.start, decl.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove the `const` keyword".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

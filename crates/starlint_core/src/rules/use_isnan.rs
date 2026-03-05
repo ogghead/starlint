@@ -8,8 +8,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +26,7 @@ impl NativeRule for UseIsnan {
             description: "Require `Number.isNaN()` instead of comparisons with `NaN`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,13 +44,45 @@ impl NativeRule for UseIsnan {
         }
 
         if is_nan(&expr.left) || is_nan(&expr.right) {
-            ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
+            // Determine the non-NaN operand to build the fix
+            let non_nan_span = if is_nan(&expr.left) {
+                expr.right.span()
+            } else {
+                expr.left.span()
+            };
+
+            #[allow(clippy::as_conversions)]
+            let fix = ctx
+                .source_text()
+                .get(non_nan_span.start as usize..non_nan_span.end as usize)
+                .map(|value_text| {
+                    // For inequality operators, wrap in negation
+                    let is_negated = matches!(
+                        expr.operator,
+                        oxc_ast::ast::BinaryOperator::StrictInequality
+                            | oxc_ast::ast::BinaryOperator::Inequality
+                    );
+                    let replacement = if is_negated {
+                        format!("!Number.isNaN({value_text})")
+                    } else {
+                        format!("Number.isNaN({value_text})")
+                    };
+                    Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(expr.span.start, expr.span.end),
+                            replacement,
+                        }],
+                    }
+                });
+
+            ctx.report(Diagnostic {
                 rule_name: "use-isnan".to_owned(),
                 message: "Comparisons with `NaN` always produce unexpected results".to_owned(),
                 span: Span::new(expr.span.start, expr.span.end),
                 severity: Severity::Error,
                 help: Some("Use `Number.isNaN(value)` instead".to_owned()),
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

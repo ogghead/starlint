@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -46,7 +46,7 @@ impl NativeRule for ConsistentVitestVi {
             description: "Enforce using `vi` instead of `vitest` for mock utilities".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -75,11 +75,24 @@ impl NativeRule for ConsistentVitestVi {
         let method_name = member.property.name.as_str();
 
         if VI_METHODS.contains(&method_name) {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!("Use `vi.{method_name}()` instead of `vitest.{method_name}()`"),
-                Span::new(call.span.start, call.span.end),
-            );
+            // Replace the `vitest` identifier with `vi` in the object position
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!("Use `vi.{method_name}()` instead of `vitest.{method_name}()`"),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some(format!(
+                    "Replace `vitest.{method_name}` with `vi.{method_name}`"
+                )),
+                fix: Some(Fix {
+                    message: "Replace `vitest` with `vi`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(obj.span.start, obj.span.end),
+                        replacement: "vi".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

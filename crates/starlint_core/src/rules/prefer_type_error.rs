@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, Statement, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for PreferTypeError {
             description: "Prefer TypeError for type checking".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -44,12 +44,23 @@ impl NativeRule for PreferTypeError {
         }
 
         // Check if the body throws a generic Error
-        if throws_generic_error(&if_stmt.consequent) {
-            ctx.report_warning(
-                "prefer-type-error",
-                "Use `new TypeError()` instead of `new Error()` for type checks",
-                Span::new(if_stmt.span.start, if_stmt.span.end),
-            );
+        if let Some(error_id_span) = find_error_callee_span(&if_stmt.consequent) {
+            ctx.report(Diagnostic {
+                rule_name: "prefer-type-error".to_owned(),
+                message: "Use `new TypeError()` instead of `new Error()` for type checks"
+                    .to_owned(),
+                span: Span::new(if_stmt.span.start, if_stmt.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace `Error` with `TypeError`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace `Error` with `TypeError`".to_owned(),
+                    edits: vec![Edit {
+                        span: error_id_span,
+                        replacement: "TypeError".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
@@ -83,18 +94,28 @@ fn is_type_check(expr: &Expression<'_>) -> bool {
     }
 }
 
-/// Check if a statement throws `new Error(...)` (not `new TypeError(...)`).
-fn throws_generic_error(stmt: &Statement<'_>) -> bool {
+/// Find the span of the `Error` identifier in a `throw new Error(...)` statement.
+/// Returns `None` if the statement doesn't throw a generic `Error`.
+fn find_error_callee_span(stmt: &Statement<'_>) -> Option<Span> {
     match stmt {
         Statement::BlockStatement(block) => {
-            block.body.len() == 1 && block.body.first().is_some_and(|s| throws_generic_error(s))
+            if block.body.len() == 1 {
+                block.body.first().and_then(find_error_callee_span)
+            } else {
+                None
+            }
         }
         Statement::ThrowStatement(throw) => {
-            matches!(&throw.argument, Expression::NewExpression(new_expr)
-                if matches!(&new_expr.callee, Expression::Identifier(id) if id.name == "Error")
-            )
+            if let Expression::NewExpression(new_expr) = &throw.argument {
+                if let Expression::Identifier(id) = &new_expr.callee {
+                    if id.name == "Error" {
+                        return Some(Span::new(id.span.start, id.span.end));
+                    }
+                }
+            }
+            None
         }
-        _ => false,
+        _ => None,
     }
 }
 

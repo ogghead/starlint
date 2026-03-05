@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +31,7 @@ impl NativeRule for NoSinglePromiseInPromiseMethods {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -67,14 +69,36 @@ impl NativeRule for NoSinglePromiseInPromiseMethods {
         };
 
         // Flag if the array has exactly one element (and no spread).
+        #[allow(clippy::as_conversions)] // u32→usize is lossless
         if array.elements.len() == 1 {
-            ctx.report_warning(
-                "no-single-promise-in-promise-methods",
-                &format!(
+            // Extract the single element text for the fix
+            let fix = array.elements.first().and_then(|elem| {
+                let elem_span = elem.span();
+                let source = ctx.source_text();
+                let elem_text = source
+                    .get(elem_span.start as usize..elem_span.end as usize)
+                    .unwrap_or("")
+                    .to_owned();
+                (!elem_text.is_empty()).then(|| Fix {
+                    message: "Unwrap single-element array".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement: elem_text,
+                    }],
+                })
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "no-single-promise-in-promise-methods".to_owned(),
+                message: format!(
                     "Unnecessary single-element array in `Promise.{method_name}()` — use the value directly"
                 ),
-                Span::new(call.span.start, call.span.end),
-            );
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Pass the value directly instead of wrapping in an array".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

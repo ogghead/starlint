@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for ErasingOp {
             description: "Detect operations that always produce a known constant".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -56,11 +56,27 @@ impl NativeRule for ErasingOp {
         };
 
         if let Some(message) = msg {
-            ctx.report_warning(
-                "erasing-op",
-                message,
-                Span::new(expr.span.start, expr.span.end),
-            );
+            let replacement = match expr.operator {
+                BinaryOperator::Exponential => "1",
+                _ => "0",
+            };
+            ctx.report(Diagnostic {
+                rule_name: "erasing-op".to_owned(),
+                message: message.to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some(format!(
+                    "This expression always evaluates to `{replacement}`"
+                )),
+                fix: Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement: replacement.to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

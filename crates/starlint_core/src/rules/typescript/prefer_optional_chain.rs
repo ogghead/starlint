@@ -9,7 +9,7 @@ use oxc_ast::ast::{Expression, LogicalOperator};
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for PreferOptionalChain {
             description: "Prefer `?.` optional chaining over `&&` short-circuit guards".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -53,13 +53,39 @@ impl NativeRule for PreferOptionalChain {
             return;
         }
 
-        ctx.report_warning(
-            "typescript/prefer-optional-chain",
-            &format!(
+        // Build fix: replace `foo && foo.bar` with `foo?.bar`
+        // by inserting `?` after the first `.` in the right side
+        let right_span = logical.right.span();
+        #[allow(clippy::as_conversions)]
+        let fix = ctx
+            .source_text()
+            .get(right_span.start as usize..right_span.end as usize)
+            .and_then(|right_text| {
+                // Replace "foo." with "foo?." at the start of the right expression
+                let prefix = format!("{guard_name}.");
+                right_text.starts_with(prefix.as_str()).then(|| {
+                    let replacement = format!("{guard_name}?.{}", &right_text[prefix.len()..]);
+                    Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(logical.span.start, logical.span.end),
+                            replacement,
+                        }],
+                    }
+                })
+            });
+
+        ctx.report(Diagnostic {
+            rule_name: "typescript/prefer-optional-chain".to_owned(),
+            message: format!(
                 "Prefer `{guard_name}?.` optional chaining over `{guard_name} && {guard_name}.…`"
             ),
-            Span::new(logical.span.start, logical.span.end),
-        );
+            span: Span::new(logical.span.start, logical.span.end),
+            severity: Severity::Warning,
+            help: Some("Use optional chaining operator `?.`".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 
