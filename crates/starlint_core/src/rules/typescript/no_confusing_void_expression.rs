@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::UnaryOperator;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoConfusingVoidExpression {
             description: "Disallow `void` expressions in misleading positions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,15 @@ impl NativeRule for NoConfusingVoidExpression {
         // Check source text before the void expression to detect value positions.
         // This is a heuristic since single-pass traversal lacks parent context.
         if is_in_value_position(ctx.source_text(), unary.span.start) {
-            ctx.report_warning(
-                "typescript/no-confusing-void-expression",
-                "Void expression used in a value position — use `undefined` or separate the side effect",
-                Span::new(unary.span.start, unary.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-confusing-void-expression".to_owned(),
+                message: "Void expression used in a value position — use `undefined` or separate the side effect".to_owned(),
+                span: Span::new(unary.span.start, unary.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::MethodDefinitionKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -53,7 +53,7 @@ impl NativeRule for ClassMethodsUseThis {
             description: "Require `this` in class methods".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -131,11 +131,15 @@ impl NativeRule for ClassMethodsUseThis {
         drop(guard);
 
         if !state.found_this {
-            ctx.report_warning(
-                "class-methods-use-this",
-                "Expected `this` to be used by class method",
-                state.span,
-            );
+            ctx.report(Diagnostic {
+                rule_name: "class-methods-use-this".to_owned(),
+                message: "Expected `this` to be used by class method".to_owned(),
+                span: state.span,
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

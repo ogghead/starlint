@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeName, JSXAttributeValue, JSXExpression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for JsxHandlerNames {
             description: "Enforce handler function naming conventions for event props".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,14 +71,18 @@ impl NativeRule for JsxHandlerNames {
             let handler_name = ident_ref.name.as_str();
             // The handler should start with "handle" or "on" (passing props through)
             if !handler_name.starts_with("handle") && !handler_name.starts_with("on") {
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
                         "Handler function for `{prop_name}` should be named starting with `handle` (e.g., `handle{}`)",
                         &prop_name[2..]
                     ),
-                    Span::new(attr.span.start, attr.span.end),
-                );
+                    span: Span::new(attr.span.start, attr.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

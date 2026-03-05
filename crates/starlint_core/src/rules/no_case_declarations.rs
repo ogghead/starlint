@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Statement, VariableDeclarationKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoCaseDeclarations {
             description: "Disallow lexical declarations in case/default clauses".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,11 +41,15 @@ impl NativeRule for NoCaseDeclarations {
 
         for stmt in &case.consequent {
             if let Some(span) = lexical_declaration_span(stmt) {
-                ctx.report_error(
-                    "no-case-declarations",
-                    "Unexpected lexical declaration in case clause",
+                ctx.report(Diagnostic {
+                    rule_name: "no-case-declarations".to_owned(),
+                    message: "Unexpected lexical declaration in case clause".to_owned(),
                     span,
-                );
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

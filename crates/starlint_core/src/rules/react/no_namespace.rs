@@ -5,7 +5,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -21,7 +21,7 @@ impl NativeRule for NoNamespace {
             description: "Disallow namespaced JSX elements (e.g. `<ns:Component>`)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -37,11 +37,15 @@ impl NativeRule for NoNamespace {
         let namespace = ns_name.namespace.name.as_str();
         let name = ns_name.name.name.as_str();
 
-        ctx.report_error(
-            "react/no-namespace",
-            &format!("React does not support JSX namespaces — found `{namespace}:{name}`"),
-            Span::new(ns_name.span.start, ns_name.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "react/no-namespace".to_owned(),
+            message: format!("React does not support JSX namespaces — found `{namespace}:{name}`"),
+            span: Span::new(ns_name.span.start, ns_name.span.end),
+            severity: Severity::Error,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

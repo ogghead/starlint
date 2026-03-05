@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{AssignmentTarget, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for PreferModule {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,11 +59,15 @@ fn check_require(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLintCo
         .is_some_and(|arg| matches!(arg, oxc_ast::ast::Argument::StringLiteral(_)));
 
     if has_string_arg {
-        ctx.report_warning(
-            "prefer-module",
-            "Use ESM `import` instead of `require()`",
-            Span::new(call.span.start, call.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "prefer-module".to_owned(),
+            message: "Use ESM `import` instead of `require()`".to_owned(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 
@@ -81,11 +85,16 @@ fn check_exports_assign(
     };
 
     if is_commonjs_export {
-        ctx.report_warning(
-            "prefer-module",
-            "Use ESM `export` instead of `CommonJS` `module.exports` / `exports`",
-            Span::new(assign.span.start, assign.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "prefer-module".to_owned(),
+            message: "Use ESM `export` instead of `CommonJS` `module.exports` / `exports`"
+                .to_owned(),
+            span: Span::new(assign.span.start, assign.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

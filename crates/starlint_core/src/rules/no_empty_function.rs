@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoEmptyFunction {
             description: "Disallow empty function bodies".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -49,11 +49,15 @@ impl NativeRule for NoEmptyFunction {
             let span_end = body.span.end;
 
             if !has_comment {
-                ctx.report_warning(
-                    "no-empty-function",
-                    "Unexpected empty function body",
-                    Span::new(span_start, span_end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-empty-function".to_owned(),
+                    message: "Unexpected empty function body".to_owned(),
+                    span: Span::new(span_start, span_end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

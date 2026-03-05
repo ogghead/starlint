@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BindingPattern, VariableDeclarationKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoUnassignedVars {
             description: "Disallow `let` declarations without an initializer".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,11 +55,15 @@ impl NativeRule for NoUnassignedVars {
 
             let name = ident.name.as_str();
 
-            ctx.report_warning(
-                "no-unassigned-vars",
-                &format!("Variable `{name}` is declared with `let` but has no initializer"),
-                Span::new(declarator.span.start, declarator.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-unassigned-vars".to_owned(),
+                message: format!("Variable `{name}` is declared with `let` but has no initializer"),
+                span: Span::new(declarator.span.start, declarator.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

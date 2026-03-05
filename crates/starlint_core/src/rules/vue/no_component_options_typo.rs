@@ -3,7 +3,7 @@
 //! Detect common typos in Vue component option names (e.g., `compued` instead
 //! of `computed`, `destory` instead of `destroy`).
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -47,7 +47,7 @@ impl NativeRule for NoComponentOptionsTypo {
             description: "Detect typos in Vue component option names".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -72,11 +72,15 @@ impl NativeRule for NoComponentOptionsTypo {
                 if after.starts_with(':') || after.starts_with('(') {
                     let start = u32::try_from(abs_pos).unwrap_or(0);
                     let end = start.saturating_add(u32::try_from(typo.len()).unwrap_or(0));
-                    ctx.report_warning(
-                        RULE_NAME,
-                        &format!("Possible typo `{typo}` — did you mean `{correction}`?"),
-                        Span::new(start, end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!("Possible typo `{typo}` — did you mean `{correction}`?"),
+                        span: Span::new(start, end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
 
                 search_pos = abs_pos.saturating_add(typo.len());

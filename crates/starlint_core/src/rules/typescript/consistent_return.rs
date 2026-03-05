@@ -8,7 +8,7 @@
 //! This text-based heuristic scans function bodies for a mix of `return expr;`
 //! and bare `return;` statements.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for ConsistentReturn {
             description: "Require consistent return statements in functions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -40,11 +40,15 @@ impl NativeRule for ConsistentReturn {
         let violations = find_inconsistent_returns(source);
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "Function has inconsistent return statements — some return a value and some do not",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Function has inconsistent return statements — some return a value and some do not".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

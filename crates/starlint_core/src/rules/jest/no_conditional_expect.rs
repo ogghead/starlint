@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NoConditionalExpect {
             description: "Disallow `expect()` inside conditionals in tests".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,11 +71,15 @@ impl NativeRule for NoConditionalExpect {
         };
 
         for span in violations {
-            ctx.report_error(
-                RULE_NAME,
-                "`expect()` should not be placed inside a conditional block",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "`expect()` should not be placed inside a conditional block".to_owned(),
                 span,
-            );
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

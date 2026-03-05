@@ -3,7 +3,7 @@
 //! Do not define a title in meta (use auto-title instead).
 //! Checks the default export for a `title:` property.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoTitlePropertyInMeta {
             description: "Do not define a title in meta — use auto-title instead".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -81,11 +81,15 @@ impl NativeRule for NoTitlePropertyInMeta {
             let abs_pos = obj_start.saturating_add(title_offset);
             let start = u32::try_from(abs_pos).unwrap_or(0);
             let end = start.saturating_add(u32::try_from("title:".len()).unwrap_or(0));
-            ctx.report_warning(
-                RULE_NAME,
-                "Do not define a `title` in meta — use auto-title instead",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Do not define a `title` in meta — use auto-title instead".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -3,7 +3,7 @@
 //! Require `JSDoc` comments for props. Props are the public API of a component
 //! and should be documented for maintainability.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for RequirePropComment {
             description: "Require JSDoc comments for props".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -113,11 +113,15 @@ impl NativeRule for RequirePropComment {
                             let start = u32::try_from(abs_pos).unwrap_or(0);
                             let end =
                                 start.saturating_add(u32::try_from(prop_name.len()).unwrap_or(0));
-                            ctx.report_warning(
-                                RULE_NAME,
-                                &format!("Prop `{prop_name}` is missing a JSDoc comment"),
-                                Span::new(start, end),
-                            );
+                            ctx.report(Diagnostic {
+                                rule_name: RULE_NAME.to_owned(),
+                                message: format!("Prop `{prop_name}` is missing a JSDoc comment"),
+                                span: Span::new(start, end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                     continue;

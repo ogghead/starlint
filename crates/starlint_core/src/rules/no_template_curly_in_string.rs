@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoTemplateCurlyInString {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -39,11 +39,15 @@ impl NativeRule for NoTemplateCurlyInString {
 
         let value = lit.value.as_str();
         if contains_template_placeholder(value) {
-            ctx.report_error(
-                "no-template-curly-in-string",
-                "Unexpected template string expression in a regular string",
-                Span::new(lit.span.start, lit.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-template-curly-in-string".to_owned(),
+                message: "Unexpected template string expression in a regular string".to_owned(),
+                span: Span::new(lit.span.start, lit.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

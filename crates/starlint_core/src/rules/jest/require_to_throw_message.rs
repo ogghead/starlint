@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for RequireToThrowMessage {
             description: "Require `.toThrow()` to have a message argument".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -63,13 +63,17 @@ impl NativeRule for RequireToThrowMessage {
 
         // Flag if no arguments provided
         if call.arguments.is_empty() {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "`.{matcher_name}()` should include a message argument to ensure the correct error is thrown"
                 ),
-                Span::new(call.span.start, call.span.end),
-            );
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

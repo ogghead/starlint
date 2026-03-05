@@ -13,7 +13,7 @@ use std::sync::RwLock;
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -47,7 +47,7 @@ impl NativeRule for ConsistentFunctionScoping {
             description: "Flag functions that could be moved to a higher scope".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -69,13 +69,17 @@ impl NativeRule for ConsistentFunctionScoping {
                 // Only flag named function declarations (not expressions)
                 if f.is_declaration() && *depth > 0 {
                     let name = f.id.as_ref().map_or("anonymous", |id| id.name.as_str());
-                    ctx.report_warning(
-                        "consistent-function-scoping",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "consistent-function-scoping".to_owned(),
+                        message: format!(
                             "Function `{name}` is declared inside another function and could be moved to a higher scope"
                         ),
-                        Span::new(f.span.start, f.span.end),
-                    );
+                        span: Span::new(f.span.start, f.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
 
                 // Track depth for all functions (declarations and expressions)

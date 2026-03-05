@@ -4,7 +4,7 @@
 //! Single named exports are harder to rename and don't benefit from
 //! the convenience of default import syntax.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -21,7 +21,7 @@ impl NativeRule for PreferDefaultExport {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,11 +77,15 @@ impl NativeRule for PreferDefaultExport {
         };
 
         if let Some((start, end)) = finding {
-            ctx.report_warning(
-                "import/prefer-default-export",
-                "Prefer default export when there is only a single export",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/prefer-default-export".to_owned(),
+                message: "Prefer default export when there is only a single export".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

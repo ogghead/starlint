@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for ExhaustiveDeps {
             description: "Warn about missing dependency arrays in hooks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,13 +52,17 @@ impl NativeRule for ExhaustiveDeps {
 
         // These hooks require at least 2 arguments: the callback and the dependency array
         if call.arguments.len() < 2 {
-            ctx.report_warning(
-                "react/exhaustive-deps",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "react/exhaustive-deps".to_owned(),
+                message: format!(
                     "`{hook_name}` is missing its dependency array — this will run on every render"
                 ),
-                Span::new(call.span.start, call.span.end),
-            );
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

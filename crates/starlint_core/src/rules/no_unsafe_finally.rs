@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoUnsafeFinally {
             description: "Disallow control flow statements in finally blocks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,32 +57,48 @@ fn check_statements_for_control_flow(stmts: &[Statement<'_>], ctx: &mut NativeLi
 fn check_statement_for_control_flow(stmt: &Statement<'_>, ctx: &mut NativeLintContext<'_>) {
     match stmt {
         Statement::ReturnStatement(ret) => {
-            ctx.report_error(
-                "no-unsafe-finally",
-                "Unsafe `return` in finally block",
-                Span::new(ret.span.start, ret.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-unsafe-finally".to_owned(),
+                message: "Unsafe `return` in finally block".to_owned(),
+                span: Span::new(ret.span.start, ret.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
         Statement::ThrowStatement(throw) => {
-            ctx.report_error(
-                "no-unsafe-finally",
-                "Unsafe `throw` in finally block",
-                Span::new(throw.span.start, throw.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-unsafe-finally".to_owned(),
+                message: "Unsafe `throw` in finally block".to_owned(),
+                span: Span::new(throw.span.start, throw.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
         Statement::BreakStatement(brk) => {
-            ctx.report_error(
-                "no-unsafe-finally",
-                "Unsafe `break` in finally block",
-                Span::new(brk.span.start, brk.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-unsafe-finally".to_owned(),
+                message: "Unsafe `break` in finally block".to_owned(),
+                span: Span::new(brk.span.start, brk.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
         Statement::ContinueStatement(cont) => {
-            ctx.report_error(
-                "no-unsafe-finally",
-                "Unsafe `continue` in finally block",
-                Span::new(cont.span.start, cont.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-unsafe-finally".to_owned(),
+                message: "Unsafe `continue` in finally block".to_owned(),
+                span: Span::new(cont.span.start, cont.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
         Statement::BlockStatement(block) => {
             check_statements_for_control_flow(&block.body, ctx);

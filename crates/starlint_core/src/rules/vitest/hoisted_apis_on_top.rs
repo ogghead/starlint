@@ -5,7 +5,7 @@
 //! Vitest's transform, but for readability and clarity it should also be
 //! placed at the top of the source file, before any other statements.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for HoistedApisOnTop {
             description: "Enforce `vi.hoisted()` calls at the top of the file".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,16 @@ impl NativeRule for HoistedApisOnTop {
         let violations = find_misplaced_hoisted(ctx.source_text());
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "`vi.hoisted()` should be at the top of the file, before other statements",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "`vi.hoisted()` should be at the top of the file, before other statements"
+                    .to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

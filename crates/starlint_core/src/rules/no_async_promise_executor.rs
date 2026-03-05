@@ -12,7 +12,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoAsyncPromiseExecutor {
             description: "Disallow using an async function as a Promise executor".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,11 +62,15 @@ impl NativeRule for NoAsyncPromiseExecutor {
         };
 
         if is_async {
-            ctx.report_error(
-                "no-async-promise-executor",
-                "Promise executor should not be an async function",
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-async-promise-executor".to_owned(),
+                message: "Promise executor should not be an async function".to_owned(),
+                span: Span::new(new_expr.span.start, new_expr.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

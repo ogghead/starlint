@@ -8,7 +8,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -62,7 +62,7 @@ impl NativeRule for NoUnmodifiedLoopCondition {
             description: "Disallow unmodified loop conditions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -84,11 +84,15 @@ impl NativeRule for NoUnmodifiedLoopCondition {
         let body_end = usize::try_from(body_span.end).unwrap_or(0);
 
         if !body_modifies_identifier(ctx.source_text(), body_start, body_end, ident_name) {
-            ctx.report_error(
-                "no-unmodified-loop-condition",
-                &format!("`{ident_name}` is not modified in the loop body"),
-                Span::new(stmt.span.start, stmt.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-unmodified-loop-condition".to_owned(),
+                message: format!("`{ident_name}` is not modified in the loop body"),
+                span: Span::new(stmt.span.start, stmt.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

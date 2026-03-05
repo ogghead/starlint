@@ -11,7 +11,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{ArrayExpressionElement, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,7 +32,7 @@ impl NativeRule for NoAwaitInPromiseMethods {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -79,13 +79,17 @@ impl NativeRule for NoAwaitInPromiseMethods {
         // Check if any element in the array is an `await` expression
         for element in &array.elements {
             if matches!(element, ArrayExpressionElement::AwaitExpression(_)) {
-                ctx.report_warning(
-                    "no-await-in-promise-methods",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "no-await-in-promise-methods".to_owned(),
+                    message: format!(
                         "Avoid using `await` inside `Promise.{method_name}()` — it defeats parallel execution"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 // Report once per call, not once per awaited element
                 return;
             }

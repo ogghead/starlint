@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoDynamicDelete {
             description: "Disallow `delete` with computed key expressions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,11 +45,16 @@ impl NativeRule for NoDynamicDelete {
         // Only flag when the operand is a computed member expression (bracket access).
         // `delete obj.prop` (static access) is fine.
         if matches!(&expr.argument, Expression::ComputedMemberExpression(_)) {
-            ctx.report_warning(
-                "typescript/no-dynamic-delete",
-                "Do not `delete` dynamically computed keys — use `Map` or `Set` instead",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-dynamic-delete".to_owned(),
+                message: "Do not `delete` dynamically computed keys — use `Map` or `Set` instead"
+                    .to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -38,7 +38,7 @@ impl NativeRule for AnchorHasContent {
             description: "Enforce anchors have content".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,11 +71,15 @@ impl NativeRule for AnchorHasContent {
             has_attribute(opening, "aria-label") || has_attribute(opening, "aria-labelledby");
 
         if !has_accessible_content {
-            ctx.report_warning(
-                RULE_NAME,
-                "Anchors must have content. Provide child text, `aria-label`, or `aria-labelledby`",
-                Span::new(opening.span.start, opening.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Anchors must have content. Provide child text, `aria-label`, or `aria-labelledby`".to_owned(),
+                span: Span::new(opening.span.start, opening.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

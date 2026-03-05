@@ -2,7 +2,7 @@
 //!
 //! Require `@param` tags for all function parameters.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -89,7 +89,7 @@ impl NativeRule for RequireParam {
             description: "Require `@param` tags for all function parameters".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -115,11 +115,15 @@ impl NativeRule for RequireParam {
                         if !doc_params.iter().any(|dp| dp == fp) {
                             let span_start = u32::try_from(abs_start).unwrap_or(0);
                             let span_end = u32::try_from(abs_end).unwrap_or(span_start);
-                            ctx.report_warning(
-                                "jsdoc/require-param",
-                                &format!("Missing `@param` tag for parameter `{fp}`"),
-                                Span::new(span_start, span_end),
-                            );
+                            ctx.report(Diagnostic {
+                                rule_name: "jsdoc/require-param".to_owned(),
+                                message: format!("Missing `@param` tag for parameter `{fp}`"),
+                                span: Span::new(span_start, span_end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                 }

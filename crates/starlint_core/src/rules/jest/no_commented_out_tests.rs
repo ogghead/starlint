@@ -2,7 +2,7 @@
 //!
 //! Warn when test code is commented out (e.g. `// it(`, `// test(`, `// describe(`).
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -39,7 +39,7 @@ impl NativeRule for NoCommentedOutTests {
             description: "Disallow commented-out tests".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -51,11 +51,15 @@ impl NativeRule for NoCommentedOutTests {
         let violations = find_commented_tests(ctx.source_text());
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "Unexpected commented-out test — remove or uncomment",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Unexpected commented-out test — remove or uncomment".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{ClassElement, Expression, MethodDefinitionKind, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for ConstructorSuper {
             description: "Require super() calls in constructors of derived classes".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -56,11 +56,15 @@ impl NativeRule for ConstructorSuper {
             let has_super_call = statements_contain_super_call(&body.statements);
 
             if has_super_class && !has_super_call {
-                ctx.report_error(
-                    "constructor-super",
-                    "Derived class constructor must call `super()`",
-                    Span::new(method.span.start, method.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "constructor-super".to_owned(),
+                    message: "Derived class constructor must call `super()`".to_owned(),
+                    span: Span::new(method.span.start, method.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

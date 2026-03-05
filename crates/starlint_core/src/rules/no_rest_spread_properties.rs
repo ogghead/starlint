@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::ObjectPropertyKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoRestSpreadProperties {
             description: "Disallow object rest/spread properties".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -37,21 +37,29 @@ impl NativeRule for NoRestSpreadProperties {
             AstKind::ObjectExpression(obj) => {
                 for property in &obj.properties {
                     if let ObjectPropertyKind::SpreadProperty(spread) = property {
-                        ctx.report_warning(
-                            "no-rest-spread-properties",
-                            "Unexpected object spread property",
-                            Span::new(spread.span.start, spread.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "no-rest-spread-properties".to_owned(),
+                            message: "Unexpected object spread property".to_owned(),
+                            span: Span::new(spread.span.start, spread.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }
             AstKind::ObjectPattern(pat) => {
                 if let Some(rest) = &pat.rest {
-                    ctx.report_warning(
-                        "no-rest-spread-properties",
-                        "Unexpected object rest property",
-                        Span::new(rest.span.start, rest.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-rest-spread-properties".to_owned(),
+                        message: "Unexpected object rest property".to_owned(),
+                        span: Span::new(rest.span.start, rest.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

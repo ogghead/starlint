@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoIsMounted {
             description: "Disallow usage of `isMounted()`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,11 +44,15 @@ impl NativeRule for NoIsMounted {
         if member.property.name.as_str() == "isMounted"
             && matches!(&member.object, Expression::ThisExpression(_))
         {
-            ctx.report_error(
-                "react/no-is-mounted",
-                "`isMounted` is an anti-pattern — use a `_isMounted` instance variable or cancellable promises instead",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/no-is-mounted".to_owned(),
+                message: "`isMounted` is an anti-pattern — use a `_isMounted` instance variable or cancellable promises instead".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

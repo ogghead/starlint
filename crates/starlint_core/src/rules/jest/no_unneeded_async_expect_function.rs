@@ -4,7 +4,7 @@
 //! Simplified: flags `it`/`test` calls whose callback is `async` but the body
 //! only has a single `await expect(...)` statement.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoUnneededAsyncExpectFunction {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,11 +61,15 @@ impl NativeRule for NoUnneededAsyncExpectFunction {
         };
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "This test function does not need to be async — `await expect(...)` can be replaced with `expect(...)` and `.resolves`/`.rejects`",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "This test function does not need to be async — `await expect(...)` can be replaced with `expect(...)` and `.resolves`/`.rejects`".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

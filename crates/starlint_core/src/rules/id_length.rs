@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,7 +42,7 @@ impl NativeRule for IdLength {
             description: "Enforce minimum identifier length".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,14 +71,18 @@ impl NativeRule for IdLength {
 
         let name_len = u32::try_from(name.len()).unwrap_or(0);
         if name_len < self.min {
-            ctx.report_warning(
-                "id-length",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "id-length".to_owned(),
+                message: format!(
                     "Identifier '{name}' is too short ({name_len} < {}). Use a more descriptive name",
                     self.min
                 ),
-                Span::new(id.span.start, id.span.end),
-            );
+                span: Span::new(id.span.start, id.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

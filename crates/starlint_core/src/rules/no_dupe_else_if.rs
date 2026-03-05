@@ -11,7 +11,7 @@ use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NoDupeElseIf {
             description: "Disallow duplicate conditions in if-else-if chains".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -76,11 +76,16 @@ impl NativeRule for NoDupeElseIf {
         };
 
         for span in duplicates {
-            ctx.report_error(
-                "no-dupe-else-if",
-                "This branch can never execute because its condition is a duplicate",
+            ctx.report(Diagnostic {
+                rule_name: "no-dupe-else-if".to_owned(),
+                message: "This branch can never execute because its condition is a duplicate"
+                    .to_owned(),
                 span,
-            );
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -3,7 +3,7 @@
 //! Enforce a maximum number of lines per file. Very large files are harder
 //! to understand and maintain — prefer splitting into smaller modules.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -38,7 +38,7 @@ impl NativeRule for MaxLines {
             description: "Enforce a maximum number of lines per file".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -65,14 +65,18 @@ impl NativeRule for MaxLines {
 
         if line_count > self.max {
             let source_len = u32::try_from(source.len()).unwrap_or(0);
-            ctx.report_warning(
-                "max-lines",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "max-lines".to_owned(),
+                message: format!(
                     "File has too many lines ({line_count}). Maximum allowed is {}",
                     self.max
                 ),
-                Span::new(0, source_len),
-            );
+                span: Span::new(0, source_len),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

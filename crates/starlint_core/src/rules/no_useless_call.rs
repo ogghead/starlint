@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoUselessCall {
             description: "Disallow unnecessary `.call()` and `.apply()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,11 +60,15 @@ impl NativeRule for NoUselessCall {
         };
 
         if is_null_or_undefined {
-            ctx.report_warning(
-                "no-useless-call",
-                &format!("Unnecessary `.{method}()` — call the function directly instead"),
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-useless-call".to_owned(),
+                message: format!("Unnecessary `.{method}()` — call the function directly instead"),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

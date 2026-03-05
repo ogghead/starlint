@@ -9,7 +9,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for ExplicitFunctionReturnType {
             description: "Require explicit return types on functions and class methods".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,11 +52,16 @@ impl NativeRule for ExplicitFunctionReturnType {
             return;
         }
 
-        ctx.report_warning(
-            RULE_NAME,
-            "Missing return type on function — add an explicit return type annotation",
-            Span::new(func.span.start, func.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: RULE_NAME.to_owned(),
+            message: "Missing return type on function — add an explicit return type annotation"
+                .to_owned(),
+            span: Span::new(func.span.start, func.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

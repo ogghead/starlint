@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::ImportDeclarationSpecifier;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NamedExport {
                     .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,15 +60,19 @@ impl NativeRule for NamedExport {
         };
         for spec in specifiers {
             if let ImportDeclarationSpecifier::ImportSpecifier(named) = spec {
-                ctx.report_error(
-                    "import/named",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "import/named".to_owned(),
+                    message: format!(
                         "'{}' is not exported from '{}' (JSON modules only have a default export)",
                         named.local.name.as_str(),
                         source_value,
                     ),
-                    Span::new(named.span.start, named.span.end),
-                );
+                    span: Span::new(named.span.start, named.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

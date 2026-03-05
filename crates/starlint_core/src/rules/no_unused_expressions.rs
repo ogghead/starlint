@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoUnusedExpressions {
             description: "Disallow unused expressions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,11 +42,16 @@ impl NativeRule for NoUnusedExpressions {
         }
 
         if is_unused_expression(&stmt.expression) {
-            ctx.report_warning(
-                "no-unused-expressions",
-                "Expected an assignment or function call and instead saw an expression",
-                Span::new(stmt.span.start, stmt.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-unused-expressions".to_owned(),
+                message: "Expected an assignment or function call and instead saw an expression"
+                    .to_owned(),
+                span: Span::new(stmt.span.start, stmt.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -55,7 +55,7 @@ impl NativeRule for NoExtendNative {
             description: "Disallow extending native types".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -81,11 +81,17 @@ impl NativeRule for NoExtendNative {
         for native in NATIVE_TYPES {
             let prefix = format!("{native}.prototype");
             if target_text.starts_with(&prefix) {
-                ctx.report_warning(
-                    "no-extend-native",
-                    &format!("{native} prototype is read only, properties should not be added"),
-                    Span::new(span_start, span_end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-extend-native".to_owned(),
+                    message: format!(
+                        "{native} prototype is read only, properties should not be added"
+                    ),
+                    span: Span::new(span_start, span_end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 return;
             }
         }

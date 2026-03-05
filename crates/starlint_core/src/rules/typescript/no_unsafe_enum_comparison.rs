@@ -9,7 +9,7 @@
 //! member names, then scans for comparison operators where one side references
 //! a known `EnumName.Member` and the other is a raw literal or non-enum value.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoUnsafeEnumComparison {
             description: "Disallow comparing enum members with non-enum values".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,15 @@ impl NativeRule for NoUnsafeEnumComparison {
         let comparisons = find_enum_comparisons(source, &enum_names);
 
         for (start, end) in comparisons {
-            ctx.report_warning(
-                "typescript/no-unsafe-enum-comparison",
-                "Do not compare enum values with non-enum primitives",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-unsafe-enum-comparison".to_owned(),
+                message: "Do not compare enum values with non-enum primitives".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

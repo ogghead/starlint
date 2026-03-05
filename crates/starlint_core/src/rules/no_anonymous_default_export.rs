@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::ExportDefaultDeclarationKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoAnonymousDefaultExport {
             description: "Disallow anonymous default exports".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,11 +50,16 @@ impl NativeRule for NoAnonymousDefaultExport {
         };
 
         if is_anonymous {
-            ctx.report_warning(
-                "no-anonymous-default-export",
-                "Assign a name to this default export for better discoverability",
-                Span::new(decl.span.start, decl.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-anonymous-default-export".to_owned(),
+                message: "Assign a name to this default export for better discoverability"
+                    .to_owned(),
+                span: Span::new(decl.span.start, decl.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

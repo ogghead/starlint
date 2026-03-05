@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for FuncNames {
             description: "Require named function expressions".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,11 +43,15 @@ impl NativeRule for FuncNames {
 
         // Function expression without a name
         if func.id.is_none() {
-            ctx.report_warning(
-                "func-names",
-                "Unexpected unnamed function expression",
-                Span::new(func.span.start, func.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "func-names".to_owned(),
+                message: "Unexpected unnamed function expression".to_owned(),
+                span: Span::new(func.span.start, func.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

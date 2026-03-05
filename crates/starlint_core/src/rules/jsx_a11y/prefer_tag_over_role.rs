@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -54,7 +54,7 @@ impl NativeRule for PreferTagOverRole {
             description: "Prefer using semantic HTML tags over ARIA roles".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -81,13 +81,17 @@ impl NativeRule for PreferTagOverRole {
                 if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
                     let role = lit.value.as_str().trim();
                     if let Some(tag) = preferred_tag(role) {
-                        ctx.report_warning(
-                            RULE_NAME,
-                            &format!(
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: format!(
                                 "Prefer using the `{tag}` element instead of `role=\"{role}\"`"
                             ),
-                            Span::new(opening.span.start, opening.span.end),
-                        );
+                            span: Span::new(opening.span.start, opening.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }

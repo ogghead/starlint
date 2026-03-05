@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for ImgRedundantAlt {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -65,13 +65,17 @@ impl NativeRule for ImgRedundantAlt {
                     let alt_lower = lit.value.as_str().to_lowercase();
                     for word in REDUNDANT_WORDS {
                         if alt_lower.contains(word) {
-                            ctx.report_warning(
-                                RULE_NAME,
-                                &format!(
+                            ctx.report(Diagnostic {
+                                rule_name: RULE_NAME.to_owned(),
+                                message: format!(
                                     "Redundant alt text. Screen readers already announce `<img>` elements as images. Avoid using \"{word}\""
                                 ),
-                                Span::new(opening.span.start, opening.span.end),
-                            );
+                                span: Span::new(opening.span.start, opening.span.end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                             break;
                         }
                     }

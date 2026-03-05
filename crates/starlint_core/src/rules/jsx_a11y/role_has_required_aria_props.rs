@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -63,7 +63,7 @@ impl NativeRule for RoleHasRequiredAriaProps {
             description: "Enforce elements with ARIA roles have required aria-* props".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -105,11 +105,17 @@ impl NativeRule for RoleHasRequiredAriaProps {
 
         for prop in props {
             if !has_attribute(opening, prop) {
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!("Elements with `role=\"{role}\"` must have the `{prop}` attribute"),
-                    Span::new(opening.span.start, opening.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
+                        "Elements with `role=\"{role}\"` must have the `{prop}` attribute"
+                    ),
+                    span: Span::new(opening.span.start, opening.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

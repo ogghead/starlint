@@ -9,7 +9,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoForInArray {
             description: "Disallow iterating over arrays with `for...in`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -38,11 +38,16 @@ impl NativeRule for NoForInArray {
             return;
         };
 
-        ctx.report_warning(
-            "typescript/no-for-in-array",
-            "`for...in` iterates over string keys, not values — use `for...of` instead",
-            Span::new(stmt.span.start, stmt.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "typescript/no-for-in-array".to_owned(),
+            message: "`for...in` iterates over string keys, not values — use `for...of` instead"
+                .to_owned(),
+            span: Span::new(stmt.span.start, stmt.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

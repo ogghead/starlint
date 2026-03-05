@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression, ObjectPropertyKind, PropertyKey, PropertyKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoInvalidFetchOptions {
             description: "Disallow `body` in `fetch()` options for GET/HEAD requests".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -84,13 +84,17 @@ impl NativeRule for NoInvalidFetchOptions {
             if let Some(method) = method_value {
                 let upper_method = method.to_uppercase();
                 if BODYLESS_METHODS.contains(&upper_method.as_str()) {
-                    ctx.report_error(
-                        "no-invalid-fetch-options",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "no-invalid-fetch-options".to_owned(),
+                        message: format!(
                             "`fetch()` with method `{method}` should not have a `body` — {upper_method} requests do not accept a body"
                         ),
-                        Span::new(call.span.start, call.span.end),
-                    );
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

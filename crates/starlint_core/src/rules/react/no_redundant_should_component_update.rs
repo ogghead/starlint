@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{ClassElement, Expression, PropertyKey};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoRedundantShouldComponentUpdate {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,11 +54,16 @@ impl NativeRule for NoRedundantShouldComponentUpdate {
             };
 
             if method_name == "shouldComponentUpdate" {
-                ctx.report_warning(
-                    "react/no-redundant-should-component-update",
-                    "`shouldComponentUpdate` is redundant when extending `PureComponent`",
-                    Span::new(method.span.start, method.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "react/no-redundant-should-component-update".to_owned(),
+                    message: "`shouldComponentUpdate` is redundant when extending `PureComponent`"
+                        .to_owned(),
+                    span: Span::new(method.span.start, method.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

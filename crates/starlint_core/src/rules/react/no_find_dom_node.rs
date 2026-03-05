@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoFindDomNode {
             description: "Disallow usage of `findDOMNode`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,11 +47,16 @@ impl NativeRule for NoFindDomNode {
         };
 
         if is_find_dom_node {
-            ctx.report_error(
-                "react/no-find-dom-node",
-                "`findDOMNode` is deprecated — use `ref` callbacks or `createRef` instead",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/no-find-dom-node".to_owned(),
+                message: "`findDOMNode` is deprecated — use `ref` callbacks or `createRef` instead"
+                    .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

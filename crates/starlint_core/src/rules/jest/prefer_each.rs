@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +30,7 @@ impl NativeRule for PreferEach {
             description: "Suggest using `test.each` over repeated similar tests".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -109,11 +109,16 @@ impl NativeRule for PreferEach {
             });
 
             if prefix_len >= MIN_PREFIX_LEN {
-                ctx.report_warning(
-                    "jest/prefer-each",
-                    "Consider using `test.each` to parameterize these similar test cases",
-                    Span::new(call.span.start, call.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "jest/prefer-each".to_owned(),
+                    message: "Consider using `test.each` to parameterize these similar test cases"
+                        .to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoStoriesOf {
             description: "`storiesOf` is deprecated and should not be used".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,11 +44,16 @@ impl NativeRule for NoStoriesOf {
         };
 
         if is_stories_of {
-            ctx.report_warning(
-                RULE_NAME,
-                "`storiesOf` is deprecated — use CSF (Component Story Format) instead",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "`storiesOf` is deprecated — use CSF (Component Story Format) instead"
+                    .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

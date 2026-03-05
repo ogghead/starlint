@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoArraySort {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,16 @@ impl NativeRule for NoArraySort {
             return;
         }
 
-        ctx.report_warning(
-            "no-array-sort",
-            "`.sort()` mutates the array in-place — prefer `.toSorted()` instead",
-            Span::new(call.span.start, call.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "no-array-sort".to_owned(),
+            message: "`.sort()` mutates the array in-place — prefer `.toSorted()` instead"
+                .to_owned(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

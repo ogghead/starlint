@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for PreferMockReturnShorthand {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,11 +68,16 @@ impl NativeRule for PreferMockReturnShorthand {
         };
 
         if is_simple_return {
-            ctx.report_warning(
-                "jest/prefer-mock-return-shorthand",
-                "Use `.mockReturnValue(x)` instead of `.mockImplementation(() => x)`",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "jest/prefer-mock-return-shorthand".to_owned(),
+                message: "Use `.mockReturnValue(x)` instead of `.mockImplementation(() => x)`"
+                    .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

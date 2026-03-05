@@ -10,7 +10,7 @@ use oxc_ast::ast::{
 };
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for PreferClassFields {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -85,11 +85,15 @@ fn check_this_literal_assignment(stmt: &Statement<'_>, ctx: &mut NativeLintConte
 
     let prop_name = member.property.name.as_str();
 
-    ctx.report_warning(
-        "prefer-class-fields",
-        &format!("`this.{prop_name}` assignment can be a class field declaration"),
-        Span::new(assign.span.start, assign.span.end),
-    );
+    ctx.report(Diagnostic {
+        rule_name: "prefer-class-fields".to_owned(),
+        message: format!("`this.{prop_name}` assignment can be a class field declaration"),
+        span: Span::new(assign.span.start, assign.span.end),
+        severity: Severity::Warning,
+        help: None,
+        fix: None,
+        labels: vec![],
+    });
 }
 
 /// Check whether an expression is a literal value (number, string, boolean,

@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoOptionalChaining {
             description: "Disallow optional chaining (`?.`)".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -35,11 +35,15 @@ impl NativeRule for NoOptionalChaining {
             return;
         };
 
-        ctx.report_warning(
-            "no-optional-chaining",
-            "Unexpected use of optional chaining (`?.`)",
-            Span::new(chain.span.start, chain.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "no-optional-chaining".to_owned(),
+            message: "Unexpected use of optional chaining (`?.`)".to_owned(),
+            span: Span::new(chain.span.start, chain.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

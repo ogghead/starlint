@@ -8,7 +8,7 @@ use std::sync::RwLock;
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -48,7 +48,7 @@ impl NativeRule for MaxNestedCallbacks {
             description: "Enforce a maximum depth of nested callbacks".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -78,14 +78,18 @@ impl NativeRule for MaxNestedCallbacks {
                 };
                 *depth = depth.saturating_add(1);
                 if *depth > self.max {
-                    ctx.report_warning(
-                        "max-nested-callbacks",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "max-nested-callbacks".to_owned(),
+                        message: format!(
                             "Too many nested callbacks ({depth}). Maximum allowed is {}",
                             self.max
                         ),
-                        Span::new(arrow.span.start, arrow.span.end),
-                    );
+                        span: Span::new(arrow.span.start, arrow.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::Function(f) if f.id.is_none() => {
@@ -95,14 +99,18 @@ impl NativeRule for MaxNestedCallbacks {
                 };
                 *depth = depth.saturating_add(1);
                 if *depth > self.max {
-                    ctx.report_warning(
-                        "max-nested-callbacks",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "max-nested-callbacks".to_owned(),
+                        message: format!(
                             "Too many nested callbacks ({depth}). Maximum allowed is {}",
                             self.max
                         ),
-                        Span::new(f.span.start, f.span.end),
-                    );
+                        span: Span::new(f.span.start, f.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

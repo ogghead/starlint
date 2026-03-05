@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoHooks {
             description: "Disallow usage of Jest lifecycle hooks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,13 +47,17 @@ impl NativeRule for NoHooks {
         };
 
         if HOOK_NAMES.contains(&callee_name) {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "Unexpected use of `{callee_name}` hook — prefer explicit setup in each test"
                 ),
-                Span::new(call.span.start, call.span.end),
-            );
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

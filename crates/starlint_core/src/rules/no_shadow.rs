@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::Ident;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoShadow {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -66,11 +66,15 @@ impl NativeRule for NoShadow {
 
                 while let Some(scope_id) = current_scope {
                     if scoping.get_binding(scope_id, ident).is_some() {
-                        ctx.report_warning(
-                            "no-shadow",
-                            &format!("'{name}' is already declared in the upper scope"),
-                            Span::new(binding.span.start, binding.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "no-shadow".to_owned(),
+                            message: format!("'{name}' is already declared in the upper scope"),
+                            span: Span::new(binding.span.start, binding.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                         break;
                     }
 

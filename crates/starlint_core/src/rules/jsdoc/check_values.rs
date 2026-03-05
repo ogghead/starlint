@@ -2,7 +2,7 @@
 //!
 //! Enforce valid `@version`, `@since`, and `@license` values.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -48,7 +48,7 @@ impl NativeRule for CheckValues {
             description: "Enforce valid `@version`, `@since`, and `@license` values".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -78,13 +78,17 @@ impl NativeRule for CheckValues {
                         if let Some(rest) = trimmed.strip_prefix(tag) {
                             let value = rest.trim();
                             if !value.is_empty() && !is_semver_like(value) {
-                                ctx.report_warning(
-                                    "jsdoc/check-values",
-                                    &format!(
+                                ctx.report(Diagnostic {
+                                    rule_name: "jsdoc/check-values".to_owned(),
+                                    message: format!(
                                         "Invalid `{tag}` value: `{value}`. Expected a semver-like version"
                                     ),
-                                    Span::new(span_start, span_end),
-                                );
+                                    span: Span::new(span_start, span_end),
+                                    severity: Severity::Warning,
+                                    help: None,
+                                    fix: None,
+                                    labels: vec![],
+                                });
                             }
                         }
                     }
@@ -93,13 +97,17 @@ impl NativeRule for CheckValues {
                     if let Some(rest) = trimmed.strip_prefix("@license") {
                         let value = rest.trim();
                         if !value.is_empty() && !COMMON_LICENSES.contains(&value) {
-                            ctx.report_warning(
-                                "jsdoc/check-values",
-                                &format!(
+                            ctx.report(Diagnostic {
+                                rule_name: "jsdoc/check-values".to_owned(),
+                                message: format!(
                                     "Unknown `@license` value: `{value}`. Expected a known SPDX identifier"
                                 ),
-                                Span::new(span_start, span_end),
-                            );
+                                span: Span::new(span_start, span_end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                 }

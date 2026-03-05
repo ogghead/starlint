@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -77,7 +77,7 @@ impl NativeRule for PreventAbbreviations {
             description: "Prefer full words over common abbreviations in identifiers".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -93,11 +93,15 @@ impl NativeRule for PreventAbbreviations {
         let name = ident.name.as_str();
 
         if let Some(expansion) = find_expansion(name) {
-            ctx.report_warning(
-                "prevent-abbreviations",
-                &format!("The abbreviation `{name}` should be written as `{expansion}`"),
-                Span::new(ident.span.start, ident.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "prevent-abbreviations".to_owned(),
+                message: format!("The abbreviation `{name}` should be written as `{expansion}`"),
+                span: Span::new(ident.span.start, ident.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

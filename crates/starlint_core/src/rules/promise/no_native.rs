@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoNative {
             description: "Forbid native `Promise` (enforce polyfill)".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,16 @@ impl NativeRule for NoNative {
         };
 
         if ident.name.as_str() == "Promise" {
-            ctx.report_warning(
-                "promise/no-native",
-                "Avoid using native `Promise` — use the configured polyfill instead",
-                Span::new(ident.span.start, ident.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "promise/no-native".to_owned(),
+                message: "Avoid using native `Promise` — use the configured polyfill instead"
+                    .to_owned(),
+                span: Span::new(ident.span.start, ident.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

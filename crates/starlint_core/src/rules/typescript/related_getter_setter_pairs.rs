@@ -5,7 +5,7 @@
 //! that leads to read-only or write-only properties with no compile-time
 //! warning.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for RelatedGetterSetterPairs {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -35,11 +35,15 @@ impl NativeRule for RelatedGetterSetterPairs {
 
         for (kind, name, start, end) in findings {
             let missing = if kind == "get" { "setter" } else { "getter" };
-            ctx.report_warning(
-                "typescript/related-getter-setter-pairs",
-                &format!("Property `{name}` has a {kind}ter but no matching {missing}"),
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/related-getter-setter-pairs".to_owned(),
+                message: format!("Property `{name}` has a {kind}ter but no matching {missing}"),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

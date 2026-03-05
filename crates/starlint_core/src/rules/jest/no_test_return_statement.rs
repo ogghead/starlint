@@ -5,7 +5,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoTestReturnStatement {
             description: "Disallow return statements in test callbacks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,11 +47,16 @@ impl NativeRule for NoTestReturnStatement {
         let before = source.get(..pos).unwrap_or("");
 
         if is_inside_test_callback(before) {
-            ctx.report_warning(
-                RULE_NAME,
-                "Unexpected return statement in test — tests should not return values",
-                Span::new(ret.span.start, ret.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Unexpected return statement in test — tests should not return values"
+                    .to_owned(),
+                span: Span::new(ret.span.start, ret.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

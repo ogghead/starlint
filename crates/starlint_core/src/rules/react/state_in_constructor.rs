@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::PropertyKey;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for StateInConstructor {
             description: "State should be initialized in the constructor".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,11 +48,15 @@ impl NativeRule for StateInConstructor {
         };
 
         if is_state {
-            ctx.report_warning(
-                "react/state-in-constructor",
-                "State initialization should be in a constructor",
-                Span::new(prop.span.start, prop.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/state-in-constructor".to_owned(),
+                message: "State initialization should be in a constructor".to_owned(),
+                span: Span::new(prop.span.start, prop.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

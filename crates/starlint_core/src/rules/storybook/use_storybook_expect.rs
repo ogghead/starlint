@@ -3,7 +3,7 @@
 //! Use `expect` from `@storybook/test` instead of generic `expect`.
 //! Checks for `expect` calls not imported from storybook.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for UseStorybookExpect {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,11 +54,17 @@ impl NativeRule for UseStorybookExpect {
             if let Some(pos) = source.find("expect(") {
                 let start = u32::try_from(pos).unwrap_or(0);
                 let end = start.saturating_add(u32::try_from("expect(".len()).unwrap_or(0));
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Import `expect` from `@storybook/test` instead of using generic `expect`",
-                    Span::new(start, end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message:
+                        "Import `expect` from `@storybook/test` instead of using generic `expect`"
+                            .to_owned(),
+                    span: Span::new(start, end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

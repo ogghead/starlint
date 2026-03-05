@@ -8,7 +8,7 @@ use oxc_ast::ast::PropertyKey;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -35,7 +35,7 @@ impl NativeRule for SortKeys {
             description: "Require object keys to be sorted".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -79,14 +79,18 @@ impl NativeRule for SortKeys {
             };
 
             if prev_name.to_lowercase() > curr_name.to_lowercase() {
-                ctx.report_warning(
-                    "sort-keys",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "sort-keys".to_owned(),
+                    message: format!(
                         "Object keys should be sorted alphabetically. \
                          Expected '{curr_name}' to come before '{prev_name}'"
                     ),
-                    Span::new(curr_span.start, curr_span.end),
-                );
+                    span: Span::new(curr_span.start, curr_span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 // Report only the first violation per object
                 return;
             }

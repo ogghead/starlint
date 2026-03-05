@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Declaration, ExportSpecifier, ModuleExportName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -43,7 +43,7 @@ impl NativeRule for OnlyExportComponents {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -70,13 +70,17 @@ impl NativeRule for OnlyExportComponents {
                         {
                             let name = id.name.as_str();
                             if is_non_component_name(name) {
-                                ctx.report_warning(
-                                    "react/only-export-components",
-                                    &format!(
+                                ctx.report(Diagnostic {
+                                    rule_name: "react/only-export-components".to_owned(),
+                                    message: format!(
                                         "Fast Refresh only works when a file exports components. Use a separate file for `{name}`"
                                     ),
-                                    Span::new(id.span.start, id.span.end),
-                                );
+                                    span: Span::new(id.span.start, id.span.end),
+                                    severity: Severity::Warning,
+                                    help: None,
+                                    fix: None,
+                                    labels: vec![],
+                                });
                             }
                         }
                     }
@@ -85,13 +89,17 @@ impl NativeRule for OnlyExportComponents {
                     if let Some(id) = &func.id {
                         let name = id.name.as_str();
                         if is_non_component_name(name) {
-                            ctx.report_warning(
-                                "react/only-export-components",
-                                &format!(
+                            ctx.report(Diagnostic {
+                                rule_name: "react/only-export-components".to_owned(),
+                                message: format!(
                                     "Fast Refresh only works when a file exports components. Use a separate file for `{name}`"
                                 ),
-                                Span::new(id.span.start, id.span.end),
-                            );
+                                span: Span::new(id.span.start, id.span.end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                 }
@@ -105,13 +113,17 @@ impl NativeRule for OnlyExportComponents {
 fn check_specifier(spec: &ExportSpecifier<'_>, ctx: &mut NativeLintContext<'_>) {
     let name = get_export_name(&spec.exported);
     if is_non_component_name(name) {
-        ctx.report_warning(
-            "react/only-export-components",
-            &format!(
+        ctx.report(Diagnostic {
+            rule_name: "react/only-export-components".to_owned(),
+            message: format!(
                 "Fast Refresh only works when a file exports components. Use a separate file for `{name}`"
             ),
-            Span::new(spec.span.start, spec.span.end),
-        );
+            span: Span::new(spec.span.start, spec.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

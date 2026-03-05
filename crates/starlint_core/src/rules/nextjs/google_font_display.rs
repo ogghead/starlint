@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for GoogleFontDisplay {
             description: "Enforce `display` parameter in Google Fonts URLs".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,11 +48,15 @@ impl NativeRule for GoogleFontDisplay {
         let has_display = value.contains("&display=") || value.contains("?display=");
 
         if !has_display {
-            ctx.report_warning(
-                RULE_NAME,
-                "Google Fonts URL is missing the `display` parameter. Add `&display=swap` to avoid invisible text during loading",
-                Span::new(lit.span.start, lit.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Google Fonts URL is missing the `display` parameter. Add `&display=swap` to avoid invisible text during loading".to_owned(),
+                span: Span::new(lit.span.start, lit.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -3,7 +3,7 @@
 //! Forbid using reserved HTML element names as Vue component names. Using names
 //! like `div`, `span`, `button` etc. as component names leads to conflicts.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -97,7 +97,7 @@ impl NativeRule for NoReservedComponentNames {
             description: "Forbid reserved HTML element names as component names".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -135,13 +135,17 @@ impl NativeRule for NoReservedComponentNames {
                 let end = start.saturating_add(
                     u32::try_from(5_usize.saturating_add(2).saturating_add(end_quote)).unwrap_or(0),
                 );
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
                         "`{name_value}` is a reserved HTML element name and should not be used as a component name"
                     ),
-                    Span::new(start, end),
-                );
+                    span: Span::new(start, end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
 
             search_start = abs_pos.saturating_add(5);

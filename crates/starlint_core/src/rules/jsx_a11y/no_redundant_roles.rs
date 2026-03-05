@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -57,7 +57,7 @@ impl NativeRule for NoRedundantRoles {
             description: "Forbid redundant roles (e.g., `<button role=\"button\">`)".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -93,13 +93,17 @@ impl NativeRule for NoRedundantRoles {
                 if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
                     let role_val = lit.value.as_str().trim();
                     if role_val == implicit_role {
-                        ctx.report_warning(
-                            RULE_NAME,
-                            &format!(
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: format!(
                                 "`<{element_name}>` has an implicit `role` of `{implicit_role}`. Setting `role=\"{role_val}\"` is redundant"
                             ),
-                            Span::new(opening.span.start, opening.span.end),
-                        );
+                            span: Span::new(opening.span.start, opening.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }

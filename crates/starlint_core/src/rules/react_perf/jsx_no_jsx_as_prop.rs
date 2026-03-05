@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeValue, JSXExpression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for JsxNoJsxAsProp {
             description: "Prevent JSX elements from being passed inline as props".to_owned(),
             category: Category::Performance,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,11 +48,17 @@ impl NativeRule for JsxNoJsxAsProp {
                 container.expression,
                 JSXExpression::JSXElement(_) | JSXExpression::JSXFragment(_)
             ) {
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Do not pass JSX as a prop value — it creates a new element on every render",
-                    Span::new(container.span.start, container.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message:
+                        "Do not pass JSX as a prop value — it creates a new element on every render"
+                            .to_owned(),
+                    span: Span::new(container.span.start, container.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 return;
             }
         }
@@ -63,11 +69,17 @@ impl NativeRule for JsxNoJsxAsProp {
             attr.value,
             Some(JSXAttributeValue::Element(_) | JSXAttributeValue::Fragment(_))
         ) {
-            ctx.report_warning(
-                RULE_NAME,
-                "Do not pass JSX as a prop value — it creates a new element on every render",
-                Span::new(attr.span.start, attr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message:
+                    "Do not pass JSX as a prop value — it creates a new element on every render"
+                        .to_owned(),
+                span: Span::new(attr.span.start, attr.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

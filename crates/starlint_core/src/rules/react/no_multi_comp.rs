@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NoMultiComp {
             description: "Only one component definition per file".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -78,11 +78,15 @@ impl NativeRule for NoMultiComp {
         }
 
         if component_count > 1 {
-            ctx.report_warning(
-                "react/no-multi-comp",
-                "Declare only one React component per file",
-                Span::new(last_span_start, last_span_start.saturating_add(1)),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/no-multi-comp".to_owned(),
+                message: "Declare only one React component per file".to_owned(),
+                span: Span::new(last_span_start, last_span_start.saturating_add(1)),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

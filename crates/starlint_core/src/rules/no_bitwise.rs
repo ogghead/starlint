@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::BinaryOperator;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoBitwise {
             description: "Disallow bitwise operators".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -35,20 +35,28 @@ impl NativeRule for NoBitwise {
         match kind {
             AstKind::BinaryExpression(expr) => {
                 if is_bitwise_binary(expr.operator) {
-                    ctx.report_warning(
-                        "no-bitwise",
-                        "Unexpected use of bitwise operator",
-                        Span::new(expr.span.start, expr.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-bitwise".to_owned(),
+                        message: "Unexpected use of bitwise operator".to_owned(),
+                        span: Span::new(expr.span.start, expr.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::UnaryExpression(expr) => {
                 if expr.operator == oxc_ast::ast::UnaryOperator::BitwiseNot {
-                    ctx.report_warning(
-                        "no-bitwise",
-                        "Unexpected use of bitwise operator `~`",
-                        Span::new(expr.span.start, expr.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-bitwise".to_owned(),
+                        message: "Unexpected use of bitwise operator `~`".to_owned(),
+                        span: Span::new(expr.span.start, expr.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

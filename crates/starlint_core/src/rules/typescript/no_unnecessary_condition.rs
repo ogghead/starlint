@@ -13,7 +13,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -33,7 +33,7 @@ impl NativeRule for NoUnnecessaryCondition {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,29 +46,37 @@ impl NativeRule for NoUnnecessaryCondition {
             AstKind::IfStatement(stmt) => {
                 if let Some(value) = boolean_literal_value(&stmt.test) {
                     let label = if value { "true" } else { "false" };
-                    ctx.report_warning(
-                        RULE_NAME,
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!(
                             "Unnecessary condition — `if ({label})` is always {}, \
                              the branch is {}",
                             label,
                             if value { "always taken" } else { "dead code" },
                         ),
-                        Span::new(stmt.span.start, stmt.span.end),
-                    );
+                        span: Span::new(stmt.span.start, stmt.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::WhileStatement(stmt) => {
                 if let Some(value) = boolean_literal_value(&stmt.test) {
                     let label = if value { "true" } else { "false" };
-                    ctx.report_warning(
-                        RULE_NAME,
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!(
                             "Unnecessary condition — `while ({label})` is a constant \
                              loop condition"
                         ),
-                        Span::new(stmt.span.start, stmt.span.end),
-                    );
+                        span: Span::new(stmt.span.start, stmt.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

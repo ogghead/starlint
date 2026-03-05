@@ -4,7 +4,7 @@
 //! rule(s) to disable. Using a blanket disable suppresses all warnings and
 //! hides legitimate issues — always list the specific rules being suppressed.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoAbusiveEslintDisable {
             description: "Disallow blanket `eslint-disable` comments without rule names".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,11 +47,15 @@ impl NativeRule for NoAbusiveEslintDisable {
         let findings = find_abusive_disables(source);
 
         for span in findings {
-            ctx.report_warning(
-                "no-abusive-eslint-disable",
-                "Specify the rules to disable — blanket `eslint-disable` hides legitimate issues",
+            ctx.report(Diagnostic {
+                rule_name: "no-abusive-eslint-disable".to_owned(),
+                message: "Specify the rules to disable — blanket `eslint-disable` hides legitimate issues".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

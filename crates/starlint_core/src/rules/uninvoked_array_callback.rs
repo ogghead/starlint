@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -34,7 +34,7 @@ impl NativeRule for UninvokedArrayCallback {
             description: "Detect problematic function references in array callbacks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,14 +77,18 @@ impl NativeRule for UninvokedArrayCallback {
 
         for &(arr_method, func_name) in DANGEROUS_CALLBACKS {
             if method == arr_method && cb_name == func_name {
-                ctx.report_warning(
-                    "uninvoked-array-callback",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "uninvoked-array-callback".to_owned(),
+                    message: format!(
                         "Passing `{func_name}` directly to `.{arr_method}()` may produce \
                          unexpected results — the callback receives extra arguments (index, array)"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 return;
             }
         }

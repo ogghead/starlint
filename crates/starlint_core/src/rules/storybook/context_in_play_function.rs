@@ -3,7 +3,7 @@
 //! Pass a context when invoking play function of another story.
 //! Checks for `.play()` calls inside play functions that don't pass arguments.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for ContextInPlayFunction {
             description: "Pass a context when invoking play function of another story".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,11 +45,16 @@ impl NativeRule for ContextInPlayFunction {
             let abs_pos = search_pos.saturating_add(pos);
             let start = u32::try_from(abs_pos).unwrap_or(0);
             let end = start.saturating_add(u32::try_from(pattern.len()).unwrap_or(0));
-            ctx.report_warning(
-                RULE_NAME,
-                "Pass the context argument when calling another story's play function",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Pass the context argument when calling another story's play function"
+                    .to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
             search_pos = abs_pos.saturating_add(1);
         }
     }

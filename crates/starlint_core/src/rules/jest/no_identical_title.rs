@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoIdenticalTitle {
             description: "Disallow identical titles in sibling test blocks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -40,7 +40,15 @@ impl NativeRule for NoIdenticalTitle {
         let violations = find_duplicate_titles(ctx.source_text());
 
         for (message, span) in violations {
-            ctx.report_error(RULE_NAME, &message, span);
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message,
+                span,
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

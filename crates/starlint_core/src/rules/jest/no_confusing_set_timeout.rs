@@ -3,7 +3,7 @@
 //! Warn when `jest.setTimeout()` is used inside test blocks instead of at the
 //! describe level or top level.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,7 +32,7 @@ impl NativeRule for NoConfusingSetTimeout {
             description: "Disallow `jest.setTimeout` inside test blocks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -69,11 +69,15 @@ impl NativeRule for NoConfusingSetTimeout {
         };
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "`jest.setTimeout()` should be called at the top level or in a `describe` block, not inside a test or hook",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "`jest.setTimeout()` should be called at the top level or in a `describe` block, not inside a test or hook".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

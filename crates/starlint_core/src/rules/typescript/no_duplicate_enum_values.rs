@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoDuplicateEnumValues {
             description: "Disallow duplicate enum member values".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,11 +52,15 @@ impl NativeRule for NoDuplicateEnumValues {
             };
 
             if !seen.insert(value_key.clone()) {
-                ctx.report_error(
-                    "typescript/no-duplicate-enum-values",
-                    &format!("Duplicate enum value `{value_key}`"),
-                    Span::new(member.span.start, member.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "typescript/no-duplicate-enum-values".to_owned(),
+                    message: format!("Duplicate enum value `{value_key}`"),
+                    span: Span::new(member.span.start, member.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

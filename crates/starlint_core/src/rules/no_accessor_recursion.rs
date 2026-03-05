@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, MethodDefinitionKind, PropertyKey, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoAccessorRecursion {
             description: "Disallow recursive getters and setters".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -51,13 +51,17 @@ impl NativeRule for NoAccessorRecursion {
 
                 for stmt in &func.statements {
                     if statement_accesses_this_property(stmt, prop_name) {
-                        ctx.report_error(
-                            "no-accessor-recursion",
-                            &format!(
+                        ctx.report(Diagnostic {
+                            rule_name: "no-accessor-recursion".to_owned(),
+                            message: format!(
                                 "Getter for '{prop_name}' recursively accesses `this.{prop_name}`"
                             ),
-                            Span::new(method.span.start, method.span.end),
-                        );
+                            span: Span::new(method.span.start, method.span.end),
+                            severity: Severity::Error,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                         return;
                     }
                 }
@@ -70,13 +74,17 @@ impl NativeRule for NoAccessorRecursion {
 
                 for stmt in &func.statements {
                     if statement_assigns_this_property(stmt, prop_name) {
-                        ctx.report_error(
-                            "no-accessor-recursion",
-                            &format!(
+                        ctx.report(Diagnostic {
+                            rule_name: "no-accessor-recursion".to_owned(),
+                            message: format!(
                                 "Setter for '{prop_name}' recursively assigns to `this.{prop_name}`"
                             ),
-                            Span::new(method.span.start, method.span.end),
-                        );
+                            span: Span::new(method.span.start, method.span.end),
+                            severity: Severity::Error,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                         return;
                     }
                 }

@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoArrayDelete {
             description: "Disallow using `delete` on array elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -51,11 +51,15 @@ impl NativeRule for NoArrayDelete {
         };
 
         if is_numeric_index(&member.expression) {
-            ctx.report_error(
-                "typescript/no-array-delete",
-                "Do not `delete` array elements — it creates a sparse array hole. Use `splice` instead",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-array-delete".to_owned(),
+                message: "Do not `delete` array elements — it creates a sparse array hole. Use `splice` instead".to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

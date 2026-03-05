@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoRedeclare {
             description: "Disallow variable redeclaration".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,11 +60,15 @@ impl NativeRule for NoRedeclare {
                     // Only report on the redeclaration, not the original
                     // The original declaration's span will differ from the redecl spans
                     for respan in redeclarations {
-                        ctx.report_error(
-                            "no-redeclare",
-                            &format!("'{}' is already defined", binding.name),
-                            Span::new(respan.span.start, respan.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "no-redeclare".to_owned(),
+                            message: format!("'{}' is already defined", binding.name),
+                            span: Span::new(respan.span.start, respan.span.end),
+                            severity: Severity::Error,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }

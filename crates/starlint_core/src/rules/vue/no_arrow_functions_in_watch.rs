@@ -4,7 +4,7 @@
 //! Arrow functions bind `this` lexically, so `this` will not refer to the
 //! component instance inside a watcher.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoArrowFunctionsInWatch {
             description: "Forbid arrow functions in the `watch` option".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,11 +47,15 @@ impl NativeRule for NoArrowFunctionsInWatch {
             let abs_pos = search_start.saturating_add(arrow_offset);
             let start = u32::try_from(abs_pos).unwrap_or(0);
             let end = start.saturating_add(2);
-            ctx.report_warning(
-                RULE_NAME,
-                "Do not use arrow functions in `watch` — `this` will not refer to the component instance",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Do not use arrow functions in `watch` — `this` will not refer to the component instance".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

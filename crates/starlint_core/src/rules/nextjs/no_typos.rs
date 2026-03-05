@@ -3,7 +3,7 @@
 //! Detect common Next.js API name typos. For example `getStaticPorps` instead
 //! of `getStaticProps`. Uses text-based scanning for fast detection.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -59,7 +59,7 @@ impl NativeRule for NoTypos {
             description: "Detect common Next.js API typos".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -102,11 +102,15 @@ impl NativeRule for NoTypos {
         };
 
         for (typo, correct, span) in violations {
-            ctx.report_error(
-                RULE_NAME,
-                &format!("`{typo}` is a typo -- did you mean `{correct}`?"),
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!("`{typo}` is a typo -- did you mean `{correct}`?"),
                 span,
-            );
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

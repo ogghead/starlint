@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for PreferBlobReadingMethods {
             description: "Prefer `Blob` reading methods over `FileReader`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -39,11 +39,15 @@ impl NativeRule for PreferBlobReadingMethods {
 
         if let Expression::Identifier(id) = &new_expr.callee {
             if id.name.as_str() == "FileReader" {
-                ctx.report_warning(
-                    "prefer-blob-reading-methods",
-                    "Prefer `Blob` reading methods (`blob.text()`, `blob.arrayBuffer()`, `blob.stream()`) over `FileReader`",
-                    Span::new(new_expr.span.start, new_expr.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "prefer-blob-reading-methods".to_owned(),
+                    message: "Prefer `Blob` reading methods (`blob.text()`, `blob.arrayBuffer()`, `blob.stream()`) over `FileReader`".to_owned(),
+                    span: Span::new(new_expr.span.start, new_expr.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

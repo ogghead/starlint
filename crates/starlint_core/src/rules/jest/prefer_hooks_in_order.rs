@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for PreferHooksInOrder {
             description: "Warn when hooks are not in the standard lifecycle order".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -88,14 +88,18 @@ impl NativeRule for PreferHooksInOrder {
 
             if let Some(prev_order) = last_order {
                 if order < prev_order {
-                    ctx.report_warning(
-                        "jest/prefer-hooks-in-order",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "jest/prefer-hooks-in-order".to_owned(),
+                        message: format!(
                             "`{callee_name}` should be placed before `{}` in the describe block",
                             HOOK_ORDER.get(prev_order).copied().unwrap_or("unknown")
                         ),
-                        Span::new(inner_call.span.start, inner_call.span.end),
-                    );
+                        span: Span::new(inner_call.span.start, inner_call.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             last_order = Some(order);

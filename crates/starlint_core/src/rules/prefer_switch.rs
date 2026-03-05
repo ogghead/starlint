@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for PreferSwitch {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,13 +71,17 @@ impl NativeRule for PreferSwitch {
         }
 
         if count >= MIN_CASES {
-            ctx.report_warning(
-                "prefer-switch",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "prefer-switch".to_owned(),
+                message: format!(
                     "Use a `switch` statement instead of {count} `if`/`else if` comparisons on `{first_ident}`"
                 ),
-                Span::new(if_stmt.span.start, if_stmt.span.end),
-            );
+                span: Span::new(if_stmt.span.start, if_stmt.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

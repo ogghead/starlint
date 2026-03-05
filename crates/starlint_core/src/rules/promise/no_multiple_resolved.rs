@@ -9,7 +9,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for NoMultipleResolved {
             description: "Forbid calling `resolve`/`reject` multiple times".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,11 +71,15 @@ impl NativeRule for NoMultipleResolved {
         let total = resolve_count.saturating_add(reject_count);
 
         if total > 1 {
-            ctx.report_error(
-                "promise/no-multiple-resolved",
-                "Promise executor calls `resolve` or `reject` multiple times",
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "promise/no-multiple-resolved".to_owned(),
+                message: "Promise executor calls `resolve` or `reject` multiple times".to_owned(),
+                span: Span::new(new_expr.span.start, new_expr.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

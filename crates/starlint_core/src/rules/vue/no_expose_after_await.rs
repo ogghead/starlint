@@ -3,7 +3,7 @@
 //! Forbid calling `expose()` after `await` in `setup()`. When `expose()` is
 //! called after an `await`, the component instance context may have changed.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoExposeAfterAwait {
             description: "Forbid calling `expose()` after `await` in `setup()`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,11 +54,15 @@ impl NativeRule for NoExposeAfterAwait {
                 .saturating_add(expose_offset);
             let start = u32::try_from(abs_pos).unwrap_or(0);
             let end = start.saturating_add(7); // "expose(" length
-            ctx.report_warning(
-                RULE_NAME,
-                "`expose()` should not be called after `await` in `setup()` — the component context may have changed",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "`expose()` should not be called after `await` in `setup()` — the component context may have changed".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

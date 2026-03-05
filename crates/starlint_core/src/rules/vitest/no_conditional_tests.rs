@@ -4,7 +4,7 @@
 //! Conditional logic in tests makes them harder to understand and can hide
 //! untested code paths. Extract each branch into a separate test instead.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoConditionalTests {
             description: "Disallow conditional logic inside test callbacks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,11 +43,15 @@ impl NativeRule for NoConditionalTests {
         let violations = find_conditionals_in_tests(source);
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "Avoid conditional logic (`if`/`switch`) inside tests — split into separate test cases instead",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Avoid conditional logic (`if`/`switch`) inside tests — split into separate test cases instead".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

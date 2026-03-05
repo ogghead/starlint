@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{AssignmentTarget, ClassElement, Expression, MethodDefinitionKind, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoThisBeforeSuper {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,11 +68,15 @@ fn check_this_before_super(stmts: &[Statement<'_>], ctx: &mut NativeLintContext<
     for stmt in stmts {
         // Check if this statement contains `this` before we've seen `super()`
         if let Some(this_span) = find_this_in_statement(stmt) {
-            ctx.report_error(
-                "no-this-before-super",
-                "`this` is not allowed before `super()`",
-                this_span,
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-this-before-super".to_owned(),
+                message: "`this` is not allowed before `super()`".to_owned(),
+                span: this_span,
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
             return;
         }
 

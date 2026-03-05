@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXChild, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -36,7 +36,7 @@ impl NativeRule for NoTitleInDocumentHead {
             description: "Forbid `<title>` in `next/document` `<Head>`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,14 +68,18 @@ impl NativeRule for NoTitleInDocumentHead {
         for child in &element.children {
             if let JSXChild::Element(child_element) = child {
                 if is_element_name(&child_element.opening_element.name, "title") {
-                    ctx.report_warning(
-                        RULE_NAME,
-                        "Do not use `<title>` in `_document` `<Head>` -- set page titles in individual pages or use the metadata API",
-                        Span::new(
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Do not use `<title>` in `_document` `<Head>` -- set page titles in individual pages or use the metadata API".to_owned(),
+                        span: Span::new(
                             child_element.opening_element.span.start,
                             child_element.opening_element.span.end,
                         ),
-                    );
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

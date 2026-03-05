@@ -11,7 +11,7 @@ use oxc_ast::ast::{PropertyKey, PropertyKind};
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NoDupeKeys {
             description: "Disallow duplicate keys in object literals".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -64,11 +64,15 @@ impl NativeRule for NoDupeKeys {
 
             if !seen.insert(key_name.clone()) {
                 let key_span = prop.key.span();
-                ctx.report_error(
-                    "no-dupe-keys",
-                    &format!("Duplicate key `{key_name}`"),
-                    Span::new(key_span.start, key_span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-dupe-keys".to_owned(),
+                    message: format!("Duplicate key `{key_name}`"),
+                    span: Span::new(key_span.start, key_span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

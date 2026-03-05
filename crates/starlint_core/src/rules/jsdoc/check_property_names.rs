@@ -2,7 +2,7 @@
 //!
 //! Enforce `@property` names are valid identifiers and not duplicated.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -55,7 +55,7 @@ impl NativeRule for CheckPropertyNames {
             description: "Enforce `@property` names are valid and not duplicated".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -80,11 +80,15 @@ impl NativeRule for CheckPropertyNames {
                     if !seen.insert(name.as_str()) {
                         let span_start = u32::try_from(abs_start).unwrap_or(0);
                         let span_end = u32::try_from(abs_end).unwrap_or(span_start);
-                        ctx.report_warning(
-                            "jsdoc/check-property-names",
-                            &format!("Duplicate `@property` name: `{name}`"),
-                            Span::new(span_start, span_end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "jsdoc/check-property-names".to_owned(),
+                            message: format!("Duplicate `@property` name: `{name}`"),
+                            span: Span::new(span_start, span_end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
 

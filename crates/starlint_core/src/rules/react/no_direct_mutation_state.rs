@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoDirectMutationState {
             description: "Disallow direct mutation of `this.state`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -40,11 +40,16 @@ impl NativeRule for NoDirectMutationState {
         // AssignmentTarget inherits SimpleAssignmentTarget which inherits MemberExpression.
         // We check for StaticMemberExpression pattern: this.state
         if is_this_state_target(&assign.left) {
-            ctx.report_error(
-                "react/no-direct-mutation-state",
-                "Do not mutate `this.state` directly — use `setState()` instead",
-                Span::new(assign.span.start, assign.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/no-direct-mutation-state".to_owned(),
+                message: "Do not mutate `this.state` directly — use `setState()` instead"
+                    .to_owned(),
+                span: Span::new(assign.span.start, assign.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoSequences {
             description: "Disallow comma operator".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -35,11 +35,15 @@ impl NativeRule for NoSequences {
             return;
         };
 
-        ctx.report_warning(
-            "no-sequences",
-            "Unexpected use of comma operator",
-            Span::new(seq.span.start, seq.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "no-sequences".to_owned(),
+            message: "Unexpected use of comma operator".to_owned(),
+            span: Span::new(seq.span.start, seq.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoDuplicateHooks {
             description: "Disallow duplicate lifecycle hooks in the same describe block".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -76,11 +76,15 @@ impl NativeRule for NoDuplicateHooks {
                     let end = pos
                         .saturating_add(u32::try_from(hook_name.len()).unwrap_or(0))
                         .saturating_add(1);
-                    ctx.report_error(
-                        RULE_NAME,
-                        &format!("Duplicate `{hook_name}` hook — each hook should only appear once per describe block"),
-                        Span::new(*pos, end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!("Duplicate `{hook_name}` hook — each hook should only appear once per describe block"),
+                        span: Span::new(*pos, end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

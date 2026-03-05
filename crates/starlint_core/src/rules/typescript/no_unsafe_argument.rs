@@ -12,7 +12,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, TSType};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -31,7 +31,7 @@ impl NativeRule for NoUnsafeArgument {
             description: "Disallow calling a function with an `as any` argument".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,12 +47,17 @@ impl NativeRule for NoUnsafeArgument {
         for arg in &call.arguments {
             if is_as_any_argument(arg) {
                 let arg_span = argument_span(arg);
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Unsafe `as any` argument — this bypasses type checking for \
-                     the corresponding parameter",
-                    arg_span,
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "Unsafe `as any` argument — this bypasses type checking for \
+                     the corresponding parameter"
+                        .to_owned(),
+                    span: arg_span,
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

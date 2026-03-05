@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -85,7 +85,7 @@ impl NativeRule for AutocompleteValid {
             description: "Enforce `autocomplete` attribute has a valid value".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -124,11 +124,15 @@ impl NativeRule for AutocompleteValid {
                     let tokens: Vec<&str> = val.split_whitespace().collect();
                     if let Some(last) = tokens.last() {
                         if !VALID_AUTOCOMPLETE.contains(last) && !last.starts_with("section-") {
-                            ctx.report_warning(
-                                RULE_NAME,
-                                &format!("`{val}` is not a valid `autocomplete` value"),
-                                Span::new(opening.span.start, opening.span.end),
-                            );
+                            ctx.report(Diagnostic {
+                                rule_name: RULE_NAME.to_owned(),
+                                message: format!("`{val}` is not a valid `autocomplete` value"),
+                                span: Span::new(opening.span.start, opening.span.end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                 }

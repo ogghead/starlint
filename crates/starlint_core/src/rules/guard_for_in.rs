@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for GuardForIn {
             description: "Require `hasOwnProperty` check in `for-in` loops".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,11 +42,15 @@ impl NativeRule for GuardForIn {
             return;
         }
 
-        ctx.report_warning(
-            "guard-for-in",
-            "The body of a `for-in` should be wrapped in an `if` statement to filter unwanted properties from the prototype",
-            Span::new(for_in.span.start, for_in.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "guard-for-in".to_owned(),
+            message: "The body of a `for-in` should be wrapped in an `if` statement to filter unwanted properties from the prototype".to_owned(),
+            span: Span::new(for_in.span.start, for_in.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

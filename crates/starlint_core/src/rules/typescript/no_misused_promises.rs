@@ -8,7 +8,7 @@
 //! This text-based heuristic scans for `addEventListener` calls whose callback
 //! argument references a function declared as `async` in the same file.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoMisusedPromises {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -49,14 +49,18 @@ impl NativeRule for NoMisusedPromises {
         let violations = find_misused_promise_callbacks(source, &async_fn_names);
 
         for (span, fn_name) in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "Promise-returning function `{fn_name}` passed as a void callback — \
                      its returned promise will not be handled"
                 ),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

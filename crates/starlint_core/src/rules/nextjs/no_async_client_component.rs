@@ -3,7 +3,7 @@
 //! Forbid async function exports in client components (files with
 //! `"use client"` directive). Client components cannot be async in React.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoAsyncClientComponent {
             description: "Forbid async client components".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -70,11 +70,15 @@ impl NativeRule for NoAsyncClientComponent {
             .collect();
 
         for (start, end) in findings {
-            ctx.report_error(
-                RULE_NAME,
-                "Client components cannot be async -- remove the `async` keyword or move to a server component",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Client components cannot be async -- remove the `async` keyword or move to a server component".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

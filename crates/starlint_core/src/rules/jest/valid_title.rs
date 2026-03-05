@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for ValidTitle {
             description: "Require valid titles for `describe`/`it`/`test` blocks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -53,33 +53,45 @@ impl NativeRule for ValidTitle {
 
         // Check the first argument (the title)
         let Some(first_arg) = call.arguments.first() else {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!("`{callee_name}()` must have a title as its first argument"),
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!("`{callee_name}()` must have a title as its first argument"),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
             return;
         };
 
         match first_arg {
             Argument::StringLiteral(lit) => {
                 if lit.value.is_empty() {
-                    ctx.report_warning(
-                        RULE_NAME,
-                        &format!("`{callee_name}()` title must not be empty"),
-                        Span::new(lit.span.start, lit.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!("`{callee_name}()` title must not be empty"),
+                        span: Span::new(lit.span.start, lit.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             Argument::TemplateLiteral(_) => {
                 // Template literals are acceptable
             }
             _ => {
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!("`{callee_name}()` title must be a string literal"),
-                    Span::new(call.span.start, call.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!("`{callee_name}()` title must be a string literal"),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

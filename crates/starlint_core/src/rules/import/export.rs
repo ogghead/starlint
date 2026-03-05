@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for ExportRule {
             description: "Report any invalid exports (duplicate named exports)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,11 +47,15 @@ impl NativeRule for ExportRule {
                     for spec in &export.specifiers {
                         let exported_name = spec.exported.name().as_str();
                         if !seen_names.insert(exported_name.to_owned()) {
-                            ctx.report_error(
-                                "import/export",
-                                &format!("Multiple exports of name '{exported_name}'"),
-                                Span::new(spec.span.start, spec.span.end),
-                            );
+                            ctx.report(Diagnostic {
+                                rule_name: "import/export".to_owned(),
+                                message: format!("Multiple exports of name '{exported_name}'"),
+                                span: Span::new(spec.span.start, spec.span.end),
+                                severity: Severity::Error,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
 
@@ -59,22 +63,30 @@ impl NativeRule for ExportRule {
                     if let Some(decl) = &export.declaration {
                         for name in collect_declaration_names(decl) {
                             if !seen_names.insert(name.clone()) {
-                                ctx.report_error(
-                                    "import/export",
-                                    &format!("Multiple exports of name '{name}'"),
-                                    Span::new(export.span.start, export.span.end),
-                                );
+                                ctx.report(Diagnostic {
+                                    rule_name: "import/export".to_owned(),
+                                    message: format!("Multiple exports of name '{name}'"),
+                                    span: Span::new(export.span.start, export.span.end),
+                                    severity: Severity::Error,
+                                    help: None,
+                                    fix: None,
+                                    labels: vec![],
+                                });
                             }
                         }
                     }
                 }
                 oxc_ast::ast::Statement::ExportDefaultDeclaration(export) => {
                     if !seen_names.insert("default".to_owned()) {
-                        ctx.report_error(
-                            "import/export",
-                            "Multiple default exports",
-                            Span::new(export.span.start, export.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "import/export".to_owned(),
+                            message: "Multiple default exports".to_owned(),
+                            span: Span::new(export.span.start, export.span.end),
+                            severity: Severity::Error,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
                 _ => {}

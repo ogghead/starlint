@@ -13,7 +13,7 @@ use oxc_ast::ast::VariableDeclarationKind;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::Severity;
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -75,7 +75,7 @@ impl NativeRule for NoInnerDeclarations {
             description: "Disallow variable or function declarations in nested blocks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -123,13 +123,20 @@ impl NativeRule for NoInnerDeclarations {
 
                 if !is_in_valid_position(node_id, semantic) {
                     let name = func.id.as_ref().map_or("anonymous", |id| id.name.as_str());
-                    ctx.report_warning(
-                        "no-inner-declarations",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "no-inner-declarations".to_owned(),
+                        message: format!(
                             "Move function declaration '{name}' to program or function body root"
                         ),
-                        starlint_plugin_sdk::diagnostic::Span::new(func.span.start, func.span.end),
-                    );
+                        span: starlint_plugin_sdk::diagnostic::Span::new(
+                            func.span.start,
+                            func.span.end,
+                        ),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::VariableDeclaration(decl) => {
@@ -143,11 +150,19 @@ impl NativeRule for NoInnerDeclarations {
                 };
 
                 if !is_in_valid_position(node_id, semantic) {
-                    ctx.report_warning(
-                        "no-inner-declarations",
-                        "Move variable declaration to program or function body root",
-                        starlint_plugin_sdk::diagnostic::Span::new(decl.span.start, decl.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-inner-declarations".to_owned(),
+                        message: "Move variable declaration to program or function body root"
+                            .to_owned(),
+                        span: starlint_plugin_sdk::diagnostic::Span::new(
+                            decl.span.start,
+                            decl.span.end,
+                        ),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

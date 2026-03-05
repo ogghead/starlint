@@ -16,7 +16,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::VariableDeclarationKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -87,7 +87,7 @@ impl NativeRule for BlockScopedVar {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -160,11 +160,15 @@ impl NativeRule for BlockScopedVar {
         let in_block = stack.last().is_some_and(|scope| *scope == ScopeKind::Block);
 
         if in_block {
-            ctx.report_warning(
-                "block-scoped-var",
-                "`var` declaration inside a block — consider using `let` or `const` for block scoping",
-                Span::new(decl.span.start, decl.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "block-scoped-var".to_owned(),
+                message: "`var` declaration inside a block — consider using `let` or `const` for block scoping".to_owned(),
+                span: Span::new(decl.span.start, decl.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 

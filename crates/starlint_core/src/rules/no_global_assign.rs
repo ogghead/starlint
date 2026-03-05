@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::AssignmentTarget;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -74,7 +74,7 @@ impl NativeRule for NoGlobalAssign {
             description: "Disallow assignment to native/global objects".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -108,11 +108,15 @@ impl NativeRule for NoGlobalAssign {
             }
         }
 
-        ctx.report_error(
-            "no-global-assign",
-            &format!("Do not assign to the global variable '{name}'"),
-            Span::new(assign.span.start, assign.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "no-global-assign".to_owned(),
+            message: format!("Do not assign to the global variable '{name}'"),
+            span: Span::new(assign.span.start, assign.span.end),
+            severity: Severity::Error,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,7 +32,7 @@ impl NativeRule for NoAwaitExpressionMember {
             description: "Disallow member access on `await` expressions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,11 +50,15 @@ impl NativeRule for NoAwaitExpressionMember {
                     unwrap_parens(&member.object),
                     Expression::AwaitExpression(_)
                 ) {
-                    ctx.report_warning(
-                        "no-await-expression-member",
-                        "Do not access a member directly on an `await` expression — assign to a variable first",
-                        Span::new(member.span.start, member.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-await-expression-member".to_owned(),
+                        message: "Do not access a member directly on an `await` expression — assign to a variable first".to_owned(),
+                        span: Span::new(member.span.start, member.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::ComputedMemberExpression(member) => {
@@ -62,11 +66,15 @@ impl NativeRule for NoAwaitExpressionMember {
                     unwrap_parens(&member.object),
                     Expression::AwaitExpression(_)
                 ) {
-                    ctx.report_warning(
-                        "no-await-expression-member",
-                        "Do not access a member directly on an `await` expression — assign to a variable first",
-                        Span::new(member.span.start, member.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-await-expression-member".to_owned(),
+                        message: "Do not access a member directly on an `await` expression — assign to a variable first".to_owned(),
+                        span: Span::new(member.span.start, member.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

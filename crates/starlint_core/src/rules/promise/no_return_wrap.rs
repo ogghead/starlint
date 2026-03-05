@@ -9,7 +9,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for NoReturnWrap {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -63,13 +63,17 @@ impl NativeRule for NoReturnWrap {
             let body_text = ctx.source_text().get(start..end).unwrap_or_default();
 
             if body_text.contains("Promise.resolve(") || body_text.contains("Promise.reject(") {
-                ctx.report_error(
-                    "promise/no-return-wrap",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "promise/no-return-wrap".to_owned(),
+                    message: format!(
                         "Unnecessary `Promise.resolve`/`Promise.reject` in `.{method}()` — return the value directly"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 return; // Only report once per call
             }
         }

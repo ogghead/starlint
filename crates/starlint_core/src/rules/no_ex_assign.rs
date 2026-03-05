@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{AssignmentTarget, BindingPattern, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoExAssign {
             description: "Disallow reassigning exceptions in catch clauses".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -75,11 +75,15 @@ fn scan_statement_for_assignment(
             if let oxc_ast::ast::Expression::AssignmentExpression(assign) = &expr_stmt.expression {
                 if let AssignmentTarget::AssignmentTargetIdentifier(target_ident) = &assign.left {
                     if target_ident.name.as_str() == name {
-                        ctx.report_error(
-                            "no-ex-assign",
-                            &format!("Do not assign to the exception parameter `{name}`"),
-                            Span::new(assign.span.start, assign.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "no-ex-assign".to_owned(),
+                            message: format!("Do not assign to the exception parameter `{name}`"),
+                            span: Span::new(assign.span.start, assign.span.end),
+                            severity: Severity::Error,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }

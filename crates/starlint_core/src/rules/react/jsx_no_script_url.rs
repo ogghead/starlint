@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeValue, JSXExpression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -31,7 +31,7 @@ impl NativeRule for JsxNoScriptUrl {
             description: "Disallow `javascript:` URLs in JSX attributes".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,11 +61,15 @@ impl NativeRule for JsxNoScriptUrl {
         };
 
         if has_script_url {
-            ctx.report_error(
-                RULE_NAME,
-                "Disallow `javascript:` URLs — they are a security risk",
-                Span::new(attr.span.start, attr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Disallow `javascript:` URLs — they are a security risk".to_owned(),
+                span: Span::new(attr.span.start, attr.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

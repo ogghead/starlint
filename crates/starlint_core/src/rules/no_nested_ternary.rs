@@ -24,7 +24,7 @@ impl NativeRule for NoNestedTernary {
             description: "Disallow nested ternary expressions".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 

@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for BadCharAtComparison {
             description: "Catch `.charAt()` compared to a multi-character string".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,12 +46,17 @@ impl NativeRule for BadCharAtComparison {
             || (is_multi_char_string(&expr.left) && is_char_at_call(&expr.right));
 
         if flagged {
-            ctx.report_warning(
-                "bad-char-at-comparison",
-                "`.charAt()` returns a single character — comparing to a multi-character \
-                 string is always false",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "bad-char-at-comparison".to_owned(),
+                message: "`.charAt()` returns a single character — comparing to a multi-character \
+                 string is always false"
+                    .to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

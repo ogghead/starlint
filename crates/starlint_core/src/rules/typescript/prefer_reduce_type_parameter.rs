@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for PreferReduceTypeParameter {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -56,11 +56,15 @@ impl NativeRule for PreferReduceTypeParameter {
             .any(|arg| matches!(arg, Argument::TSAsExpression(_)));
 
         if has_as_assertion {
-            ctx.report_warning(
-                "typescript/prefer-reduce-type-parameter",
-                "Use a generic type parameter on `.reduce<T>()` instead of asserting the initial value with `as`",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/prefer-reduce-type-parameter".to_owned(),
+                message: "Use a generic type parameter on `.reduce<T>()` instead of asserting the initial value with `as`".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

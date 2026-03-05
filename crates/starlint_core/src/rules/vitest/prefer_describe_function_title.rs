@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for PreferDescribeFunctionTitle {
             description: "Enforce meaningful `describe` block titles".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,11 +59,15 @@ impl NativeRule for PreferDescribeFunctionTitle {
         // Flag empty string titles.
         if let Argument::StringLiteral(lit) = first_arg {
             if lit.value.as_str().trim().is_empty() {
-                ctx.report_warning(
-                    RULE_NAME,
-                    "`describe` block should have a meaningful title — use the function name or feature being tested",
-                    Span::new(call.span.start, call.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "`describe` block should have a meaningful title — use the function name or feature being tested".to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
 
@@ -75,11 +79,15 @@ impl NativeRule for PreferDescribeFunctionTitle {
                     .iter()
                     .all(|q| q.value.raw.as_str().trim().is_empty());
                 if is_empty {
-                    ctx.report_warning(
-                        RULE_NAME,
-                        "`describe` block should have a meaningful title — use the function name or feature being tested",
-                        Span::new(call.span.start, call.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "`describe` block should have a meaningful title — use the function name or feature being tested".to_owned(),
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

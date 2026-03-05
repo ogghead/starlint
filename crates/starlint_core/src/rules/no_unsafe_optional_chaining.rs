@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NoUnsafeOptionalChaining {
                     .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,11 +44,15 @@ impl NativeRule for NoUnsafeOptionalChaining {
             // `new foo?.bar()` — undefined is not a constructor
             AstKind::NewExpression(new_expr) => {
                 if contains_optional_chain(&new_expr.callee) {
-                    ctx.report_error(
-                        "no-unsafe-optional-chaining",
-                        "Unsafe use of optional chaining in `new` expression",
-                        Span::new(new_expr.span.start, new_expr.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-unsafe-optional-chaining".to_owned(),
+                        message: "Unsafe use of optional chaining in `new` expression".to_owned(),
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             // Arithmetic operations on optional chain: `foo?.bar + 1`
@@ -65,11 +69,15 @@ impl NativeRule for NoUnsafeOptionalChaining {
             // Spread: `[...foo?.bar]` — undefined is not iterable
             AstKind::SpreadElement(spread) => {
                 if contains_optional_chain(&spread.argument) {
-                    ctx.report_error(
-                        "no-unsafe-optional-chaining",
-                        "Unsafe use of optional chaining in spread element",
-                        Span::new(spread.span.start, spread.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-unsafe-optional-chaining".to_owned(),
+                        message: "Unsafe use of optional chaining in spread element".to_owned(),
+                        span: Span::new(spread.span.start, spread.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}
@@ -88,11 +96,15 @@ fn contains_optional_chain(expr: &Expression<'_>) -> bool {
 
 /// Report unsafe optional chaining in arithmetic context.
 fn report_arithmetic(span: oxc_span::Span, ctx: &mut NativeLintContext<'_>) {
-    ctx.report_error(
-        "no-unsafe-optional-chaining",
-        "Unsafe use of optional chaining in arithmetic operation",
-        Span::new(span.start, span.end),
-    );
+    ctx.report(Diagnostic {
+        rule_name: "no-unsafe-optional-chaining".to_owned(),
+        message: "Unsafe use of optional chaining in arithmetic operation".to_owned(),
+        span: Span::new(span.start, span.end),
+        severity: Severity::Error,
+        help: None,
+        fix: None,
+        labels: vec![],
+    });
 }
 
 #[cfg(test)]

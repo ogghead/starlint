@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoUnassignedImport {
             description: "Forbid unassigned (side-effect) imports".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,11 +44,15 @@ impl NativeRule for NoUnassignedImport {
             .is_none_or(|specs| specs.is_empty());
 
         if is_unassigned {
-            ctx.report_warning(
-                "import/no-unassigned-import",
-                "Unexpected side-effect import with no bindings",
-                Span::new(import.span.start, import.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/no-unassigned-import".to_owned(),
+                message: "Unexpected side-effect import with no bindings".to_owned(),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

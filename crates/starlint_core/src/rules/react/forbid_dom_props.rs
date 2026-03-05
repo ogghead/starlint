@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::JSXAttributeName;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for ForbidDomProps {
             description: "Warn when certain DOM props are used".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -74,11 +74,15 @@ impl NativeRule for ForbidDomProps {
                     .first()
                     .is_some_and(|&b| b.is_ascii_lowercase())
             {
-                ctx.report_warning(
-                    "react/forbid-dom-props",
-                    &format!("Prop `{attr_name}` is forbidden on DOM elements"),
-                    Span::new(attr.span.start, attr.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "react/forbid-dom-props".to_owned(),
+                    message: format!("Prop `{attr_name}` is forbidden on DOM elements"),
+                    span: Span::new(attr.span.start, attr.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

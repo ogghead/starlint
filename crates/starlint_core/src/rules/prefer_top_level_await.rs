@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,7 +45,7 @@ impl NativeRule for PreferTopLevelAwait {
             description: "Prefer top-level `await` over async IIFEs".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -64,11 +64,16 @@ impl NativeRule for PreferTopLevelAwait {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-top-level-await",
-            "Prefer top-level `await` over an immediately-invoked async function",
-            Span::new(call.span.start, call.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "prefer-top-level-await".to_owned(),
+            message: "Prefer top-level `await` over an immediately-invoked async function"
+                .to_owned(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

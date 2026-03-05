@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for PreferClasslistToggle {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,11 +61,15 @@ impl NativeRule for PreferClasslistToggle {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-classlist-toggle",
-            &format!("Prefer `classList.toggle()` over `classList.{method_name}()`"),
-            Span::new(call.span.start, call.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "prefer-classlist-toggle".to_owned(),
+            message: format!("Prefer `classList.toggle()` over `classList.{method_name}()`"),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

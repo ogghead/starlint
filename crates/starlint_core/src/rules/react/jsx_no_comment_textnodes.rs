@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for JsxNoCommentTextnodes {
             description: "Disallow comments from being inserted as text nodes".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -51,11 +51,15 @@ impl NativeRule for JsxNoCommentTextnodes {
         let has_block_comment = value.contains("/*") && value.contains("*/");
 
         if has_line_comment || has_block_comment {
-            ctx.report_warning(
-                RULE_NAME,
-                "Comments inside JSX children will be rendered as text. Use JSX expression containers `{/* comment */}` instead",
-                Span::new(text.span.start, text.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Comments inside JSX children will be rendered as text. Use JSX expression containers `{/* comment */}` instead".to_owned(),
+                span: Span::new(text.span.start, text.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

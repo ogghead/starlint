@@ -9,7 +9,7 @@
 //! This text-based heuristic scans for function parameter type annotations
 //! containing `[]` that are not preceded by the `readonly` keyword.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for PreferReadonlyParameterTypes {
             description: "Prefer readonly parameter types for array parameters".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,11 +42,15 @@ impl NativeRule for PreferReadonlyParameterTypes {
         let violations = find_mutable_array_params(source);
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "Array parameter should use `readonly` type annotation (e.g. `readonly string[]`)",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Array parameter should use `readonly` type annotation (e.g. `readonly string[]`)".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for PreferLiteralEnumMember {
             description: "Prefer literal values in enum members".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,11 +48,15 @@ impl NativeRule for PreferLiteralEnumMember {
             return;
         }
 
-        ctx.report_warning(
-            "typescript/prefer-literal-enum-member",
-            "Enum member should be initialized with a literal value",
-            Span::new(member.span.start, member.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "typescript/prefer-literal-enum-member".to_owned(),
+            message: "Enum member should be initialized with a literal value".to_owned(),
+            span: Span::new(member.span.start, member.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

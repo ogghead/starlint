@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -62,7 +62,7 @@ impl NativeRule for NoAriaHiddenOnFocusable {
             description: "Forbid `aria-hidden=\"true\"` on focusable elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -96,11 +96,15 @@ impl NativeRule for NoAriaHiddenOnFocusable {
         let has_tabindex = has_attribute(opening, "tabIndex");
 
         if is_interactive || is_anchor_with_href || has_tabindex {
-            ctx.report_warning(
-                RULE_NAME,
-                "`aria-hidden=\"true\"` must not be set on focusable elements",
-                Span::new(opening.span.start, opening.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "`aria-hidden=\"true\"` must not be set on focusable elements".to_owned(),
+                span: Span::new(opening.span.start, opening.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

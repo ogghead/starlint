@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for RequirePostMessageTargetOrigin {
             description: "Require `targetOrigin` argument in `postMessage()` calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,11 +50,15 @@ impl NativeRule for RequirePostMessageTargetOrigin {
         // The Web API signature is `postMessage(message, targetOrigin, [transfer])`.
         // If fewer than 2 arguments are provided, `targetOrigin` is missing.
         if call.arguments.len() < 2 {
-            ctx.report_warning(
-                "require-post-message-target-origin",
-                "`postMessage()` is missing the `targetOrigin` argument — this is a security risk",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "require-post-message-target-origin".to_owned(),
+                message: "`postMessage()` is missing the `targetOrigin` argument — this is a security risk".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

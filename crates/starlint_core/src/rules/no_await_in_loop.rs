@@ -10,7 +10,7 @@ use std::sync::RwLock;
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -78,7 +78,7 @@ impl NativeRule for NoAwaitInLoop {
             description: "Disallow `await` inside loops — use `Promise.all()` instead".to_owned(),
             category: Category::Performance,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -138,11 +138,15 @@ impl NativeRule for NoAwaitInLoop {
         let in_loop = stack.last().is_some_and(|scope| *scope == ScopeKind::Loop);
 
         if in_loop {
-            ctx.report_warning(
-                "no-await-in-loop",
-                "Unexpected `await` inside a loop — iterations run sequentially, consider `Promise.all()`",
-                Span::new(await_expr.span.start, await_expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-await-in-loop".to_owned(),
+                message: "Unexpected `await` inside a loop — iterations run sequentially, consider `Promise.all()`".to_owned(),
+                span: Span::new(await_expr.span.start, await_expr.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 

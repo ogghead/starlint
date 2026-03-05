@@ -16,7 +16,7 @@
 //! Allowed patterns:
 //! - `methodName(): this { ... return this; }`
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -36,7 +36,7 @@ impl NativeRule for PreferReturnThisType {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -49,11 +49,17 @@ impl NativeRule for PreferReturnThisType {
         let findings = find_class_name_return_types(source);
 
         for (start, end) in findings {
-            ctx.report_warning(
-                RULE_NAME,
-                "Use `this` as the return type instead of the class name for chainable methods",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message:
+                    "Use `this` as the return type instead of the class name for chainable methods"
+                        .to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

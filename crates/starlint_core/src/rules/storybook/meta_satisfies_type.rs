@@ -3,7 +3,7 @@
 //! Meta should use `satisfies Meta` for type safety.
 //! Checks for `export default { ... } satisfies Meta` vs `export default { ... }` without `satisfies`.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for MetaSatisfiesType {
             description: "Meta should use `satisfies Meta` for type safety".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -58,11 +58,15 @@ impl NativeRule for MetaSatisfiesType {
         if !after_default.contains("satisfies") {
             let start = u32::try_from(default_pos).unwrap_or(0);
             let end = start.saturating_add(u32::try_from("export default".len()).unwrap_or(0));
-            ctx.report_warning(
-                RULE_NAME,
-                "Meta should use `satisfies Meta` for type safety",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Meta should use `satisfies Meta` for type safety".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

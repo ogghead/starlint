@@ -23,7 +23,7 @@ impl NativeRule for NoNamedAsDefaultMember {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 

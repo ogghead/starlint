@@ -3,7 +3,7 @@
 //! Identifies storybook addons that aren't installed.
 //! Text-based stub: checks for `addons:` array referencing common addon packages.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoUninstalledAddons {
             description: "Identifies storybook addons that are not installed".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -64,11 +64,16 @@ impl NativeRule for NoUninstalledAddons {
                 let addon_name = remaining.get(..addon_end).unwrap_or_default();
                 let end_full = start.saturating_add(u32::try_from(addon_name.len()).unwrap_or(0));
 
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Verify that this storybook addon is installed in your dependencies",
-                    Span::new(start, end_full),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "Verify that this storybook addon is installed in your dependencies"
+                        .to_owned(),
+                    span: Span::new(start, end_full),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
 
                 let _ = end;
                 search_pos = abs_pos.saturating_add(1);

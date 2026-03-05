@@ -24,7 +24,7 @@ impl NativeRule for NoUnsafeNegation {
             description: "Disallow negating the left operand of relational operators".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 

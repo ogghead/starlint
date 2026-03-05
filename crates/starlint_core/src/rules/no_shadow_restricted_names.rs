@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoShadowRestrictedNames {
             description: "Disallow identifiers from shadowing restricted names".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,11 +41,15 @@ impl NativeRule for NoShadowRestrictedNames {
 
         let name = ident.name.as_str();
         if RESTRICTED_NAMES.contains(&name) {
-            ctx.report_error(
-                "no-shadow-restricted-names",
-                &format!("Shadowing of global property `{name}`"),
-                Span::new(ident.span.start, ident.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-shadow-restricted-names".to_owned(),
+                message: format!("Shadowing of global property `{name}`"),
+                span: Span::new(ident.span.start, ident.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

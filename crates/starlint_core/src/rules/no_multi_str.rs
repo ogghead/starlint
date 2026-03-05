@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoMultiStr {
             description: "Disallow multiline strings".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,11 +47,15 @@ impl NativeRule for NoMultiStr {
         let span_end = lit.span.end;
 
         if has_continuation {
-            ctx.report_warning(
-                "no-multi-str",
-                "Multiline strings using `\\` are not recommended",
-                Span::new(span_start, span_end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-multi-str".to_owned(),
+                message: "Multiline strings using `\\` are not recommended".to_owned(),
+                span: Span::new(span_start, span_end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

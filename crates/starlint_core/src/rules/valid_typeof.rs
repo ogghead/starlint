@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,7 +37,7 @@ impl NativeRule for ValidTypeof {
             description: "Enforce comparing `typeof` expressions against valid strings".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -81,11 +81,15 @@ fn check_typeof_value(
 
     let value = lit.value.as_str();
     if !VALID_TYPEOF_VALUES.contains(&value) {
-        ctx.report_error(
-            "valid-typeof",
-            &format!("Invalid typeof comparison value `\"{value}\"`"),
-            Span::new(full_span.start, full_span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "valid-typeof".to_owned(),
+            message: format!("Invalid typeof comparison value `\"{value}\"`"),
+            span: Span::new(full_span.start, full_span.end),
+            severity: Severity::Error,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

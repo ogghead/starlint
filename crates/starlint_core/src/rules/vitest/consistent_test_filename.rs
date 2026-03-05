@@ -4,7 +4,7 @@
 //! Test files should include `.test.` or `.spec.` in their filename.
 //! This rule runs once per file and inspects the file path.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for ConsistentTestFilename {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -74,11 +74,15 @@ impl NativeRule for ConsistentTestFilename {
         let matches_convention = TEST_PATTERNS.iter().any(|p| file_name.contains(p));
 
         if !matches_convention {
-            ctx.report_warning(
-                RULE_NAME,
-                "Test file should include `.test.` or `.spec.` in its filename",
-                Span::new(0, 0),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Test file should include `.test.` or `.spec.` in its filename".to_owned(),
+                span: Span::new(0, 0),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

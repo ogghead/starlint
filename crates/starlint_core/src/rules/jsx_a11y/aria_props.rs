@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -76,7 +76,7 @@ impl NativeRule for AriaProps {
             description: "Enforce valid `aria-*` attribute names".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -97,11 +97,15 @@ impl NativeRule for AriaProps {
                 };
 
                 if name_str.starts_with("aria-") && !VALID_ARIA_PROPS.contains(&name_str) {
-                    ctx.report_warning(
-                        RULE_NAME,
-                        &format!("`{name_str}` is not a valid WAI-ARIA attribute"),
-                        Span::new(opening.span.start, opening.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!("`{name_str}` is not a valid WAI-ARIA attribute"),
+                        span: Span::new(opening.span.start, opening.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

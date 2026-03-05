@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::BindingPattern;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for PreferAwaitToCallbacks {
             description: "Prefer `async`/`await` over callbacks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,13 +62,17 @@ impl NativeRule for PreferAwaitToCallbacks {
                         }
                         _ => return,
                     };
-                    ctx.report_warning(
-                        "promise/prefer-await-to-callbacks",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "promise/prefer-await-to-callbacks".to_owned(),
+                        message: format!(
                             "Function has callback parameter `{name}` — prefer `async`/`await`"
                         ),
                         span,
-                    );
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                     return; // Only report once per function
                 }
             }

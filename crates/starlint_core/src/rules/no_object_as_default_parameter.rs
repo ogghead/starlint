@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoObjectAsDefaultParameter {
             description: "Disallow object literals as default parameter values".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,11 +55,15 @@ impl NativeRule for NoObjectAsDefaultParameter {
                 continue;
             }
 
-            ctx.report_warning(
-                "no-object-as-default-parameter",
-                "Do not use an object literal as a default parameter — prefer destructuring defaults",
-                Span::new(param.span.start, param.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-object-as-default-parameter".to_owned(),
+                message: "Do not use an object literal as a default parameter — prefer destructuring defaults".to_owned(),
+                span: Span::new(param.span.start, param.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

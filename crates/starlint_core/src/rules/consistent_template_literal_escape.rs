@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,6 +37,43 @@ fn has_unnecessary_escape(raw: &str) -> bool {
     false
 }
 
+/// Remove unnecessary `\'` and `\"` escape sequences from raw template text.
+fn remove_unnecessary_escapes(raw: &str) -> String {
+    let mut result = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '\\' && matches!(chars.peek(), Some('\'' | '"')) {
+            // Skip the backslash, the quote will be added by the next iteration
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+/// Find the span of the raw content within a template quasi element.
+#[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
+fn find_quasi_raw_span(quasi: &oxc_ast::ast::TemplateElement<'_>, source: &str) -> Option<Span> {
+    let start = quasi.span.start as usize;
+    let end = quasi.span.end as usize;
+    let slice = source.get(start..end)?;
+
+    let content_start = if slice.starts_with('`') || slice.starts_with('}') {
+        start.saturating_add(1)
+    } else {
+        start
+    };
+    let content_end = if slice.ends_with('`') {
+        end.saturating_sub(1)
+    } else if slice.ends_with("${") {
+        end.saturating_sub(2)
+    } else {
+        end
+    };
+
+    Some(Span::new(content_start as u32, content_end as u32))
+}
+
 impl NativeRule for ConsistentTemplateLiteralEscape {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
@@ -46,7 +83,7 @@ impl NativeRule for ConsistentTemplateLiteralEscape {
                     .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -59,18 +96,47 @@ impl NativeRule for ConsistentTemplateLiteralEscape {
             return;
         };
 
+        let mut edits = Vec::new();
+        let mut found = false;
         for quasi in &template.quasis {
             let raw = quasi.value.raw.as_str();
             if has_unnecessary_escape(raw) {
-                ctx.report_warning(
-                    "consistent-template-literal-escape",
-                    "Unnecessary escape sequence in template literal — `\\'` and `\\\"` do not \
-                     need escaping in template literals",
-                    Span::new(template.span.start, template.span.end),
-                );
-                // Report once per template literal, not per quasi
-                return;
+                found = true;
+                let cleaned = remove_unnecessary_escapes(raw);
+                #[allow(clippy::as_conversions)]
+                if let Some(raw_edit) =
+                    find_quasi_raw_span(quasi, ctx.source_text()).map(|span| Edit {
+                        span,
+                        replacement: cleaned,
+                    })
+                {
+                    edits.push(raw_edit);
+                }
             }
+        }
+
+        if found {
+            let fix = (!edits.is_empty()).then(|| Fix {
+                message: "Remove unnecessary escape sequences".to_owned(),
+                edits,
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "consistent-template-literal-escape".to_owned(),
+                message:
+                    "Unnecessary escape sequence in template literal — `\\'` and `\\\"` do not \
+                     need escaping in template literals"
+                        .to_owned(),
+                span: Span::new(template.span.start, template.span.end),
+                severity: Severity::Warning,
+                help: Some(
+                    "Remove the backslash — single and double quotes don't need escaping in \
+                     template literals"
+                        .to_owned(),
+                ),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

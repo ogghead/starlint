@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -68,7 +68,7 @@ impl NativeRule for NoNodejsModules {
             description: "Forbid Node.js built-in modules".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -92,11 +92,15 @@ impl NativeRule for NoNodejsModules {
         });
 
         if NODE_BUILTINS.contains(&base_module) {
-            ctx.report_warning(
-                "import/no-nodejs-modules",
-                &format!("Do not import Node.js built-in module `{source_value}`"),
-                Span::new(import.span.start, import.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/no-nodejs-modules".to_owned(),
+                message: format!("Do not import Node.js built-in module `{source_value}`"),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

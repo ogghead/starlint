@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoReturnAssign {
             description: "Disallow assignment operators in `return` statements".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,11 +41,15 @@ impl NativeRule for NoReturnAssign {
         };
 
         if contains_assignment(arg) {
-            ctx.report_error(
-                "no-return-assign",
-                "Assignment in return statement — use a separate statement or `===` for comparison",
-                Span::new(ret.span.start, ret.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-return-assign".to_owned(),
+                message: "Assignment in return statement — use a separate statement or `===` for comparison".to_owned(),
+                span: Span::new(ret.span.start, ret.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

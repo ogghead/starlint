@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for IframeMissingSandbox {
             description: "Require sandbox attribute on iframe elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,11 +57,16 @@ impl NativeRule for IframeMissingSandbox {
         });
 
         if !has_sandbox {
-            ctx.report_warning(
-                "react/iframe-missing-sandbox",
-                "`<iframe>` elements should have a `sandbox` attribute for security",
-                Span::new(opening.span.start, opening.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/iframe-missing-sandbox".to_owned(),
+                message: "`<iframe>` elements should have a `sandbox` attribute for security"
+                    .to_owned(),
+                span: Span::new(opening.span.start, opening.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -38,7 +38,7 @@ impl NativeRule for ClickEventsHaveKeyEvents {
             description: "Enforce `onClick` is accompanied by a keyboard event handler".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,11 +60,15 @@ impl NativeRule for ClickEventsHaveKeyEvents {
             || has_attribute(opening, "onKeyPress");
 
         if !has_key_event {
-            ctx.report_warning(
-                RULE_NAME,
-                "Elements with `onClick` must have a keyboard event handler (`onKeyDown`, `onKeyUp`, or `onKeyPress`)",
-                Span::new(opening.span.start, opening.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Elements with `onClick` must have a keyboard event handler (`onKeyDown`, `onKeyUp`, or `onKeyPress`)".to_owned(),
+                span: Span::new(opening.span.start, opening.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

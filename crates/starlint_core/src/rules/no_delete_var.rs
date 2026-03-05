@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoDeleteVar {
             description: "Disallow deleting variables".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,11 +44,15 @@ impl NativeRule for NoDeleteVar {
         // Only flag when the operand is a plain identifier (i.e. a variable).
         // `delete obj.prop` is fine — that's the intended usage.
         if matches!(&expr.argument, Expression::Identifier(_)) {
-            ctx.report_error(
-                "no-delete-var",
-                "Variables should not be deleted",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-delete-var".to_owned(),
+                message: "Variables should not be deleted".to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

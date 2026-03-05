@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NewCap {
             description: "Require constructor names to begin with a capital letter".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -58,13 +58,17 @@ impl NativeRule for NewCap {
         };
 
         if ch.is_lowercase() {
-            ctx.report_warning(
-                "new-cap",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "new-cap".to_owned(),
+                message: format!(
                     "A constructor name `{callee_name}` should start with an uppercase letter"
                 ),
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+                span: Span::new(new_expr.span.start, new_expr.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

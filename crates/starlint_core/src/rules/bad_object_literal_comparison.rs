@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for BadObjectLiteralComparison {
             description: "Catch `x === {}` or `x === []` (always false)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,14 +50,18 @@ impl NativeRule for BadObjectLiteralComparison {
             } else {
                 literal_kind_name(&expr.right)
             };
-            ctx.report_warning(
-                "bad-object-literal-comparison",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "bad-object-literal-comparison".to_owned(),
+                message: format!(
                     "Comparison against {kind_name} literal is always false — \
                      object/array literals create new references"
                 ),
-                Span::new(expr.span.start, expr.span.end),
-            );
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +25,7 @@ impl NativeRule for PreferPromiseRejectErrors {
             description: "Require using Error objects as Promise rejection reasons".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,11 +62,36 @@ impl NativeRule for PreferPromiseRejectErrors {
             );
 
             if is_literal_rejection {
-                ctx.report_warning(
-                    "prefer-promise-reject-errors",
-                    "Expected the Promise rejection reason to be an Error",
-                    Span::new(call.span.start, call.span.end),
-                );
+                #[allow(clippy::as_conversions)]
+                let fix = {
+                    let arg_span = first_arg.span();
+                    let source = ctx.source_text();
+                    source
+                        .get(arg_span.start as usize..arg_span.end as usize)
+                        .map(|arg_text| {
+                            let replacement = format!("new Error({arg_text})");
+                            Fix {
+                                message: format!("Replace with `{replacement}`"),
+                                edits: vec![Edit {
+                                    span: Span::new(arg_span.start, arg_span.end),
+                                    replacement,
+                                }],
+                            }
+                        })
+                };
+
+                ctx.report(Diagnostic {
+                    rule_name: "prefer-promise-reject-errors".to_owned(),
+                    message: "Expected the Promise rejection reason to be an Error".to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some(
+                        "Wrap the rejection reason in `new Error(...)` for better stack traces"
+                            .to_owned(),
+                    ),
+                    fix,
+                    labels: vec![],
+                });
             }
         }
     }

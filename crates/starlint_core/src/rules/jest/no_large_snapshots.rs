@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoLargeSnapshots {
             description: "Disallow large inline snapshots".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -73,13 +73,17 @@ impl NativeRule for NoLargeSnapshots {
         };
 
         if line_count > MAX_LINES {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "Inline snapshot is too large ({line_count} lines, max {MAX_LINES}) — use an external snapshot file instead"
                 ),
-                Span::new(call.span.start, call.span.end),
-            );
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

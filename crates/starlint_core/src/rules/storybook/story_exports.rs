@@ -3,7 +3,7 @@
 //! A story file must contain at least one story export.
 //! Checks for named exports in `.stories.` files.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for StoryExports {
             description: "A story file must contain at least one story export".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -49,11 +49,15 @@ impl NativeRule for StoryExports {
         let has_reexport = source.contains("export {");
 
         if !has_named_export && !has_reexport {
-            ctx.report_warning(
-                RULE_NAME,
-                "Story files must contain at least one named story export",
-                Span::new(0, 0),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Story files must contain at least one named story export".to_owned(),
+                span: Span::new(0, 0),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

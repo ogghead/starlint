@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoUnreachable {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -64,7 +64,15 @@ impl NativeRule for NoUnreachable {
                     continue;
                 }
                 let span = statement_span(stmt);
-                ctx.report_error("no-unreachable", "Unreachable code", span);
+                ctx.report(Diagnostic {
+                    rule_name: "no-unreachable".to_owned(),
+                    message: "Unreachable code".to_owned(),
+                    span,
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 // Only report the first unreachable statement per block
                 break;
             }

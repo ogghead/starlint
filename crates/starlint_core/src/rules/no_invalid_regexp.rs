@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoInvalidRegexp {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -72,11 +72,15 @@ impl NativeRule for NoInvalidRegexp {
 
         // Validate the regex pattern
         if let Some(error) = validate_regex_pattern(pattern, flags) {
-            ctx.report_error(
-                "no-invalid-regexp",
-                &format!("Invalid regular expression: {error}"),
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-invalid-regexp".to_owned(),
+                message: format!("Invalid regular expression: {error}"),
+                span: Span::new(new_expr.span.start, new_expr.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

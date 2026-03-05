@@ -32,7 +32,7 @@ impl NativeRule for PreferModernDomApis {
             description: "Prefer modern DOM APIs over legacy mutation methods".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 

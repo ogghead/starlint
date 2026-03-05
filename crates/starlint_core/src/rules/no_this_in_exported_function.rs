@@ -3,7 +3,7 @@
 //! Flag `this` usage in exported functions (not class methods). Exported
 //! functions shouldn't rely on `this` binding — it's fragile and error-prone.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -167,7 +167,7 @@ impl NativeRule for NoThisInExportedFunction {
             description: "Disallow `this` in exported functions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -179,11 +179,15 @@ impl NativeRule for NoThisInExportedFunction {
         let flagged_spans = find_exported_functions_with_this(ctx.source_text());
 
         for span in flagged_spans {
-            ctx.report_warning(
-                "no-this-in-exported-function",
-                "Exported functions should not use `this`",
+            ctx.report(Diagnostic {
+                rule_name: "no-this-in-exported-function".to_owned(),
+                message: "Exported functions should not use `this`".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

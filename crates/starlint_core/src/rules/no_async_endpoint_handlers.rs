@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -36,7 +36,7 @@ impl NativeRule for NoAsyncEndpointHandlers {
             description: "Disallow async functions as Express route handlers".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,13 +62,17 @@ impl NativeRule for NoAsyncEndpointHandlers {
         // Check if any argument is an async function
         for arg in &call.arguments {
             if is_async_function_arg(arg) {
-                ctx.report_error(
-                    "no-async-endpoint-handlers",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "no-async-endpoint-handlers".to_owned(),
+                    message: format!(
                         "Unexpected async function passed to `.{method_name}()` handler — Express does not catch promise rejections"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 return;
             }
         }

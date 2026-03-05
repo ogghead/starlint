@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for CatchOrReturn {
             description: "Require `.catch()` or return for promises".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,11 +55,15 @@ impl NativeRule for CatchOrReturn {
 
         // If the outermost call is .then(), flag it
         if method == "then" {
-            ctx.report_error(
-                "promise/catch-or-return",
-                "Promise chain must end with `.catch()` or be returned",
-                Span::new(stmt.span.start, stmt.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "promise/catch-or-return".to_owned(),
+                message: "Promise chain must end with `.catch()` or be returned".to_owned(),
+                span: Span::new(stmt.span.start, stmt.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

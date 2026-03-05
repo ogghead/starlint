@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{PropertyKey, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for RequireRenderReturn {
             description: "Require a return statement in `render()`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,11 +57,15 @@ impl NativeRule for RequireRenderReturn {
             .any(|stmt| matches!(stmt, Statement::ReturnStatement(_)));
 
         if !has_return {
-            ctx.report_error(
-                "react/require-render-return",
-                "`render()` method must contain a return statement",
-                Span::new(method.span.start, method.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/require-render-return".to_owned(),
+                message: "`render()` method must contain a return statement".to_owned(),
+                span: Span::new(method.span.start, method.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

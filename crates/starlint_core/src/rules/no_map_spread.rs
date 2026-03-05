@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, ObjectPropertyKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoMapSpread {
             description: "Disallow spreading a Map in an object literal".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,11 +50,15 @@ impl NativeRule for NoMapSpread {
 
             if let Expression::Identifier(id) = &new_expr.callee {
                 if id.name.as_str() == "Map" {
-                    ctx.report_error(
-                        "no-map-spread",
-                        "Spreading a Map into an object literal produces an empty object — Map entries are not object properties",
-                        Span::new(spread.span.start, spread.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-map-spread".to_owned(),
+                        message: "Spreading a Map into an object literal produces an empty object — Map entries are not object properties".to_owned(),
+                        span: Span::new(spread.span.start, spread.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

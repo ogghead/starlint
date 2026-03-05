@@ -28,7 +28,7 @@ impl NativeRule for NoPrototypeBuiltins {
             description: "Disallow calling Object.prototype methods directly on objects".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 

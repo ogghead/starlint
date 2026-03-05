@@ -8,7 +8,7 @@
 //! This text-based heuristic scans for functions with `: void` return type
 //! annotations and flags `return <expr>;` statements within them.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for StrictVoidReturn {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,11 +42,16 @@ impl NativeRule for StrictVoidReturn {
         let violations = find_void_return_violations(source);
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "Do not return a value from a function typed as returning `void`",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Do not return a value from a function typed as returning `void`"
+                    .to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

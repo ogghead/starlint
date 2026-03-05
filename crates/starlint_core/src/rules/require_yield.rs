@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for RequireYield {
             description: "Require generator functions to contain yield".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -53,11 +53,15 @@ impl NativeRule for RequireYield {
                 .id
                 .as_ref()
                 .map_or("(anonymous)", |id| id.name.as_str());
-            ctx.report_error(
-                "require-yield",
-                &format!("Generator function '{name}' requires a yield expression"),
-                Span::new(func.span.start, func.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "require-yield".to_owned(),
+                message: format!("Generator function '{name}' requires a yield expression"),
+                span: Span::new(func.span.start, func.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

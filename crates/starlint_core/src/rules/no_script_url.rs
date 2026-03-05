@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoScriptUrl {
             description: "Disallow `javascript:` URLs".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,15 @@ impl NativeRule for NoScriptUrl {
         };
 
         if lit.value.to_lowercase().starts_with("javascript:") {
-            ctx.report_error(
-                "no-script-url",
-                "Script URL is a form of `eval()` and is a security risk",
-                Span::new(lit.span.start, lit.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-script-url".to_owned(),
+                message: "Script URL is a form of `eval()` and is a security risk".to_owned(),
+                span: Span::new(lit.span.start, lit.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

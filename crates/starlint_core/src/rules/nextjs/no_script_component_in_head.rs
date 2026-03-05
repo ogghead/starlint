@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXChild, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -36,7 +36,7 @@ impl NativeRule for NoScriptComponentInHead {
             description: "Forbid `<Script>` inside `<Head>`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -58,14 +58,18 @@ impl NativeRule for NoScriptComponentInHead {
         for child in &element.children {
             if let JSXChild::Element(child_element) = child {
                 if is_element_name(&child_element.opening_element.name, "Script") {
-                    ctx.report_error(
-                        RULE_NAME,
-                        "Do not use `<Script>` inside `<Head>` -- move `<Script>` outside of `<Head>`",
-                        Span::new(
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Do not use `<Script>` inside `<Head>` -- move `<Script>` outside of `<Head>`".to_owned(),
+                        span: Span::new(
                             child_element.opening_element.span.start,
                             child_element.opening_element.span.end,
                         ),
-                    );
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

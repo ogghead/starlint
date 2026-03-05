@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Declaration, ExportDefaultDeclarationKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +30,7 @@ impl NativeRule for ExplicitModuleBoundaryTypes {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -65,21 +65,30 @@ fn check_declaration(decl: &Declaration<'_>, ctx: &mut NativeLintContext<'_>) {
         }
 
         if func.return_type.is_none() {
-            ctx.report_warning(
-                RULE_NAME,
-                "Exported function missing explicit return type",
-                Span::new(func.span.start, func.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Exported function missing explicit return type".to_owned(),
+                span: Span::new(func.span.start, func.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
 
         // Check each parameter for a type annotation
         for param in &func.params.items {
             if param.type_annotation.is_none() {
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Exported function parameter missing explicit type annotation",
-                    Span::new(param.span.start, param.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "Exported function parameter missing explicit type annotation"
+                        .to_owned(),
+                    span: Span::new(param.span.start, param.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }
@@ -100,39 +109,57 @@ fn check_default_declaration(
             }
 
             if func.return_type.is_none() {
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Exported function missing explicit return type",
-                    Span::new(func.span.start, func.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "Exported function missing explicit return type".to_owned(),
+                    span: Span::new(func.span.start, func.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
 
             for param in &func.params.items {
                 if param.type_annotation.is_none() {
-                    ctx.report_warning(
-                        RULE_NAME,
-                        "Exported function parameter missing explicit type annotation",
-                        Span::new(param.span.start, param.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Exported function parameter missing explicit type annotation"
+                            .to_owned(),
+                        span: Span::new(param.span.start, param.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }
         ExportDefaultDeclarationKind::ArrowFunctionExpression(arrow) => {
             if arrow.return_type.is_none() {
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Exported arrow function missing explicit return type",
-                    Span::new(span_start, span_end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "Exported arrow function missing explicit return type".to_owned(),
+                    span: Span::new(span_start, span_end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
 
             for param in &arrow.params.items {
                 if param.type_annotation.is_none() {
-                    ctx.report_warning(
-                        RULE_NAME,
-                        "Exported function parameter missing explicit type annotation",
-                        Span::new(param.span.start, param.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Exported function parameter missing explicit type annotation"
+                            .to_owned(),
+                        span: Span::new(param.span.start, param.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

@@ -3,7 +3,7 @@
 //! Forbid duplicate `<Head>` components from `next/head` in a single file.
 //! Multiple `<Head>` components can cause unexpected behavior.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoDuplicateHead {
             description: "Forbid duplicate `<Head>` components".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -51,11 +51,15 @@ impl NativeRule for NoDuplicateHead {
             for pos in positions.into_iter().skip(1) {
                 let start = u32::try_from(pos).unwrap_or(0);
                 let end = u32::try_from(pos.saturating_add(5)).unwrap_or(0);
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Duplicate `<Head>` component found -- only one `<Head>` should be used per page",
-                    Span::new(start, end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "Duplicate `<Head>` component found -- only one `<Head>` should be used per page".to_owned(),
+                    span: Span::new(start, end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

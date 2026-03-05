@@ -7,7 +7,7 @@
 //! `expect`. This is because concurrent tests run in parallel and the global
 //! `expect` cannot track snapshots correctly across concurrent executions.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -35,7 +35,7 @@ impl NativeRule for RequireLocalTestContextForConcurrentSnapshots {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,13 +47,17 @@ impl NativeRule for RequireLocalTestContextForConcurrentSnapshots {
         let violations = find_concurrent_snapshot_violations(ctx.source_text());
 
         for (span, matcher) in violations {
-            ctx.report_error(
-                RULE_NAME,
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "Concurrent test uses `{matcher}` without local test context — destructure `{{ expect }}` from the test context parameter"
                 ),
                 span,
-            );
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

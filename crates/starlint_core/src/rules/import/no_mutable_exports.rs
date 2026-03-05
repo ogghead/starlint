@@ -4,7 +4,7 @@
 //! Mutable exports can lead to confusing behavior since importers receive
 //! a live binding that can change unexpectedly.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -20,7 +20,7 @@ impl NativeRule for NoMutableExports {
             description: "Forbid using `let` or `var` in exported declarations".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,11 +59,17 @@ impl NativeRule for NoMutableExports {
         };
 
         for (start, end, keyword) in findings {
-            ctx.report_warning(
-                "import/no-mutable-exports",
-                &format!("Exporting mutable binding using `{keyword}` — use `const` instead"),
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/no-mutable-exports".to_owned(),
+                message: format!(
+                    "Exporting mutable binding using `{keyword}` — use `const` instead"
+                ),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

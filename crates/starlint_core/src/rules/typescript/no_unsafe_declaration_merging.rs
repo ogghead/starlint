@@ -5,7 +5,7 @@
 //! lead to unexpected runtime behavior because the interface adds type-level
 //! members that the class does not actually implement at runtime.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoUnsafeDeclarationMerging {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,13 +52,17 @@ impl NativeRule for NoUnsafeDeclarationMerging {
         };
 
         for (name, start, end) in &findings {
-            ctx.report_error(
-                RULE_NAME,
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "Unsafe declaration merging — interface `{name}` merges with a class of the same name"
                 ),
-                Span::new(*start, *end),
-            );
+                span: Span::new(*start, *end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -10,7 +10,7 @@
 //! declarations and counts how many times each parameter name appears in the
 //! surrounding signature text.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +30,7 @@ impl NativeRule for NoUnnecessaryTypeParameters {
             description: "Disallow type parameters that are only used once".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,14 +42,18 @@ impl NativeRule for NoUnnecessaryTypeParameters {
         let source = ctx.source_text();
 
         for finding in find_single_use_type_params(source) {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "Type parameter `{}` is used only once — consider removing it and using the type directly",
                     finding.name
                 ),
-                Span::new(finding.start, finding.end),
-            );
+                span: Span::new(finding.start, finding.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

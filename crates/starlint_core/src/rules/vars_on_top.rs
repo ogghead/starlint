@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Statement, VariableDeclarationKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -36,7 +36,7 @@ impl NativeRule for VarsOnTop {
             description: "Require var declarations to be at the top of their scope".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,11 +68,16 @@ fn check_statements(stmts: &[Statement<'_>], ctx: &mut NativeLintContext<'_>) {
             // Any var declaration after a non-var statement is a violation
             if let Statement::VariableDeclaration(decl) = stmt {
                 if decl.kind == VariableDeclarationKind::Var {
-                    ctx.report_warning(
-                        "vars-on-top",
-                        "All `var` declarations must be at the top of the scope",
-                        Span::new(decl.span.start, decl.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "vars-on-top".to_owned(),
+                        message: "All `var` declarations must be at the top of the scope"
+                            .to_owned(),
+                        span: Span::new(decl.span.start, decl.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         } else if !is_var_or_directive(stmt) {

@@ -13,7 +13,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -34,7 +34,7 @@ impl NativeRule for NoBaseToString {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -74,13 +74,17 @@ impl NativeRule for NoBaseToString {
             return;
         };
 
-        ctx.report_warning(
-            RULE_NAME,
-            &format!(
+        ctx.report(Diagnostic {
+            rule_name: RULE_NAME.to_owned(),
+            message: format!(
                 "Calling `.toString()` on an {kind_name} returns a useless default string representation"
             ),
-            Span::new(call.span.start, call.span.end),
-        );
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

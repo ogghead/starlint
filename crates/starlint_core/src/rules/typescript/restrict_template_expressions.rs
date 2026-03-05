@@ -16,7 +16,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,7 +32,7 @@ impl NativeRule for RestrictTemplateExpressions {
             description: "Disallow non-string types in template literal expressions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,14 +60,18 @@ impl NativeRule for RestrictTemplateExpressions {
             .collect();
 
         for (start, end, kind_name) in findings {
-            ctx.report_warning(
-                "typescript/restrict-template-expressions",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "typescript/restrict-template-expressions".to_owned(),
+                message: format!(
                     "Do not use {kind_name} in a template literal — it will not produce a \
                      useful string"
                 ),
-                Span::new(start, end),
-            );
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

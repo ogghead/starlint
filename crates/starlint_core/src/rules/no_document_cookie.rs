@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoDocumentCookie {
             description: "Disallow direct use of `document.cookie`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,15 @@ impl NativeRule for NoDocumentCookie {
         );
 
         if is_document {
-            ctx.report_warning(
-                "no-document-cookie",
-                "Do not use `document.cookie` directly — use a cookie library or the Cookie Store API",
-                Span::new(member.span.start, member.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-document-cookie".to_owned(),
+                message: "Do not use `document.cookie` directly — use a cookie library or the Cookie Store API".to_owned(),
+                span: Span::new(member.span.start, member.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

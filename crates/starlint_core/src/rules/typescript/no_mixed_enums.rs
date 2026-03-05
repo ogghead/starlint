@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoMixedEnums {
             description: "Disallow enums that mix string and number members".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -58,11 +58,15 @@ impl NativeRule for NoMixedEnums {
 
             if has_string && has_number {
                 let name = decl.id.name.as_str();
-                ctx.report_error(
-                    "typescript/no-mixed-enums",
-                    &format!("Enum `{name}` mixes string and number members"),
-                    Span::new(decl.span.start, decl.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "typescript/no-mixed-enums".to_owned(),
+                    message: format!("Enum `{name}` mixes string and number members"),
+                    span: Span::new(decl.span.start, decl.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 return;
             }
         }

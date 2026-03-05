@@ -11,7 +11,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, TSType};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NoUnsafeMemberAccess {
             description: "Disallow member access on `any` typed values".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,11 +41,15 @@ impl NativeRule for NoUnsafeMemberAccess {
         };
 
         if is_as_any_object(&member.object) {
-            ctx.report_warning(
-                "typescript/no-unsafe-member-access",
-                "Unsafe member access — accessing a property on an `as any` expression propagates type unsafety",
-                Span::new(member.span.start, member.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-unsafe-member-access".to_owned(),
+                message: "Unsafe member access — accessing a property on an `as any` expression propagates type unsafety".to_owned(),
+                span: Span::new(member.span.start, member.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

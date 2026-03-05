@@ -10,7 +10,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -163,7 +163,7 @@ impl NativeRule for NoUndef {
             description: "Disallow the use of undeclared variables".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -199,11 +199,15 @@ impl NativeRule for NoUndef {
             return;
         }
 
-        ctx.report_error(
-            "no-undef",
-            &format!("'{}' is not defined", ident.name),
-            Span::new(ident.span.start, ident.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "no-undef".to_owned(),
+            message: format!("'{}' is not defined", ident.name),
+            span: Span::new(ident.span.start, ident.span.end),
+            severity: Severity::Error,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

@@ -3,7 +3,7 @@
 //! Disallow inline comments after code. Comments should appear on
 //! their own line for better readability and consistency.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -19,7 +19,7 @@ impl NativeRule for NoInlineComments {
             description: "Disallow inline comments after code".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,11 +57,15 @@ impl NativeRule for NoInlineComments {
         };
 
         for (start, end) in violations {
-            ctx.report_warning(
-                "no-inline-comments",
-                "Unexpected comment inline with code",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-inline-comments".to_owned(),
+                message: "Unexpected comment inline with code".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

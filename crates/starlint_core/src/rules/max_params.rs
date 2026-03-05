@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,7 +42,7 @@ impl NativeRule for MaxParams {
             description: "Enforce a maximum number of parameters per function".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -74,14 +74,18 @@ impl NativeRule for MaxParams {
         };
 
         if param_count > self.max {
-            ctx.report_warning(
-                "max-params",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "max-params".to_owned(),
+                message: format!(
                     "Function '{name}' has too many parameters ({param_count}). Maximum allowed is {}",
                     self.max
                 ),
-                Span::new(span.start, span.end),
-            );
+                span: Span::new(span.start, span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

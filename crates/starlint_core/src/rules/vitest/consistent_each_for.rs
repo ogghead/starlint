@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for ConsistentEachFor {
             description: "Enforce consistent usage of `.each` for parameterized tests".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -73,13 +73,17 @@ impl NativeRule for ConsistentEachFor {
         // Flag if the `.each()` call receives an empty array `[]`.
         if let Some(oxc_ast::ast::Argument::ArrayExpression(arr)) = call.arguments.first() {
             if arr.elements.is_empty() {
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
                         "`{obj_name}.each` called with an empty array — provide test case data or remove `.each`"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

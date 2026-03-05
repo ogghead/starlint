@@ -3,7 +3,7 @@
 //! Limit the number of dependencies a module can have. Modules with many
 //! imports are harder to understand and may indicate a need for refactoring.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -38,7 +38,7 @@ impl NativeRule for MaxDependencies {
             description: "Limit the number of dependencies a module can have".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -89,14 +89,18 @@ impl NativeRule for MaxDependencies {
         };
 
         if dep_count > self.max {
-            ctx.report_warning(
-                "import/max-dependencies",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "import/max-dependencies".to_owned(),
+                message: format!(
                     "Module has too many dependencies ({dep_count}). Maximum allowed is {}",
                     self.max,
                 ),
-                Span::new(0, source_len),
-            );
+                span: Span::new(0, source_len),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

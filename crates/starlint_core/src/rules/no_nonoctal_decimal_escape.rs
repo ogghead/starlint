@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoNonoctalDecimalEscape {
             description: "Disallow `\\8` and `\\9` escape sequences in string literals".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -47,11 +47,15 @@ impl NativeRule for NoNonoctalDecimalEscape {
         };
 
         if contains_nonoctal_escape(raw) {
-            ctx.report_error(
-                "no-nonoctal-decimal-escape",
-                "Don't use `\\8` or `\\9` escape sequences in string literals",
-                Span::new(lit.span.start, lit.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-nonoctal-decimal-escape".to_owned(),
+                message: "Don't use `\\8` or `\\9` escape sequences in string literals".to_owned(),
+                span: Span::new(lit.span.start, lit.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

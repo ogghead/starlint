@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, BindingPattern, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoArrayIndexKey {
             description: "Disallow usage of array index as key".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -82,13 +82,17 @@ impl NativeRule for NoArrayIndexKey {
             let body_source = &source[start..end];
             let key_pattern = format!("key={{{param_name}}}");
             if body_source.contains(&key_pattern) {
-                ctx.report_warning(
-                    "react/no-array-index-key",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "react/no-array-index-key".to_owned(),
+                    message: format!(
                         "Do not use array index `{param_name}` as `key` — use a stable identifier instead"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

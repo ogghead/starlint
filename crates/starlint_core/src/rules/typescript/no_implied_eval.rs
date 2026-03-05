@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,7 +32,7 @@ impl NativeRule for NoImpliedEval {
             description: "Disallow implied `eval()` usage".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -72,13 +72,17 @@ impl NativeRule for NoImpliedEval {
                     .first()
                     .is_some_and(|arg| matches!(arg, Argument::StringLiteral(_)))
                 {
-                    ctx.report_error(
-                        RULE_NAME,
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!(
                             "Implied `eval()` — do not pass a string to `{name}()`, use a function instead"
                         ),
-                        Span::new(call.span.start, call.span.end),
-                    );
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::NewExpression(new_expr) => {
@@ -94,11 +98,15 @@ impl NativeRule for NoImpliedEval {
                         .last()
                         .is_some_and(|arg| matches!(arg, Argument::StringLiteral(_)))
                 {
-                    ctx.report_error(
-                        RULE_NAME,
-                        "Implied `eval()` — do not use the `Function` constructor with a string body",
-                        Span::new(new_expr.span.start, new_expr.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Implied `eval()` — do not use the `Function` constructor with a string body".to_owned(),
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

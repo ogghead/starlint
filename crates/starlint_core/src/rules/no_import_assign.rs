@@ -8,7 +8,7 @@ use oxc_ast::ast::ImportDeclarationSpecifier;
 use oxc_ast::ast_kind::AstType;
 use oxc_semantic::SymbolFlags;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoImportAssign {
             description: "Disallow reassignment of imported bindings".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -73,14 +73,18 @@ impl NativeRule for NoImportAssign {
                 .any(oxc_semantic::Reference::is_write);
 
             if has_write {
-                ctx.report_error(
-                    "no-import-assign",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "no-import-assign".to_owned(),
+                    message: format!(
                         "'{}' is an imported binding and cannot be reassigned",
                         local.name
                     ),
-                    Span::new(local.span.start, local.span.end),
-                );
+                    span: Span::new(local.span.start, local.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

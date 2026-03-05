@@ -13,7 +13,7 @@ use oxc_ast::ast::{BindingPattern, CallExpression, Expression, FormalParameters,
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -31,7 +31,7 @@ impl NativeRule for OnlyUsedInRecursion {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -100,13 +100,17 @@ impl NativeRule for OnlyUsedInRecursion {
         };
 
         for (param_name, param_span) in &flagged_params {
-            ctx.report_warning(
-                "only-used-in-recursion",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "only-used-in-recursion".to_owned(),
+                message: format!(
                     "Parameter `{param_name}` is only passed through to the recursive call at the same position"
                 ),
-                *param_span,
-            );
+                span: *param_span,
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoDynamicRequire {
             description: "Forbid `require()` calls with expressions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -53,11 +53,15 @@ impl NativeRule for NoDynamicRequire {
             first_arg.is_some_and(|arg| matches!(arg, oxc_ast::ast::Argument::StringLiteral(_)));
 
         if !is_literal {
-            ctx.report_warning(
-                "import/no-dynamic-require",
-                "Calls to `require()` should use a string literal argument",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/no-dynamic-require".to_owned(),
+                message: "Calls to `require()` should use a string literal argument".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

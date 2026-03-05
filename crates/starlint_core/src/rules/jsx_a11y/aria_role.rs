@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -97,7 +97,7 @@ impl NativeRule for AriaRole {
             description: "Enforce `role` attribute has a valid value".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -124,11 +124,15 @@ impl NativeRule for AriaRole {
                 if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
                     let role = lit.value.as_str().trim();
                     if !role.is_empty() && !VALID_ROLES.contains(&role) {
-                        ctx.report_warning(
-                            RULE_NAME,
-                            &format!("`{role}` is not a valid WAI-ARIA role"),
-                            Span::new(opening.span.start, opening.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: format!("`{role}` is not a valid WAI-ARIA role"),
+                            span: Span::new(opening.span.start, opening.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }

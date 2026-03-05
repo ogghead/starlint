@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for PreferCalledWith {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -51,13 +51,17 @@ impl NativeRule for PreferCalledWith {
             return;
         }
 
-        ctx.report_warning(
-            "jest/prefer-called-with",
-            &format!(
+        ctx.report(Diagnostic {
+            rule_name: "jest/prefer-called-with".to_owned(),
+            message: format!(
                 "Use `toHaveBeenCalledWith()` instead of `{method}()` for more specific assertions"
             ),
-            Span::new(call.span.start, call.span.end),
-        );
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

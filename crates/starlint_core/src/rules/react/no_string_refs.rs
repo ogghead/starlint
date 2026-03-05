@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeName, JSXAttributeValue};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoStringRefs {
             description: "Disallow using string refs (deprecated)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,16 @@ impl NativeRule for NoStringRefs {
 
         // Only flag when the value is a string literal
         if let Some(JSXAttributeValue::StringLiteral(_)) = &attr.value {
-            ctx.report_warning(
-                "react/no-string-refs",
-                "String refs are deprecated — use `useRef` or callback refs instead",
-                Span::new(attr.span.start, attr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/no-string-refs".to_owned(),
+                message: "String refs are deprecated — use `useRef` or callback refs instead"
+                    .to_owned(),
+                span: Span::new(attr.span.start, attr.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

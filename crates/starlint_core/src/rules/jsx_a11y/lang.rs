@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,7 +45,7 @@ impl NativeRule for Lang {
             description: "Enforce `lang` attribute has a valid value".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -81,19 +81,27 @@ impl NativeRule for Lang {
                 if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
                     let val = lit.value.as_str().trim();
                     if val.is_empty() {
-                        ctx.report_warning(
-                            RULE_NAME,
-                            "The `lang` attribute must not be empty",
-                            Span::new(opening.span.start, opening.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: "The `lang` attribute must not be empty".to_owned(),
+                            span: Span::new(opening.span.start, opening.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     } else {
                         let primary = primary_subtag(val).to_lowercase();
                         if !VALID_LANG_CODES.contains(&primary.as_str()) {
-                            ctx.report_warning(
-                                RULE_NAME,
-                                &format!("`{val}` is not a valid BCP 47 language tag"),
-                                Span::new(opening.span.start, opening.span.end),
-                            );
+                            ctx.report(Diagnostic {
+                                rule_name: RULE_NAME.to_owned(),
+                                message: format!("`{val}` is not a valid BCP 47 language tag"),
+                                span: Span::new(opening.span.start, opening.span.end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                 }

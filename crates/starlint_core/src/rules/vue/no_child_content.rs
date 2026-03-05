@@ -3,7 +3,7 @@
 //! Forbid using `v-html` or `v-text` directives on elements that also have
 //! child content. When both are present, the directive overwrites the children.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoChildContent {
             description: "Forbid `v-html`/`v-text` on elements with child content".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -80,13 +80,17 @@ impl NativeRule for NoChildContent {
                     if !inner.trim().is_empty() {
                         let start = u32::try_from(abs_pos).unwrap_or(0);
                         let end = start.saturating_add(u32::try_from(directive.len()).unwrap_or(0));
-                        ctx.report_warning(
-                            RULE_NAME,
-                            &format!(
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: format!(
                                 "Element with `{directive}` should not have child content — the directive will overwrite it"
                             ),
-                            Span::new(start, end),
-                        );
+                            span: Span::new(start, end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
 

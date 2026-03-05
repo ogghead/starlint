@@ -3,7 +3,7 @@
 //! Enforce newline before closing bracket of multi-line elements in templates.
 //! Scans for multi-line tags where `>` is not on its own line.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for HtmlClosingBracketNewline {
             description: "Enforce newline before closing bracket of multi-line elements".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -75,11 +75,17 @@ impl NativeRule for HtmlClosingBracketNewline {
                     let abs_close = abs_open.saturating_add(close_offset);
                     let start = u32::try_from(abs_close).unwrap_or(0);
                     let end = start.saturating_add(1);
-                    ctx.report_warning(
-                        RULE_NAME,
-                        "Closing bracket `>` of a multi-line element should be on a new line",
-                        Span::new(start, end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message:
+                            "Closing bracket `>` of a multi-line element should be on a new line"
+                                .to_owned(),
+                        span: Span::new(start, end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
 

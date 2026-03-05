@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -48,7 +48,7 @@ impl NativeRule for BadArrayMethodOnArguments {
             description: "Detect array methods called on `arguments`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,14 +77,18 @@ impl NativeRule for BadArrayMethodOnArguments {
 
         let method = member.property.name.as_str();
         if ARRAY_METHODS.contains(&method) {
-            ctx.report_error(
-                "bad-array-method-on-arguments",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "bad-array-method-on-arguments".to_owned(),
+                message: format!(
                     "`arguments.{method}()` will fail — `arguments` is not an array. \
                      Use `Array.from(arguments).{method}()` or rest parameters instead"
                 ),
-                Span::new(call.span.start, call.span.end),
-            );
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

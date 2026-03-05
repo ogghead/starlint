@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -59,7 +59,7 @@ impl NativeRule for RulesOfHooks {
             description: "Hooks must be called at the top level of a function component".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -108,13 +108,17 @@ impl NativeRule for RulesOfHooks {
                 };
 
                 if is_hook_name(hook_name) {
-                    ctx.report_error(
-                        "react/rules-of-hooks",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "react/rules-of-hooks".to_owned(),
+                        message: format!(
                             "React hook `{hook_name}` is called conditionally — hooks must be called at the top level"
                         ),
-                        Span::new(call.span.start, call.span.end),
-                    );
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

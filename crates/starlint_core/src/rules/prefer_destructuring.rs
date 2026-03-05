@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, VariableDeclarationKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for PreferDestructuring {
             description: "Prefer destructuring from arrays and objects".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -69,21 +69,29 @@ impl NativeRule for PreferDestructuring {
 
                     // Only suggest if the variable name matches the property name
                     if binding_name == Some(prop_name) {
-                        ctx.report_warning(
-                            "prefer-destructuring",
-                            &format!("Use object destructuring: `{{ {prop_name} }} = ...`"),
-                            Span::new(declarator.span.start, declarator.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "prefer-destructuring".to_owned(),
+                            message: format!("Use object destructuring: `{{ {prop_name} }} = ...`"),
+                            span: Span::new(declarator.span.start, declarator.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
                 Expression::ComputedMemberExpression(member) => {
                     // arr[0] — suggest destructuring for numeric indices
                     if let Expression::NumericLiteral(_) = &member.expression {
-                        ctx.report_warning(
-                            "prefer-destructuring",
-                            "Use array destructuring instead of indexed access",
-                            Span::new(declarator.span.start, declarator.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "prefer-destructuring".to_owned(),
+                            message: "Use array destructuring instead of indexed access".to_owned(),
+                            span: Span::new(declarator.span.start, declarator.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
                 _ => {}

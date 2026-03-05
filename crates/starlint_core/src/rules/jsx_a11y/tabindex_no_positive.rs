@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for TabindexNoPositive {
             description: "Forbid positive `tabIndex` values".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,11 +52,15 @@ impl NativeRule for TabindexNoPositive {
                     let val = lit.value.as_str();
                     if let Ok(n) = val.parse::<i32>() {
                         if n > 0 {
-                            ctx.report_warning(
-                                RULE_NAME,
-                                "Avoid positive `tabIndex` values. They disrupt the natural tab order",
-                                Span::new(opening.span.start, opening.span.end),
-                            );
+                            ctx.report(Diagnostic {
+                                rule_name: RULE_NAME.to_owned(),
+                                message: "Avoid positive `tabIndex` values. They disrupt the natural tab order".to_owned(),
+                                span: Span::new(opening.span.start, opening.span.end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                 }

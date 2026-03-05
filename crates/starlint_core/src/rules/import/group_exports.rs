@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for GroupExports {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,11 +55,16 @@ impl NativeRule for GroupExports {
         // If there are more than one named export declaration, flag all but the first
         if named_exports.len() > 1 {
             for export in named_exports.iter().skip(1) {
-                ctx.report_warning(
-                    "import/group-exports",
-                    "Multiple named export declarations; prefer a single export { ... }",
-                    Span::new(export.span.start, export.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "import/group-exports".to_owned(),
+                    message: "Multiple named export declarations; prefer a single export { ... }"
+                        .to_owned(),
+                    span: Span::new(export.span.start, export.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

@@ -3,7 +3,7 @@
 //! Meta should only have inline properties.
 //! Checks that default export meta object doesn't use computed or spread properties.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for MetaInlineProperties {
             description: "Meta should only have inline properties".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -78,11 +78,15 @@ impl NativeRule for MetaInlineProperties {
             let abs_pos = obj_start.saturating_add(spread_offset);
             let start = u32::try_from(abs_pos).unwrap_or(0);
             let end = start.saturating_add(3);
-            ctx.report_warning(
-                RULE_NAME,
-                "Meta should only have inline properties, avoid spread syntax",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Meta should only have inline properties, avoid spread syntax".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

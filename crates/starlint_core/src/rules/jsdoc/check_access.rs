@@ -2,7 +2,7 @@
 //!
 //! Enforce valid `@access` tags in `JSDoc` comments.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -17,7 +17,7 @@ impl NativeRule for CheckAccess {
             description: "Enforce valid `@access` tags in JSDoc comments".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,13 +45,17 @@ impl NativeRule for CheckAccess {
                         {
                             let span_start = u32::try_from(abs_start).unwrap_or(0);
                             let span_end = u32::try_from(abs_end).unwrap_or(span_start);
-                            ctx.report_warning(
-                                "jsdoc/check-access",
-                                &format!(
+                            ctx.report(Diagnostic {
+                                rule_name: "jsdoc/check-access".to_owned(),
+                                message: format!(
                                     "Invalid `@access` value: `{value}`. Use public, private, protected, or package"
                                 ),
-                                Span::new(span_start, span_end),
-                            );
+                                span: Span::new(span_start, span_end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
                         }
                     }
                 }

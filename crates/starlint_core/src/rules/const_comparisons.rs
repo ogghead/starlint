@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression, LogicalOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for ConstComparisons {
             description: "Detect always-true or always-false constant comparisons".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,11 +71,15 @@ impl NativeRule for ConstComparisons {
         };
 
         if let Some(message) = finding {
-            ctx.report_warning(
-                "const-comparisons",
-                message,
-                Span::new(logical.span.start, logical.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "const-comparisons".to_owned(),
+                message: message.to_owned(),
+                span: Span::new(logical.span.start, logical.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

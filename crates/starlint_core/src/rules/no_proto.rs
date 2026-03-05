@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoProto {
             description: "Disallow the use of the `__proto__` property".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -33,11 +33,17 @@ impl NativeRule for NoProto {
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         if let AstKind::StaticMemberExpression(member) = kind {
             if member.property.name.as_str() == "__proto__" {
-                ctx.report_warning(
-                    "no-proto",
-                    "Use `Object.getPrototypeOf`/`Object.setPrototypeOf` instead of `__proto__`",
-                    Span::new(member.span.start, member.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-proto".to_owned(),
+                    message:
+                        "Use `Object.getPrototypeOf`/`Object.setPrototypeOf` instead of `__proto__`"
+                            .to_owned(),
+                    span: Span::new(member.span.start, member.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

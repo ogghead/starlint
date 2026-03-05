@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::JSXChild;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,7 +45,7 @@ impl NativeRule for JsxMaxDepth {
             description: "Enforce a maximum JSX nesting depth".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,13 +60,17 @@ impl NativeRule for JsxMaxDepth {
 
         let depth = jsx_depth(&element.children).saturating_add(1);
         if depth > DEFAULT_MAX_DEPTH {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "JSX nesting depth of {depth} exceeds maximum of {DEFAULT_MAX_DEPTH}. Consider extracting sub-components"
                 ),
-                Span::new(element.span.start, element.span.end),
-            );
+                span: Span::new(element.span.start, element.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

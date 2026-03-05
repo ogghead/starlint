@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoDuplicateImports {
             description: "Disallow duplicate module imports".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,11 +45,15 @@ impl NativeRule for NoDuplicateImports {
             };
             let source = import.source.value.as_str();
             if !seen.insert(source.to_owned()) {
-                ctx.report_warning(
-                    "no-duplicate-imports",
-                    &format!("'{source}' import is duplicated"),
-                    Span::new(import.span.start, import.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-duplicate-imports".to_owned(),
+                    message: format!("'{source}' import is duplicated"),
+                    span: Span::new(import.span.start, import.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

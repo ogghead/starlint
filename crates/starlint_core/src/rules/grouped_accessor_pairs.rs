@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{ClassElement, MethodDefinitionKind, PropertyKey, PropertyKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for GroupedAccessorPairs {
             description: "Require grouped getter/setter pairs in objects and classes".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -159,11 +159,15 @@ fn report_non_adjacent(accessors: &HashMap<String, AccessorInfo>, ctx: &mut Nati
         let diff = getter_pos.abs_diff(setter_pos);
         if diff > 1 {
             if let Some(span) = info.second_span {
-                ctx.report_warning(
-                    "grouped-accessor-pairs",
-                    &format!("Getter and setter for `{name}` should be grouped together"),
+                ctx.report(Diagnostic {
+                    rule_name: "grouped-accessor-pairs".to_owned(),
+                    message: format!("Getter and setter for `{name}` should be grouped together"),
                     span,
-                );
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }
@@ -182,11 +186,15 @@ fn report_non_adjacent_keyed(
         let diff = getter_pos.abs_diff(setter_pos);
         if diff > 1 {
             if let Some(span) = info.second_span {
-                ctx.report_warning(
-                    "grouped-accessor-pairs",
-                    &format!("Getter and setter for `{name}` should be grouped together"),
+                ctx.report(Diagnostic {
+                    rule_name: "grouped-accessor-pairs".to_owned(),
+                    message: format!("Getter and setter for `{name}` should be grouped together"),
                     span,
-                );
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

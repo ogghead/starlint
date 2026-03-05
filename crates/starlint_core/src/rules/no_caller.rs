@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoCaller {
             description: "Disallow use of `arguments.caller` and `arguments.callee`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,15 @@ impl NativeRule for NoCaller {
         };
 
         if id.name.as_str() == "arguments" {
-            ctx.report_warning(
-                "no-caller",
-                &format!("Avoid using `arguments.{prop}` — it is deprecated"),
-                Span::new(member.span.start, member.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-caller".to_owned(),
+                message: format!("Avoid using `arguments.{prop}` — it is deprecated"),
+                span: Span::new(member.span.start, member.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

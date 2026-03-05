@@ -24,7 +24,7 @@ impl NativeRule for NoPromiseExecutorReturn {
             description: "Disallow returning a value from a Promise executor".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 

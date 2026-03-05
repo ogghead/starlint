@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoNamespace {
             description: "Disallow TypeScript `namespace` and `module` declarations".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,15 @@ impl NativeRule for NoNamespace {
             return;
         };
 
-        ctx.report_warning(
-            "typescript/no-namespace",
-            "Do not use TypeScript namespaces — use ES modules instead",
-            Span::new(decl.span.start, decl.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "typescript/no-namespace".to_owned(),
+            message: "Do not use TypeScript namespaces — use ES modules instead".to_owned(),
+            span: Span::new(decl.span.start, decl.span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

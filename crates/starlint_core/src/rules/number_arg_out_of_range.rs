@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NumberArgOutOfRange {
             description: "Detect numeric arguments outside valid ranges".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,11 +42,15 @@ impl NativeRule for NumberArgOutOfRange {
             .or_else(|| check_method_range(call, "toExponential", 0, 100));
 
         if let Some(message) = findings {
-            ctx.report_error(
-                "number-arg-out-of-range",
-                &message,
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "number-arg-out-of-range".to_owned(),
+                message,
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

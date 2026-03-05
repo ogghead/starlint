@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoAssignModuleVariable {
             description: "Forbid assigning to the `module` variable".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,15 @@ impl NativeRule for NoAssignModuleVariable {
         };
 
         if is_module_target {
-            ctx.report_error(
-                RULE_NAME,
-                "Do not assign to the `module` variable -- it interferes with Next.js module handling",
-                Span::new(assign.span.start, assign.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Do not assign to the `module` variable -- it interferes with Next.js module handling".to_owned(),
+                span: Span::new(assign.span.start, assign.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

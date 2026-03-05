@@ -7,7 +7,7 @@
 //!
 //! Simplified syntax-only version — full checking requires type information.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for SwitchExhaustivenessCheck {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -40,11 +40,15 @@ impl NativeRule for SwitchExhaustivenessCheck {
         let violations = find_switch_without_default(source);
 
         for span in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                "Switch statement is missing a `default` case — add one to ensure exhaustiveness",
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Switch statement is missing a `default` case — add one to ensure exhaustiveness".to_owned(),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

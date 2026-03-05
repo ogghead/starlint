@@ -4,7 +4,7 @@
 //! options in `<script setup>`. The `defineOptions()` macro is the idiomatic
 //! way to set component metadata in Vue 3.3+.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for PreferDefineOptions {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,14 +54,18 @@ impl NativeRule for PreferDefineOptions {
             if after_export.contains(key) {
                 let start = u32::try_from(export_pos).unwrap_or(0);
                 let end = start.saturating_add(16); // "export default {" length
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
                         "Consider using `defineOptions()` instead of `export default` for component option `{option}`",
                         option = key.trim_end_matches(':')
                     ),
-                    Span::new(start, end),
-                );
+                    span: Span::new(start, end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 // Only report once per file
                 return;
             }

@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoLossOfPrecision {
             description: "Disallow literal numbers that lose precision".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,11 +54,15 @@ impl NativeRule for NoLossOfPrecision {
         // Parse the raw text as f64, then format it back.
         // If the round-trip doesn't match the original value, precision was lost.
         if loses_precision(&raw, lit.value) {
-            ctx.report_error(
-                "no-loss-of-precision",
-                &format!("This number literal will lose precision at runtime: `{raw}`"),
-                Span::new(lit.span.start, lit.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-loss-of-precision".to_owned(),
+                message: format!("This number literal will lose precision at runtime: `{raw}`"),
+                span: Span::new(lit.span.start, lit.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

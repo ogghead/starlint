@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeValue, JSXExpression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for JsxNoNewArrayAsProp {
             description: "Prevent array literals from being passed as JSX props".to_owned(),
             category: Category::Performance,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,15 @@ impl NativeRule for JsxNoNewArrayAsProp {
         };
 
         if matches!(container.expression, JSXExpression::ArrayExpression(_)) {
-            ctx.report_warning(
-                RULE_NAME,
-                "Do not pass an array literal as a JSX prop — it creates a new reference on every render",
-                Span::new(container.span.start, container.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Do not pass an array literal as a JSX prop — it creates a new reference on every render".to_owned(),
+                span: Span::new(container.span.start, container.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

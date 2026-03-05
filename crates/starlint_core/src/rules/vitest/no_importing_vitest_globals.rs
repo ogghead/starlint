@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::ImportDeclarationSpecifier;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,7 +45,7 @@ impl NativeRule for NoImportingVitestGlobals {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -73,13 +73,17 @@ impl NativeRule for NoImportingVitestGlobals {
             if let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier {
                 let imported_name = named.imported.name().as_str();
                 if VITEST_GLOBALS.contains(&imported_name) {
-                    ctx.report_warning(
-                        RULE_NAME,
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!(
                             "Do not import `{imported_name}` from `vitest` — it is available as a global when `globals: true` is configured"
                         ),
-                        Span::new(named.span.start, named.span.end),
-                    );
+                        span: Span::new(named.span.start, named.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

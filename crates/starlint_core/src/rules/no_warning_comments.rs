@@ -3,7 +3,7 @@
 //! Disallow specified warning terms in comments. Flags comments containing
 //! TODO, FIXME, HACK, etc.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoWarningComments {
             description: "Disallow specified warning terms in comments".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -31,11 +31,15 @@ impl NativeRule for NoWarningComments {
         let findings = find_warning_comments(source);
 
         for (term, span) in findings {
-            ctx.report_warning(
-                "no-warning-comments",
-                &format!("Unexpected `{term}` comment"),
+            ctx.report(Diagnostic {
+                rule_name: "no-warning-comments".to_owned(),
+                message: format!("Unexpected `{term}` comment"),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 

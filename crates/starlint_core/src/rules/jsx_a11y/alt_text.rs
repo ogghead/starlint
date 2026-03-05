@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -77,7 +77,7 @@ impl NativeRule for AltText {
                     .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -109,18 +109,26 @@ impl NativeRule for AltText {
 
         if name == "object" {
             if !has_alt && !has_aria_label {
-                ctx.report_warning(
-                    RULE_NAME,
-                    "`<object>` elements must have an `alt`, `aria-label`, or `aria-labelledby` attribute",
-                    Span::new(opening.span.start, opening.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "`<object>` elements must have an `alt`, `aria-label`, or `aria-labelledby` attribute".to_owned(),
+                    span: Span::new(opening.span.start, opening.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         } else if !has_alt {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!("`<{name}>` elements must have an `alt` attribute"),
-                Span::new(opening.span.start, opening.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!("`<{name}>` elements must have an `alt` attribute"),
+                span: Span::new(opening.span.start, opening.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoRelativeParentImports {
             description: "Forbid importing from parent directories".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -38,11 +38,15 @@ impl NativeRule for NoRelativeParentImports {
         let source_value = import.source.value.as_str();
 
         if source_value.starts_with("../") || source_value == ".." {
-            ctx.report_warning(
-                "import/no-relative-parent-imports",
-                "Relative parent imports are not allowed",
-                Span::new(import.span.start, import.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/no-relative-parent-imports".to_owned(),
+                message: "Relative parent imports are not allowed".to_owned(),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

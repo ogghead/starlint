@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -40,7 +40,7 @@ impl NativeRule for BetterRegex {
             description: "Suggest simpler alternatives for regex character classes".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,11 +57,17 @@ impl NativeRule for BetterRegex {
 
         for &(class, replacement) in IMPROVABLE_PATTERNS {
             if pattern.contains(class) {
-                ctx.report_warning(
-                    "better-regex",
-                    &format!("The regex pattern `{class}` can be replaced with `{replacement}`"),
-                    Span::new(regex.span.start, regex.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "better-regex".to_owned(),
+                    message: format!(
+                        "The regex pattern `{class}` can be replaced with `{replacement}`"
+                    ),
+                    span: Span::new(regex.span.start, regex.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 // Report only the first match per regex to avoid noise.
                 return;
             }

@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoEmptyCharacterClass {
             description: "Disallow empty character classes in regular expressions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -38,11 +38,15 @@ impl NativeRule for NoEmptyCharacterClass {
         let pattern = regex.regex.pattern.text.as_str();
 
         if has_empty_character_class(pattern) {
-            ctx.report_error(
-                "no-empty-character-class",
-                "Empty character class `[]` will never match anything",
-                Span::new(regex.span.start, regex.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-empty-character-class".to_owned(),
+                message: "Empty character class `[]` will never match anything".to_owned(),
+                span: Span::new(regex.span.start, regex.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

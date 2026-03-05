@@ -12,7 +12,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -69,7 +69,7 @@ impl NativeRule for InitDeclarations {
             description: "Require initialization in variable declarations".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -115,11 +115,15 @@ impl NativeRule for InitDeclarations {
         for declarator in &decl.declarations {
             if declarator.init.is_none() {
                 let span = declarator.span();
-                ctx.report_warning(
-                    "init-declarations",
-                    "Variable declaration should be initialized",
-                    Span::new(span.start, span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "init-declarations".to_owned(),
+                    message: "Variable declaration should be initialized".to_owned(),
+                    span: Span::new(span.start, span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

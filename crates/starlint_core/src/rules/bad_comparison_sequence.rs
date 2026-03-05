@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for BadComparisonSequence {
             description: "Catch chained comparison sequences like `a < b < c`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,12 +45,16 @@ impl NativeRule for BadComparisonSequence {
         // Check if the left operand is also a comparison — that makes it a chain
         if let Expression::BinaryExpression(left) = &expr.left {
             if left.operator.is_compare() {
-                ctx.report_warning(
-                    "bad-comparison-sequence",
-                    "Chained comparisons like `a < b < c` do not work as expected in JavaScript — \
-                     the left comparison returns a boolean, which is then compared to the right operand",
-                    Span::new(expr.span.start, expr.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "bad-comparison-sequence".to_owned(),
+                    message: "Chained comparisons like `a < b < c` do not work as expected in JavaScript — \
+                     the left comparison returns a boolean, which is then compared to the right operand".to_owned(),
+                    span: Span::new(expr.span.start, expr.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

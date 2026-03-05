@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, FormalParameters};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -67,7 +67,7 @@ impl NativeRule for ForwardRefUsesRef {
             description: "Warn when forwardRef is used but ref parameter is not used".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -100,11 +100,16 @@ impl NativeRule for ForwardRefUsesRef {
         };
 
         if params_missing_ref {
-            ctx.report_warning(
-                "react/forward-ref-uses-ref",
-                "`forwardRef` is used but the `ref` parameter is missing or unused",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/forward-ref-uses-ref".to_owned(),
+                message: "`forwardRef` is used but the `ref` parameter is missing or unused"
+                    .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

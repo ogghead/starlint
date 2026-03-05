@@ -11,7 +11,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,7 +45,7 @@ impl NativeRule for NoArrayCallbackReference {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -76,13 +76,17 @@ impl NativeRule for NoArrayCallbackReference {
         // (not an arrow function, function expression, or other expression)
         if let Argument::Identifier(id) = first_arg {
             let fn_name = id.name.as_str();
-            ctx.report_warning(
-                "no-array-callback-reference",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "no-array-callback-reference".to_owned(),
+                message: format!(
                     "Do not pass `{fn_name}` directly to `.{method_name}()` — it may receive unexpected arguments"
                 ),
-                Span::new(call.span.start, call.span.end),
-            );
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

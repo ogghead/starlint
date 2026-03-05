@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for AlwaysReturn {
             description: "Require returning inside `.then()` callbacks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -69,11 +69,15 @@ impl NativeRule for AlwaysReturn {
         // and regular functions as a heuristic.
         match arg_expr {
             Expression::ArrowFunctionExpression(_) | Expression::FunctionExpression(_) => {
-                ctx.report_error(
-                    "promise/always-return",
-                    "Each `.then()` callback should return a value or throw",
-                    Span::new(call.span.start, call.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "promise/always-return".to_owned(),
+                    message: "Each `.then()` callback should return a value or throw".to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
             _ => {}
         }

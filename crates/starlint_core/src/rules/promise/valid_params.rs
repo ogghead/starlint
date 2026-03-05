@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for ValidParams {
             description: "Enforce correct number of params to Promise methods".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,13 +68,17 @@ impl NativeRule for ValidParams {
                 } else {
                     format!("{min}-{max}")
                 };
-                ctx.report_error(
-                    "promise/valid-params",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "promise/valid-params".to_owned(),
+                    message: format!(
                         "`Promise.{method}()` expects {expected_msg} argument(s), got {arg_count}"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

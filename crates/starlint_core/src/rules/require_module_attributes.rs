@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for RequireModuleAttributes {
             description: "Require import attributes for non-JS modules".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,11 +57,15 @@ impl NativeRule for RequireModuleAttributes {
             .is_some_and(|clause| !clause.with_entries.is_empty());
 
         if !has_attributes {
-            ctx.report_warning(
-                "require-module-attributes",
-                &format!("Import from '{source}' is missing import attributes"),
-                Span::new(import.span.start, import.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "require-module-attributes".to_owned(),
+                message: format!("Import from '{source}' is missing import attributes"),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

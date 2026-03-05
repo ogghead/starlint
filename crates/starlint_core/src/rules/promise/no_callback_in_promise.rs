@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NoCallbackInPromise {
             description: "Forbid callbacks inside `.then()`/`.catch()`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,14 +59,18 @@ impl NativeRule for NoCallbackInPromise {
 
             if let Expression::Identifier(ident) = arg_expr {
                 if CALLBACK_NAMES.contains(&ident.name.as_str()) {
-                    ctx.report_error(
-                        "promise/no-callback-in-promise",
-                        &format!(
+                    ctx.report(Diagnostic {
+                        rule_name: "promise/no-callback-in-promise".to_owned(),
+                        message: format!(
                             "Do not pass callback `{}` into `.{method}()` — avoid mixing callbacks and promises",
                             ident.name
                         ),
-                        Span::new(call.span.start, call.span.end),
-                    );
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

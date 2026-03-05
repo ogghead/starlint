@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +30,7 @@ impl NativeRule for PreferHooksOnTop {
             description: "Warn when hooks are not at the top of the describe block".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -88,13 +88,17 @@ impl NativeRule for PreferHooksOnTop {
             if TEST_NAMES.contains(&callee_name) {
                 seen_test = true;
             } else if seen_test && HOOK_NAMES.contains(&callee_name) {
-                ctx.report_warning(
-                    "jest/prefer-hooks-on-top",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "jest/prefer-hooks-on-top".to_owned(),
+                    message: format!(
                         "`{callee_name}` should be declared before any test cases in the describe block"
                     ),
-                    Span::new(inner_call.span.start, inner_call.span.end),
-                );
+                    span: Span::new(inner_call.span.start, inner_call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

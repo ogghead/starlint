@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoUnreadableIife {
             description: "Disallow unreadable IIFEs (non-arrow function IIFEs)".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,11 +42,15 @@ impl NativeRule for NoUnreadableIife {
         // This covers `(function() {})()` — the outer call with a parenthesized
         // function expression as callee.
         if is_function_iife_callee(&call.callee) {
-            ctx.report_warning(
-                "no-unreadable-iife",
-                "IIFE with `function` expression is hard to read; consider using an arrow function",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-unreadable-iife".to_owned(),
+                message: "IIFE with `function` expression is hard to read; consider using an arrow function".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

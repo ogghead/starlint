@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoHeadImportInDocument {
             description: "Forbid importing `next/head` in `_document`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,11 +50,15 @@ impl NativeRule for NoHeadImportInDocument {
             .unwrap_or("");
 
         if file_stem == "_document" {
-            ctx.report_error(
-                RULE_NAME,
-                "Do not import `next/head` in `_document` -- use `Head` from `next/document` instead",
-                Span::new(import.span.start, import.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Do not import `next/head` in `_document` -- use `Head` from `next/document` instead".to_owned(),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

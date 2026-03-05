@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::PropertyKey;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoDidMountSetState {
             description: "Disallow `setState` in `componentDidMount`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,11 +61,15 @@ impl NativeRule for NoDidMountSetState {
         let end_idx = usize::try_from(method_end).unwrap_or(0);
         let body_source = &source[start_idx..end_idx];
         if body_source.contains("this.setState") {
-            ctx.report_warning(
-                "react/no-did-mount-set-state",
-                "Do not use `setState` in `componentDidMount`",
-                Span::new(method.span.start, method.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/no-did-mount-set-state".to_owned(),
+                message: "Do not use `setState` in `componentDidMount`".to_owned(),
+                span: Span::new(method.span.start, method.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression, JSXAttributeItem, JSXAttributeName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -91,7 +91,7 @@ impl NativeRule for JsxKey {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -119,11 +119,15 @@ impl NativeRule for JsxKey {
         };
 
         if callback_returns_jsx_without_key(first_arg) {
-            ctx.report_warning(
-                RULE_NAME,
-                "Missing `key` prop for JSX element in `.map()` iterator",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Missing `key` prop for JSX element in `.map()` iterator".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

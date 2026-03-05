@@ -2,7 +2,7 @@
 //!
 //! Warn when `describe` blocks are nested too deeply (default: > 5).
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for MaxNestedDescribe {
             description: "Limit the nesting depth of `describe` blocks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -66,11 +66,17 @@ impl NativeRule for MaxNestedDescribe {
         };
 
         for (depth, span) in violations {
-            ctx.report_warning(
-                RULE_NAME,
-                &format!("`describe` is nested {depth} levels deep (max: {DEFAULT_MAX_DEPTH})"),
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
+                    "`describe` is nested {depth} levels deep (max: {DEFAULT_MAX_DEPTH})"
+                ),
                 span,
-            );
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

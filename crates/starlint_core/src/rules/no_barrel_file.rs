@@ -4,7 +4,7 @@
 //! Barrel files hurt tree-shaking because bundlers must evaluate the entire
 //! re-export chain to determine what is actually used.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -74,7 +74,7 @@ impl NativeRule for NoBarrelFile {
             description: "Disallow barrel files (index files that only re-export)".to_owned(),
             category: Category::Performance,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -92,11 +92,17 @@ impl NativeRule for NoBarrelFile {
 
         if is_barrel {
             let source_len = u32::try_from(ctx.source_text().len()).unwrap_or(0);
-            ctx.report_warning(
-                "no-barrel-file",
-                "Barrel files hurt tree-shaking. Import directly from the source module instead",
-                Span::new(0, source_len),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-barrel-file".to_owned(),
+                message:
+                    "Barrel files hurt tree-shaking. Import directly from the source module instead"
+                        .to_owned(),
+                span: Span::new(0, source_len),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

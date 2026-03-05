@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for JsxNoDuplicateProps {
             description: "Disallow duplicate props in JSX elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -53,11 +53,15 @@ impl NativeRule for JsxNoDuplicateProps {
                     }
                 };
                 if !seen.insert(name) {
-                    ctx.report_error(
-                        RULE_NAME,
-                        &format!("Duplicate prop `{name}` found on JSX element"),
-                        Span::new(attr.span.start, attr.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!("Duplicate prop `{name}` found on JSX element"),
+                        span: Span::new(attr.span.start, attr.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

@@ -25,7 +25,7 @@ impl NativeRule for NoConstantBinaryExpression {
             description: "Disallow expressions where the operation is predictable".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 

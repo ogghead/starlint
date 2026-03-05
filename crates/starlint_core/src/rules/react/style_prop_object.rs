@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::JSXAttributeValue;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for StylePropObject {
             description: "The `style` prop should be an object, not a string".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,11 +43,15 @@ impl NativeRule for StylePropObject {
 
         // Check if the value is a string literal
         if let Some(JSXAttributeValue::StringLiteral(_)) = &attr.value {
-            ctx.report_error(
-                "react/style-prop-object",
-                "The `style` prop expects an object, not a string",
-                Span::new(attr.span.start, attr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/style-prop-object".to_owned(),
+                message: "The `style` prop expects an object, not a string".to_owned(),
+                span: Span::new(attr.span.start, attr.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

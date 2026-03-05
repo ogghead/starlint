@@ -3,7 +3,7 @@
 //! Disallow empty files. An empty file is likely a mistake or leftover
 //! from a refactoring and should be removed.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -19,7 +19,7 @@ impl NativeRule for NoEmptyFile {
             description: "Disallow empty files".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -37,11 +37,15 @@ impl NativeRule for NoEmptyFile {
         };
 
         if is_empty {
-            ctx.report_warning(
-                "no-empty-file",
-                "Empty files are not allowed",
-                Span::new(0, 0),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-empty-file".to_owned(),
+                message: "Empty files are not allowed".to_owned(),
+                span: Span::new(0, 0),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

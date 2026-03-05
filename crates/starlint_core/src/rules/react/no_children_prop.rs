@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::JSXAttributeName;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoChildrenProp {
             description: "Disallow passing `children` as a prop".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,11 +41,15 @@ impl NativeRule for NoChildrenProp {
         };
 
         if name == "children" {
-            ctx.report_warning(
-                "react/no-children-prop",
-                "Do not pass `children` as a prop — nest children between opening and closing tags instead",
-                Span::new(attr.span.start, attr.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "react/no-children-prop".to_owned(),
+                message: "Do not pass `children` as a prop — nest children between opening and closing tags instead".to_owned(),
+                span: Span::new(attr.span.start, attr.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

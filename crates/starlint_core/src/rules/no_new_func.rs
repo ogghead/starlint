@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoNewFunc {
             description: "Disallow `new Function()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,21 +36,29 @@ impl NativeRule for NoNewFunc {
             AstKind::NewExpression(new_expr) => {
                 if matches!(&new_expr.callee, Expression::Identifier(id) if id.name.as_str() == "Function")
                 {
-                    ctx.report_warning(
-                        "no-new-func",
-                        "The `Function` constructor is `eval`",
-                        Span::new(new_expr.span.start, new_expr.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-new-func".to_owned(),
+                        message: "The `Function` constructor is `eval`".to_owned(),
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::CallExpression(call) => {
                 if matches!(&call.callee, Expression::Identifier(id) if id.name.as_str() == "Function")
                 {
-                    ctx.report_warning(
-                        "no-new-func",
-                        "The `Function` constructor is `eval`",
-                        Span::new(call.span.start, call.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-new-func".to_owned(),
+                        message: "The `Function` constructor is `eval`".to_owned(),
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

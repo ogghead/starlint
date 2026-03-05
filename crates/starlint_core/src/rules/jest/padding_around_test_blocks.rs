@@ -2,7 +2,7 @@
 //!
 //! Suggest adding blank lines before and after test blocks (`it`/`test`/`describe`).
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for PaddingAroundTestBlocks {
             description: "Require padding around test blocks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -96,7 +96,15 @@ impl NativeRule for PaddingAroundTestBlocks {
         };
 
         for (msg, span) in &violations {
-            ctx.report_warning(RULE_NAME, msg, *span);
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: msg.to_owned(),
+                span: *span,
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

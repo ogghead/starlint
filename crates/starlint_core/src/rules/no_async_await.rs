@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoAsyncAwait {
             description: "Disallow async/await".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -37,25 +37,37 @@ impl NativeRule for NoAsyncAwait {
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         match kind {
             AstKind::Function(func) if func.r#async => {
-                ctx.report_warning(
-                    "no-async-await",
-                    "Unexpected async function",
-                    Span::new(func.span.start, func.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-async-await".to_owned(),
+                    message: "Unexpected async function".to_owned(),
+                    span: Span::new(func.span.start, func.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
             AstKind::ArrowFunctionExpression(arrow) if arrow.r#async => {
-                ctx.report_warning(
-                    "no-async-await",
-                    "Unexpected async function",
-                    Span::new(arrow.span.start, arrow.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-async-await".to_owned(),
+                    message: "Unexpected async function".to_owned(),
+                    span: Span::new(arrow.span.start, arrow.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
             AstKind::AwaitExpression(await_expr) => {
-                ctx.report_warning(
-                    "no-async-await",
-                    "Unexpected `await` expression",
-                    Span::new(await_expr.span.start, await_expr.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-async-await".to_owned(),
+                    message: "Unexpected `await` expression".to_owned(),
+                    span: Span::new(await_expr.span.start, await_expr.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
             _ => {}
         }

@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -52,7 +52,7 @@ impl NativeRule for NoBeforeInteractiveScriptOutsideDocument {
             description: "Forbid `strategy=\"beforeInteractive\"` outside `_document`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -89,11 +89,15 @@ impl NativeRule for NoBeforeInteractiveScriptOutsideDocument {
         let file_stem = file_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
 
         if file_stem != "_document" {
-            ctx.report_error(
-                RULE_NAME,
-                "`strategy=\"beforeInteractive\"` on `<Script>` is only allowed in `pages/_document`",
-                Span::new(opening.span.start, opening.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "`strategy=\"beforeInteractive\"` on `<Script>` is only allowed in `pages/_document`".to_owned(),
+                span: Span::new(opening.span.start, opening.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

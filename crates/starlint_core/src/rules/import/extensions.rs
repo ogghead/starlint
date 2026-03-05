@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for Extensions {
             description: "Ensure consistent use of file extension in import path".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -49,11 +49,15 @@ impl NativeRule for Extensions {
 
         for ext in JS_EXTENSIONS {
             if source_value.ends_with(ext) {
-                ctx.report_warning(
-                    "import/extensions",
-                    &format!("Unexpected use of file extension '{ext}' in import path"),
-                    Span::new(import.source.span.start, import.source.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "import/extensions".to_owned(),
+                    message: format!("Unexpected use of file extension '{ext}' in import path"),
+                    span: Span::new(import.source.span.start, import.source.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 return;
             }
         }

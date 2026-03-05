@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,7 +37,7 @@ impl NativeRule for NoInstanceofBuiltins {
             description: "Prefer builtin type-checking methods over instanceof".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,13 +60,17 @@ impl NativeRule for NoInstanceofBuiltins {
 
         let name = right_id.name.as_str();
         if let Some((_builtin, suggestion)) = BUILTIN_TYPES.iter().find(|(b, _)| *b == name) {
-            ctx.report_warning(
-                "no-instanceof-builtins",
-                &format!(
+            ctx.report(Diagnostic {
+                rule_name: "no-instanceof-builtins".to_owned(),
+                message: format!(
                     "Avoid `instanceof {name}` which doesn't work across realms. {suggestion}"
                 ),
-                Span::new(bin.span.start, bin.span.end),
-            );
+                span: Span::new(bin.span.start, bin.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

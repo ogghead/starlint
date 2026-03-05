@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{ClassElement, Expression, PropertyKey};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoUnusedPrivateClassMembers {
             description: "Disallow unused private class members".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,11 +77,15 @@ impl NativeRule for NoUnusedPrivateClassMembers {
         // Report declared but unused private members
         for (name, span) in &declared {
             if !used.contains(name) {
-                ctx.report_error(
-                    "no-unused-private-class-members",
-                    &format!("Private member `#{name}` is declared but never used"),
-                    *span,
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "no-unused-private-class-members".to_owned(),
+                    message: format!("Private member `#{name}` is declared but never used"),
+                    span: *span,
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::VariableDeclarationKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoUseBeforeDefine {
             description: "Disallow use of variables before they are defined".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -64,11 +64,15 @@ impl NativeRule for NoUseBeforeDefine {
                 for reference in scoping.get_resolved_references(symbol_id) {
                     let ref_span = semantic.reference_span(reference);
                     if ref_span.start < binding.span.start {
-                        ctx.report_warning(
-                            "no-use-before-define",
-                            &format!("'{}' is used before it is defined", binding.name),
-                            Span::new(ref_span.start, ref_span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "no-use-before-define".to_owned(),
+                            message: format!("'{}' is used before it is defined", binding.name),
+                            span: Span::new(ref_span.start, ref_span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }

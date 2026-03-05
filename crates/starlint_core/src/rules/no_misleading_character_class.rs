@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoMisleadingCharacterClass {
             description: "Disallow multi-code-point characters in character classes".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -40,11 +40,16 @@ impl NativeRule for NoMisleadingCharacterClass {
         let pattern = regex.regex.pattern.text.as_str();
 
         if has_misleading_char_class(pattern) {
-            ctx.report_error(
-                "no-misleading-character-class",
-                "Character class contains a character composed of multiple code points",
-                Span::new(regex.span.start, regex.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-misleading-character-class".to_owned(),
+                message: "Character class contains a character composed of multiple code points"
+                    .to_owned(),
+                span: Span::new(regex.span.start, regex.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

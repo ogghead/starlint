@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -41,7 +41,7 @@ impl NativeRule for MaxLinesPerFunction {
             description: "Enforce a maximum number of lines per function".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -79,14 +79,18 @@ impl NativeRule for MaxLinesPerFunction {
         if let Some(body_text) = source.get(start..end) {
             let line_count = u32::try_from(body_text.lines().count()).unwrap_or(0);
             if line_count > self.max {
-                ctx.report_warning(
-                    "max-lines-per-function",
-                    &format!(
+                ctx.report(Diagnostic {
+                    rule_name: "max-lines-per-function".to_owned(),
+                    message: format!(
                         "Function '{name}' has too many lines ({line_count}). Maximum allowed is {}",
                         self.max
                     ),
-                    Span::new(span.start, span.end),
-                );
+                    span: Span::new(span.start, span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
         }
     }

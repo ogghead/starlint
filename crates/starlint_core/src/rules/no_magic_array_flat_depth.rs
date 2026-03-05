@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoMagicArrayFlatDepth {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,11 +60,15 @@ impl NativeRule for NoMagicArrayFlatDepth {
         // Only flag numeric literals > 1
         // Allow: .flat(), .flat(1), .flat(Infinity), .flat(someVar)
         if is_magic_flat_depth(first_arg) {
-            ctx.report_warning(
-                "no-magic-array-flat-depth",
-                "Magic number depth in `.flat()` — use a named constant for non-trivial flat depths",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-magic-array-flat-depth".to_owned(),
+                message: "Magic number depth in `.flat()` — use a named constant for non-trivial flat depths".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

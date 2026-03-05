@@ -9,7 +9,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for NoNesting {
             description: "Forbid nesting `.then()`/`.catch()` chains".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,11 +61,15 @@ impl NativeRule for NoNesting {
             let body_text = ctx.source_text().get(start..end).unwrap_or_default();
 
             if body_text.contains(".then(") || body_text.contains(".catch(") {
-                ctx.report_warning(
-                    "promise/no-nesting",
-                    "Avoid nesting `.then()`/`.catch()` — flatten the chain or use `async`/`await`",
-                    Span::new(call.span.start, call.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "promise/no-nesting".to_owned(),
+                    message: "Avoid nesting `.then()`/`.catch()` — flatten the chain or use `async`/`await`".to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
                 return; // Only report once per call
             }
         }

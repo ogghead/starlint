@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::VariableDeclarationKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoUnusedVars {
             description: "Disallow unused variables".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -72,11 +72,15 @@ impl NativeRule for NoUnusedVars {
                     .any(oxc_semantic::Reference::is_read);
 
                 if !has_read {
-                    ctx.report_warning(
-                        "no-unused-vars",
-                        &format!("'{}' is declared but never used", binding.name),
-                        Span::new(binding.span.start, binding.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-unused-vars".to_owned(),
+                        message: format!("'{}' is declared but never used", binding.name),
+                        span: Span::new(binding.span.start, binding.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

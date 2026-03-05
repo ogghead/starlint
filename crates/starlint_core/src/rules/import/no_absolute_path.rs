@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoAbsolutePath {
             description: "Disallow absolute paths in import declarations".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -42,11 +42,15 @@ impl NativeRule for NoAbsolutePath {
             || source_value.as_bytes().get(1).is_some_and(|b| *b == b':');
 
         if is_absolute {
-            ctx.report_warning(
-                "import/no-absolute-path",
-                &format!("Do not use absolute path '{source_value}' in import"),
-                Span::new(import.source.span.start, import.source.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/no-absolute-path".to_owned(),
+                message: format!("Do not use absolute path '{source_value}' in import"),
+                span: Span::new(import.source.span.start, import.source.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

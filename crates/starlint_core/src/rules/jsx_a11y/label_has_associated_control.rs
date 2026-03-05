@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -40,7 +40,7 @@ impl NativeRule for LabelHasAssociatedControl {
                     .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -69,11 +69,17 @@ impl NativeRule for LabelHasAssociatedControl {
 
         // If no children and no htmlFor, the label has no associated control
         if element.children.is_empty() && !has_html_for {
-            ctx.report_warning(
-                RULE_NAME,
-                "`<label>` must have an associated control via `htmlFor` or by nesting an input",
-                Span::new(opening.span.start, opening.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message:
+                    "`<label>` must have an associated control via `htmlFor` or by nesting an input"
+                        .to_owned(),
+                span: Span::new(opening.span.start, opening.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

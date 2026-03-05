@@ -3,7 +3,7 @@
 //! Forbid named exports. Some teams prefer a single default export per
 //! module for consistency or to enforce a particular module pattern.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -19,7 +19,7 @@ impl NativeRule for NoNamedExport {
             description: "Forbid named exports".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -69,11 +69,15 @@ impl NativeRule for NoNamedExport {
         };
 
         for (start, end) in findings {
-            ctx.report_warning(
-                "import/no-named-export",
-                "Named exports are not allowed — use a default export instead",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "import/no-named-export".to_owned(),
+                message: "Named exports are not allowed — use a default export instead".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

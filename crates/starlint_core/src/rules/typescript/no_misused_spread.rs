@@ -9,7 +9,7 @@
 //! the source for `[...{` patterns which indicate spreading an object literal
 //! into an array context.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoMisusedSpread {
             description: "Disallow spreading non-iterable values into arrays".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -38,11 +38,15 @@ impl NativeRule for NoMisusedSpread {
         let findings = find_misused_spreads(source);
 
         for (start, end) in findings {
-            ctx.report_error(
-                "typescript/no-misused-spread",
-                "Do not spread a non-iterable value into an array — object literals are not iterable",
-                Span::new(start, end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-misused-spread".to_owned(),
+                message: "Do not spread a non-iterable value into an array — object literals are not iterable".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

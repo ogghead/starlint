@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -46,11 +46,15 @@ fn report_keyword_prefix(
     ctx: &mut NativeLintContext<'_>,
 ) {
     if let Some(keyword) = find_keyword_prefix(name) {
-        ctx.report_warning(
-            "no-keyword-prefix",
-            &format!("Do not prefix identifiers with keyword `{keyword}_`"),
-            Span::new(span_start, span_end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "no-keyword-prefix".to_owned(),
+            message: format!("Do not prefix identifiers with keyword `{keyword}_`"),
+            span: Span::new(span_start, span_end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 
@@ -62,7 +66,7 @@ impl NativeRule for NoKeywordPrefix {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 

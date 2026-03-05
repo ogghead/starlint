@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoNew {
             description: "Disallow `new` for side effects".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -38,11 +38,15 @@ impl NativeRule for NoNew {
         };
 
         if matches!(stmt.expression, oxc_ast::ast::Expression::NewExpression(_)) {
-            ctx.report_warning(
-                "no-new",
-                "Do not use `new` for side effects",
-                Span::new(stmt.span.start, stmt.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "no-new".to_owned(),
+                message: "Do not use `new` for side effects".to_owned(),
+                span: Span::new(stmt.span.start, stmt.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

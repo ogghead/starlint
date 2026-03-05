@@ -8,7 +8,7 @@ use oxc_ast::ast::VariableDeclarationKind;
 use oxc_ast::ast_kind::AstType;
 use oxc_semantic::SymbolFlags;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoConstAssign {
             description: "Disallow reassignment of const variables".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -70,11 +70,18 @@ impl NativeRule for NoConstAssign {
                     .any(oxc_semantic::Reference::is_write);
 
                 if has_write {
-                    ctx.report_error(
-                        "no-const-assign",
-                        &format!("'{}' is a constant and cannot be reassigned", binding.name),
-                        Span::new(binding.span.start, binding.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-const-assign".to_owned(),
+                        message: format!(
+                            "'{}' is a constant and cannot be reassigned",
+                            binding.name
+                        ),
+                        span: Span::new(binding.span.start, binding.span.end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }

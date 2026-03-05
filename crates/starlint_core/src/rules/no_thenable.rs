@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoThenable {
             description: "Disallow then property".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,31 +44,43 @@ impl NativeRule for NoThenable {
                         continue;
                     };
                     if property_key_is_then(&p.key) {
-                        ctx.report_warning(
-                            "no-thenable",
-                            "Do not add `then` to an object",
-                            Span::new(p.span.start, p.span.end),
-                        );
+                        ctx.report(Diagnostic {
+                            rule_name: "no-thenable".to_owned(),
+                            message: "Do not add `then` to an object".to_owned(),
+                            span: Span::new(p.span.start, p.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
                     }
                 }
             }
             // Check class methods/properties named `then`
             AstKind::MethodDefinition(method) => {
                 if property_key_is_then(&method.key) {
-                    ctx.report_warning(
-                        "no-thenable",
-                        "Do not add `then` to a class",
-                        Span::new(method.span.start, method.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-thenable".to_owned(),
+                        message: "Do not add `then` to a class".to_owned(),
+                        span: Span::new(method.span.start, method.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::PropertyDefinition(prop) => {
                 if property_key_is_then(&prop.key) {
-                    ctx.report_warning(
-                        "no-thenable",
-                        "Do not add `then` to a class",
-                        Span::new(prop.span.start, prop.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-thenable".to_owned(),
+                        message: "Do not add `then` to a class".to_owned(),
+                        span: Span::new(prop.span.start, prop.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}
