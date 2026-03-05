@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -76,13 +78,54 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
                 "false"
             };
 
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
+            // Build fix: determine if we need negation
+            // === true / == true → just the non-bool operand
+            // !== true / != true → negate the non-bool operand
+            // === false / == false → negate the non-bool operand
+            // !== false / != false → just the non-bool operand
+            let is_equality = matches!(
+                expr.operator,
+                BinaryOperator::Equality | BinaryOperator::StrictEquality
+            );
+            let needs_negation = if bool_val.unwrap_or(true) {
+                !is_equality // `!== true` or `!= true` → negate
+            } else {
+                is_equality // `=== false` or `== false` → negate
+            };
+
+            let source = ctx.source_text();
+            let other = if left_is_bool {
+                &expr.right
+            } else {
+                &expr.left
+            };
+            let other_start = usize::try_from(other.span().start).unwrap_or(0);
+            let other_end = usize::try_from(other.span().end).unwrap_or(0);
+            let other_text = source.get(other_start..other_end).unwrap_or("");
+
+            let replacement = if needs_negation {
+                format!("!{other_text}")
+            } else {
+                other_text.to_owned()
+            };
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
                     "Unnecessary comparison to `{bool_str}` — simplify the expression by removing `{op_str} {bool_str}`"
                 ),
-                Span::new(expr.span.start, expr.span.end),
-            );
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some("Simplify the boolean comparison".to_owned()),
+                fix: Some(Fix {
+                    message: "Simplify the boolean comparison".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

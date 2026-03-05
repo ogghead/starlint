@@ -836,6 +836,17 @@ fn fix_idempotent_prefer_ternary_assign() {
 }
 
 #[test]
+fn fix_idempotent_ts_no_unnecessary_boolean_literal_compare() {
+    assert_fix_idempotent(
+        vec![Box::new(
+            rules::typescript::no_unnecessary_boolean_literal_compare::NoUnnecessaryBooleanLiteralCompare,
+        )],
+        "if (x === true) {}",
+        "ts_no_unnecessary_boolean_literal_compare",
+    );
+}
+
+#[test]
 fn fix_idempotent_all_rules() {
     // Includes `console.log(' hello')` which triggers both no-console and
     // no-console-spaces with overlapping spans — the multi-pass convergence
