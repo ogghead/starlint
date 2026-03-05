@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -58,11 +58,21 @@ impl NativeRule for PreferDateNow {
                     return;
                 }
 
-                ctx.report_warning(
-                    "prefer-date-now",
-                    "Use `Date.now()` instead of `new Date().getTime()`",
-                    Span::new(call.span.start, call.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "prefer-date-now".to_owned(),
+                    message: "Use `Date.now()` instead of `new Date().getTime()`".to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some("Replace with `Date.now()`".to_owned()),
+                    fix: Some(Fix {
+                        message: "Replace with `Date.now()`".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement: "Date.now()".to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
             // +new Date()
             AstKind::UnaryExpression(unary) => {
@@ -73,11 +83,21 @@ impl NativeRule for PreferDateNow {
                     return;
                 }
 
-                ctx.report_warning(
-                    "prefer-date-now",
-                    "Use `Date.now()` instead of `+new Date()`",
-                    Span::new(unary.span.start, unary.span.end),
-                );
+                ctx.report(Diagnostic {
+                    rule_name: "prefer-date-now".to_owned(),
+                    message: "Use `Date.now()` instead of `+new Date()`".to_owned(),
+                    span: Span::new(unary.span.start, unary.span.end),
+                    severity: Severity::Warning,
+                    help: Some("Replace with `Date.now()`".to_owned()),
+                    fix: Some(Fix {
+                        message: "Replace with `Date.now()`".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(unary.span.start, unary.span.end),
+                            replacement: "Date.now()".to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
             _ => {}
         }

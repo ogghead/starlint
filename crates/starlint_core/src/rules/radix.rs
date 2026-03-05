@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -52,11 +52,26 @@ impl NativeRule for Radix {
 
         // Must have at least one argument but missing the radix (second arg)
         if !call.arguments.is_empty() && call.arguments.len() < 2 {
-            ctx.report_warning(
-                "radix",
-                "Missing radix parameter in `parseInt()` — specify 10 for decimal",
-                Span::new(call.span.start, call.span.end),
-            );
+            // Insert `, 10` before closing paren
+            ctx.report(Diagnostic {
+                rule_name: "radix".to_owned(),
+                message: "Missing radix parameter in `parseInt()` — specify 10 for decimal"
+                    .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Add radix parameter `10`".to_owned()),
+                fix: Some(Fix {
+                    message: "Add radix parameter `10`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(
+                            call.span.end.saturating_sub(1),
+                            call.span.end.saturating_sub(1),
+                        ),
+                        replacement: ", 10".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

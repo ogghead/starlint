@@ -6,7 +6,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -44,11 +46,34 @@ impl NativeRule for PreferExponentiationOperator {
         }
 
         if matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Math") {
-            ctx.report_warning(
-                "prefer-exponentiation-operator",
-                "Use the `**` operator instead of `Math.pow()`",
-                Span::new(call.span.start, call.span.end),
+            let fix = call.arguments.first().zip(call.arguments.get(1)).map(
+                |(first, second)| {
+                    let source = ctx.source_text();
+                    let f_start = usize::try_from(first.span().start).unwrap_or(0);
+                    let f_end = usize::try_from(first.span().end).unwrap_or(0);
+                    let s_start = usize::try_from(second.span().start).unwrap_or(0);
+                    let s_end = usize::try_from(second.span().end).unwrap_or(0);
+                    let first_text = source.get(f_start..f_end).unwrap_or("");
+                    let second_text = source.get(s_start..s_end).unwrap_or("");
+                    Fix {
+                        message: "Use `**` operator".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement: format!("{first_text} ** {second_text}"),
+                        }],
+                    }
+                },
             );
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-exponentiation-operator".to_owned(),
+                message: "Use the `**` operator instead of `Math.pow()`".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace with `**` operator".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

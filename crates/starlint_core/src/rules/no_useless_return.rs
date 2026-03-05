@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -43,11 +43,23 @@ impl NativeRule for NoUselessReturn {
 
         if let Statement::ReturnStatement(ret) = last {
             if ret.argument.is_none() {
-                ctx.report_warning(
-                    "no-useless-return",
-                    "Unnecessary return statement",
-                    Span::new(ret.span.start, ret.span.end),
-                );
+                let ret_span = Span::new(ret.span.start, ret.span.end);
+
+                ctx.report(Diagnostic {
+                    rule_name: "no-useless-return".to_owned(),
+                    message: "Unnecessary return statement".to_owned(),
+                    span: ret_span,
+                    severity: Severity::Warning,
+                    help: Some("Remove the unnecessary `return`".to_owned()),
+                    fix: Some(Fix {
+                        message: "Remove unnecessary `return`".to_owned(),
+                        edits: vec![Edit {
+                            span: ret_span,
+                            replacement: String::new(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

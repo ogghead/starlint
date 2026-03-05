@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -39,11 +41,28 @@ impl NativeRule for NoImplicitCoercion {
             AstKind::UnaryExpression(outer) if outer.operator == UnaryOperator::LogicalNot => {
                 if let Expression::UnaryExpression(inner) = &outer.argument {
                     if inner.operator == UnaryOperator::LogicalNot {
-                        ctx.report_warning(
-                            "no-implicit-coercion",
-                            "Use `Boolean(x)` instead of `!!x`",
-                            Span::new(outer.span.start, outer.span.end),
-                        );
+                        let source = ctx.source_text();
+                        let arg_start =
+                            usize::try_from(inner.argument.span().start).unwrap_or(0);
+                        let arg_end =
+                            usize::try_from(inner.argument.span().end).unwrap_or(0);
+                        let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
+
+                        ctx.report(Diagnostic {
+                            rule_name: "no-implicit-coercion".to_owned(),
+                            message: "Use `Boolean(x)` instead of `!!x`".to_owned(),
+                            span: Span::new(outer.span.start, outer.span.end),
+                            severity: Severity::Warning,
+                            help: Some("Replace with `Boolean()`".to_owned()),
+                            fix: Some(Fix {
+                                message: "Replace with `Boolean()`".to_owned(),
+                                edits: vec![Edit {
+                                    span: Span::new(outer.span.start, outer.span.end),
+                                    replacement: format!("Boolean({arg_text})"),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
                     }
                 }
             }
@@ -54,11 +73,28 @@ impl NativeRule for NoImplicitCoercion {
                     &expr.argument,
                     Expression::NumericLiteral(_) | Expression::BigIntLiteral(_)
                 ) {
-                    ctx.report_warning(
-                        "no-implicit-coercion",
-                        "Use `Number(x)` instead of `+x`",
-                        Span::new(expr.span.start, expr.span.end),
-                    );
+                    let source = ctx.source_text();
+                    let arg_start =
+                        usize::try_from(expr.argument.span().start).unwrap_or(0);
+                    let arg_end =
+                        usize::try_from(expr.argument.span().end).unwrap_or(0);
+                    let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
+
+                    ctx.report(Diagnostic {
+                        rule_name: "no-implicit-coercion".to_owned(),
+                        message: "Use `Number(x)` instead of `+x`".to_owned(),
+                        span: Span::new(expr.span.start, expr.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace with `Number()`".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace with `Number()`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(expr.span.start, expr.span.end),
+                                replacement: format!("Number({arg_text})"),
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             // "" + x → String(x)
@@ -68,11 +104,28 @@ impl NativeRule for NoImplicitCoercion {
                     Expression::StringLiteral(s) if s.value.is_empty()
                 );
                 if left_is_empty_string {
-                    ctx.report_warning(
-                        "no-implicit-coercion",
-                        "Use `String(x)` instead of `\"\" + x`",
-                        Span::new(expr.span.start, expr.span.end),
-                    );
+                    let source = ctx.source_text();
+                    let right_start =
+                        usize::try_from(expr.right.span().start).unwrap_or(0);
+                    let right_end =
+                        usize::try_from(expr.right.span().end).unwrap_or(0);
+                    let right_text = source.get(right_start..right_end).unwrap_or("x");
+
+                    ctx.report(Diagnostic {
+                        rule_name: "no-implicit-coercion".to_owned(),
+                        message: "Use `String(x)` instead of `\"\" + x`".to_owned(),
+                        span: Span::new(expr.span.start, expr.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace with `String()`".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace with `String()`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(expr.span.start, expr.span.end),
+                                replacement: format!("String({right_text})"),
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

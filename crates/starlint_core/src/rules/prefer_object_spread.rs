@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -58,11 +60,36 @@ impl NativeRule for PreferObjectSpread {
             };
 
             if is_empty_object {
-                ctx.report_warning(
-                    "prefer-object-spread",
-                    "Use an object spread instead of `Object.assign` with empty object",
-                    Span::new(call.span.start, call.span.end),
-                );
+                let source = ctx.source_text();
+                let mut parts = Vec::new();
+                for arg in call.arguments.iter().skip(1) {
+                    let s = usize::try_from(arg.span().start).unwrap_or(0);
+                    let e = usize::try_from(arg.span().end).unwrap_or(0);
+                    let text = source.get(s..e).unwrap_or("");
+                    parts.push(format!("...{text}"));
+                }
+                let replacement = if parts.is_empty() {
+                    "{}".to_owned()
+                } else {
+                    format!("{{ {} }}", parts.join(", "))
+                };
+
+                ctx.report(Diagnostic {
+                    rule_name: "prefer-object-spread".to_owned(),
+                    message: "Use an object spread instead of `Object.assign` with empty object"
+                        .to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some("Replace with object spread".to_owned()),
+                    fix: Some(Fix {
+                        message: "Replace with object spread".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement,
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

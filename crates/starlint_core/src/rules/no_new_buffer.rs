@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,11 +44,41 @@ impl NativeRule for NoNewBuffer {
         );
 
         if is_buffer {
-            ctx.report_error(
-                "no-new-buffer",
-                "`new Buffer()` is deprecated — use `Buffer.from()`, `Buffer.alloc()`, or `Buffer.allocUnsafe()`",
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+            let source = ctx.source_text();
+            // Extract arguments source
+            let callee_start = usize::try_from(new_expr.callee.span().start).unwrap_or(0);
+            let expr_end = usize::try_from(new_expr.span.end).unwrap_or(0);
+            // Get "Buffer(...)" from callee start to end
+            let callee_to_end = source.get(callee_start..expr_end).unwrap_or("");
+            // Determine method: alloc for numeric arg, from otherwise
+            let method = new_expr
+                .arguments
+                .first()
+                .map_or("from", |arg| {
+                    if matches!(arg, oxc_ast::ast::Argument::NumericLiteral(_)) {
+                        "alloc"
+                    } else {
+                        "from"
+                    }
+                });
+            // Replace "Buffer" in callee_to_end with "Buffer.method"
+            let replacement = callee_to_end.replacen("Buffer", &format!("Buffer.{method}"), 1);
+
+            ctx.report(Diagnostic {
+                rule_name: "no-new-buffer".to_owned(),
+                message: "`new Buffer()` is deprecated — use `Buffer.from()`, `Buffer.alloc()`, or `Buffer.allocUnsafe()`".to_owned(),
+                span: Span::new(new_expr.span.start, new_expr.span.end),
+                severity: Severity::Error,
+                help: Some(format!("Replace with `Buffer.{method}()`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `Buffer.{method}()`"),
+                    edits: vec![Edit {
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

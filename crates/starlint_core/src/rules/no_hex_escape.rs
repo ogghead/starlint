@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,13 +45,67 @@ impl NativeRule for NoHexEscape {
 
         let finding = raw.contains("\\x");
         if finding {
-            ctx.report_warning(
-                "no-hex-escape",
-                r"Use Unicode escape `\uNNNN` instead of hex escape `\xNN`",
-                Span::new(lit.span.start, lit.span.end),
-            );
+            let fixed = convert_hex_to_unicode(raw);
+
+            ctx.report(Diagnostic {
+                rule_name: "no-hex-escape".to_owned(),
+                message: r"Use Unicode escape `\uNNNN` instead of hex escape `\xNN`".to_owned(),
+                span: Span::new(lit.span.start, lit.span.end),
+                severity: Severity::Warning,
+                help: Some(r"Replace `\xNN` with `\u00NN`".to_owned()),
+                fix: Some(Fix {
+                    message: r"Convert hex escapes to Unicode escapes".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(lit.span.start, lit.span.end),
+                        replacement: fixed,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
+}
+
+/// Convert `\xNN` hex escapes to `\u00NN` Unicode escapes in raw source.
+fn convert_hex_to_unicode(raw: &str) -> String {
+    let mut result = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            result.push(ch);
+            continue;
+        }
+        if chars.peek() == Some(&'x') {
+            let _ = chars.next(); // consume 'x'
+            // Collect 2 hex digits
+            let mut hex = String::new();
+            for _ in 0..2 {
+                if let Some(&c) = chars.peek() {
+                    if c.is_ascii_hexdigit() {
+                        hex.push(c);
+                        let _ = chars.next();
+                    } else {
+                        break;
+                    }
+                }
+            }
+            if hex.len() == 2 {
+                result.push_str("\\u00");
+            } else {
+                // Incomplete hex escape, keep as-is
+                result.push('\\');
+                result.push('x');
+            }
+            result.push_str(&hex);
+        } else {
+            result.push('\\');
+            if let Some(&next) = chars.peek() {
+                result.push(next);
+                let _ = chars.next();
+            }
+        }
+    }
+    result
 }
 
 #[cfg(test)]

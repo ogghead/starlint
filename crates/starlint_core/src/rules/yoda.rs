@@ -4,10 +4,12 @@
 //! in a comparison, e.g. `"red" === color` instead of `color === "red"`.
 
 use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
+use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,12 +44,45 @@ impl NativeRule for Yoda {
 
         // Flag: literal on the left, non-literal on the right
         if is_literal(&expr.left) && !is_literal(&expr.right) {
-            ctx.report_warning(
-                "yoda",
-                "Expected literal to be on the right side of comparison",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            let source = ctx.source_text();
+            let left_start = usize::try_from(expr.left.span().start).unwrap_or(0);
+            let left_end = usize::try_from(expr.left.span().end).unwrap_or(0);
+            let right_start = usize::try_from(expr.right.span().start).unwrap_or(0);
+            let right_end = usize::try_from(expr.right.span().end).unwrap_or(0);
+            let left_text = source.get(left_start..left_end).unwrap_or("");
+            let right_text = source.get(right_start..right_end).unwrap_or("");
+            let flipped = flip_comparison(expr.operator);
+
+            ctx.report(Diagnostic {
+                rule_name: "yoda".to_owned(),
+                message: "Expected literal to be on the right side of comparison".to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some("Swap the operands".to_owned()),
+                fix: Some(Fix {
+                    message: "Swap operands".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement: format!("{right_text} {flipped} {left_text}"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
+    }
+}
+
+/// Flip a comparison operator for swapping operands.
+const fn flip_comparison(op: BinaryOperator) -> &'static str {
+    match op {
+        BinaryOperator::LessThan => ">",
+        BinaryOperator::LessEqualThan => ">=",
+        BinaryOperator::GreaterThan => "<",
+        BinaryOperator::GreaterEqualThan => "<=",
+        BinaryOperator::Equality => "==",
+        BinaryOperator::Inequality => "!=",
+        BinaryOperator::StrictInequality => "!==",
+        _ => "===",
     }
 }
 

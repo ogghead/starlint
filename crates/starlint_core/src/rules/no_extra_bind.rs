@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -47,11 +49,26 @@ impl NativeRule for NoExtraBind {
 
         // Arrow functions cannot be rebound — `.bind()` on them is always useless
         if is_arrow_function(&member.object) {
-            ctx.report_warning(
-                "no-extra-bind",
-                "The `.bind()` call on an arrow function is unnecessary",
-                Span::new(call.span.start, call.span.end),
-            );
+            let source = ctx.source_text();
+            let obj_start = usize::try_from(member.object.span().start).unwrap_or(0);
+            let obj_end = usize::try_from(member.object.span().end).unwrap_or(0);
+            let obj_text = source.get(obj_start..obj_end).unwrap_or("");
+
+            ctx.report(Diagnostic {
+                rule_name: "no-extra-bind".to_owned(),
+                message: "The `.bind()` call on an arrow function is unnecessary".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove `.bind()`".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove `.bind()`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement: obj_text.to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

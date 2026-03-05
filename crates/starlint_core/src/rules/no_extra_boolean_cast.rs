@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -54,11 +54,27 @@ impl NativeRule for NoExtraBooleanCast {
         };
 
         if is_double_negation(test) || is_boolean_call(test) {
-            ctx.report_warning(
-                "no-extra-boolean-cast",
-                "Redundant double negation in boolean context",
-                Span::new(test.span().start, test.span().end),
-            );
+            let inner_span = unwrap_boolean_cast(test);
+            let source = ctx.source_text();
+            let inner_start = usize::try_from(inner_span.start).unwrap_or(0);
+            let inner_end = usize::try_from(inner_span.end).unwrap_or(0);
+            let inner_text = source.get(inner_start..inner_end).unwrap_or("x");
+
+            ctx.report(Diagnostic {
+                rule_name: "no-extra-boolean-cast".to_owned(),
+                message: "Redundant double negation in boolean context".to_owned(),
+                span: Span::new(test.span().start, test.span().end),
+                severity: Severity::Warning,
+                help: Some("Remove the unnecessary boolean cast".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove unnecessary boolean cast".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(test.span().start, test.span().end),
+                        replacement: inner_text.to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
@@ -84,6 +100,26 @@ fn is_boolean_call(expr: &Expression<'_>) -> bool {
 }
 
 use oxc_span::GetSpan;
+
+/// Extract the span of the inner expression from `!!x` or `Boolean(x)`.
+fn unwrap_boolean_cast(expr: &Expression<'_>) -> Span {
+    if let Expression::UnaryExpression(outer) = expr {
+        if outer.operator == UnaryOperator::LogicalNot {
+            if let Expression::UnaryExpression(inner) = &outer.argument {
+                if inner.operator == UnaryOperator::LogicalNot {
+                    return Span::new(inner.argument.span().start, inner.argument.span().end);
+                }
+            }
+        }
+    }
+    if let Expression::CallExpression(call) = expr {
+        if let Some(arg) = call.arguments.first() {
+            return Span::new(arg.span().start, arg.span().end);
+        }
+    }
+    // Fallback: return the expression's own span
+    Span::new(expr.span().start, expr.span().end)
+}
 
 #[cfg(test)]
 mod tests {

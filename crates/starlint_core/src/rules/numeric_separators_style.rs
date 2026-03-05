@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -76,12 +76,80 @@ impl NativeRule for NumericSeparatorsStyle {
             return;
         }
 
-        ctx.report_warning(
-            "numeric-separators-style",
-            &format!("Numeric literal `{raw}` should use numeric separators for readability"),
-            Span::new(lit.span.start, lit.span.end),
-        );
+        let fixed = add_numeric_separators(raw);
+
+        ctx.report(Diagnostic {
+            rule_name: "numeric-separators-style".to_owned(),
+            message: format!(
+                "Numeric literal `{raw}` should use numeric separators for readability"
+            ),
+            span: Span::new(lit.span.start, lit.span.end),
+            severity: Severity::Warning,
+            help: Some("Add numeric separators".to_owned()),
+            fix: Some(Fix {
+                message: "Add numeric separators".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(lit.span.start, lit.span.end),
+                    replacement: fixed,
+                }],
+            }),
+            labels: vec![],
+        });
     }
+}
+
+/// Add numeric separators to a raw numeric literal string.
+fn add_numeric_separators(raw: &str) -> String {
+    // Detect prefix (0x, 0o, 0b)
+    let (prefix, rest) = if raw.len() > 2 {
+        match raw.as_bytes().get(1) {
+            Some(b'x' | b'X' | b'o' | b'O' | b'b' | b'B') => (&raw[..2], &raw[2..]),
+            _ => ("", raw),
+        }
+    } else {
+        ("", raw)
+    };
+
+    // Split on decimal point or exponent
+    let (integer, suffix) = rest
+        .find(['.', 'e', 'E'])
+        .map_or((rest, ""), |pos| (&rest[..pos], &rest[pos..]));
+
+    // Group size: 3 for decimal/octal, 4 for binary, 2 for hex
+    let group_size = if prefix.starts_with("0x") || prefix.starts_with("0X") {
+        2
+    } else if prefix.starts_with("0b") || prefix.starts_with("0B") {
+        4
+    } else {
+        3
+    };
+
+    let formatted = insert_separators(integer, group_size);
+    format!("{prefix}{formatted}{suffix}")
+}
+
+/// Insert `_` separators into a digit string from right to left.
+fn insert_separators(digits: &str, group_size: usize) -> String {
+    let len = digits.len();
+    if len <= group_size || group_size == 0 {
+        return digits.to_owned();
+    }
+    let extra = len.checked_div(group_size).unwrap_or(0);
+    let mut result = String::with_capacity(len.saturating_add(extra));
+    let first_group = len.checked_rem(group_size).unwrap_or(0);
+    if let Some(prefix) = digits.get(..first_group) {
+        result.push_str(prefix);
+    }
+    let tail = digits.get(first_group..).unwrap_or("");
+    for (i, chunk) in tail.as_bytes().chunks(group_size).enumerate() {
+        if first_group > 0 || i > 0 {
+            result.push('_');
+        }
+        for &b in chunk {
+            result.push(char::from(b));
+        }
+    }
+    result
 }
 
 #[cfg(test)]

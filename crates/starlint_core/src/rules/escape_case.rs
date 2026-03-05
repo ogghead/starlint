@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,13 +45,89 @@ impl NativeRule for EscapeCase {
         // Check for \xNN or \uNNNN with lowercase hex digits
         let finding = has_lowercase_escape(raw);
         if finding {
-            ctx.report_warning(
-                "escape-case",
-                "Use uppercase hex digits in escape sequences (e.g., `\\xFF` not `\\xff`)",
-                Span::new(lit.span.start, lit.span.end),
-            );
+            let fixed = uppercase_escapes(raw);
+
+            ctx.report(Diagnostic {
+                rule_name: "escape-case".to_owned(),
+                message: "Use uppercase hex digits in escape sequences (e.g., `\\xFF` not `\\xff`)"
+                    .to_owned(),
+                span: Span::new(lit.span.start, lit.span.end),
+                severity: Severity::Warning,
+                help: Some("Uppercase hex digits in escape sequences".to_owned()),
+                fix: Some(Fix {
+                    message: "Uppercase hex digits".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(lit.span.start, lit.span.end),
+                        replacement: fixed,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
+}
+
+/// Produce a new raw string with all hex digits in escape sequences uppercased.
+fn uppercase_escapes(raw: &str) -> String {
+    let mut result = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            result.push(ch);
+            continue;
+        }
+        result.push('\\');
+        match chars.peek() {
+            Some('x') => {
+                if let Some(x) = chars.next() { result.push(x); } // push 'x'
+                for _ in 0..2 {
+                    if let Some(&c) = chars.peek() {
+                        if c.is_ascii_hexdigit() {
+                            result.push(c.to_ascii_uppercase());
+                            let _ = chars.next();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            }
+            Some('u') => {
+                if let Some(u) = chars.next() { result.push(u); } // push 'u'
+                if chars.peek() == Some(&'{') {
+                    if let Some(brace) = chars.next() { result.push(brace); } // push '{'
+                    while let Some(&c) = chars.peek() {
+                        if c == '}' {
+                            if let Some(close) = chars.next() { result.push(close); }
+                            break;
+                        }
+                        if c.is_ascii_hexdigit() {
+                            result.push(c.to_ascii_uppercase());
+                        } else {
+                            result.push(c);
+                        }
+                        let _ = chars.next();
+                    }
+                } else {
+                    for _ in 0..4 {
+                        if let Some(&c) = chars.peek() {
+                            if c.is_ascii_hexdigit() {
+                                result.push(c.to_ascii_uppercase());
+                                let _ = chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            Some(&next) => {
+                result.push(next);
+                let _ = chars.next();
+            }
+            None => {}
+        }
+    }
+    result
 }
 
 /// Check if a raw string contains escape sequences with lowercase hex digits.

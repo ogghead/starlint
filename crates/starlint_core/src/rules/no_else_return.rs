@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -43,13 +45,49 @@ impl NativeRule for NoElseReturn {
         }
 
         // The consequent must always return
-        if consequent_always_returns(&if_stmt.consequent) {
-            ctx.report_warning(
-                "no-else-return",
-                "Unnecessary `else` after `return` — remove the `else` and outdent its contents",
-                Span::new(if_stmt.span.start, if_stmt.span.end),
-            );
+        if !consequent_always_returns(&if_stmt.consequent) {
+            return;
         }
+
+        let source = ctx.source_text();
+        let Some(alternate) = if_stmt.alternate.as_ref() else {
+            return;
+        };
+        let alt_start = usize::try_from(alternate.span().start).unwrap_or(0);
+        let alt_end = usize::try_from(alternate.span().end).unwrap_or(0);
+        let alt_source = source.get(alt_start..alt_end).unwrap_or("");
+
+        // If alternate is a block, extract inner content (strip braces)
+        let body_text = if matches!(alternate, Statement::BlockStatement(_)) {
+            alt_source
+                .get(1..alt_source.len().saturating_sub(1))
+                .unwrap_or("")
+                .trim()
+        } else {
+            alt_source.trim()
+        };
+
+        // Replace ` else { ... }` (from consequent end to if_stmt end)
+        // with `\n` + the body statements
+        let cons_end = if_stmt.consequent.span().end;
+
+        ctx.report(Diagnostic {
+            rule_name: "no-else-return".to_owned(),
+            message:
+                "Unnecessary `else` after `return` — remove the `else` and outdent its contents"
+                    .to_owned(),
+            span: Span::new(if_stmt.span.start, if_stmt.span.end),
+            severity: Severity::Warning,
+            help: Some("Remove the `else` wrapper".to_owned()),
+            fix: Some(Fix {
+                message: "Remove the `else` wrapper".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(cons_end, if_stmt.span.end),
+                    replacement: format!("\n{body_text}"),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

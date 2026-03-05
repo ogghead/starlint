@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,11 +44,28 @@ impl NativeRule for PreferMathTrunc {
             AstKind::UnaryExpression(outer) if outer.operator == UnaryOperator::BitwiseNot => {
                 if let Expression::UnaryExpression(inner) = &outer.argument {
                     if inner.operator == UnaryOperator::BitwiseNot {
-                        ctx.report_warning(
-                            "prefer-math-trunc",
-                            "Use `Math.trunc(x)` instead of `~~x`",
-                            Span::new(outer.span.start, outer.span.end),
-                        );
+                        let source = ctx.source_text();
+                        let arg_start =
+                            usize::try_from(inner.argument.span().start).unwrap_or(0);
+                        let arg_end =
+                            usize::try_from(inner.argument.span().end).unwrap_or(0);
+                        let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
+
+                        ctx.report(Diagnostic {
+                            rule_name: "prefer-math-trunc".to_owned(),
+                            message: "Use `Math.trunc(x)` instead of `~~x`".to_owned(),
+                            span: Span::new(outer.span.start, outer.span.end),
+                            severity: Severity::Warning,
+                            help: Some("Replace with `Math.trunc()`".to_owned()),
+                            fix: Some(Fix {
+                                message: "Replace with `Math.trunc()`".to_owned(),
+                                edits: vec![Edit {
+                                    span: Span::new(outer.span.start, outer.span.end),
+                                    replacement: format!("Math.trunc({arg_text})"),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
                     }
                 }
             }
@@ -63,11 +82,29 @@ impl NativeRule for PreferMathTrunc {
                         BinaryOperator::ShiftRight => ">>",
                         _ => return,
                     };
-                    ctx.report_warning(
-                        "prefer-math-trunc",
-                        &format!("Use `Math.trunc(x)` instead of `x {op} 0`"),
-                        Span::new(expr.span.start, expr.span.end),
-                    );
+
+                    let source = ctx.source_text();
+                    let left_start =
+                        usize::try_from(expr.left.span().start).unwrap_or(0);
+                    let left_end =
+                        usize::try_from(expr.left.span().end).unwrap_or(0);
+                    let left_text = source.get(left_start..left_end).unwrap_or("x");
+
+                    ctx.report(Diagnostic {
+                        rule_name: "prefer-math-trunc".to_owned(),
+                        message: format!("Use `Math.trunc(x)` instead of `x {op} 0`"),
+                        span: Span::new(expr.span.start, expr.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace with `Math.trunc()`".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace with `Math.trunc()`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(expr.span.start, expr.span.end),
+                                replacement: format!("Math.trunc({left_text})"),
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

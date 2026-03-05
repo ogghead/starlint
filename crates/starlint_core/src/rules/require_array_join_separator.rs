@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -47,11 +47,26 @@ impl NativeRule for RequireArrayJoinSeparator {
 
         // Flag if no arguments provided
         if call.arguments.is_empty() {
-            ctx.report_warning(
-                "require-array-join-separator",
-                "Missing separator argument in `.join()` — the default `\",\"` may not be intended",
-                Span::new(call.span.start, call.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "require-array-join-separator".to_owned(),
+                message:
+                    "Missing separator argument in `.join()` — the default `\",\"` may not be intended"
+                        .to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Add explicit separator argument".to_owned()),
+                fix: Some(Fix {
+                    message: "Add `\",\"` separator".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(
+                            call.span.end.saturating_sub(1),
+                            call.span.end.saturating_sub(1),
+                        ),
+                        replacement: "\",\"".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

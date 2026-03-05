@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,11 +44,38 @@ impl NativeRule for NoUselessConcat {
 
         // Both sides must be string literals or template literals
         if is_string_like(&expr.left) && is_string_like(&expr.right) {
-            ctx.report_warning(
-                "no-useless-concat",
-                "Unnecessary concatenation of two string literals — combine them into one",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            // Try to build a merged string literal from the source.
+            let source = ctx.source_text();
+            let left_start = usize::try_from(expr.left.span().start).unwrap_or(0);
+            let left_end = usize::try_from(expr.left.span().end).unwrap_or(0);
+            let right_start = usize::try_from(expr.right.span().start).unwrap_or(0);
+            let right_end = usize::try_from(expr.right.span().end).unwrap_or(0);
+            let left_raw = source.get(left_start..left_end).unwrap_or("");
+            let right_raw = source.get(right_start..right_end).unwrap_or("");
+
+            let fix = (left_raw.len() >= 2 && right_raw.len() >= 2).then(|| {
+                let left_inner = &left_raw[1..left_raw.len().saturating_sub(1)];
+                let right_inner = &right_raw[1..right_raw.len().saturating_sub(1)];
+                let quote = &left_raw[..1];
+                Fix {
+                    message: "Combine into a single string".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement: format!("{quote}{left_inner}{right_inner}{quote}"),
+                    }],
+                }
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "no-useless-concat".to_owned(),
+                message: "Unnecessary concatenation of two string literals — combine them into one"
+                    .to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some("Combine into a single string literal".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

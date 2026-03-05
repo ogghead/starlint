@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -39,11 +39,29 @@ impl NativeRule for NoDivRegex {
         let pattern = regex.regex.pattern.text.as_str();
 
         if pattern.starts_with('=') {
-            ctx.report_warning(
-                "no-div-regex",
-                "Ambiguous regex: looks like it could be a division operator",
-                Span::new(regex.span.start, regex.span.end),
-            );
+            // Fix: escape the leading = by wrapping in char class [=]
+            let source = ctx.source_text();
+            let start = usize::try_from(regex.span.start).unwrap_or(0);
+            let end = usize::try_from(regex.span.end).unwrap_or(0);
+            let raw = source.get(start..end).unwrap_or("");
+            // raw is "/=pattern/flags" — insert [=] after first /
+            let fix = raw.get(2..).map(|rest| Fix {
+                message: "Escape leading `=` in regex".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(regex.span.start, regex.span.end),
+                    replacement: format!("/[=]{rest}"),
+                }],
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "no-div-regex".to_owned(),
+                message: "Ambiguous regex: looks like it could be a division operator".to_owned(),
+                span: Span::new(regex.span.start, regex.span.end),
+                severity: Severity::Warning,
+                help: Some("Escape leading `=` with `[=]`".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

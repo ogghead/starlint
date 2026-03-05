@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -58,11 +60,40 @@ impl NativeRule for PreferReflectApply {
             }
         }
 
-        ctx.report_warning(
-            "prefer-reflect-apply",
-            "Use `Reflect.apply()` instead of `.apply()`",
-            Span::new(call.span.start, call.span.end),
-        );
+        let source = ctx.source_text();
+        let fn_start = usize::try_from(member.object.span().start).unwrap_or(0);
+        let fn_end = usize::try_from(member.object.span().end).unwrap_or(0);
+        let fn_text = source.get(fn_start..fn_end).unwrap_or("");
+
+        let fix = call
+            .arguments
+            .first()
+            .zip(call.arguments.get(1))
+            .map(|(ctx_arg, args_arg)| {
+                let ctx_start = usize::try_from(ctx_arg.span().start).unwrap_or(0);
+                let ctx_end = usize::try_from(ctx_arg.span().end).unwrap_or(0);
+                let args_start = usize::try_from(args_arg.span().start).unwrap_or(0);
+                let args_end = usize::try_from(args_arg.span().end).unwrap_or(0);
+                let ctx_text = source.get(ctx_start..ctx_end).unwrap_or("");
+                let args_text = source.get(args_start..args_end).unwrap_or("");
+                Fix {
+                    message: "Replace with `Reflect.apply()`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement: format!("Reflect.apply({fn_text}, {ctx_text}, {args_text})"),
+                    }],
+                }
+            });
+
+        ctx.report(Diagnostic {
+            rule_name: "prefer-reflect-apply".to_owned(),
+            message: "Use `Reflect.apply()` instead of `.apply()`".to_owned(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace with `Reflect.apply()`".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

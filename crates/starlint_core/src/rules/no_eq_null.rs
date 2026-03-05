@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,11 +47,41 @@ impl NativeRule for NoEqNull {
         let has_null = is_null(&expr.left) || is_null(&expr.right);
 
         if has_null {
-            ctx.report_warning(
-                "no-eq-null",
-                "Use `===` or `!==` to compare with `null`",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            let source = ctx.source_text();
+            let left_end = usize::try_from(expr.left.span().end).unwrap_or(0);
+            let right_start = usize::try_from(expr.right.span().start).unwrap_or(0);
+            let between = source.get(left_end..right_start).unwrap_or("");
+            let op_str = if expr.operator == BinaryOperator::Equality {
+                "=="
+            } else {
+                "!="
+            };
+            let replacement_op = if expr.operator == BinaryOperator::Equality {
+                "==="
+            } else {
+                "!=="
+            };
+
+            let fix = between.find(op_str).map(|offset| {
+                let op_pos = u32::try_from(left_end.saturating_add(offset)).unwrap_or(0);
+                Fix {
+                    message: format!("Replace `{op_str}` with `{replacement_op}`"),
+                    edits: vec![Edit {
+                        span: Span::new(op_pos, op_pos.saturating_add(2)),
+                        replacement: replacement_op.to_owned(),
+                    }],
+                }
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "no-eq-null".to_owned(),
+                message: "Use `===` or `!==` to compare with `null`".to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace `{op_str}` with `{replacement_op}`")),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

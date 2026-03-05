@@ -8,8 +8,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -61,18 +62,83 @@ impl NativeRule for NoExtraLabel {
 
         // For a simple single-level loop/switch, any break/continue with
         // this label is redundant since it's the immediately enclosing one.
-        // We flag the label itself.
         let span_start = labeled.span.start;
         let label_end = labeled.label.span.end;
-        // Label span includes the colon: "label:"
-        let label_len = label_name.len();
-        let _ = label_len; // Suppress unused warning
 
-        ctx.report_warning(
-            "no-extra-label",
-            &format!("Unnecessary label `{label_name}`"),
-            Span::new(span_start, label_end),
-        );
+        // Build edits: delete the label prefix, and remove label from break/continue.
+        let body_start = labeled.body.span().start;
+        let mut edits = vec![Edit {
+            span: Span::new(span_start, body_start),
+            replacement: String::new(),
+        }];
+
+        // Also remove label references from break/continue statements.
+        collect_label_ref_edits(&labeled.body, label_name, &mut edits);
+
+        ctx.report(Diagnostic {
+            rule_name: "no-extra-label".to_owned(),
+            message: format!("Unnecessary label `{label_name}`"),
+            span: Span::new(span_start, label_end),
+            severity: Severity::Warning,
+            help: Some(format!("Remove label `{label_name}`")),
+            fix: Some(Fix {
+                message: format!("Remove label `{label_name}`"),
+                edits,
+            }),
+            labels: vec![],
+        });
+    }
+}
+
+/// Walk the body of a loop/switch to find break/continue statements referencing
+/// `label`, and add edits to remove the label (including the preceding space).
+fn collect_label_ref_edits(stmt: &Statement<'_>, label: &str, edits: &mut Vec<Edit>) {
+    match stmt {
+        Statement::BreakStatement(brk) => {
+            if let Some(l) = &brk.label {
+                if l.name.as_str() == label {
+                    // Delete " label" (space + label name) from break statement.
+                    edits.push(Edit {
+                        span: Span::new(l.span.start.saturating_sub(1), l.span.end),
+                        replacement: String::new(),
+                    });
+                }
+            }
+        }
+        Statement::ContinueStatement(cont) => {
+            if let Some(l) = &cont.label {
+                if l.name.as_str() == label {
+                    edits.push(Edit {
+                        span: Span::new(l.span.start.saturating_sub(1), l.span.end),
+                        replacement: String::new(),
+                    });
+                }
+            }
+        }
+        Statement::BlockStatement(block) => {
+            for s in &block.body {
+                collect_label_ref_edits(s, label, edits);
+            }
+        }
+        Statement::IfStatement(if_stmt) => {
+            collect_label_ref_edits(&if_stmt.consequent, label, edits);
+            if let Some(alt) = &if_stmt.alternate {
+                collect_label_ref_edits(alt, label, edits);
+            }
+        }
+        Statement::ForStatement(f) => collect_label_ref_edits(&f.body, label, edits),
+        Statement::ForInStatement(f) => collect_label_ref_edits(&f.body, label, edits),
+        Statement::ForOfStatement(f) => collect_label_ref_edits(&f.body, label, edits),
+        Statement::WhileStatement(w) => collect_label_ref_edits(&w.body, label, edits),
+        Statement::DoWhileStatement(d) => collect_label_ref_edits(&d.body, label, edits),
+        Statement::SwitchStatement(sw) => {
+            for case in &sw.cases {
+                for s in &case.consequent {
+                    collect_label_ref_edits(s, label, edits);
+                }
+            }
+        }
+        _ => {}
     }
 }
 

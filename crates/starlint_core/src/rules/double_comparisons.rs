@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression, LogicalOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -82,11 +82,28 @@ impl NativeRule for DoubleComparisons {
         };
 
         if let Some(message) = finding {
-            ctx.report_warning(
-                "double-comparisons",
-                message,
-                Span::new(logical.span.start, logical.span.end),
-            );
+            let replacement_op = match logical.operator {
+                LogicalOperator::And => "===",
+                _ => "!==",
+            };
+            let left_a = expr_source(&left.left, source).unwrap_or("");
+            let right_b = expr_source(&left.right, source).unwrap_or("");
+
+            ctx.report(Diagnostic {
+                rule_name: "double-comparisons".to_owned(),
+                message: message.to_owned(),
+                span: Span::new(logical.span.start, logical.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Simplify to `{replacement_op}`")),
+                fix: Some(Fix {
+                    message: format!("Simplify to `{replacement_op}`"),
+                    edits: vec![Edit {
+                        span: Span::new(logical.span.start, logical.span.end),
+                        replacement: format!("{left_a} {replacement_op} {right_b}"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

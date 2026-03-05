@@ -3,7 +3,7 @@
 //! Require or disallow the Unicode Byte Order Mark (BOM, U+FEFF).
 //! By default, this rule requires that files do NOT start with a BOM.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,11 +32,21 @@ impl NativeRule for UnicodeBom {
 
         // Default behavior: disallow BOM
         if source.starts_with('\u{FEFF}') {
-            ctx.report_warning(
-                "unicode-bom",
-                "Unexpected Unicode BOM (Byte Order Mark)",
-                Span::new(0, 3), // BOM is 3 bytes in UTF-8
-            );
+            ctx.report(Diagnostic {
+                rule_name: "unicode-bom".to_owned(),
+                message: "Unexpected Unicode BOM (Byte Order Mark)".to_owned(),
+                span: Span::new(0, 3),
+                severity: Severity::Warning,
+                help: Some("Remove the BOM".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove the BOM".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(0, 3),
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

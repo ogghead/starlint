@@ -8,7 +8,7 @@ use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,11 +42,25 @@ impl NativeRule for NoUnusedLabels {
         // Check if the label is referenced in the body
         if !statement_references_label(&labeled.body, label_name) {
             let label_span = labeled.label.span();
-            ctx.report_error(
-                "no-unused-labels",
-                &format!("Label `{label_name}` is defined but never used"),
-                Span::new(label_span.start, label_span.end),
-            );
+            // Delete from the start of the labeled statement to the start of the body.
+            let body_start = labeled.body.span().start;
+            let delete_span = Span::new(labeled.span.start, body_start);
+
+            ctx.report(Diagnostic {
+                rule_name: "no-unused-labels".to_owned(),
+                message: format!("Label `{label_name}` is defined but never used"),
+                span: Span::new(label_span.start, label_span.end),
+                severity: Severity::Error,
+                help: Some(format!("Remove label `{label_name}`")),
+                fix: Some(Fix {
+                    message: format!("Remove label `{label_name}`"),
+                    edits: vec![Edit {
+                        span: delete_span,
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

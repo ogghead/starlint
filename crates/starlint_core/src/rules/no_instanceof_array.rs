@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -46,11 +48,26 @@ impl NativeRule for NoInstanceofArray {
         );
 
         if is_array {
-            ctx.report_warning(
-                "no-instanceof-array",
-                "Use `Array.isArray()` instead of `instanceof Array`",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            let source = ctx.source_text();
+            let left_start = usize::try_from(expr.left.span().start).unwrap_or(0);
+            let left_end = usize::try_from(expr.left.span().end).unwrap_or(0);
+            let left_text = source.get(left_start..left_end).unwrap_or("x");
+
+            ctx.report(Diagnostic {
+                rule_name: "no-instanceof-array".to_owned(),
+                message: "Use `Array.isArray()` instead of `instanceof Array`".to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace with `Array.isArray()`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace with `Array.isArray()`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement: format!("Array.isArray({left_text})"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

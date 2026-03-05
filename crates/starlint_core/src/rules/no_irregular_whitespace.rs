@@ -4,7 +4,7 @@
 //! Characters like non-breaking space (U+00A0), zero-width space (U+200B),
 //! and others can cause unexpected behavior and are almost invisible.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -69,14 +69,26 @@ impl NativeRule for NoIrregularWhitespace {
         };
 
         for (offset, char_len, ch) in findings {
-            ctx.report_error(
-                "no-irregular-whitespace",
-                &format!(
+            let char_span = Span::new(offset, offset.checked_add(char_len).unwrap_or(offset));
+
+            ctx.report(Diagnostic {
+                rule_name: "no-irregular-whitespace".to_owned(),
+                message: format!(
                     "Irregular whitespace character U+{:04X} not allowed",
                     u32::from(ch)
                 ),
-                Span::new(offset, offset.checked_add(char_len).unwrap_or(offset)),
-            );
+                span: char_span,
+                severity: Severity::Error,
+                help: Some("Replace with a regular space".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace with a regular space".to_owned(),
+                    edits: vec![Edit {
+                        span: char_span,
+                        replacement: " ".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

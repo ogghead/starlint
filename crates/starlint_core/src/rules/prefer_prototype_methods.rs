@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -75,14 +77,32 @@ impl NativeRule for PreferPrototypeMethods {
         let prototype_method = inner_member.property.name.as_str();
         let prototype_owner = if is_empty_array { "Array" } else { "String" };
 
-        ctx.report_warning(
-            "prefer-prototype-methods",
-            &format!(
+        // Replace the literal (`[]` or `""`) with `Type.prototype`
+        let literal_span = inner_member.object.span();
+        let replacement = format!("{prototype_owner}.prototype");
+
+        ctx.report(Diagnostic {
+            rule_name: "prefer-prototype-methods".to_owned(),
+            message: format!(
                 "Use `{prototype_owner}.prototype.{prototype_method}.{method}()` instead of a \
                  literal"
             ),
-            Span::new(call.span.start, call.span.end),
-        );
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: Some(format!(
+                "Replace with `{prototype_owner}.prototype.{prototype_method}.{method}()`"
+            )),
+            fix: Some(Fix {
+                message: format!(
+                    "Replace with `{prototype_owner}.prototype.{prototype_method}.{method}()`"
+                ),
+                edits: vec![Edit {
+                    span: Span::new(literal_span.start, literal_span.end),
+                    replacement,
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

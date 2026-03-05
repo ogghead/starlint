@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,26 +39,67 @@ impl NativeRule for NoArrayConstructor {
                 if matches!(&new_expr.callee, Expression::Identifier(id) if id.name.as_str() == "Array")
                     && new_expr.arguments.len() != 1
                 {
-                    ctx.report_warning(
-                        "no-array-constructor",
-                        "Use array literal `[]` instead of `Array` constructor",
-                        Span::new(new_expr.span.start, new_expr.span.end),
-                    );
+                    let source = ctx.source_text();
+                    let replacement = build_array_literal(&new_expr.arguments, source);
+                    ctx.report(Diagnostic {
+                        rule_name: "no-array-constructor".to_owned(),
+                        message: "Use array literal `[]` instead of `Array` constructor".to_owned(),
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace with array literal".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace with array literal".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(new_expr.span.start, new_expr.span.end),
+                                replacement,
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::CallExpression(call) => {
                 if matches!(&call.callee, Expression::Identifier(id) if id.name.as_str() == "Array")
                     && call.arguments.len() != 1
                 {
-                    ctx.report_warning(
-                        "no-array-constructor",
-                        "Use array literal `[]` instead of `Array` constructor",
-                        Span::new(call.span.start, call.span.end),
-                    );
+                    let source = ctx.source_text();
+                    let replacement = build_array_literal(&call.arguments, source);
+                    ctx.report(Diagnostic {
+                        rule_name: "no-array-constructor".to_owned(),
+                        message: "Use array literal `[]` instead of `Array` constructor".to_owned(),
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace with array literal".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace with array literal".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(call.span.start, call.span.end),
+                                replacement,
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}
         }
+    }
+}
+
+/// Build an array literal string from arguments.
+fn build_array_literal(args: &[oxc_ast::ast::Argument<'_>], source: &str) -> String {
+    if args.is_empty() {
+        return "[]".to_owned();
+    }
+    if let (Some(first), Some(last)) = (args.first(), args.last()) {
+        let first_span: oxc_span::Span = first.span();
+        let last_span: oxc_span::Span = last.span();
+        let first_start = usize::try_from(first_span.start).unwrap_or(0);
+        let last_end = usize::try_from(last_span.end).unwrap_or(0);
+        let args_text = source.get(first_start..last_end).unwrap_or("");
+        format!("[{args_text}]")
+    } else {
+        "[]".to_owned()
     }
 }
 

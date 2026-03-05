@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{AssignmentOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -82,17 +84,33 @@ impl NativeRule for MisrefactoredAssignOp {
                     AssignmentOperator::Remainder => "%=",
                     _ => return,
                 };
-                let findings = vec![(
-                    format!(
+
+                // Fix: replace the RHS binary expression with just the right operand
+                let rhs_right_start =
+                    usize::try_from(rhs_bin.right.span().start).unwrap_or(0);
+                let rhs_right_end =
+                    usize::try_from(rhs_bin.right.span().end).unwrap_or(0);
+                let right_text = source.get(rhs_right_start..rhs_right_end).unwrap_or("");
+
+                ctx.report(Diagnostic {
+                    rule_name: "misrefactored-assign-op".to_owned(),
+                    message: format!(
                         "`{target_src} {op_str} {target_src} ...` looks like a misrefactored \
                          compound assignment — did you mean `{target_src} {op_str} ...` without \
                          repeating `{target_src}`?"
                     ),
-                    Span::new(assign.span.start, assign.span.end),
-                )];
-                for (msg, span) in findings {
-                    ctx.report_warning("misrefactored-assign-op", &msg, span);
-                }
+                    span: Span::new(assign.span.start, assign.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Simplify to `{target_src} {op_str} {right_text}`")),
+                    fix: Some(Fix {
+                        message: format!("Simplify to `{target_src} {op_str} {right_text}`"),
+                        edits: vec![Edit {
+                            span: Span::new(rhs_bin.span.start, rhs_bin.span.end),
+                            replacement: right_text.to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

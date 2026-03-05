@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,22 +37,42 @@ impl NativeRule for NoObjectConstructor {
                 if matches!(&new_expr.callee, Expression::Identifier(id) if id.name.as_str() == "Object")
                     && new_expr.arguments.is_empty()
                 {
-                    ctx.report_warning(
-                        "no-object-constructor",
-                        "Disallow `Object` constructor — use `{}` instead",
-                        Span::new(new_expr.span.start, new_expr.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-object-constructor".to_owned(),
+                        message: "Disallow `Object` constructor — use `{}` instead".to_owned(),
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace with `{}`".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace with `{}`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(new_expr.span.start, new_expr.span.end),
+                                replacement: "{}".to_owned(),
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             AstKind::CallExpression(call) => {
                 if matches!(&call.callee, Expression::Identifier(id) if id.name.as_str() == "Object")
                     && call.arguments.is_empty()
                 {
-                    ctx.report_warning(
-                        "no-object-constructor",
-                        "Disallow `Object` constructor — use `{}` instead",
-                        Span::new(call.span.start, call.span.end),
-                    );
+                    ctx.report(Diagnostic {
+                        rule_name: "no-object-constructor".to_owned(),
+                        message: "Disallow `Object` constructor — use `{}` instead".to_owned(),
+                        span: Span::new(call.span.start, call.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace with `{}`".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace with `{}`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(call.span.start, call.span.end),
+                                replacement: "{}".to_owned(),
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}

@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::VariableDeclarationKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::Severity;
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -78,11 +78,24 @@ impl NativeRule for PreferConst {
         });
 
         if all_const_eligible && !decl.declarations.is_empty() {
-            ctx.report_warning(
-                "prefer-const",
-                "'let' declaration can use 'const' since variables are never reassigned",
-                starlint_plugin_sdk::diagnostic::Span::new(decl.span.start, decl.span.end),
-            );
+            let let_span = Span::new(decl.span.start, decl.span.start.saturating_add(3));
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-const".to_owned(),
+                message: "'let' declaration can use 'const' since variables are never reassigned"
+                    .to_owned(),
+                span: Span::new(decl.span.start, decl.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace `let` with `const`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace `let` with `const`".to_owned(),
+                    edits: vec![Edit {
+                        span: let_span,
+                        replacement: "const".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

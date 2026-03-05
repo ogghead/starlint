@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -72,11 +72,26 @@ impl NativeRule for PreferStringRaw {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-string-raw",
-            "Template literal with escape sequences could use `String.raw`",
-            Span::new(template.span.start, template.span.end),
-        );
+        let source = ctx.source_text();
+        let tmpl_start = usize::try_from(template.span.start).unwrap_or(0);
+        let tmpl_end = usize::try_from(template.span.end).unwrap_or(0);
+        let tmpl_text = source.get(tmpl_start..tmpl_end).unwrap_or("");
+
+        ctx.report(Diagnostic {
+            rule_name: "prefer-string-raw".to_owned(),
+            message: "Template literal with escape sequences could use `String.raw`".to_owned(),
+            span: Span::new(template.span.start, template.span.end),
+            severity: Severity::Warning,
+            help: Some("Prefix with `String.raw`".to_owned()),
+            fix: Some(Fix {
+                message: "Prefix with `String.raw`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(template.span.start, template.span.end),
+                    replacement: format!("String.raw{tmpl_text}"),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

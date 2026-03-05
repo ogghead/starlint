@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, Expression, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -66,13 +68,36 @@ impl NativeRule for PreferTernary {
             .zip(is_simple_assign(alt_stmt))
             .is_some_and(|(left, right)| left == right);
 
-        if both_return || both_assign_same {
-            ctx.report_warning(
-                "prefer-ternary",
-                "This `if`/`else` can be replaced with a ternary expression",
-                Span::new(if_stmt.span.start, if_stmt.span.end),
-            );
+        if !both_return && !both_assign_same {
+            return;
         }
+
+        let source = ctx.source_text();
+        let cond_start = usize::try_from(if_stmt.test.span().start).unwrap_or(0);
+        let cond_end = usize::try_from(if_stmt.test.span().end).unwrap_or(0);
+        let cond_text = source.get(cond_start..cond_end).unwrap_or("");
+
+        let fix = if both_return {
+            build_return_ternary(source, cond_text, cons_stmt, alt_stmt)
+        } else {
+            build_assign_ternary(source, cond_text, cons_stmt, alt_stmt)
+        };
+
+        ctx.report(Diagnostic {
+            rule_name: "prefer-ternary".to_owned(),
+            message: "This `if`/`else` can be replaced with a ternary expression".to_owned(),
+            span: Span::new(if_stmt.span.start, if_stmt.span.end),
+            severity: Severity::Warning,
+            help: Some("Use a ternary expression".to_owned()),
+            fix: fix.map(|replacement| Fix {
+                message: "Convert to ternary expression".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(if_stmt.span.start, if_stmt.span.end),
+                    replacement,
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 
@@ -113,6 +138,66 @@ fn assignment_target_name<'a>(target: &'a AssignmentTarget<'a>) -> Option<&'a st
         AssignmentTarget::AssignmentTargetIdentifier(ident) => Some(ident.name.as_str()),
         _ => None,
     }
+}
+
+/// Build `return cond ? cons_val : alt_val;`
+fn build_return_ternary(
+    source: &str,
+    cond_text: &str,
+    cons_stmt: &Statement<'_>,
+    alt_stmt: &Statement<'_>,
+) -> Option<String> {
+    let Statement::ReturnStatement(cons_ret) = cons_stmt else {
+        return None;
+    };
+    let Statement::ReturnStatement(alt_ret) = alt_stmt else {
+        return None;
+    };
+    let cons_arg = cons_ret.argument.as_ref()?;
+    let alt_arg = alt_ret.argument.as_ref()?;
+
+    let if_start = usize::try_from(cons_arg.span().start).unwrap_or(0);
+    let if_end = usize::try_from(cons_arg.span().end).unwrap_or(0);
+    let else_start = usize::try_from(alt_arg.span().start).unwrap_or(0);
+    let else_end = usize::try_from(alt_arg.span().end).unwrap_or(0);
+
+    let if_val = source.get(if_start..if_end)?;
+    let else_val = source.get(else_start..else_end)?;
+
+    Some(format!("return {cond_text} ? {if_val} : {else_val};"))
+}
+
+/// Build `target = cond ? cons_val : alt_val;`
+fn build_assign_ternary(
+    source: &str,
+    cond_text: &str,
+    if_stmt: &Statement<'_>,
+    else_stmt: &Statement<'_>,
+) -> Option<String> {
+    let Statement::ExpressionStatement(if_expr) = if_stmt else {
+        return None;
+    };
+    let Expression::AssignmentExpression(if_assign) = &if_expr.expression else {
+        return None;
+    };
+    let Statement::ExpressionStatement(else_expr) = else_stmt else {
+        return None;
+    };
+    let Expression::AssignmentExpression(else_assign) = &else_expr.expression else {
+        return None;
+    };
+
+    let target_name = assignment_target_name(&if_assign.left)?;
+
+    let if_start = usize::try_from(if_assign.right.span().start).unwrap_or(0);
+    let if_end = usize::try_from(if_assign.right.span().end).unwrap_or(0);
+    let else_start = usize::try_from(else_assign.right.span().start).unwrap_or(0);
+    let else_end = usize::try_from(else_assign.right.span().end).unwrap_or(0);
+
+    let if_val = source.get(if_start..if_end)?;
+    let else_val = source.get(else_start..else_end)?;
+
+    Some(format!("{target_name} = {cond_text} ? {if_val} : {else_val};"))
 }
 
 #[cfg(test)]

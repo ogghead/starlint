@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, BindingPattern, Expression, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -98,11 +98,23 @@ impl NativeRule for PreferNativeCoercionFunctions {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-native-coercion-functions",
-            &format!("Unnecessary arrow function wrapper — pass `{callee_name}` directly"),
-            Span::new(arrow.span.start, arrow.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "prefer-native-coercion-functions".to_owned(),
+            message: format!(
+                "Unnecessary arrow function wrapper — pass `{callee_name}` directly"
+            ),
+            span: Span::new(arrow.span.start, arrow.span.end),
+            severity: Severity::Warning,
+            help: Some(format!("Replace with `{callee_name}`")),
+            fix: Some(Fix {
+                message: format!("Replace with `{callee_name}`"),
+                edits: vec![Edit {
+                    span: Span::new(arrow.span.start, arrow.span.end),
+                    replacement: callee_name.to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

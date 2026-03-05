@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,11 +44,27 @@ impl NativeRule for NoNewArray {
         );
 
         if is_array {
-            ctx.report_warning(
-                "no-new-array",
-                "Use `[]` or `Array.from()` instead of `new Array()`",
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+            // Remove `new ` prefix: replace whole span with source from callee start
+            let source = ctx.source_text();
+            let callee_start = usize::try_from(new_expr.callee.span().start).unwrap_or(0);
+            let expr_end = usize::try_from(new_expr.span.end).unwrap_or(0);
+            let without_new = source.get(callee_start..expr_end).unwrap_or("");
+
+            ctx.report(Diagnostic {
+                rule_name: "no-new-array".to_owned(),
+                message: "Use `[]` or `Array.from()` instead of `new Array()`".to_owned(),
+                span: Span::new(new_expr.span.start, new_expr.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove `new` keyword".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove `new` keyword".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        replacement: without_new.to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

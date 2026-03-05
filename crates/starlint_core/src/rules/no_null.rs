@@ -5,7 +5,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -34,11 +34,21 @@ impl NativeRule for NoNull {
             return;
         };
 
-        ctx.report_warning(
-            "no-null",
-            "Avoid using `null` — prefer `undefined` for consistency",
-            Span::new(lit.span.start, lit.span.end),
-        );
+        ctx.report(Diagnostic {
+            rule_name: "no-null".to_owned(),
+            message: "Avoid using `null` — prefer `undefined` for consistency".to_owned(),
+            span: Span::new(lit.span.start, lit.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace `null` with `undefined`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace `null` with `undefined`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(lit.span.start, lit.span.end),
+                    replacement: "undefined".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

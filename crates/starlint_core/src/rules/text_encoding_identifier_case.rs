@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -73,11 +73,25 @@ impl NativeRule for TextEncodingIdentifierCase {
 
         let value = lit.value.as_str();
         if let Some(canonical) = canonical_encoding(value) {
-            ctx.report_warning(
-                "text-encoding-identifier-case",
-                &format!("Prefer `'{canonical}'` over `'{value}'`"),
-                Span::new(lit.span.start, lit.span.end),
-            );
+            // Replace the string content inside the quotes (span includes quotes).
+            let content_start = lit.span.start.saturating_add(1);
+            let content_end = lit.span.end.saturating_sub(1);
+
+            ctx.report(Diagnostic {
+                rule_name: "text-encoding-identifier-case".to_owned(),
+                message: format!("Prefer `'{canonical}'` over `'{value}'`"),
+                span: Span::new(lit.span.start, lit.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Replace `'{value}'` with `'{canonical}'`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `'{canonical}'`"),
+                    edits: vec![Edit {
+                        span: Span::new(content_start, content_end),
+                        replacement: canonical.to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

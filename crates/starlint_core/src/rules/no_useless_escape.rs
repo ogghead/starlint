@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -61,11 +61,49 @@ impl NativeRule for NoUselessEscape {
         let span_end = lit.span.end;
 
         if has_useless {
-            ctx.report_warning(
-                "no-useless-escape",
-                "Unnecessary escape character",
-                Span::new(span_start, span_end),
-            );
+            let quote = &raw[..1];
+            let fixed_inner = strip_useless_escapes(inner);
+            let fixed = format!("{quote}{fixed_inner}{quote}");
+
+            ctx.report(Diagnostic {
+                rule_name: "no-useless-escape".to_owned(),
+                message: "Unnecessary escape character".to_owned(),
+                span: Span::new(span_start, span_end),
+                severity: Severity::Warning,
+                help: Some("Remove the unnecessary escape".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove unnecessary escape".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(span_start, span_end),
+                        replacement: fixed,
+                    }],
+                }),
+                labels: vec![],
+            });
+        }
+    }
+}
+
+/// Remove useless backslash escapes from inner string content (without quotes).
+fn strip_useless_escapes(inner: &str) -> String {
+    let mut result = String::with_capacity(inner.len());
+    let mut chars = inner.chars();
+    loop {
+        match chars.next() {
+            None => return result,
+            Some('\\') => match chars.next() {
+                None => {
+                    result.push('\\');
+                    return result;
+                }
+                Some(next_ch) => {
+                    if is_meaningful_escape(next_ch) {
+                        result.push('\\');
+                    }
+                    result.push(next_ch);
+                }
+            },
+            Some(ch) => result.push(ch),
         }
     }
 }

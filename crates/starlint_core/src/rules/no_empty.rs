@@ -11,6 +11,17 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
+/// Returns `true` if the source text inside a block contains a comment.
+fn block_has_comment(source: &str, block: &oxc_ast::ast::BlockStatement<'_>) -> bool {
+    let start: usize = block.span.start.try_into().unwrap_or(0);
+    let end: usize = block.span.end.try_into().unwrap_or(0);
+    if start >= end || end > source.len() {
+        return false;
+    }
+    let inner = &source[start..end];
+    inner.contains("//") || inner.contains("/*")
+}
+
 /// Flags empty block statements (e.g. `if (x) {}`).
 #[derive(Debug)]
 pub struct NoEmpty;
@@ -32,7 +43,7 @@ impl NativeRule for NoEmpty {
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         if let AstKind::BlockStatement(block) = kind {
-            if block.body.is_empty() {
+            if block.body.is_empty() && !block_has_comment(ctx.source_text(), block) {
                 let span = Span::new(block.span.start, block.span.end);
                 ctx.report(Diagnostic {
                     rule_name: "no-empty".to_owned(),

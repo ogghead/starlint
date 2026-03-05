@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -40,13 +40,92 @@ impl NativeRule for NoRegexSpaces {
 
         // Check for multiple consecutive spaces outside character classes
         if has_multiple_spaces_outside_char_class(pattern) {
-            ctx.report_error(
-                "no-regex-spaces",
-                "Unexpected multiple consecutive spaces in regular expression",
-                Span::new(regex.span.start, regex.span.end),
-            );
+            // Fix: replace the regex source with spaces collapsed to quantifiers
+            let source = ctx.source_text();
+            let start = usize::try_from(regex.span.start).unwrap_or(0);
+            let end = usize::try_from(regex.span.end).unwrap_or(0);
+            let raw = source.get(start..end).unwrap_or("");
+            let fixed = replace_multi_spaces_in_regex(raw);
+
+            ctx.report(Diagnostic {
+                rule_name: "no-regex-spaces".to_owned(),
+                message: "Unexpected multiple consecutive spaces in regular expression".to_owned(),
+                span: Span::new(regex.span.start, regex.span.end),
+                severity: Severity::Error,
+                help: Some("Use a space quantifier like ` {N}` instead".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace multiple spaces with quantifier".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(regex.span.start, regex.span.end),
+                        replacement: fixed,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
+}
+
+/// Replace runs of 2+ spaces in a regex source string with ` {N}` quantifiers.
+/// Preserves character classes and escaped characters.
+fn replace_multi_spaces_in_regex(raw: &str) -> String {
+    let mut result = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    let mut in_char_class = false;
+    let mut space_count: usize = 0;
+
+    while let Some(ch) = chars.next() {
+        if ch == '\\' {
+            // Flush any pending spaces
+            flush_spaces(&mut result, &mut space_count, in_char_class);
+            result.push('\\');
+            if let Some(next) = chars.next() {
+                result.push(next);
+            }
+            continue;
+        }
+
+        if ch == '[' && !in_char_class {
+            flush_spaces(&mut result, &mut space_count, in_char_class);
+            in_char_class = true;
+            result.push(ch);
+            continue;
+        }
+
+        if ch == ']' && in_char_class {
+            flush_spaces(&mut result, &mut space_count, in_char_class);
+            in_char_class = false;
+            result.push(ch);
+            continue;
+        }
+
+        if !in_char_class && ch == ' ' {
+            space_count = space_count.saturating_add(1);
+        } else {
+            flush_spaces(&mut result, &mut space_count, in_char_class);
+            result.push(ch);
+        }
+    }
+    flush_spaces(&mut result, &mut space_count, in_char_class);
+    result
+}
+
+/// Flush accumulated spaces: single space stays as-is, 2+ becomes ` {N}`.
+fn flush_spaces(result: &mut String, count: &mut usize, in_char_class: bool) {
+    if *count == 0 {
+        return;
+    }
+    if *count == 1 || in_char_class {
+        for _ in 0..*count {
+            result.push(' ');
+        }
+    } else {
+        result.push(' ');
+        result.push('{');
+        result.push_str(&count.to_string());
+        result.push('}');
+    }
+    *count = 0;
 }
 
 /// Check if a regex pattern string has multiple consecutive spaces

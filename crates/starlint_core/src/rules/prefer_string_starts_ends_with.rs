@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -76,11 +78,34 @@ fn check_index_of_comparison(
         return;
     }
 
-    ctx.report_warning(
-        "prefer-string-starts-ends-with",
-        "Prefer `startsWith()` over `.indexOf() === 0`",
-        Span::new(expr.span.start, expr.span.end),
-    );
+    // Build fix: `obj.startsWith(arg)`
+    let source = ctx.source_text();
+    let obj_start = usize::try_from(member.object.span().start).unwrap_or(0);
+    let obj_end = usize::try_from(member.object.span().end).unwrap_or(0);
+    let obj_text = source.get(obj_start..obj_end).unwrap_or("");
+    let arg_span = call.arguments.first().map(oxc_span::GetSpan::span);
+    let fix = arg_span.and_then(|a| {
+        let a_start = usize::try_from(a.start).unwrap_or(0);
+        let a_end = usize::try_from(a.end).unwrap_or(0);
+        let arg_text = source.get(a_start..a_end)?;
+        Some(Fix {
+            message: "Replace with `.startsWith()`".to_owned(),
+            edits: vec![Edit {
+                span: Span::new(expr.span.start, expr.span.end),
+                replacement: format!("{obj_text}.startsWith({arg_text})"),
+            }],
+        })
+    });
+
+    ctx.report(Diagnostic {
+        rule_name: "prefer-string-starts-ends-with".to_owned(),
+        message: "Prefer `startsWith()` over `.indexOf() === 0`".to_owned(),
+        span: Span::new(expr.span.start, expr.span.end),
+        severity: Severity::Warning,
+        help: Some("Replace with `.startsWith()`".to_owned()),
+        fix,
+        labels: vec![],
+    });
 }
 
 /// Check for `/^foo/.test(str)` or `/foo$/.test(str)` pattern.
@@ -121,11 +146,30 @@ fn check_regex_test(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLin
         return;
     }
 
-    ctx.report_warning(
-        "prefer-string-starts-ends-with",
-        &format!("Prefer `.{kind}('{literal_part}')` over regex test"),
-        Span::new(call.span.start, call.span.end),
-    );
+    // Build fix: `str.startsWith('literal')` or `str.endsWith('literal')`
+    let source = ctx.source_text();
+    let fix = call.arguments.first().map(|arg| {
+        let a_start = usize::try_from(arg.span().start).unwrap_or(0);
+        let a_end = usize::try_from(arg.span().end).unwrap_or(0);
+        let arg_text = source.get(a_start..a_end).unwrap_or("");
+        Fix {
+            message: format!("Replace with `.{kind}('{literal_part}')`"),
+            edits: vec![Edit {
+                span: Span::new(call.span.start, call.span.end),
+                replacement: format!("{arg_text}.{kind}('{literal_part}')"),
+            }],
+        }
+    });
+
+    ctx.report(Diagnostic {
+        rule_name: "prefer-string-starts-ends-with".to_owned(),
+        message: format!("Prefer `.{kind}('{literal_part}')` over regex test"),
+        span: Span::new(call.span.start, call.span.end),
+        severity: Severity::Warning,
+        help: Some(format!("Replace with `.{kind}('{literal_part}')`")),
+        fix,
+        labels: vec![],
+    });
 }
 
 /// Check if an expression is the numeric literal `0`.

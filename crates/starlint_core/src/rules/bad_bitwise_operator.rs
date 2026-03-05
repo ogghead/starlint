@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -48,11 +50,32 @@ impl NativeRule for BadBitwiseOperator {
         }
 
         let actual = if intended == "||" { "|" } else { "&" };
-        ctx.report_warning(
-            "bad-bitwise-operator",
-            &format!("Suspicious use of `{actual}` — did you mean `{intended}`?"),
-            Span::new(expr.span.start, expr.span.end),
-        );
+
+        let source = ctx.source_text();
+        let left_end = usize::try_from(expr.left.span().end).unwrap_or(0);
+        let right_start = usize::try_from(expr.right.span().start).unwrap_or(0);
+        let between = source.get(left_end..right_start).unwrap_or("");
+
+        let fix = between.find(actual).map(|offset| {
+            let op_pos = u32::try_from(left_end.saturating_add(offset)).unwrap_or(0);
+            Fix {
+                message: format!("Replace `{actual}` with `{intended}`"),
+                edits: vec![Edit {
+                    span: Span::new(op_pos, op_pos.saturating_add(1)),
+                    replacement: intended.to_owned(),
+                }],
+            }
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: "bad-bitwise-operator".to_owned(),
+            message: format!("Suspicious use of `{actual}` — did you mean `{intended}`?"),
+            span: Span::new(expr.span.start, expr.span.end),
+            severity: Severity::Warning,
+            help: Some(format!("Replace `{actual}` with `{intended}`")),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

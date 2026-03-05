@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,11 +45,23 @@ impl NativeRule for PreferStringSlice {
         let method = member.property.name.as_str();
         match method {
             "substr" | "substring" => {
-                ctx.report_warning(
-                    "prefer-string-slice",
-                    &format!("Prefer `.slice()` over `.{method}()`"),
-                    Span::new(call.span.start, call.span.end),
-                );
+                let prop_span = Span::new(member.property.span.start, member.property.span.end);
+
+                ctx.report(Diagnostic {
+                    rule_name: "prefer-string-slice".to_owned(),
+                    message: format!("Prefer `.slice()` over `.{method}()`"),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Replace `.{method}()` with `.slice()`")),
+                    fix: Some(Fix {
+                        message: format!("Replace `.{method}()` with `.slice()`"),
+                        edits: vec![Edit {
+                            span: prop_span,
+                            replacement: "slice".to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
             _ => {}
         }

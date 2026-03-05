@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -52,15 +52,41 @@ impl NativeRule for PreferNumericLiterals {
         // Check if the second argument is a literal 2, 8, or 16
         if let Some(Argument::NumericLiteral(num)) = call.arguments.get(1) {
             let radix = num.value;
-            if (radix - 2.0).abs() < f64::EPSILON
-                || (radix - 8.0).abs() < f64::EPSILON
-                || (radix - 16.0).abs() < f64::EPSILON
-            {
-                ctx.report_warning(
-                    "prefer-numeric-literals",
-                    "Use a numeric literal instead of `parseInt()`",
-                    Span::new(call.span.start, call.span.end),
-                );
+            let prefix = if (radix - 2.0).abs() < f64::EPSILON {
+                Some("0b")
+            } else if (radix - 8.0).abs() < f64::EPSILON {
+                Some("0o")
+            } else if (radix - 16.0).abs() < f64::EPSILON {
+                Some("0x")
+            } else {
+                None
+            };
+
+            if let Some(lit_prefix) = prefix {
+                // Extract string value from first argument
+                let fix = call.arguments.first().and_then(|arg| {
+                    if let Argument::StringLiteral(s) = arg {
+                        Some(Fix {
+                            message: "Use numeric literal".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(call.span.start, call.span.end),
+                                replacement: format!("{lit_prefix}{}", s.value.as_str()),
+                            }],
+                        })
+                    } else {
+                        None
+                    }
+                });
+
+                ctx.report(Diagnostic {
+                    rule_name: "prefer-numeric-literals".to_owned(),
+                    message: "Use a numeric literal instead of `parseInt()`".to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Use `{lit_prefix}` literal notation")),
+                    fix,
+                    labels: vec![],
+                });
             }
         }
     }

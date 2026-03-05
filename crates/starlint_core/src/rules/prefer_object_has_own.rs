@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -61,11 +63,33 @@ impl NativeRule for PreferObjectHasOwn {
         let is_object_literal = matches!(&inner_member.object, Expression::ObjectExpression(_));
 
         if is_object_prototype || is_object_literal {
-            ctx.report_warning(
-                "prefer-object-has-own",
-                "Use `Object.hasOwn()` instead of `Object.prototype.hasOwnProperty.call()`",
-                Span::new(call.span.start, call.span.end),
-            );
+            let source = ctx.source_text();
+            let fix = call
+                .arguments
+                .first()
+                .zip(call.arguments.last())
+                .map(|(first, last)| {
+                    let f_start = usize::try_from(first.span().start).unwrap_or(0);
+                    let l_end = usize::try_from(last.span().end).unwrap_or(0);
+                    let args_text = source.get(f_start..l_end).unwrap_or("");
+                    Fix {
+                        message: "Replace with `Object.hasOwn()`".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement: format!("Object.hasOwn({args_text})"),
+                        }],
+                    }
+                });
+
+            ctx.report(Diagnostic {
+                rule_name: "prefer-object-has-own".to_owned(),
+                message: "Use `Object.hasOwn()` instead of `Object.prototype.hasOwnProperty.call()`".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace with `Object.hasOwn()`".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

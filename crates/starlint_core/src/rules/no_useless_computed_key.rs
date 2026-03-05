@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::PropertyKey;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,36 +38,52 @@ impl NativeRule for NoUselessComputedKey {
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::ObjectProperty(prop) => {
-                if prop.computed && is_literal_key(&prop.key) {
-                    ctx.report_warning(
-                        "no-useless-computed-key",
-                        "Unnecessary computed property key — use a literal key instead",
-                        Span::new(prop.span.start, prop.span.end),
-                    );
-                }
-            }
-            AstKind::MethodDefinition(method) => {
-                if method.computed && is_literal_key(&method.key) {
-                    ctx.report_warning(
-                        "no-useless-computed-key",
-                        "Unnecessary computed property key — use a literal key instead",
-                        Span::new(method.span.start, method.span.end),
-                    );
-                }
-            }
-            AstKind::PropertyDefinition(prop) => {
-                if prop.computed && is_literal_key(&prop.key) {
-                    ctx.report_warning(
-                        "no-useless-computed-key",
-                        "Unnecessary computed property key — use a literal key instead",
-                        Span::new(prop.span.start, prop.span.end),
-                    );
-                }
-            }
-            _ => {}
+        let (computed, key, prop_span) = match kind {
+            AstKind::ObjectProperty(prop) => (prop.computed, &prop.key, prop.span),
+            AstKind::MethodDefinition(method) => (method.computed, &method.key, method.span),
+            AstKind::PropertyDefinition(prop) => (prop.computed, &prop.key, prop.span),
+            _ => return,
+        };
+
+        if !computed || !is_literal_key(key) {
+            return;
         }
+
+        let source = ctx.source_text();
+        let key_span = key.span();
+        let key_start = usize::try_from(key_span.start).unwrap_or(0);
+        let key_end = usize::try_from(key_span.end).unwrap_or(0);
+        let key_source = source.get(key_start..key_end).unwrap_or("");
+
+        // Find [ before the key and ] after it in the source.
+        let before = source.get(..key_start).unwrap_or("");
+        let after = source.get(key_end..).unwrap_or("");
+        let open = before.rfind('[').map(|p| u32::try_from(p).unwrap_or(0));
+        let close = after
+            .find(']')
+            .map(|p| u32::try_from(key_end.saturating_add(p).saturating_add(1)).unwrap_or(0));
+
+        let fix = if let (Some(open_pos), Some(close_pos)) = (open, close) {
+            Some(Fix {
+                message: "Remove computed brackets".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(open_pos, close_pos),
+                    replacement: key_source.to_owned(),
+                }],
+            })
+        } else {
+            None
+        };
+
+        ctx.report(Diagnostic {
+            rule_name: "no-useless-computed-key".to_owned(),
+            message: "Unnecessary computed property key — use a literal key instead".to_owned(),
+            span: Span::new(prop_span.start, prop_span.end),
+            severity: Severity::Warning,
+            help: Some("Remove the computed brackets".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

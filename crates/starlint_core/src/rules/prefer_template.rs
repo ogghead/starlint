@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -55,12 +57,25 @@ impl NativeRule for PreferTemplate {
             return;
         }
 
-        // Flag: string + variable or variable + string
-        ctx.report_warning(
-            "prefer-template",
-            "Unexpected string concatenation — prefer template literals",
-            Span::new(expr.span.start, expr.span.end),
-        );
+        // Build fix: convert to template literal
+        let source = ctx.source_text();
+        let fix = build_template_fix(source, &expr.left, &expr.right);
+
+        ctx.report(Diagnostic {
+            rule_name: "prefer-template".to_owned(),
+            message: "Unexpected string concatenation — prefer template literals".to_owned(),
+            span: Span::new(expr.span.start, expr.span.end),
+            severity: Severity::Warning,
+            help: Some("Use a template literal instead".to_owned()),
+            fix: Some(Fix {
+                message: "Convert to template literal".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(expr.span.start, expr.span.end),
+                    replacement: fix,
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 
@@ -70,6 +85,41 @@ const fn is_string_expression(expr: &Expression<'_>) -> bool {
         expr,
         Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
     )
+}
+
+/// Extract the raw content of a string literal (between quotes) from source,
+/// escaping backticks and `${` for template literal context.
+fn string_content_for_template(source: &str, expr: &Expression<'_>) -> Option<String> {
+    let start = usize::try_from(expr.span().start).unwrap_or(0);
+    let end = usize::try_from(expr.span().end).unwrap_or(0);
+    let raw = source.get(start..end)?;
+    // Strip surrounding quotes (single, double, or backtick)
+    let inner = raw.get(1..raw.len().saturating_sub(1)).unwrap_or("");
+    Some(inner.replace('`', "\\`").replace("${", "\\${"))
+}
+
+/// Build the replacement template literal string.
+fn build_template_fix(source: &str, left: &Expression<'_>, right: &Expression<'_>) -> String {
+    let left_start = usize::try_from(left.span().start).unwrap_or(0);
+    let left_end = usize::try_from(left.span().end).unwrap_or(0);
+    let right_start = usize::try_from(right.span().start).unwrap_or(0);
+    let right_end = usize::try_from(right.span().end).unwrap_or(0);
+
+    let left_str = if is_string_expression(left) {
+        string_content_for_template(source, left).unwrap_or_default()
+    } else {
+        let text = source.get(left_start..left_end).unwrap_or("");
+        format!("${{{text}}}")
+    };
+
+    let right_str = if is_string_expression(right) {
+        string_content_for_template(source, right).unwrap_or_default()
+    } else {
+        let text = source.get(right_start..right_end).unwrap_or("");
+        format!("${{{text}}}")
+    };
+
+    format!("`{left_str}{right_str}`")
 }
 
 #[cfg(test)]

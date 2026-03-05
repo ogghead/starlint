@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -60,11 +60,21 @@ impl NativeRule for MissingThrow {
         };
 
         if is_error_ctor {
-            ctx.report_warning(
-                "missing-throw",
-                "`new Error()` is not thrown — did you forget `throw`?",
-                Span::new(stmt.span.start, stmt.span.end),
-            );
+            ctx.report(Diagnostic {
+                rule_name: "missing-throw".to_owned(),
+                message: "`new Error()` is not thrown — did you forget `throw`?".to_owned(),
+                span: Span::new(stmt.span.start, stmt.span.end),
+                severity: Severity::Warning,
+                help: Some("Add `throw` before the expression".to_owned()),
+                fix: Some(Fix {
+                    message: "Add `throw`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(new_expr.span.start, new_expr.span.start),
+                        replacement: "throw ".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

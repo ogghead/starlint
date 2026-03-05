@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -52,12 +54,31 @@ impl NativeRule for OperatorAssignment {
         }
 
         // Check if the left side of the binary matches the assignment target
-        if targets_match(&assign.left, &binary.left, ctx.source_text()) {
-            ctx.report_warning(
-                "operator-assignment",
-                "Assignment can be replaced with an operator assignment",
-                Span::new(assign.span.start, assign.span.end),
-            );
+        let source = ctx.source_text();
+        if targets_match(&assign.left, &binary.left, source) {
+            let target_start = usize::try_from(assign.left.span().start).unwrap_or(0);
+            let target_end = usize::try_from(assign.left.span().end).unwrap_or(0);
+            let target_text = source.get(target_start..target_end).unwrap_or("");
+            let right_start = usize::try_from(binary.right.span().start).unwrap_or(0);
+            let right_end = usize::try_from(binary.right.span().end).unwrap_or(0);
+            let right_text = source.get(right_start..right_end).unwrap_or("");
+            let op_str = shorthand_op_str(binary.operator);
+
+            ctx.report(Diagnostic {
+                rule_name: "operator-assignment".to_owned(),
+                message: "Assignment can be replaced with an operator assignment".to_owned(),
+                span: Span::new(assign.span.start, assign.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Use `{op_str}` shorthand")),
+                fix: Some(Fix {
+                    message: format!("Use `{op_str}` shorthand"),
+                    edits: vec![Edit {
+                        span: Span::new(assign.span.start, assign.span.end),
+                        replacement: format!("{target_text} {op_str} {right_text}"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
@@ -79,6 +100,25 @@ const fn has_shorthand(op: BinaryOperator) -> bool {
             | BinaryOperator::ShiftRight
             | BinaryOperator::ShiftRightZeroFill
     )
+}
+
+/// Convert a binary operator to its compound assignment shorthand string.
+const fn shorthand_op_str(op: BinaryOperator) -> &'static str {
+    match op {
+        BinaryOperator::Addition => "+=",
+        BinaryOperator::Subtraction => "-=",
+        BinaryOperator::Multiplication => "*=",
+        BinaryOperator::Division => "/=",
+        BinaryOperator::Remainder => "%=",
+        BinaryOperator::Exponential => "**=",
+        BinaryOperator::BitwiseAnd => "&=",
+        BinaryOperator::BitwiseOR => "|=",
+        BinaryOperator::BitwiseXOR => "^=",
+        BinaryOperator::ShiftLeft => "<<=",
+        BinaryOperator::ShiftRight => ">>=",
+        BinaryOperator::ShiftRightZeroFill => ">>>=",
+        _ => "=",
+    }
 }
 
 /// Compare assignment target and expression by source text.
