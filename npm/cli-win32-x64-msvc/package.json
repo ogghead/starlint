@@ -1,6 +1,6 @@
 {
   "name": "@starlint/cli-win32-x64-msvc",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "starlint CLI binary for Windows x64 (MSVC)",
   "license": "MIT",
   "repository": {
