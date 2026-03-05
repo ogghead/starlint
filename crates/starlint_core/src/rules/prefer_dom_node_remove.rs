@@ -6,8 +6,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +25,7 @@ impl NativeRule for PreferDomNodeRemove {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,11 +46,42 @@ impl NativeRule for PreferDomNodeRemove {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-dom-node-remove",
-            "Prefer `childNode.remove()` over `parentNode.removeChild(childNode)`",
-            Span::new(call.span.start, call.span.end),
-        );
+        // Extract the child argument to build `child.remove()`
+        let call_span = Span::new(call.span.start, call.span.end);
+        let fix = if call.arguments.len() == 1 {
+            let Some(arg) = call.arguments.first() else {
+                return;
+            };
+            let arg_span = arg.span();
+            let child_text = ctx
+                .source_text()
+                .get(
+                    usize::try_from(arg_span.start).unwrap_or(0)
+                        ..usize::try_from(arg_span.end).unwrap_or(0),
+                )
+                .unwrap_or("")
+                .to_owned();
+            (!child_text.is_empty()).then(|| Fix {
+                message: "Replace with `child.remove()`".to_owned(),
+                edits: vec![Edit {
+                    span: call_span,
+                    replacement: format!("{child_text}.remove()"),
+                }],
+            })
+        } else {
+            None
+        };
+
+        ctx.report(Diagnostic {
+            rule_name: "prefer-dom-node-remove".to_owned(),
+            message: "Prefer `childNode.remove()` over `parentNode.removeChild(childNode)`"
+                .to_owned(),
+            span: call_span,
+            severity: Severity::Warning,
+            help: Some("Use `childNode.remove()` instead".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 

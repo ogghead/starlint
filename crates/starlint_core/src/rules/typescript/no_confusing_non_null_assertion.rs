@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +30,7 @@ impl NativeRule for NoConfusingNonNullAssertion {
                     .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -45,12 +47,29 @@ impl NativeRule for NoConfusingNonNullAssertion {
             return;
         }
 
-        if matches!(&expr.left, Expression::TSNonNullExpression(_)) {
-            ctx.report_warning(
-                "typescript/no-confusing-non-null-assertion",
-                "Non-null assertion `!` next to an equality operator is confusing — it may look like `!=` or `!==`",
-                Span::new(expr.span.start, expr.span.end),
-            );
+        if let Expression::TSNonNullExpression(non_null) = &expr.left {
+            // Wrap the non-null assertion in parentheses: `x! == y` → `(x!) == y`
+            let source = ctx.source_text();
+            let left_start = usize::try_from(non_null.span().start).unwrap_or(0);
+            let left_end = usize::try_from(non_null.span().end).unwrap_or(0);
+            let left_text = source.get(left_start..left_end).unwrap_or("");
+            let replacement = format!("({left_text})");
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-confusing-non-null-assertion".to_owned(),
+                message: "Non-null assertion `!` next to an equality operator is confusing — it may look like `!=` or `!==`".to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Warning,
+                help: Some("Wrap the non-null assertion in parentheses to clarify intent".to_owned()),
+                fix: Some(Fix {
+                    message: "Wrap in parentheses: `(x!)`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(non_null.span().start, non_null.span().end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

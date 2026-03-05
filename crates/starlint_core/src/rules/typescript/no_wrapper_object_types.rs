@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::TSTypeName;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -39,7 +39,7 @@ impl NativeRule for NoWrapperObjectTypes {
             description: "Disallow wrapper object types in type annotations".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,11 +61,23 @@ impl NativeRule for NoWrapperObjectTypes {
 
         for &(wrapper, primitive) in WRAPPER_TYPES {
             if name == wrapper {
-                ctx.report_error(
-                    RULE_NAME,
-                    &format!("Use lowercase `{primitive}` instead of `{wrapper}`"),
-                    Span::new(type_ref.span.start, type_ref.span.end),
-                );
+                let message = format!("Use lowercase `{primitive}` instead of `{wrapper}`");
+                let ident_span = Span::new(ident.span.start, ident.span.end);
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: message.clone(),
+                    span: Span::new(type_ref.span.start, type_ref.span.end),
+                    severity: Severity::Error,
+                    help: Some(message),
+                    fix: Some(Fix {
+                        message: format!("Replace `{wrapper}` with `{primitive}`"),
+                        edits: vec![Edit {
+                            span: ident_span,
+                            replacement: primitive.to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
                 return;
             }
         }

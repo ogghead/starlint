@@ -79,7 +79,9 @@ fn uppercase_escapes(raw: &str) -> String {
         result.push('\\');
         match chars.peek() {
             Some('x') => {
-                if let Some(x) = chars.next() { result.push(x); } // push 'x'
+                if let Some(x) = chars.next() {
+                    result.push(x);
+                } // push 'x'
                 for _ in 0..2 {
                     if let Some(&c) = chars.peek() {
                         if c.is_ascii_hexdigit() {
@@ -92,12 +94,18 @@ fn uppercase_escapes(raw: &str) -> String {
                 }
             }
             Some('u') => {
-                if let Some(u) = chars.next() { result.push(u); } // push 'u'
+                if let Some(u) = chars.next() {
+                    result.push(u);
+                } // push 'u'
                 if chars.peek() == Some(&'{') {
-                    if let Some(brace) = chars.next() { result.push(brace); } // push '{'
+                    if let Some(brace) = chars.next() {
+                        result.push(brace);
+                    } // push '{'
                     while let Some(&c) = chars.peek() {
                         if c == '}' {
-                            if let Some(close) = chars.next() { result.push(close); }
+                            if let Some(close) = chars.next() {
+                                result.push(close);
+                            }
                             break;
                         }
                         if c.is_ascii_hexdigit() {

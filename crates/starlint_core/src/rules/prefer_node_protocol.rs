@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -70,7 +70,7 @@ impl NativeRule for PreferNodeProtocol {
             description: "Prefer node: protocol for Node.js built-in modules".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -94,11 +94,29 @@ impl NativeRule for PreferNodeProtocol {
         let module_name = source.split('/').next().unwrap_or(source);
 
         if NODE_BUILTINS.contains(&module_name) {
-            ctx.report_warning(
-                "prefer-node-protocol",
-                &format!("Prefer `node:{source}` over `{source}`"),
-                Span::new(import.source.span.start, import.source.span.end),
+            let source_span = Span::new(import.source.span.start, import.source.span.end);
+            // The span includes the quotes, so replace the content inside the quotes.
+            // source_span covers the full string literal including quotes, e.g. 'fs'.
+            // We need to replace the inner content: start+1 to end-1.
+            let inner_span = Span::new(
+                source_span.start.saturating_add(1),
+                source_span.end.saturating_sub(1),
             );
+            ctx.report(Diagnostic {
+                rule_name: "prefer-node-protocol".to_owned(),
+                message: format!("Prefer `node:{source}` over `{source}`"),
+                span: source_span,
+                severity: Severity::Warning,
+                help: Some(format!("Add `node:` prefix to `{source}`")),
+                fix: Some(Fix {
+                    message: format!("Replace `{source}` with `node:{source}`"),
+                    edits: vec![Edit {
+                        span: inner_span,
+                        replacement: format!("node:{source}"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

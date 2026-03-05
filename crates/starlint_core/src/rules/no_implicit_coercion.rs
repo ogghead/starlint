@@ -42,10 +42,8 @@ impl NativeRule for NoImplicitCoercion {
                 if let Expression::UnaryExpression(inner) = &outer.argument {
                     if inner.operator == UnaryOperator::LogicalNot {
                         let source = ctx.source_text();
-                        let arg_start =
-                            usize::try_from(inner.argument.span().start).unwrap_or(0);
-                        let arg_end =
-                            usize::try_from(inner.argument.span().end).unwrap_or(0);
+                        let arg_start = usize::try_from(inner.argument.span().start).unwrap_or(0);
+                        let arg_end = usize::try_from(inner.argument.span().end).unwrap_or(0);
                         let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
 
                         ctx.report(Diagnostic {
@@ -74,10 +72,8 @@ impl NativeRule for NoImplicitCoercion {
                     Expression::NumericLiteral(_) | Expression::BigIntLiteral(_)
                 ) {
                     let source = ctx.source_text();
-                    let arg_start =
-                        usize::try_from(expr.argument.span().start).unwrap_or(0);
-                    let arg_end =
-                        usize::try_from(expr.argument.span().end).unwrap_or(0);
+                    let arg_start = usize::try_from(expr.argument.span().start).unwrap_or(0);
+                    let arg_end = usize::try_from(expr.argument.span().end).unwrap_or(0);
                     let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
 
                     ctx.report(Diagnostic {
@@ -105,10 +101,8 @@ impl NativeRule for NoImplicitCoercion {
                 );
                 if left_is_empty_string {
                     let source = ctx.source_text();
-                    let right_start =
-                        usize::try_from(expr.right.span().start).unwrap_or(0);
-                    let right_end =
-                        usize::try_from(expr.right.span().end).unwrap_or(0);
+                    let right_start = usize::try_from(expr.right.span().start).unwrap_or(0);
+                    let right_end = usize::try_from(expr.right.span().end).unwrap_or(0);
                     let right_text = source.get(right_start..right_end).unwrap_or("x");
 
                     ctx.report(Diagnostic {

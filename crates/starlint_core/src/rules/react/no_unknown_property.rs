@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeName, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -83,7 +83,7 @@ impl NativeRule for NoUnknownProperty {
             description: "Disallow usage of unknown DOM properties".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -112,11 +112,31 @@ impl NativeRule for NoUnknownProperty {
             };
 
             if let Some(react_name) = react_equivalent(attr_name) {
-                ctx.report_warning(
-                    "react/no-unknown-property",
-                    &format!("Unknown property `{attr_name}` — did you mean `{react_name}`?"),
-                    Span::new(attr.span.start, attr.span.end),
-                );
+                let attr_span = Span::new(attr.span.start, attr.span.end);
+
+                // Get the span of just the identifier name for the fix
+                let name_span = match &attr.name {
+                    JSXAttributeName::Identifier(id) => Span::new(id.span.start, id.span.end),
+                    JSXAttributeName::NamespacedName(_) => attr_span,
+                };
+
+                ctx.report(Diagnostic {
+                    rule_name: "react/no-unknown-property".to_owned(),
+                    message: format!(
+                        "Unknown property `{attr_name}` — did you mean `{react_name}`?"
+                    ),
+                    span: attr_span,
+                    severity: Severity::Warning,
+                    help: Some(format!("Replace `{attr_name}` with `{react_name}`")),
+                    fix: Some(Fix {
+                        message: format!("Rename to `{react_name}`"),
+                        edits: vec![Edit {
+                            span: name_span,
+                            replacement: react_name.to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

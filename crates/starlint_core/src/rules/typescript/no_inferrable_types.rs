@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BindingPattern, Expression, TSType};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoInferrableTypes {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -54,11 +54,27 @@ impl NativeRule for NoInferrableTypes {
 
         if is_inferrable_annotation(&type_ann.type_annotation, init) {
             let type_name = annotation_type_name(&type_ann.type_annotation);
-            ctx.report_warning(
-                "typescript/no-inferrable-types",
-                &format!("Type `{type_name}` is trivially inferred from the initializer"),
-                Span::new(decl.span.start, decl.span.end),
-            );
+
+            // Delete the type annotation span (`: type`).
+            // The TSTypeAnnotation span includes the colon and the type.
+            let ann_start = type_ann.span.start;
+            let ann_end = type_ann.span.end;
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-inferrable-types".to_owned(),
+                message: format!("Type `{type_name}` is trivially inferred from the initializer"),
+                span: Span::new(decl.span.start, decl.span.end),
+                severity: Severity::Warning,
+                help: Some(format!("Remove the `{type_name}` type annotation")),
+                fix: Some(Fix {
+                    message: format!("Remove the `{type_name}` type annotation"),
+                    edits: vec![Edit {
+                        span: Span::new(ann_start, ann_end),
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoUselessErrorCaptureStackTrace {
             description: "Flag useless `Error.captureStackTrace()` calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -49,11 +49,31 @@ impl NativeRule for NoUselessErrorCaptureStackTrace {
             matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Error");
 
         if is_error_object {
-            ctx.report_warning(
-                "no-useless-error-capture-stack-trace",
-                "`Error.captureStackTrace()` is redundant — `Error` subclasses automatically capture stack traces",
-                Span::new(call.span.start, call.span.end),
-            );
+            let call_span = Span::new(call.span.start, call.span.end);
+            // Extend span to include trailing semicolon if present
+            let source = ctx.source_text();
+            let end = usize::try_from(call.span.end).unwrap_or(0);
+            let fix_end = if source.as_bytes().get(end) == Some(&b';') {
+                call.span.end.saturating_add(1)
+            } else {
+                call.span.end
+            };
+            let fix_span = Span::new(call.span.start, fix_end);
+            ctx.report(Diagnostic {
+                rule_name: "no-useless-error-capture-stack-trace".to_owned(),
+                message: "`Error.captureStackTrace()` is redundant — `Error` subclasses automatically capture stack traces".to_owned(),
+                span: call_span,
+                severity: Severity::Warning,
+                help: Some("Remove the `Error.captureStackTrace()` call".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove `Error.captureStackTrace()` call".to_owned(),
+                    edits: vec![Edit {
+                        span: fix_span,
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

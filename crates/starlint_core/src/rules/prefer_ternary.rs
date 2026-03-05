@@ -197,7 +197,9 @@ fn build_assign_ternary(
     let if_val = source.get(if_start..if_end)?;
     let else_val = source.get(else_start..else_end)?;
 
-    Some(format!("{target_name} = {cond_text} ? {if_val} : {else_val};"))
+    Some(format!(
+        "{target_name} = {cond_text} ? {if_val} : {else_val};"
+    ))
 }
 
 #[cfg(test)]

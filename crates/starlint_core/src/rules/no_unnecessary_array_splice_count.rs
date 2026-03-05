@@ -9,7 +9,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoUnnecessaryArraySpliceCount {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -88,13 +88,29 @@ impl NativeRule for NoUnnecessaryArraySpliceCount {
 
         if let (Some(receiver), Some(owner)) = (receiver_text, owner_text) {
             if !receiver.is_empty() && receiver == owner {
-                ctx.report_warning(
-                    "no-unnecessary-array-splice-count",
-                    &format!(
+                let call_span = Span::new(call.span.start, call.span.end);
+                // Remove from end of first argument to end of second argument
+                // This removes ", arr.length" from ".splice(0, arr.length)"
+                let first_arg_end = call.arguments.first().map_or(0, |a| a.span().end);
+                let second_arg_end = second_arg.span().end;
+                let remove_span = Span::new(first_arg_end, second_arg_end);
+                ctx.report(Diagnostic {
+                    rule_name: "no-unnecessary-array-splice-count".to_owned(),
+                    message: format!(
                         "Unnecessary `.length` argument — `{receiver}.splice(index)` already removes all remaining elements"
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: call_span,
+                    severity: Severity::Warning,
+                    help: Some("Remove the `.length` count argument".to_owned()),
+                    fix: Some(Fix {
+                        message: "Remove `.length` count argument".to_owned(),
+                        edits: vec![Edit {
+                            span: remove_span,
+                            replacement: String::new(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

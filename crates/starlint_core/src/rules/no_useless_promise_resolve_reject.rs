@@ -9,7 +9,7 @@ use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoUselessPromiseResolveReject {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -57,6 +57,9 @@ impl NativeRule for NoUselessPromiseResolveReject {
             return;
         };
 
+        // Extract the inner argument text for the fix
+        let inner_arg_text = extract_promise_inner_arg(arg, ctx.source_text());
+
         // Walk ancestors to check if we're inside an async function
         let Some(semantic) = ctx.semantic() else {
             return;
@@ -70,25 +73,11 @@ impl NativeRule for NoUselessPromiseResolveReject {
         for ancestor in semantic.nodes().ancestors(node_id) {
             match ancestor.kind() {
                 AstKind::Function(func) if func.r#async => {
-                    ctx.report_warning(
-                        "no-useless-promise-resolve-reject",
-                        &format!(
-                            "Unnecessary `Promise.{method_name}()` in async function; \
-                             use `return` or `throw` directly"
-                        ),
-                        Span::new(ret.span.start, ret.span.end),
-                    );
+                    report_promise_fix(ctx, ret.span, method_name, &inner_arg_text);
                     return;
                 }
                 AstKind::ArrowFunctionExpression(arrow) if arrow.r#async => {
-                    ctx.report_warning(
-                        "no-useless-promise-resolve-reject",
-                        &format!(
-                            "Unnecessary `Promise.{method_name}()` in async function; \
-                             use `return` or `throw` directly"
-                        ),
-                        Span::new(ret.span.start, ret.span.end),
-                    );
+                    report_promise_fix(ctx, ret.span, method_name, &inner_arg_text);
                     return;
                 }
                 // Hit a non-async function boundary, stop
@@ -99,6 +88,64 @@ impl NativeRule for NoUselessPromiseResolveReject {
             }
         }
     }
+}
+
+/// Extract the inner argument text from `Promise.resolve(x)` or `Promise.reject(x)`.
+/// Returns the argument source text, or an empty string if no arguments.
+fn extract_promise_inner_arg(expr: &Expression<'_>, source: &str) -> String {
+    let Expression::CallExpression(call) = expr else {
+        return String::new();
+    };
+
+    if let Some(first_arg) = call.arguments.first() {
+        let arg_span = first_arg.span();
+        let start = usize::try_from(arg_span.start).unwrap_or(0);
+        let end = usize::try_from(arg_span.end).unwrap_or(0);
+        source.get(start..end).unwrap_or("").to_owned()
+    } else {
+        String::new()
+    }
+}
+
+/// Report the diagnostic with a fix for Promise.resolve/reject.
+fn report_promise_fix(
+    ctx: &mut NativeLintContext<'_>,
+    ret_span: oxc_span::Span,
+    method_name: &str,
+    inner_arg_text: &str,
+) {
+    let span = Span::new(ret_span.start, ret_span.end);
+    let replacement = if method_name == "resolve" {
+        if inner_arg_text.is_empty() {
+            "return".to_owned()
+        } else {
+            format!("return {inner_arg_text}")
+        }
+    } else if inner_arg_text.is_empty() {
+        "throw undefined".to_owned()
+    } else {
+        format!("throw {inner_arg_text}")
+    };
+    let fix_message = if method_name == "resolve" {
+        "Replace with `return` value directly".to_owned()
+    } else {
+        "Replace with `throw` directly".to_owned()
+    };
+    ctx.report(Diagnostic {
+        rule_name: "no-useless-promise-resolve-reject".to_owned(),
+        message: format!(
+            "Unnecessary `Promise.{method_name}()` in async function; \
+             use `return` or `throw` directly"
+        ),
+        span,
+        severity: Severity::Warning,
+        help: Some(format!("Use `{replacement}` instead")),
+        fix: Some(Fix {
+            message: fix_message,
+            edits: vec![Edit { span, replacement }],
+        }),
+        labels: vec![],
+    });
 }
 
 /// Check if an expression is `Promise.resolve(...)` or `Promise.reject(...)`.

@@ -9,7 +9,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +28,7 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
             description: "Disallow unnecessary template expressions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -42,11 +44,33 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
         // A template literal with exactly one expression and no meaningful
         // static parts (quasis are all empty) is unnecessary: `${x}` -> x
         if template.expressions.len() == 1 && all_quasis_empty(&template.quasis) {
-            ctx.report_warning(
-                "typescript/no-unnecessary-template-expression",
-                "Unnecessary template expression — use the value directly or `String(...)` instead of wrapping in a template literal",
-                Span::new(template.span.start, template.span.end),
-            );
+            let template_span = Span::new(template.span.start, template.span.end);
+            let message = "Unnecessary template expression — use the value directly or `String(...)` instead of wrapping in a template literal";
+
+            // Extract the expression text from source
+            let source = ctx.source_text();
+            let Some(expr) = template.expressions.first() else {
+                return;
+            };
+            let expr_start = usize::try_from(expr.span().start).unwrap_or(0);
+            let expr_end = usize::try_from(expr.span().end).unwrap_or(0);
+            let expr_text = source.get(expr_start..expr_end).unwrap_or("");
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-unnecessary-template-expression".to_owned(),
+                message: message.to_owned(),
+                span: template_span,
+                severity: Severity::Warning,
+                help: Some("Remove the template literal wrapper".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace with the expression directly".to_owned(),
+                    edits: vec![Edit {
+                        span: template_span,
+                        replacement: expr_text.to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
             return;
         }
 
@@ -61,11 +85,30 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
                 .is_some_and(|q| q.value.raw.as_str().contains('\n'));
 
             if !is_multiline {
-                ctx.report_warning(
-                    "typescript/no-unnecessary-template-expression",
-                    "Unnecessary template literal with no expressions — use a regular string literal instead",
-                    Span::new(template.span.start, template.span.end),
-                );
+                let template_span = Span::new(template.span.start, template.span.end);
+                let message = "Unnecessary template literal with no expressions — use a regular string literal instead";
+
+                // Extract the static text content and wrap in quotes
+                let raw_text = template.quasis.first().map_or("", |q| q.value.raw.as_str());
+                // Escape any single quotes in the content for the replacement
+                let escaped = raw_text.replace('\'', "\\'");
+                let replacement = format!("'{escaped}'");
+
+                ctx.report(Diagnostic {
+                    rule_name: "typescript/no-unnecessary-template-expression".to_owned(),
+                    message: message.to_owned(),
+                    span: template_span,
+                    severity: Severity::Warning,
+                    help: Some("Replace with a regular string literal".to_owned()),
+                    fix: Some(Fix {
+                        message: "Convert to a regular string literal".to_owned(),
+                        edits: vec![Edit {
+                            span: template_span,
+                            replacement,
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

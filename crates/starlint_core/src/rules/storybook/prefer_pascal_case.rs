@@ -3,7 +3,7 @@
 //! Stories should use `PascalCase` names.
 //! Checks named export identifiers in `.stories.` files for `PascalCase`.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -14,6 +14,23 @@ const RULE_NAME: &str = "storybook/prefer-pascal-case";
 /// Stories should use `PascalCase` names.
 #[derive(Debug)]
 pub struct PreferPascalCase;
+
+/// Convert a string to `PascalCase`.
+fn to_pascal_case(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut capitalize_next = true;
+    for c in s.chars() {
+        if c == '_' || c == '-' || c == ' ' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            result.extend(c.to_uppercase());
+            capitalize_next = false;
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
 
 /// Check if a string is `PascalCase` (starts with uppercase, no underscores/hyphens at start).
 fn is_pascal_case(s: &str) -> bool {
@@ -37,7 +54,7 @@ impl NativeRule for PreferPascalCase {
             description: "Stories should use PascalCase names".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -83,11 +100,22 @@ impl NativeRule for PreferPascalCase {
                     let name_start = abs_pos.saturating_add(pattern.len());
                     let start = u32::try_from(name_start).unwrap_or(0);
                     let end = start.saturating_add(u32::try_from(export_name.len()).unwrap_or(0));
-                    ctx.report_warning(
-                        RULE_NAME,
-                        "Story exports should use PascalCase",
-                        Span::new(start, end),
-                    );
+                    let pascal = to_pascal_case(export_name);
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Story exports should use PascalCase".to_owned(),
+                        span: Span::new(start, end),
+                        severity: Severity::Warning,
+                        help: Some(format!("Rename to `{pascal}`")),
+                        fix: Some(Fix {
+                            message: format!("Rename to `{pascal}`"),
+                            edits: vec![Edit {
+                                span: Span::new(start, end),
+                                replacement: pascal,
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
 
                 search_pos = abs_pos.saturating_add(1);

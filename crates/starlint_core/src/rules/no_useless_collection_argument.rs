@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +28,7 @@ impl NativeRule for NoUselessCollectionArgument {
             description: "Disallow passing an empty array to collection constructors".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -55,11 +56,24 @@ impl NativeRule for NoUselessCollectionArgument {
         };
 
         if is_empty_array_argument(first_arg) {
-            ctx.report_warning(
-                "no-useless-collection-argument",
-                &format!("Unnecessary empty array argument in `new {name}([])` — use `new {name}()` instead"),
-                Span::new(new_expr.span.start, new_expr.span.end),
-            );
+            let expr_span = Span::new(new_expr.span.start, new_expr.span.end);
+            // Remove the empty array argument
+            let arg_span = Span::new(first_arg.span().start, first_arg.span().end);
+            ctx.report(Diagnostic {
+                rule_name: "no-useless-collection-argument".to_owned(),
+                message: format!("Unnecessary empty array argument in `new {name}([])` — use `new {name}()` instead"),
+                span: expr_span,
+                severity: Severity::Warning,
+                help: Some(format!("Use `new {name}()` instead")),
+                fix: Some(Fix {
+                    message: "Remove empty array argument".to_owned(),
+                    edits: vec![Edit {
+                        span: arg_span,
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

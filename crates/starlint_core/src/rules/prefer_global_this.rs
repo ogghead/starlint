@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for PreferGlobalThis {
             description: "Prefer globalThis over window/self/global".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -40,11 +40,22 @@ impl NativeRule for PreferGlobalThis {
 
         let name = ident.name.as_str();
         if DEPRECATED_GLOBALS.contains(&name) {
-            ctx.report_warning(
-                "prefer-global-this",
-                &format!("Prefer `globalThis` over `{name}`"),
-                Span::new(ident.span.start, ident.span.end),
-            );
+            let ident_span = Span::new(ident.span.start, ident.span.end);
+            ctx.report(Diagnostic {
+                rule_name: "prefer-global-this".to_owned(),
+                message: format!("Prefer `globalThis` over `{name}`"),
+                span: ident_span,
+                severity: Severity::Warning,
+                help: Some(format!("Replace `{name}` with `globalThis`")),
+                fix: Some(Fix {
+                    message: format!("Replace `{name}` with `globalThis`"),
+                    edits: vec![Edit {
+                        span: ident_span,
+                        replacement: "globalThis".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

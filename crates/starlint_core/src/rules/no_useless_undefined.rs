@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +25,7 @@ impl NativeRule for NoUselessUndefined {
             description: "Disallow useless undefined".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -34,27 +35,53 @@ impl NativeRule for NoUselessUndefined {
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         match kind {
-            // `let x = undefined;` or `const x = undefined;`
+            // `let x = undefined;` -> `let x;`
             AstKind::VariableDeclarator(decl) => {
                 if let Some(init) = &decl.init {
                     if is_undefined(init) {
-                        ctx.report_warning(
-                            "no-useless-undefined",
-                            "Do not use useless `undefined`",
-                            Span::new(decl.span.start, decl.span.end),
-                        );
+                        // Remove from end of binding id to end of init (` = undefined`)
+                        let remove_span = Span::new(decl.id.span().end, init.span().end);
+                        ctx.report(Diagnostic {
+                            rule_name: "no-useless-undefined".to_owned(),
+                            message: "Do not use useless `undefined`".to_owned(),
+                            span: Span::new(decl.span.start, decl.span.end),
+                            severity: Severity::Warning,
+                            help: Some("Remove `= undefined`".to_owned()),
+                            fix: Some(Fix {
+                                message: "Remove `= undefined`".to_owned(),
+                                edits: vec![Edit {
+                                    span: remove_span,
+                                    replacement: String::new(),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
                     }
                 }
             }
-            // `return undefined;`
+            // `return undefined;` -> `return;`
             AstKind::ReturnStatement(ret) => {
                 if let Some(arg) = &ret.argument {
                     if is_undefined(arg) {
-                        ctx.report_warning(
-                            "no-useless-undefined",
-                            "Do not use useless `undefined`",
-                            Span::new(ret.span.start, ret.span.end),
-                        );
+                        // Remove from after `return` keyword to end of argument (` undefined`)
+                        // `return` is 6 chars, so the keyword ends at ret.span.start + 6
+                        let return_keyword_end = ret.span.start.saturating_add(6);
+                        let remove_span = Span::new(return_keyword_end, arg.span().end);
+                        ctx.report(Diagnostic {
+                            rule_name: "no-useless-undefined".to_owned(),
+                            message: "Do not use useless `undefined`".to_owned(),
+                            span: Span::new(ret.span.start, ret.span.end),
+                            severity: Severity::Warning,
+                            help: Some("Remove `undefined` from return".to_owned()),
+                            fix: Some(Fix {
+                                message: "Remove `undefined` from return".to_owned(),
+                                edits: vec![Edit {
+                                    span: remove_span,
+                                    replacement: String::new(),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
                     }
                 }
             }

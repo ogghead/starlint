@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoEmptyNamedBlocks {
             description: "Forbid empty named import blocks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -43,11 +43,35 @@ impl NativeRule for NoEmptyNamedBlocks {
         // Empty named block: the specifiers list exists but is empty
         // This catches `import {} from 'mod'`
         if specifiers.is_empty() {
-            ctx.report_warning(
-                "import/no-empty-named-blocks",
-                "Unexpected empty named import block",
-                Span::new(import.span.start, import.span.end),
-            );
+            // Remove the entire empty import statement
+            let stmt_start = import.span.start;
+            let mut stmt_end = import.span.end;
+
+            // Also remove trailing newline if present
+            let end_usize = usize::try_from(stmt_end).unwrap_or(0);
+            if ctx
+                .source_text()
+                .get(end_usize..end_usize.saturating_add(1))
+                == Some("\n")
+            {
+                stmt_end = stmt_end.saturating_add(1);
+            }
+
+            ctx.report(Diagnostic {
+                rule_name: "import/no-empty-named-blocks".to_owned(),
+                message: "Unexpected empty named import block".to_owned(),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove the empty import statement".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove the empty import statement".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(stmt_start, stmt_end),
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

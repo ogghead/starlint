@@ -26,7 +26,11 @@ fn assert_fix_idempotent(rules: Vec<Box<dyn NativeRule>>, source: &str, label: &
 
     // First pass: lint and collect diagnostics.
     let result = session.lint_single_file(file, source);
-    let fixable_count = result.diagnostics.iter().filter(|d| d.fix.is_some()).count();
+    let fixable_count = result
+        .diagnostics
+        .iter()
+        .filter(|d| d.fix.is_some())
+        .count();
     assert!(
         fixable_count > 0,
         "{label}: source should trigger at least one fixable diagnostic, got 0"
@@ -59,10 +63,7 @@ fn assert_fix_idempotent(rules: Vec<Box<dyn NativeRule>>, source: &str, label: &
             "{label}: fixes did not converge after {MAX_FIX_PASSES} passes, \
              still have {} fixable diagnostics from: {:?}",
             fixable.len(),
-            fixable
-                .iter()
-                .map(|d| &d.rule_name)
-                .collect::<Vec<_>>()
+            fixable.iter().map(|d| &d.rule_name).collect::<Vec<_>>()
         );
 
         diagnostics = relint.diagnostics;
@@ -549,9 +550,7 @@ fn fix_idempotent_no_null() {
 #[test]
 fn fix_idempotent_no_object_constructor() {
     assert_fix_idempotent(
-        vec![Box::new(
-            rules::no_object_constructor::NoObjectConstructor,
-        )],
+        vec![Box::new(rules::no_object_constructor::NoObjectConstructor)],
         "var obj = new Object();",
         "no_object_constructor",
     );
@@ -684,9 +683,7 @@ fn fix_idempotent_prefer_numeric_literals() {
 #[test]
 fn fix_idempotent_prefer_object_has_own() {
     assert_fix_idempotent(
-        vec![Box::new(
-            rules::prefer_object_has_own::PreferObjectHasOwn,
-        )],
+        vec![Box::new(rules::prefer_object_has_own::PreferObjectHasOwn)],
         "Object.prototype.hasOwnProperty.call(obj, 'key');",
         "prefer_object_has_own",
     );
@@ -713,9 +710,7 @@ fn fix_idempotent_prefer_object_spread() {
 #[test]
 fn fix_idempotent_prefer_reflect_apply() {
     assert_fix_idempotent(
-        vec![Box::new(
-            rules::prefer_reflect_apply::PreferReflectApply,
-        )],
+        vec![Box::new(rules::prefer_reflect_apply::PreferReflectApply)],
         "foo.apply(null, args);",
         "prefer_reflect_apply",
     );
@@ -780,7 +775,9 @@ fn fix_idempotent_prefer_native_coercion_functions() {
 #[test]
 fn fix_idempotent_prefer_prototype_methods() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_prototype_methods::PreferPrototypeMethods)],
+        vec![Box::new(
+            rules::prefer_prototype_methods::PreferPrototypeMethods,
+        )],
         "[].forEach.call(obj, fn);",
         "prefer_prototype_methods",
     );

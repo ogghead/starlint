@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for PreferDomNodeAppend {
             description: "Prefer `Node.append()` over `Node.appendChild()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,22 @@ impl NativeRule for PreferDomNodeAppend {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-dom-node-append",
-            "Prefer `Node.append()` over `Node.appendChild()`",
-            Span::new(call.span.start, call.span.end),
-        );
+        let prop_span = Span::new(member.property.span.start, member.property.span.end);
+        ctx.report(Diagnostic {
+            rule_name: "prefer-dom-node-append".to_owned(),
+            message: "Prefer `Node.append()` over `Node.appendChild()`".to_owned(),
+            span: Span::new(call.span.start, call.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace `appendChild` with `append`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace `appendChild` with `append`".to_owned(),
+                edits: vec![Edit {
+                    span: prop_span,
+                    replacement: "append".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

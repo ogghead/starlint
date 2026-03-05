@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -43,7 +45,7 @@ impl NativeRule for NoNonNullAssertedOptionalChain {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -57,11 +59,28 @@ impl NativeRule for NoNonNullAssertedOptionalChain {
         };
 
         if is_optional_chain(&expr.expression) {
-            ctx.report_error(
-                RULE_NAME,
-                "Non-null assertion after optional chain is contradictory — remove `!` or `?.`",
-                Span::new(expr.span.start, expr.span.end),
-            );
+            // Remove the `!` by replacing the whole expression with the inner expression text
+            let inner_start = usize::try_from(expr.expression.span().start).unwrap_or(0);
+            let inner_end = usize::try_from(expr.expression.span().end).unwrap_or(0);
+            let inner_text = ctx.source_text().get(inner_start..inner_end).unwrap_or("");
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message:
+                    "Non-null assertion after optional chain is contradictory — remove `!` or `?.`"
+                        .to_owned(),
+                span: Span::new(expr.span.start, expr.span.end),
+                severity: Severity::Error,
+                help: Some("Remove the `!` non-null assertion".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove the `!` non-null assertion".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement: inner_text.to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

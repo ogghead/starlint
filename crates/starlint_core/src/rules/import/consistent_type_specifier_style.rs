@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::ImportDeclarationSpecifier;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for ConsistentTypeSpecifierStyle {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -69,11 +69,42 @@ impl NativeRule for ConsistentTypeSpecifierStyle {
         });
 
         if all_type {
-            ctx.report_warning(
-                "import/consistent-type-specifier-style",
-                "Prefer top-level `import type` when all specifiers are type imports",
-                Span::new(import.span.start, import.span.end),
-            );
+            // Build the replacement: replace `import {` with `import type {`
+            // and strip inline `type` keywords from each specifier.
+            let import_start = usize::try_from(import.span.start).unwrap_or(0);
+            let import_end = usize::try_from(import.span.end).unwrap_or(0);
+            let import_text = ctx
+                .source_text()
+                .get(import_start..import_end)
+                .unwrap_or("");
+
+            // Replace `import ` with `import type ` at the start, then remove all
+            // inline `type ` prefixes inside the braces.
+            let replacement = if let Some(rest) = import_text.strip_prefix("import ") {
+                let cleaned = rest.replace("type ", "");
+                format!("import type {cleaned}")
+            } else {
+                import_text.to_owned()
+            };
+
+            ctx.report(Diagnostic {
+                rule_name: "import/consistent-type-specifier-style".to_owned(),
+                message: "Prefer top-level `import type` when all specifiers are type imports"
+                    .to_owned(),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Warning,
+                help: Some(
+                    "Use `import type { ... }` instead of inline `type` specifiers".to_owned(),
+                ),
+                fix: Some(Fix {
+                    message: "Convert to top-level `import type`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(import.span.start, import.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

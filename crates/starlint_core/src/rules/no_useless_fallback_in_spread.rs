@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +25,7 @@ impl NativeRule for NoUselessFallbackInSpread {
             description: "Disallow useless fallback in spread".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -58,11 +59,34 @@ impl NativeRule for NoUselessFallbackInSpread {
         };
 
         if obj.properties.is_empty() {
-            ctx.report_warning(
-                "no-useless-fallback-in-spread",
-                "The empty object fallback in spread is unnecessary; spreading `undefined`/`null` is a no-op",
-                Span::new(spread.span.start, spread.span.end),
-            );
+            // Replace the spread argument (the whole logical expr, possibly
+            // parenthesized) with just the left-hand side.
+            let left_span = Span::new(logical.left.span().start, logical.left.span().end);
+            let left_text = ctx
+                .source_text()
+                .get(
+                    usize::try_from(left_span.start).unwrap_or(0)
+                        ..usize::try_from(left_span.end).unwrap_or(0),
+                )
+                .unwrap_or("")
+                .to_owned();
+            // Replace the spread argument (everything after `...`)
+            let arg_span = Span::new(spread.argument.span().start, spread.argument.span().end);
+            ctx.report(Diagnostic {
+                rule_name: "no-useless-fallback-in-spread".to_owned(),
+                message: "The empty object fallback in spread is unnecessary; spreading `undefined`/`null` is a no-op".to_owned(),
+                span: Span::new(spread.span.start, spread.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove the fallback `|| {}`/`?? {}`".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove the empty object fallback".to_owned(),
+                    edits: vec![Edit {
+                        span: arg_span,
+                        replacement: left_text,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

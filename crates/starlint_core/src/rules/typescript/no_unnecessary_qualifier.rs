@@ -5,7 +5,7 @@
 //! the namespace prefix. For example, inside `namespace Foo { ... }`, writing
 //! `Foo.bar` is redundant — `bar` alone suffices and is clearer.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoUnnecessaryQualifier {
             description: "Disallow unnecessary namespace qualifiers".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -35,13 +35,25 @@ impl NativeRule for NoUnnecessaryQualifier {
         let findings = find_unnecessary_qualifiers(source);
 
         for (ns_name, qual_start, qual_end) in findings {
-            ctx.report_warning(
-                "typescript/no-unnecessary-qualifier",
-                &format!(
-                    "Unnecessary namespace qualifier `{ns_name}.` — already inside namespace `{ns_name}`"
-                ),
-                Span::new(qual_start, qual_end),
+            let span = Span::new(qual_start, qual_end);
+            let message = format!(
+                "Unnecessary namespace qualifier `{ns_name}.` — already inside namespace `{ns_name}`"
             );
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-unnecessary-qualifier".to_owned(),
+                message: message.clone(),
+                span,
+                severity: Severity::Warning,
+                help: Some(format!("Remove the `{ns_name}.` qualifier")),
+                fix: Some(Fix {
+                    message: format!("Remove `{ns_name}.` qualifier"),
+                    edits: vec![Edit {
+                        span,
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

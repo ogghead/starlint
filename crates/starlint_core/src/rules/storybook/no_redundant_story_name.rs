@@ -3,7 +3,7 @@
 //! A story should not have a redundant name property.
 //! Checks for `name:` property on story exports where the name matches the export name.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for NoRedundantStoryName {
             description: "A story should not have a redundant name property".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -81,11 +81,47 @@ impl NativeRule for NoRedundantStoryName {
                         .saturating_add(name_in_obj);
                     let start = u32::try_from(abs_name_pos).unwrap_or(0);
                     let end = start.saturating_add(u32::try_from(name_pattern.len()).unwrap_or(0));
-                    ctx.report_warning(
-                        RULE_NAME,
-                        "Story name property is redundant when it matches the export name",
-                        Span::new(start, end),
-                    );
+
+                    // Extend removal span to include surrounding comma and whitespace
+                    let fix_start = start;
+                    let mut fix_end = end;
+                    let fix_end_usize = usize::try_from(fix_end).unwrap_or(0);
+                    let after = source.get(fix_end_usize..).unwrap_or_default();
+                    // Skip trailing whitespace and comma
+                    let extra = after
+                        .chars()
+                        .take_while(|c| *c == ' ' || *c == ',' || *c == '\n' || *c == '\r')
+                        .count();
+                    fix_end = fix_end.saturating_add(u32::try_from(extra).unwrap_or(0));
+
+                    // Also try to consume leading comma+whitespace if the property
+                    // was not the first one (i.e. preceded by `, `)
+                    let fix_start_usize = usize::try_from(fix_start).unwrap_or(0);
+                    let before = source.get(..fix_start_usize).unwrap_or_default();
+                    let leading = before
+                        .chars()
+                        .rev()
+                        .take_while(|c| *c == ' ' || *c == ',')
+                        .count();
+                    let actual_start =
+                        fix_start.saturating_sub(u32::try_from(leading).unwrap_or(0));
+
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Story name property is redundant when it matches the export name"
+                            .to_owned(),
+                        span: Span::new(start, end),
+                        severity: Severity::Warning,
+                        help: Some("Remove the redundant `name` property".to_owned()),
+                        fix: Some(Fix {
+                            message: "Remove the redundant `name` property".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(actual_start, fix_end),
+                                replacement: String::new(),
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
 

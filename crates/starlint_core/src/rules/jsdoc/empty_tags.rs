@@ -2,7 +2,7 @@
 //!
 //! Enforce certain `JSDoc` tags have no content (e.g. `@abstract`, `@async`).
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,7 +32,7 @@ impl NativeRule for EmptyTags {
             description: "Enforce certain JSDoc tags have no content".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -51,6 +51,8 @@ impl NativeRule for EmptyTags {
                 let abs_end = search_from.saturating_add(end).saturating_add(2);
                 let block = source.get(abs_start..abs_end).unwrap_or_default();
 
+                // Track the byte offset of each line within the source
+                let mut line_offset = abs_start;
                 for line in block.lines() {
                     let trimmed = super::trim_jsdoc_line(line);
                     if let Some(after_at) = trimmed.strip_prefix('@') {
@@ -60,14 +62,57 @@ impl NativeRule for EmptyTags {
                             if !rest.is_empty() {
                                 let span_start = u32::try_from(abs_start).unwrap_or(0);
                                 let span_end = u32::try_from(abs_end).unwrap_or(span_start);
-                                ctx.report_warning(
-                                    "jsdoc/empty-tags",
-                                    &format!("`@{tag_name}` tag should not have content"),
-                                    Span::new(span_start, span_end),
-                                );
+
+                                // Find the `@tagname` in this line within the source
+                                let tag_needle = format!("@{tag_name}");
+                                let line_source = source.get(line_offset..).unwrap_or_default();
+                                if let Some(at_pos) = line_source.find(&tag_needle) {
+                                    // Content starts after `@tagname`
+                                    let content_start = line_offset
+                                        .saturating_add(at_pos)
+                                        .saturating_add(tag_needle.len());
+                                    // Content ends at end of line (before newline)
+                                    // but we want to stop before `*/` if on same line
+                                    let line_end = line_offset.saturating_add(line.len());
+                                    let region =
+                                        source.get(content_start..line_end).unwrap_or_default();
+                                    // Remove everything up to `*/` or end of line
+                                    let end_trim = region.find("*/").unwrap_or(region.len());
+                                    // Trim trailing whitespace before `*/`
+                                    let to_remove = region.get(..end_trim).unwrap_or_default();
+                                    if !to_remove.trim().is_empty() {
+                                        let fix_start = u32::try_from(content_start).unwrap_or(0);
+                                        let fix_end = fix_start.saturating_add(
+                                            u32::try_from(to_remove.len()).unwrap_or(0),
+                                        );
+                                        ctx.report(Diagnostic {
+                                            rule_name: "jsdoc/empty-tags".to_owned(),
+                                            message: format!(
+                                                "`@{tag_name}` tag should not have content"
+                                            ),
+                                            span: Span::new(span_start, span_end),
+                                            severity: Severity::Warning,
+                                            help: Some(format!(
+                                                "Remove content after `@{tag_name}`"
+                                            )),
+                                            fix: Some(Fix {
+                                                message: format!(
+                                                    "Remove content after `@{tag_name}`"
+                                                ),
+                                                edits: vec![Edit {
+                                                    span: Span::new(fix_start, fix_end),
+                                                    replacement: String::new(),
+                                                }],
+                                            }),
+                                            labels: vec![],
+                                        });
+                                    }
+                                }
                             }
                         }
                     }
+                    // Advance past this line + newline character
+                    line_offset = line_offset.saturating_add(line.len()).saturating_add(1);
                 }
 
                 pos = abs_end;

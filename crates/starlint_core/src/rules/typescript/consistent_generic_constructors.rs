@@ -7,7 +7,7 @@
 //! the value, e.g. `const x = new Foo<string>()` instead of
 //! `const x: Foo<string> = new Foo()`.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for ConsistentGenericConstructors {
                     .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -37,12 +37,35 @@ impl NativeRule for ConsistentGenericConstructors {
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
         let findings = find_inconsistent_generics(ctx.source_text());
 
-        for (start, end) in findings {
-            ctx.report_warning(
-                "typescript/consistent-generic-constructors",
-                "Generic type arguments should be on the constructor call, not the type annotation — use `new Foo<T>()` instead",
-                Span::new(start, end),
-            );
+        // Collect fix data upfront to avoid borrow conflict with ctx
+        let fix_data: Vec<_> = findings
+            .iter()
+            .map(|(start, end)| {
+                let source = ctx.source_text();
+                let line_start = usize::try_from(*start).unwrap_or(0);
+                let line_end = usize::try_from(*end).unwrap_or(0);
+                let line_text = source.get(line_start..line_end).unwrap_or("");
+                let fix = build_generic_constructor_fix(line_text);
+                (*start, *end, fix)
+            })
+            .collect();
+
+        for (start, end, fix) in fix_data {
+            let span = Span::new(start, end);
+            let message = "Generic type arguments should be on the constructor call, not the type annotation — use `new Foo<T>()` instead";
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/consistent-generic-constructors".to_owned(),
+                message: message.to_owned(),
+                span,
+                severity: Severity::Warning,
+                help: Some("Move type arguments to the constructor call".to_owned()),
+                fix: fix.map(|replacement| Fix {
+                    message: "Move type arguments to constructor".to_owned(),
+                    edits: vec![Edit { span, replacement }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
@@ -125,6 +148,60 @@ fn find_inconsistent_generics(source: &str) -> Vec<(u32, u32)> {
     }
 
     results
+}
+
+/// Build replacement text for moving generic type args from annotation to constructor.
+///
+/// Input:  `const x: Map<string, number> = new Map();`
+/// Output: `const x = new Map<string, number>();`
+fn build_generic_constructor_fix(line: &str) -> Option<String> {
+    let trimmed = line.trim();
+
+    // Find the declaration keyword
+    let (keyword, rest) = if let Some(r) = trimmed.strip_prefix("const ") {
+        ("const", r)
+    } else if let Some(r) = trimmed.strip_prefix("let ") {
+        ("let", r)
+    } else if let Some(r) = trimmed.strip_prefix("var ") {
+        ("var", r)
+    } else {
+        return None;
+    };
+
+    // Find the colon (type annotation) and `= new`
+    let colon_pos = rest.find(':')?;
+    let eq_new_pos = rest.find("= new ")?;
+
+    if colon_pos >= eq_new_pos {
+        return None;
+    }
+
+    // Variable name is before the colon
+    let var_name = rest.get(..colon_pos)?.trim();
+
+    // Type annotation between colon and `=`
+    let type_annotation = rest.get(colon_pos.saturating_add(1)..eq_new_pos)?.trim();
+
+    // Extract generic args from type annotation
+    let angle_open = type_annotation.find('<')?;
+    let generic_args = type_annotation.get(angle_open..)?;
+
+    // Constructor part after `= new `
+    let constructor_part = rest.get(eq_new_pos.saturating_add(6)..)?.trim();
+
+    // Find the `(` in the constructor call
+    let paren_pos = constructor_part.find('(')?;
+    let constructor_name = constructor_part.get(..paren_pos)?;
+    let constructor_args = constructor_part.get(paren_pos..)?;
+
+    // Preserve leading whitespace from the original line
+    let leading_ws = line
+        .get(..line.len().saturating_sub(trimmed.len()))
+        .unwrap_or("");
+
+    Some(format!(
+        "{leading_ws}{keyword} {var_name} = new {constructor_name}{generic_args}{constructor_args}"
+    ))
 }
 
 #[cfg(test)]

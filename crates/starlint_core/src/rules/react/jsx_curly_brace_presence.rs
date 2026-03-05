@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::JSXExpression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for JsxCurlyBracePresence {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -42,12 +42,27 @@ impl NativeRule for JsxCurlyBracePresence {
             return;
         };
 
-        if let JSXExpression::StringLiteral(_) = &container.expression {
-            ctx.report_warning(
-                RULE_NAME,
-                "Unnecessary curly braces around string literal. Use a plain string attribute value instead",
-                Span::new(container.span.start, container.span.end),
-            );
+        if let JSXExpression::StringLiteral(lit) = &container.expression {
+            let container_span = Span::new(container.span.start, container.span.end);
+            // Build replacement: the string literal value wrapped in double quotes
+            let value = lit.value.as_str();
+            let replacement = format!("\"{value}\"");
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Unnecessary curly braces around string literal. Use a plain string attribute value instead".to_owned(),
+                span: container_span,
+                severity: Severity::Warning,
+                help: Some("Remove the curly braces and use a plain string".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove unnecessary curly braces".to_owned(),
+                    edits: vec![Edit {
+                        span: container_span,
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

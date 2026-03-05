@@ -45,10 +45,8 @@ impl NativeRule for PreferMathTrunc {
                 if let Expression::UnaryExpression(inner) = &outer.argument {
                     if inner.operator == UnaryOperator::BitwiseNot {
                         let source = ctx.source_text();
-                        let arg_start =
-                            usize::try_from(inner.argument.span().start).unwrap_or(0);
-                        let arg_end =
-                            usize::try_from(inner.argument.span().end).unwrap_or(0);
+                        let arg_start = usize::try_from(inner.argument.span().start).unwrap_or(0);
+                        let arg_end = usize::try_from(inner.argument.span().end).unwrap_or(0);
                         let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
 
                         ctx.report(Diagnostic {
@@ -84,10 +82,8 @@ impl NativeRule for PreferMathTrunc {
                     };
 
                     let source = ctx.source_text();
-                    let left_start =
-                        usize::try_from(expr.left.span().start).unwrap_or(0);
-                    let left_end =
-                        usize::try_from(expr.left.span().end).unwrap_or(0);
+                    let left_start = usize::try_from(expr.left.span().start).unwrap_or(0);
+                    let left_end = usize::try_from(expr.left.span().end).unwrap_or(0);
                     let left_text = source.get(left_start..left_end).unwrap_or("x");
 
                     ctx.report(Diagnostic {

@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -43,7 +43,7 @@ impl NativeRule for JsxNoTargetBlank {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -92,11 +92,67 @@ impl NativeRule for JsxNoTargetBlank {
         });
 
         if !has_noreferrer {
-            ctx.report_warning(
-                RULE_NAME,
-                "Using `target=\"_blank\"` without `rel=\"noreferrer\"` is a security risk",
-                Span::new(opening.span.start, opening.span.end),
-            );
+            let opening_span = Span::new(opening.span.start, opening.span.end);
+
+            // Find existing rel attribute to determine fix strategy
+            let rel_attr = opening.attributes.iter().find_map(|item| {
+                if let JSXAttributeItem::Attribute(attr) = item {
+                    if attr_name(&attr.name) == "rel" {
+                        return Some(attr);
+                    }
+                }
+                None
+            });
+
+            let fix = if let Some(rel) = rel_attr {
+                // Existing rel attribute: replace its value to include "noreferrer"
+                let existing_value = get_string_value(rel.value.as_ref()).unwrap_or("");
+                let new_value = if existing_value.is_empty() {
+                    "noreferrer".to_owned()
+                } else {
+                    format!("{existing_value} noreferrer")
+                };
+                Some(Fix {
+                    message: "Add `noreferrer` to the `rel` attribute".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(rel.span.start, rel.span.end),
+                        replacement: format!("rel=\"{new_value}\""),
+                    }],
+                })
+            } else {
+                // No rel attribute: insert before the closing `>` or `/>` of the opening tag
+                // Insert at the end of the opening tag, just before the `>`
+                let open_end = opening.span.end;
+                let source = ctx.source_text();
+                let end_idx = usize::try_from(open_end).unwrap_or(0);
+                // Check if self-closing (ends with "/>") or regular (ends with ">")
+                let before_end = source.get(end_idx.saturating_sub(2)..end_idx).unwrap_or("");
+                let insert_pos = if before_end.ends_with("/>") {
+                    open_end.saturating_sub(2)
+                } else {
+                    open_end.saturating_sub(1)
+                };
+                let insert_span = Span::new(insert_pos, insert_pos);
+                Some(Fix {
+                    message: "Add `rel=\"noreferrer\"`".to_owned(),
+                    edits: vec![Edit {
+                        span: insert_span,
+                        replacement: " rel=\"noreferrer\"".to_owned(),
+                    }],
+                })
+            };
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message:
+                    "Using `target=\"_blank\"` without `rel=\"noreferrer\"` is a security risk"
+                        .to_owned(),
+                span: opening_span,
+                severity: Severity::Warning,
+                help: Some("Add `rel=\"noreferrer\"` to the element".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

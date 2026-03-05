@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for SelfClosingComp {
             description: "Components without children should be self-closing".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -38,11 +38,37 @@ impl NativeRule for SelfClosingComp {
         // If there is a closing element, the element is not self-closing.
         // If children is empty but there's a closing tag, it should be self-closing.
         if element.closing_element.is_some() && element.children.is_empty() {
-            ctx.report_warning(
-                "react/self-closing-comp",
-                "Empty components should be self-closing",
-                Span::new(element.span.start, element.span.end),
+            let element_span = Span::new(element.span.start, element.span.end);
+            let source = ctx.source_text();
+            let opening = &element.opening_element;
+            let open_start = usize::try_from(opening.span.start).unwrap_or(0);
+            let open_end = usize::try_from(opening.span.end).unwrap_or(0);
+            let opening_text = source.get(open_start..open_end).unwrap_or("");
+
+            // Build self-closing tag: strip trailing ">" and append " />"
+            let replacement = opening_text.strip_suffix('>').map_or_else(
+                || format!("{opening_text} />"),
+                |without_angle| {
+                    let t = without_angle.trim_end();
+                    format!("{t} />")
+                },
             );
+
+            ctx.report(Diagnostic {
+                rule_name: "react/self-closing-comp".to_owned(),
+                message: "Empty components should be self-closing".to_owned(),
+                span: element_span,
+                severity: Severity::Warning,
+                help: Some("Use a self-closing tag instead".to_owned()),
+                fix: Some(Fix {
+                    message: "Convert to self-closing tag".to_owned(),
+                    edits: vec![Edit {
+                        span: element_span,
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

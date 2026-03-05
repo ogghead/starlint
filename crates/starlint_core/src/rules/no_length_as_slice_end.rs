@@ -10,7 +10,7 @@ use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoLengthAsSliceEnd {
             description: "Disallow using `.length` as the end argument in `.slice()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -69,11 +69,27 @@ impl NativeRule for NoLengthAsSliceEnd {
 
         if let (Some(receiver), Some(length_obj)) = (slice_receiver_text, length_object_text) {
             if receiver == length_obj {
-                ctx.report_warning(
-                    "no-length-as-slice-end",
-                    "Unnecessary `.length` as `.slice()` end — `.slice()` already defaults to the full length",
-                    Span::new(call.span.start, call.span.end),
-                );
+                let call_span = Span::new(call.span.start, call.span.end);
+                // Remove from end of first argument to end of second argument
+                // This removes ", X.length" from ".slice(start, X.length)"
+                let first_arg_end = call.arguments.first().map_or(0, |a| a.span().end);
+                let second_arg_end = second_arg.span().end;
+                let remove_span = Span::new(first_arg_end, second_arg_end);
+                ctx.report(Diagnostic {
+                    rule_name: "no-length-as-slice-end".to_owned(),
+                    message: "Unnecessary `.length` as `.slice()` end — `.slice()` already defaults to the full length".to_owned(),
+                    span: call_span,
+                    severity: Severity::Warning,
+                    help: Some("Remove the `.length` end argument".to_owned()),
+                    fix: Some(Fix {
+                        message: "Remove `.length` end argument".to_owned(),
+                        edits: vec![Edit {
+                            span: remove_span,
+                            replacement: String::new(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

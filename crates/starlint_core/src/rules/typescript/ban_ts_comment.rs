@@ -5,7 +5,7 @@
 //! diagnostics and should at minimum include a reason explaining why the
 //! suppression is necessary.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for BanTsComment {
             description: "Disallow `@ts-<directive>` comments without description".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -36,11 +36,24 @@ impl NativeRule for BanTsComment {
         let findings = find_banned_directives(ctx.source_text());
 
         for (directive, start, end) in findings {
-            ctx.report_warning(
-                "typescript/ban-ts-comment",
-                &format!("Do not use `{directive}` because it suppresses `TypeScript` diagnostics"),
-                Span::new(start, end),
-            );
+            // For @ts-ignore, suggest replacing with @ts-expect-error
+            let fix = (directive == "@ts-ignore").then(|| Fix {
+                message: "Replace `@ts-ignore` with `@ts-expect-error`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(start, end),
+                    replacement: "@ts-expect-error".to_owned(),
+                }],
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/ban-ts-comment".to_owned(),
+                message: format!("Do not use `{directive}` because it suppresses `TypeScript` diagnostics"),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: (directive == "@ts-ignore").then(|| "Use `@ts-expect-error` instead — it will error when the suppression is no longer needed".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

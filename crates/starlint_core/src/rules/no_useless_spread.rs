@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::ArrayExpressionElement;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +25,7 @@ impl NativeRule for NoUselessSpread {
             description: "Disallow unnecessary spread".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -43,15 +43,34 @@ impl NativeRule for NoUselessSpread {
         if array.elements.len() == 1 {
             if let Some(ArrayExpressionElement::SpreadElement(spread)) = array.elements.first() {
                 // `[...[a, b, c]]` — spreading an array literal into a new array
-                if matches!(
-                    &spread.argument,
-                    oxc_ast::ast::Expression::ArrayExpression(_)
-                ) {
-                    ctx.report_warning(
-                        "no-useless-spread",
-                        "Spreading an array literal in an array literal is unnecessary",
-                        Span::new(array.span.start, array.span.end),
-                    );
+                if let oxc_ast::ast::Expression::ArrayExpression(inner) = &spread.argument {
+                    // Replace `[...[a, b, c]]` with `[a, b, c]` (use inner array's source)
+                    let inner_span = Span::new(inner.span.start, inner.span.end);
+                    let inner_text = ctx
+                        .source_text()
+                        .get(
+                            usize::try_from(inner_span.start).unwrap_or(0)
+                                ..usize::try_from(inner_span.end).unwrap_or(0),
+                        )
+                        .unwrap_or("")
+                        .to_owned();
+                    let outer_span = Span::new(array.span.start, array.span.end);
+                    ctx.report(Diagnostic {
+                        rule_name: "no-useless-spread".to_owned(),
+                        message: "Spreading an array literal in an array literal is unnecessary"
+                            .to_owned(),
+                        span: outer_span,
+                        severity: Severity::Warning,
+                        help: Some("Use the inner array directly".to_owned()),
+                        fix: Some(Fix {
+                            message: "Remove unnecessary spread".to_owned(),
+                            edits: vec![Edit {
+                                span: outer_span,
+                                replacement: inner_text,
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
         }

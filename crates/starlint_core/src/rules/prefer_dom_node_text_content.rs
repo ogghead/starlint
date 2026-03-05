@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for PreferDomNodeTextContent {
             description: "Prefer `textContent` over `innerText`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -40,11 +40,23 @@ impl NativeRule for PreferDomNodeTextContent {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-dom-node-text-content",
-            "Prefer `textContent` over `innerText` — `innerText` triggers a reflow",
-            Span::new(member.span.start, member.span.end),
-        );
+        let prop_span = Span::new(member.property.span.start, member.property.span.end);
+        ctx.report(Diagnostic {
+            rule_name: "prefer-dom-node-text-content".to_owned(),
+            message: "Prefer `textContent` over `innerText` — `innerText` triggers a reflow"
+                .to_owned(),
+            span: Span::new(member.span.start, member.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace `innerText` with `textContent`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace `innerText` with `textContent`".to_owned(),
+                edits: vec![Edit {
+                    span: prop_span,
+                    replacement: "textContent".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

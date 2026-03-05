@@ -6,7 +6,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -31,7 +33,7 @@ impl NativeRule for NoFocusedTests {
             description: "Disallow focused tests (`.only`, `fdescribe`, `fit`)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -47,14 +49,30 @@ impl NativeRule for NoFocusedTests {
         match &call.callee {
             // fdescribe(...) or fit(...)
             Expression::Identifier(id) if FOCUSED_IDENTIFIERS.contains(&id.name.as_str()) => {
-                ctx.report_error(
-                    RULE_NAME,
-                    &format!(
+                let replacement = match id.name.as_str() {
+                    "fdescribe" => "describe",
+                    "fit" => "it",
+                    _ => return,
+                };
+                let id_span = Span::new(id.span.start, id.span.end);
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
                         "Unexpected focused test: `{}()` will prevent other tests from running",
                         id.name
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Error,
+                    help: Some(format!("Replace `{}` with `{replacement}`", id.name)),
+                    fix: Some(Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: id_span,
+                            replacement: replacement.to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
             // describe.only(...), it.only(...), test.only(...)
             Expression::StaticMemberExpression(member) => {
@@ -69,13 +87,25 @@ impl NativeRule for NoFocusedTests {
                         } else {
                             "test"
                         };
-                        ctx.report_error(
-                            RULE_NAME,
-                            &format!(
+                        // Replace `test.only` with `test` (remove `.only`)
+                        let callee_span = Span::new(member.span().start, member.span().end);
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: format!(
                                 "Unexpected focused test: `{base_name}.only()` will prevent other tests from running"
                             ),
-                            Span::new(call.span.start, call.span.end),
-                        );
+                            span: Span::new(call.span.start, call.span.end),
+                            severity: Severity::Error,
+                            help: Some(format!("Remove `.only` from `{base_name}.only`")),
+                            fix: Some(Fix {
+                                message: format!("Replace `{base_name}.only` with `{base_name}`"),
+                                edits: vec![Edit {
+                                    span: callee_span,
+                                    replacement: base_name.to_owned(),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
                     }
                 }
             }

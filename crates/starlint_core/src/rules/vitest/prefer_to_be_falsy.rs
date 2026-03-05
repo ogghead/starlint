@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +27,7 @@ impl NativeRule for PreferToBeFalsy {
             description: "Prefer `toBeFalsy()` over `toBe(false)`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -60,11 +60,23 @@ impl NativeRule for PreferToBeFalsy {
         let is_false = matches!(first_arg, Argument::BooleanLiteral(lit) if !lit.value);
 
         if is_false {
-            ctx.report_warning(
-                RULE_NAME,
-                "Prefer `toBeFalsy()` over `toBe(false)`",
-                Span::new(call.span.start, call.span.end),
-            );
+            // Replace from the property name start to end of call: `toBe(false)` -> `toBeFalsy()`
+            let fix_span = Span::new(member.property.span.start, call.span.end);
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Prefer `toBeFalsy()` over `toBe(false)`".to_owned(),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: Some("Replace `toBe(false)` with `toBeFalsy()`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace with `toBeFalsy()`".to_owned(),
+                    edits: vec![Edit {
+                        span: fix_span,
+                        replacement: "toBeFalsy()".to_owned(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

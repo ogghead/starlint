@@ -100,9 +100,7 @@ impl NativeRule for PreferNativeCoercionFunctions {
 
         ctx.report(Diagnostic {
             rule_name: "prefer-native-coercion-functions".to_owned(),
-            message: format!(
-                "Unnecessary arrow function wrapper — pass `{callee_name}` directly"
-            ),
+            message: format!("Unnecessary arrow function wrapper — pass `{callee_name}` directly"),
             span: Span::new(arrow.span.start, arrow.span.end),
             severity: Severity::Warning,
             help: Some(format!("Replace with `{callee_name}`")),

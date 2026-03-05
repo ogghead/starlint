@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::TSTypeName;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -30,7 +30,7 @@ impl NativeRule for ArrayType {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -59,11 +59,43 @@ impl NativeRule for ArrayType {
             "Use `T[]` instead of `Array<T>`"
         };
 
-        ctx.report_warning(
-            "typescript/array-type",
-            suggestion,
-            Span::new(type_ref.span.start, type_ref.span.end),
-        );
+        // Extract the type parameter text from inside the angle brackets
+        let source = ctx.source_text();
+        let ref_start = usize::try_from(type_ref.span.start).unwrap_or(0);
+        let ref_end = usize::try_from(type_ref.span.end).unwrap_or(0);
+        let ref_text = source.get(ref_start..ref_end).unwrap_or("");
+
+        // Find the content between `<` and `>` for the type argument
+        let fix = ref_text.find('<').and_then(|open| {
+            ref_text.rfind('>').map(|close| {
+                let inner = ref_text.get(open.saturating_add(1)..close).unwrap_or("");
+                if name == "ReadonlyArray" {
+                    format!("readonly {inner}[]")
+                } else {
+                    // If the type arg contains `|` or `&`, wrap in parens for correctness
+                    if inner.contains('|') || inner.contains('&') {
+                        format!("({inner})[]")
+                    } else {
+                        format!("{inner}[]")
+                    }
+                }
+            })
+        });
+
+        let span = Span::new(type_ref.span.start, type_ref.span.end);
+
+        ctx.report(Diagnostic {
+            rule_name: "typescript/array-type".to_owned(),
+            message: suggestion.to_owned(),
+            span,
+            severity: Severity::Warning,
+            help: Some(suggestion.to_owned()),
+            fix: fix.map(|replacement| Fix {
+                message: suggestion.to_owned(),
+                edits: vec![Edit { span, replacement }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

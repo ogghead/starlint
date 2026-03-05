@@ -86,10 +86,8 @@ impl NativeRule for MisrefactoredAssignOp {
                 };
 
                 // Fix: replace the RHS binary expression with just the right operand
-                let rhs_right_start =
-                    usize::try_from(rhs_bin.right.span().start).unwrap_or(0);
-                let rhs_right_end =
-                    usize::try_from(rhs_bin.right.span().end).unwrap_or(0);
+                let rhs_right_start = usize::try_from(rhs_bin.right.span().start).unwrap_or(0);
+                let rhs_right_end = usize::try_from(rhs_bin.right.span().end).unwrap_or(0);
                 let right_text = source.get(rhs_right_start..rhs_right_end).unwrap_or("");
 
                 ctx.report(Diagnostic {

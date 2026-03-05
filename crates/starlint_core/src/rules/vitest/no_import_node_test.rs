@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for NoImportNodeTest {
             description: "Disallow importing from `node:test` in Vitest projects".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -42,11 +42,32 @@ impl NativeRule for NoImportNodeTest {
         let source_value = import.source.value.as_str();
 
         if source_value == "node:test" {
-            ctx.report_error(
-                RULE_NAME,
-                "Do not import from `node:test` — use Vitest's test runner instead",
-                Span::new(import.span.start, import.span.end),
-            );
+            // Replace the import source string literal (including quotes)
+            let source_span = Span::new(import.source.span.start, import.source.span.end);
+            // Determine the quote character used in the source
+            let src = ctx.source_text();
+            let quote = src
+                .as_bytes()
+                .get(usize::try_from(import.source.span.start).unwrap_or(0))
+                .copied()
+                .unwrap_or(b'"');
+            let quote_char = char::from(quote);
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Do not import from `node:test` — use Vitest's test runner instead"
+                    .to_owned(),
+                span: Span::new(import.span.start, import.span.end),
+                severity: Severity::Error,
+                help: Some("Replace `node:test` with `vitest`".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace with `vitest`".to_owned(),
+                    edits: vec![Edit {
+                        span: source_span,
+                        replacement: format!("{quote_char}vitest{quote_char}"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

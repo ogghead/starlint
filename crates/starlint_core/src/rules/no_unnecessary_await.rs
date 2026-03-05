@@ -8,8 +8,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +26,7 @@ impl NativeRule for NoUnnecessaryAwait {
             description: "Disallow awaiting non-promise values".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -39,11 +40,34 @@ impl NativeRule for NoUnnecessaryAwait {
         };
 
         if is_non_thenable_literal(&await_expr.argument) {
-            ctx.report_warning(
-                "no-unnecessary-await",
-                "Unnecessary `await` on a non-thenable value",
-                Span::new(await_expr.span.start, await_expr.span.end),
+            let await_span = Span::new(await_expr.span.start, await_expr.span.end);
+            let arg_span = Span::new(
+                await_expr.argument.span().start,
+                await_expr.argument.span().end,
             );
+            let arg_text = ctx
+                .source_text()
+                .get(
+                    usize::try_from(arg_span.start).unwrap_or(0)
+                        ..usize::try_from(arg_span.end).unwrap_or(0),
+                )
+                .unwrap_or("")
+                .to_owned();
+            ctx.report(Diagnostic {
+                rule_name: "no-unnecessary-await".to_owned(),
+                message: "Unnecessary `await` on a non-thenable value".to_owned(),
+                span: await_span,
+                severity: Severity::Warning,
+                help: Some("Remove the `await` keyword".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove `await`".to_owned(),
+                    edits: vec![Edit {
+                        span: await_span,
+                        replacement: arg_text,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

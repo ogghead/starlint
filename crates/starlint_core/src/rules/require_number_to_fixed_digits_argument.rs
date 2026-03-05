@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for RequireNumberToFixedDigitsArgument {
             description: "Require `.toFixed()` to have an explicit digits argument".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -48,11 +48,27 @@ impl NativeRule for RequireNumberToFixedDigitsArgument {
             return;
         }
 
-        ctx.report_warning(
-            "require-number-to-fixed-digits-argument",
-            "`.toFixed()` should have an explicit digits argument",
-            Span::new(call.span.start, call.span.end),
+        let call_span = Span::new(call.span.start, call.span.end);
+        // Fix: insert `0` inside the empty parens. The closing paren is at call.span.end - 1.
+        let insert_span = Span::new(
+            call.span.end.saturating_sub(1),
+            call.span.end.saturating_sub(1),
         );
+        ctx.report(Diagnostic {
+            rule_name: "require-number-to-fixed-digits-argument".to_owned(),
+            message: "`.toFixed()` should have an explicit digits argument".to_owned(),
+            span: call_span,
+            severity: Severity::Warning,
+            help: Some("Add `0` as the digits argument".to_owned()),
+            fix: Some(Fix {
+                message: "Add `0` argument".to_owned(),
+                edits: vec![Edit {
+                    span: insert_span,
+                    replacement: "0".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

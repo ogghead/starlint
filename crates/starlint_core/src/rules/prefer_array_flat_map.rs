@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for PreferArrayFlatMap {
             description: "Prefer .flatMap() over .map().flat()".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -69,11 +69,39 @@ impl NativeRule for PreferArrayFlatMap {
         };
 
         if map_member.property.name == "map" {
-            ctx.report_warning(
-                "prefer-array-flat-map",
-                "Prefer `.flatMap()` over `.map().flat()`",
-                Span::new(call.span.start, call.span.end),
-            );
+            let call_span = Span::new(call.span.start, call.span.end);
+            // Fix: replace `map` with `flatMap` and remove `.flat()` suffix.
+            // We need the source of the `.map(...)` call (which ends at map_call.span.end)
+            // and rename `map` to `flatMap` — effectively keeping everything up to the
+            // end of the map call and replacing the outer `.flat()`.
+            let map_prop_span =
+                Span::new(map_member.property.span.start, map_member.property.span.end);
+            // The overall fix: rename `.map` to `.flatMap` and replace the outer
+            // `.flat()` call span with just the map call result.
+            // Strategy: two edits — rename `map` -> `flatMap`, and delete `.flat()` / `.flat(1)`
+            // The `.flat(...)` portion starts right after map_call ends.
+            let flat_suffix_span = Span::new(map_call.span.end, call.span.end);
+            ctx.report(Diagnostic {
+                rule_name: "prefer-array-flat-map".to_owned(),
+                message: "Prefer `.flatMap()` over `.map().flat()`".to_owned(),
+                span: call_span,
+                severity: Severity::Warning,
+                help: Some("Use `.flatMap()` instead".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace `.map().flat()` with `.flatMap()`".to_owned(),
+                    edits: vec![
+                        Edit {
+                            span: map_prop_span,
+                            replacement: "flatMap".to_owned(),
+                        },
+                        Edit {
+                            span: flat_suffix_span,
+                            replacement: String::new(),
+                        },
+                    ],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

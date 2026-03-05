@@ -6,8 +6,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::JSXChild;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -41,7 +42,7 @@ impl NativeRule for JsxNoUselessFragment {
             description: "Disallow unnecessary fragments".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -56,11 +57,47 @@ impl NativeRule for JsxNoUselessFragment {
 
         let count = meaningful_children_count(&fragment.children);
         if count <= 1 {
-            ctx.report_warning(
-                RULE_NAME,
-                "Unnecessary fragment: fragments with a single child (or no children) can be removed",
-                Span::new(fragment.span.start, fragment.span.end),
-            );
+            let fragment_span = Span::new(fragment.span.start, fragment.span.end);
+
+            // Build a fix for single-child case by extracting the child's source text
+            let fix = if count == 1 {
+                let source = ctx.source_text();
+                fragment
+                    .children
+                    .iter()
+                    .find(|child| {
+                        if let JSXChild::Text(text) = child {
+                            !text.value.as_str().trim().is_empty()
+                        } else {
+                            true
+                        }
+                    })
+                    .map(|child| {
+                        let child_span = child.span();
+                        let start = usize::try_from(child_span.start).unwrap_or(0);
+                        let end = usize::try_from(child_span.end).unwrap_or(0);
+                        let child_text = source.get(start..end).unwrap_or("");
+                        Fix {
+                            message: "Remove the enclosing fragment".to_owned(),
+                            edits: vec![Edit {
+                                span: fragment_span,
+                                replacement: child_text.to_owned(),
+                            }],
+                        }
+                    })
+            } else {
+                None
+            };
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Unnecessary fragment: fragments with a single child (or no children) can be removed".to_owned(),
+                span: fragment_span,
+                severity: Severity::Warning,
+                help: Some("Remove the unnecessary fragment wrapper".to_owned()),
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

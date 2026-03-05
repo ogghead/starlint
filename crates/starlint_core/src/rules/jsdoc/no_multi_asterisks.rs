@@ -2,7 +2,7 @@
 //!
 //! Forbid multiple asterisks at the start of `JSDoc` lines.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -17,7 +17,7 @@ impl NativeRule for NoMultiAsterisks {
             description: "Forbid multiple asterisks in JSDoc comments".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -38,24 +38,51 @@ impl NativeRule for NoMultiAsterisks {
 
                 // Check inner lines (skip first line with /**, and last with */)
                 let lines: Vec<&str> = block.lines().collect();
+                let mut edits = Vec::new();
+                let mut line_offset = abs_start;
                 for (i, line) in lines.iter().enumerate() {
-                    // Skip the opening /** and closing */ lines
                     if i == 0 || i == lines.len().saturating_sub(1) {
+                        line_offset = line_offset.saturating_add(line.len()).saturating_add(1);
                         continue;
                     }
                     let trimmed = line.trim();
                     // Count leading asterisks
                     let asterisk_count = trimmed.chars().take_while(|c| *c == '*').count();
                     if asterisk_count > 1 {
-                        let span_start = u32::try_from(abs_start).unwrap_or(0);
-                        let span_end = u32::try_from(abs_end).unwrap_or(span_start);
-                        ctx.report_warning(
-                            "jsdoc/no-multi-asterisks",
-                            "Multiple asterisks at the start of a JSDoc line",
-                            Span::new(span_start, span_end),
-                        );
-                        break; // One report per block is enough
+                        // Find the position of the asterisks in the original source line
+                        let whitespace_prefix = line.len().saturating_sub(trimmed.len());
+                        // The first `*` stays; remove the extra ones
+                        let extra_start = line_offset
+                            .saturating_add(whitespace_prefix)
+                            .saturating_add(1); // skip the first `*`
+                        let extra_end =
+                            extra_start.saturating_add(asterisk_count.saturating_sub(1));
+                        edits.push(Edit {
+                            span: Span::new(
+                                u32::try_from(extra_start).unwrap_or(0),
+                                u32::try_from(extra_end).unwrap_or(0),
+                            ),
+                            replacement: String::new(),
+                        });
                     }
+                    line_offset = line_offset.saturating_add(line.len()).saturating_add(1);
+                }
+
+                if !edits.is_empty() {
+                    let span_start = u32::try_from(abs_start).unwrap_or(0);
+                    let span_end = u32::try_from(abs_end).unwrap_or(span_start);
+                    ctx.report(Diagnostic {
+                        rule_name: "jsdoc/no-multi-asterisks".to_owned(),
+                        message: "Multiple asterisks at the start of a JSDoc line".to_owned(),
+                        span: Span::new(span_start, span_end),
+                        severity: Severity::Warning,
+                        help: Some("Replace multiple asterisks with a single one".to_owned()),
+                        fix: Some(Fix {
+                            message: "Remove extra asterisks".to_owned(),
+                            edits,
+                        }),
+                        labels: vec![],
+                    });
                 }
 
                 pos = abs_end;

@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, ClassElement, Expression, MethodDefinitionKind, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoUselessConstructor {
             description: "Disallow unnecessary constructors".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -55,11 +55,22 @@ impl NativeRule for NoUselessConstructor {
 
             // Empty constructor with no super class
             if body.statements.is_empty() && !has_super {
-                ctx.report_error(
-                    "no-useless-constructor",
-                    "Useless constructor — empty constructor is unnecessary",
-                    Span::new(method.span.start, method.span.end),
-                );
+                let method_span = Span::new(method.span.start, method.span.end);
+                ctx.report(Diagnostic {
+                    rule_name: "no-useless-constructor".to_owned(),
+                    message: "Useless constructor — empty constructor is unnecessary".to_owned(),
+                    span: method_span,
+                    severity: Severity::Error,
+                    help: Some("Remove the empty constructor".to_owned()),
+                    fix: Some(Fix {
+                        message: "Remove empty constructor".to_owned(),
+                        edits: vec![Edit {
+                            span: method_span,
+                            replacement: String::new(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
                 continue;
             }
 
@@ -67,11 +78,22 @@ impl NativeRule for NoUselessConstructor {
             if has_super && body.statements.len() == 1 {
                 if let Some(Statement::ExpressionStatement(expr_stmt)) = body.statements.first() {
                     if is_simple_super_call(&expr_stmt.expression, params) {
-                        ctx.report_error(
-                            "no-useless-constructor",
-                            "Useless constructor — constructor simply delegates to `super()` with the same arguments",
-                            Span::new(method.span.start, method.span.end),
-                        );
+                        let method_span = Span::new(method.span.start, method.span.end);
+                        ctx.report(Diagnostic {
+                            rule_name: "no-useless-constructor".to_owned(),
+                            message: "Useless constructor — constructor simply delegates to `super()` with the same arguments".to_owned(),
+                            span: method_span,
+                            severity: Severity::Error,
+                            help: Some("Remove the useless constructor".to_owned()),
+                            fix: Some(Fix {
+                                message: "Remove useless constructor".to_owned(),
+                                edits: vec![Edit {
+                                    span: method_span,
+                                    replacement: String::new(),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
                     }
                 }
             }

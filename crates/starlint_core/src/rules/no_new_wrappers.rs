@@ -6,8 +6,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +27,7 @@ impl NativeRule for NoNewWrappers {
             description: "Disallow primitive wrapper constructors".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -42,11 +43,35 @@ impl NativeRule for NoNewWrappers {
         if let Expression::Identifier(id) = &new_expr.callee {
             let name = id.name.as_str();
             if WRAPPER_TYPES.contains(&name) {
-                ctx.report_warning(
-                    "no-new-wrappers",
-                    &format!("Do not use `new {name}()` — use the primitive instead"),
-                    Span::new(new_expr.span.start, new_expr.span.end),
-                );
+                let expr_span = Span::new(new_expr.span.start, new_expr.span.end);
+                // Fix: remove `new ` prefix, keeping `String(x)` etc.
+                // The callee starts at `id.span().start`, so `new ` is the prefix before that.
+                let callee_start = new_expr.callee.span().start;
+                let without_new = ctx
+                    .source_text()
+                    .get(
+                        usize::try_from(callee_start).unwrap_or(0)
+                            ..usize::try_from(expr_span.end).unwrap_or(0),
+                    )
+                    .unwrap_or("")
+                    .to_owned();
+                ctx.report(Diagnostic {
+                    rule_name: "no-new-wrappers".to_owned(),
+                    message: format!(
+                        "Do not use `new {name}()` \u{2014} use the primitive instead"
+                    ),
+                    span: expr_span,
+                    severity: Severity::Warning,
+                    help: Some(format!("Remove `new` to call `{name}()` as a function")),
+                    fix: Some(Fix {
+                        message: "Remove `new` keyword".to_owned(),
+                        edits: vec![Edit {
+                            span: expr_span,
+                            replacement: without_new,
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

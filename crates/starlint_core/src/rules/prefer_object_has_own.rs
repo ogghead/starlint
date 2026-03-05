@@ -83,7 +83,9 @@ impl NativeRule for PreferObjectHasOwn {
 
             ctx.report(Diagnostic {
                 rule_name: "prefer-object-has-own".to_owned(),
-                message: "Use `Object.hasOwn()` instead of `Object.prototype.hasOwnProperty.call()`".to_owned(),
+                message:
+                    "Use `Object.hasOwn()` instead of `Object.prototype.hasOwnProperty.call()`"
+                        .to_owned(),
                 span: Span::new(call.span.start, call.span.end),
                 severity: Severity::Warning,
                 help: Some("Replace with `Object.hasOwn()`".to_owned()),

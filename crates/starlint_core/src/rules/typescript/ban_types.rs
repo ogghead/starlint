@@ -10,25 +10,32 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::TSTypeName;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
-/// Banned type names and their suggested replacements.
-const BANNED_TYPES: &[(&str, &str)] = &[
+/// Banned type names, their suggested replacements, and optional auto-fix replacement.
+/// The third element is `Some(replacement)` when a safe direct replacement exists.
+const BANNED_TYPES: &[(&str, &str, Option<&str>)] = &[
     (
         "Object",
         "Use `object` or a more specific type instead of `Object`",
+        Some("object"),
     ),
-    ("Boolean", "Use `boolean` instead of `Boolean`"),
-    ("Number", "Use `number` instead of `Number`"),
-    ("String", "Use `string` instead of `String`"),
-    ("Symbol", "Use `symbol` instead of `Symbol`"),
-    ("BigInt", "Use `bigint` instead of `BigInt`"),
+    (
+        "Boolean",
+        "Use `boolean` instead of `Boolean`",
+        Some("boolean"),
+    ),
+    ("Number", "Use `number` instead of `Number`", Some("number")),
+    ("String", "Use `string` instead of `String`", Some("string")),
+    ("Symbol", "Use `symbol` instead of `Symbol`", Some("symbol")),
+    ("BigInt", "Use `bigint` instead of `BigInt`", Some("bigint")),
     (
         "Function",
         "Use a specific function type like `() => void` instead of `Function`",
+        None,
     ),
 ];
 
@@ -43,7 +50,7 @@ impl NativeRule for BanTypes {
             description: "Disallow certain built-in types that are problematic".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -62,13 +69,24 @@ impl NativeRule for BanTypes {
 
         let name = ident.name.as_str();
 
-        for &(banned, message) in BANNED_TYPES {
+        for &(banned, message, replacement) in BANNED_TYPES {
             if name == banned {
-                ctx.report_warning(
-                    "typescript/ban-types",
-                    message,
-                    Span::new(type_ref.span.start, type_ref.span.end),
-                );
+                let ident_span = Span::new(ident.span.start, ident.span.end);
+                ctx.report(Diagnostic {
+                    rule_name: "typescript/ban-types".to_owned(),
+                    message: message.to_owned(),
+                    span: Span::new(type_ref.span.start, type_ref.span.end),
+                    severity: Severity::Warning,
+                    help: Some(message.to_owned()),
+                    fix: replacement.map(|r| Fix {
+                        message: format!("Replace `{banned}` with `{r}`"),
+                        edits: vec![Edit {
+                            span: ident_span,
+                            replacement: r.to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
                 return;
             }
         }

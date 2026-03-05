@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +29,7 @@ impl NativeRule for ExplicitLengthCheck {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -58,13 +59,36 @@ fn check_condition(
     container_span: oxc_span::Span,
     ctx: &mut NativeLintContext<'_>,
 ) {
+    let report_span = Span::new(container_span.start, container_span.end);
+
     // Case 1: `if (foo.length)` — direct member expression as condition
     if is_length_or_size_member(expr) {
-        ctx.report_warning(
-            "explicit-length-check",
-            "Use an explicit comparison (`> 0` or `=== 0`) instead of a truthy check on `.length`/`.size`",
-            Span::new(container_span.start, container_span.end),
-        );
+        // Fix: replace `foo.length` with `foo.length > 0`
+        let expr_span = expr.span();
+        let member_text = ctx
+            .source_text()
+            .get(
+                usize::try_from(expr_span.start).unwrap_or(0)
+                    ..usize::try_from(expr_span.end).unwrap_or(0),
+            )
+            .unwrap_or("")
+            .to_owned();
+        let condition_span = Span::new(expr_span.start, expr_span.end);
+        ctx.report(Diagnostic {
+            rule_name: "explicit-length-check".to_owned(),
+            message: "Use an explicit comparison (`> 0` or `=== 0`) instead of a truthy check on `.length`/`.size`".to_owned(),
+            span: report_span,
+            severity: Severity::Warning,
+            help: Some("Use `> 0` for a non-empty check".to_owned()),
+            fix: Some(Fix {
+                message: "Replace with `> 0` comparison".to_owned(),
+                edits: vec![Edit {
+                    span: condition_span,
+                    replacement: format!("{member_text} > 0"),
+                }],
+            }),
+            labels: vec![],
+        });
         return;
     }
 
@@ -72,11 +96,33 @@ fn check_condition(
     if let Expression::UnaryExpression(unary) = expr {
         if unary.operator == UnaryOperator::LogicalNot && is_length_or_size_member(&unary.argument)
         {
-            ctx.report_warning(
-                "explicit-length-check",
-                "Use `=== 0` instead of negating `.length`/`.size`",
-                Span::new(container_span.start, container_span.end),
-            );
+            // Fix: replace `!foo.length` with `foo.length === 0`
+            let inner_span = unary.argument.span();
+            let member_text = ctx
+                .source_text()
+                .get(
+                    usize::try_from(inner_span.start).unwrap_or(0)
+                        ..usize::try_from(inner_span.end).unwrap_or(0),
+                )
+                .unwrap_or("")
+                .to_owned();
+            // Replace the whole unary expression `!foo.length` with `foo.length === 0`
+            let unary_span = Span::new(unary.span.start, unary.span.end);
+            ctx.report(Diagnostic {
+                rule_name: "explicit-length-check".to_owned(),
+                message: "Use `=== 0` instead of negating `.length`/`.size`".to_owned(),
+                span: report_span,
+                severity: Severity::Warning,
+                help: Some("Use `=== 0` for an empty check".to_owned()),
+                fix: Some(Fix {
+                    message: "Replace with `=== 0` comparison".to_owned(),
+                    edits: vec![Edit {
+                        span: unary_span,
+                        replacement: format!("{member_text} === 0"),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

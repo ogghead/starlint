@@ -51,16 +51,13 @@ impl NativeRule for NoNewBuffer {
             // Get "Buffer(...)" from callee start to end
             let callee_to_end = source.get(callee_start..expr_end).unwrap_or("");
             // Determine method: alloc for numeric arg, from otherwise
-            let method = new_expr
-                .arguments
-                .first()
-                .map_or("from", |arg| {
-                    if matches!(arg, oxc_ast::ast::Argument::NumericLiteral(_)) {
-                        "alloc"
-                    } else {
-                        "from"
-                    }
-                });
+            let method = new_expr.arguments.first().map_or("from", |arg| {
+                if matches!(arg, oxc_ast::ast::Argument::NumericLiteral(_)) {
+                    "alloc"
+                } else {
+                    "from"
+                }
+            });
             // Replace "Buffer" in callee_to_end with "Buffer.method"
             let replacement = callee_to_end.replacen("Buffer", &format!("Buffer.{method}"), 1);
 

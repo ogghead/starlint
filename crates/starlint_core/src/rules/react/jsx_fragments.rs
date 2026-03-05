@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName, JSXMemberExpressionObject};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -53,18 +53,20 @@ impl NativeRule for JsxFragments {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
     fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+        Some(&[AstType::JSXElement])
     }
 
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+        let AstKind::JSXElement(element) = kind else {
             return;
         };
+
+        let opening = &element.opening_element;
 
         if !is_react_fragment(&opening.name) {
             return;
@@ -75,11 +77,34 @@ impl NativeRule for JsxFragments {
             return;
         }
 
-        ctx.report_warning(
-            RULE_NAME,
-            "Prefer `<>` shorthand over `<React.Fragment>` when no `key` prop is needed",
-            Span::new(opening.span.start, opening.span.end),
-        );
+        let opening_span = Span::new(opening.span.start, opening.span.end);
+
+        // Build edits: replace opening tag and closing tag
+        let mut edits = vec![Edit {
+            span: opening_span,
+            replacement: "<>".to_owned(),
+        }];
+
+        if let Some(closing) = &element.closing_element {
+            edits.push(Edit {
+                span: Span::new(closing.span.start, closing.span.end),
+                replacement: "</>".to_owned(),
+            });
+        }
+
+        ctx.report(Diagnostic {
+            rule_name: RULE_NAME.to_owned(),
+            message: "Prefer `<>` shorthand over `<React.Fragment>` when no `key` prop is needed"
+                .to_owned(),
+            span: Span::new(element.span.start, element.span.end),
+            severity: Severity::Warning,
+            help: Some("Replace `<React.Fragment>` with `<>`".to_owned()),
+            fix: Some(Fix {
+                message: "Replace with shorthand fragment syntax".to_owned(),
+                edits,
+            }),
+            labels: vec![],
+        });
     }
 }
 

@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::TSType;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +25,7 @@ impl NativeRule for NoUnnecessaryTypeConstraint {
             description: "Disallow unnecessary constraints on generic type parameters".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -37,19 +38,35 @@ impl NativeRule for NoUnnecessaryTypeConstraint {
             return;
         };
 
-        let constraint_name = match &param.constraint {
-            Some(TSType::TSAnyKeyword(_)) => "any",
-            Some(TSType::TSUnknownKeyword(_)) => "unknown",
+        let (constraint_name, constraint_span) = match &param.constraint {
+            Some(ts_type @ TSType::TSAnyKeyword(_)) => ("any", ts_type.span()),
+            Some(ts_type @ TSType::TSUnknownKeyword(_)) => ("unknown", ts_type.span()),
             _ => return,
         };
 
-        ctx.report_warning(
-            "typescript/no-unnecessary-type-constraint",
-            &format!(
+        // Delete from the end of the type parameter name to the end of the constraint type.
+        // This removes ` extends any` / ` extends unknown`.
+        // The name ends at `param.name.span.end`, the constraint ends at `constraint_span.end`.
+        let delete_start = param.name.span.end;
+        let delete_end = constraint_span.end;
+
+        ctx.report(Diagnostic {
+            rule_name: "typescript/no-unnecessary-type-constraint".to_owned(),
+            message: format!(
                 "Unnecessary `extends {constraint_name}` constraint — type parameters default to `{constraint_name}` implicitly"
             ),
-            Span::new(param.span.start, param.span.end),
-        );
+            span: Span::new(param.span.start, param.span.end),
+            severity: Severity::Warning,
+            help: Some(format!("Remove the `extends {constraint_name}` constraint")),
+            fix: Some(Fix {
+                message: format!("Remove `extends {constraint_name}`"),
+                edits: vec![Edit {
+                    span: Span::new(delete_start, delete_end),
+                    replacement: String::new(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

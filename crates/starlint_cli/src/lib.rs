@@ -136,7 +136,7 @@ pub fn run() -> miette::Result<ExitStatus> {
     let lint_elapsed = lint_start.elapsed();
 
     if fix_enabled {
-        apply_fixes_to_files(&results, fix_dangerous);
+        apply_fixes_to_files(&results, fix_dangerous, &session);
     }
 
     let report_start = Instant::now();
@@ -205,56 +205,67 @@ fn configure_thread_pool(cli_threads: usize, config_threads: usize) {
     }
 }
 
+/// Maximum number of lint-fix passes per file before giving up.
+///
+/// Prevents infinite loops when fixes oscillate. In practice, two passes
+/// are enough: the first applies non-overlapping fixes, the second picks up
+/// any that were skipped due to span overlaps.
+const MAX_FIX_PASSES: usize = 10;
+
 /// Apply fixes from diagnostics and write fixed files back to disk.
+///
+/// Uses a multi-pass convergence loop: after applying fixes, the file is
+/// re-linted and any remaining fixable diagnostics are applied again. This
+/// handles cases where two rules produce overlapping fixes (e.g.,
+/// `no-console` removes a statement while `no-console-spaces` fixes the
+/// inner string) — the skipped fix is picked up on the next pass.
 ///
 /// When `include_dangerous` is false, only `SafeFix` fixes are applied.
 /// When true, all fixes (including `SuggestionFix` and `DangerousFix`) are applied.
 #[allow(clippy::print_stderr)]
-fn apply_fixes_to_files(results: &[FileDiagnostics], include_dangerous: bool) {
+fn apply_fixes_to_files(
+    results: &[FileDiagnostics],
+    include_dangerous: bool,
+    session: &LintSession,
+) {
     let mut files_fixed = 0usize;
 
     // Look up fix_kind per rule from rule metadata.
-    let rule_fix_kinds: std::collections::HashMap<String, FixKind> =
-        starlint_core::rules::all_rule_metas()
-            .into_iter()
-            .map(|m| (m.name, m.fix_kind))
-            .collect();
+    let rule_fix_kinds: std::collections::HashMap<String, FixKind> = all_rule_metas()
+        .into_iter()
+        .map(|m| (m.name, m.fix_kind))
+        .collect();
 
     for result in results {
-        let filtered_diags: Vec<_> = if include_dangerous {
-            // All diagnostics with fixes.
-            result
-                .diagnostics
-                .iter()
-                .filter(|d| d.fix.is_some())
-                .cloned()
-                .collect()
-        } else {
-            // Only diagnostics from rules with SafeFix.
-            result
-                .diagnostics
-                .iter()
-                .filter(|d| {
-                    d.fix.is_some()
-                        && rule_fix_kinds
-                            .get(&d.rule_name)
-                            .is_some_and(|k| *k == FixKind::SafeFix)
-                })
-                .cloned()
-                .collect()
-        };
+        let mut source = result.source_text.clone();
+        let mut changed = false;
 
-        if filtered_diags.is_empty() {
-            continue;
+        for pass in 0..MAX_FIX_PASSES {
+            let diagnostics = if pass == 0 {
+                result.diagnostics.clone()
+            } else {
+                session.lint_single_file(&result.path, &source).diagnostics
+            };
+
+            let filtered = filter_fixable_diags(&diagnostics, include_dangerous, &rule_fix_kinds);
+            if filtered.is_empty() {
+                break;
+            }
+
+            let fixed = apply_fixes(&source, &filtered);
+            if fixed == source {
+                break;
+            }
+            source = fixed;
+            changed = true;
         }
 
-        let fixed_source = apply_fixes(&result.source_text, &filtered_diags);
-        if fixed_source == result.source_text {
+        if !changed {
             continue;
         }
 
         let dir = result.path.parent().unwrap_or_else(|| Path::new("."));
-        match write_atomic(dir, &result.path, &fixed_source) {
+        match write_atomic(dir, &result.path, &source) {
             Ok(()) => {
                 files_fixed = files_fixed.saturating_add(1);
             }
@@ -269,6 +280,32 @@ fn apply_fixes_to_files(results: &[FileDiagnostics], include_dangerous: bool) {
 
     if files_fixed > 0 {
         eprintln!("fixed {files_fixed} file(s)");
+    }
+}
+
+/// Filter diagnostics to only those with applicable fixes.
+fn filter_fixable_diags(
+    diagnostics: &[starlint_core::starlint_plugin_sdk::diagnostic::Diagnostic],
+    include_dangerous: bool,
+    rule_fix_kinds: &std::collections::HashMap<String, FixKind>,
+) -> Vec<starlint_core::starlint_plugin_sdk::diagnostic::Diagnostic> {
+    if include_dangerous {
+        diagnostics
+            .iter()
+            .filter(|d| d.fix.is_some())
+            .cloned()
+            .collect()
+    } else {
+        diagnostics
+            .iter()
+            .filter(|d| {
+                d.fix.is_some()
+                    && rule_fix_kinds
+                        .get(&d.rule_name)
+                        .is_some_and(|k| *k == FixKind::SafeFix)
+            })
+            .cloned()
+            .collect()
     }
 }
 

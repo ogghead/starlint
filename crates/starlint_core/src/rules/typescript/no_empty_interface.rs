@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for NoEmptyInterface {
             description: "Disallow empty interfaces".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -43,11 +43,27 @@ impl NativeRule for NoEmptyInterface {
         }
 
         if decl.body.body.is_empty() {
-            ctx.report_warning(
-                "typescript/no-empty-interface",
-                "Empty interface is equivalent to `{}` — consider removing it or adding members",
-                Span::new(decl.span.start, decl.span.end),
-            );
+            // Convert `interface Foo {}` to `type Foo = {}`
+            let name = &decl.id.name;
+            let replacement = format!("type {name} = {{}}");
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/no-empty-interface".to_owned(),
+                message:
+                    "Empty interface is equivalent to `{}` — consider removing it or adding members"
+                        .to_owned(),
+                span: Span::new(decl.span.start, decl.span.end),
+                severity: Severity::Warning,
+                help: Some("Convert to a type alias".to_owned()),
+                fix: Some(Fix {
+                    message: format!("Convert to `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(decl.span.start, decl.span.end),
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

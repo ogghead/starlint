@@ -4,7 +4,7 @@
 //! `ESLint`. Any remaining `tslint:disable` or `tslint:enable` directives
 //! should be removed.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -20,7 +20,7 @@ impl NativeRule for BanTslintComment {
             description: "Disallow `// tslint:` comments".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -31,12 +31,44 @@ impl NativeRule for BanTslintComment {
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
         let findings = find_tslint_directives(ctx.source_text());
 
-        for (directive, start, end) in findings {
-            ctx.report_warning(
-                "typescript/ban-tslint-comment",
-                &format!("Do not use `{directive}` — TSLint has been deprecated"),
-                Span::new(start, end),
-            );
+        // Collect all fix data upfront to avoid borrow conflict with ctx
+        let fix_data: Vec<_> = findings
+            .iter()
+            .map(|(directive, start, end)| {
+                let source = ctx.source_text();
+                let start_usize = usize::try_from(*start).unwrap_or(0);
+                let line_start = source
+                    .get(..start_usize)
+                    .and_then(|s| s.rfind('\n'))
+                    .map_or(0, |pos| pos.saturating_add(1));
+                let line_end = source
+                    .get(start_usize..)
+                    .and_then(|s| s.find('\n'))
+                    .map_or(source.len(), |pos| {
+                        start_usize.saturating_add(pos).saturating_add(1)
+                    });
+                let delete_start = u32::try_from(line_start).unwrap_or(0);
+                let delete_end = u32::try_from(line_end).unwrap_or(delete_start);
+                (*directive, *start, *end, delete_start, delete_end)
+            })
+            .collect();
+
+        for (directive, start, end, delete_start, delete_end) in fix_data {
+            ctx.report(Diagnostic {
+                rule_name: "typescript/ban-tslint-comment".to_owned(),
+                message: format!("Do not use `{directive}` — TSLint has been deprecated"),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: Some("Remove the tslint comment".to_owned()),
+                fix: Some(Fix {
+                    message: "Delete the tslint comment line".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(delete_start, delete_end),
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

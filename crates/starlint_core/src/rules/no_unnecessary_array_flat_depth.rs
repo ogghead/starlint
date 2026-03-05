@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoUnnecessaryArrayFlatDepth {
             description: "Disallow passing the default depth `1` to `.flat()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -57,11 +57,27 @@ impl NativeRule for NoUnnecessaryArrayFlatDepth {
         };
 
         if is_numeric_one(first_arg) {
-            ctx.report_warning(
-                "no-unnecessary-array-flat-depth",
-                "Unnecessary depth argument — `.flat()` defaults to depth `1`",
-                Span::new(call.span.start, call.span.end),
-            );
+            let call_span = Span::new(call.span.start, call.span.end);
+            // Get the span of the argument to remove it
+            let Argument::NumericLiteral(num_lit) = first_arg else {
+                return;
+            };
+            let arg_span = Span::new(num_lit.span.start, num_lit.span.end);
+            ctx.report(Diagnostic {
+                rule_name: "no-unnecessary-array-flat-depth".to_owned(),
+                message: "Unnecessary depth argument — `.flat()` defaults to depth `1`".to_owned(),
+                span: call_span,
+                severity: Severity::Warning,
+                help: Some("Remove the depth argument".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove depth argument".to_owned(),
+                    edits: vec![Edit {
+                        span: arg_span,
+                        replacement: String::new(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

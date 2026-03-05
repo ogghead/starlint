@@ -6,7 +6,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -31,7 +33,7 @@ impl NativeRule for NoDisabledTests {
             description: "Disallow disabled tests (`xdescribe`, `xtest`, `.skip`)".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -47,14 +49,31 @@ impl NativeRule for NoDisabledTests {
         match &call.callee {
             // xdescribe(...), xit(...), xtest(...)
             Expression::Identifier(id) if DISABLED_IDENTIFIERS.contains(&id.name.as_str()) => {
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!(
+                let replacement = match id.name.as_str() {
+                    "xdescribe" => "describe",
+                    "xit" => "it",
+                    "xtest" => "test",
+                    _ => return,
+                };
+                let id_span = Span::new(id.span.start, id.span.end);
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
                         "Unexpected disabled test: `{}()` — remove or re-enable",
                         id.name
                     ),
-                    Span::new(call.span.start, call.span.end),
-                );
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some(format!("Replace `{}` with `{replacement}`", id.name)),
+                    fix: Some(Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: id_span,
+                            replacement: replacement.to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
             // describe.skip(...), it.skip(...), test.skip(...)
             Expression::StaticMemberExpression(member) => {
@@ -69,13 +88,25 @@ impl NativeRule for NoDisabledTests {
                         } else {
                             "test"
                         };
-                        ctx.report_warning(
-                            RULE_NAME,
-                            &format!(
+                        // Replace `test.skip` with `test` (remove `.skip`)
+                        let callee_span = Span::new(member.span().start, member.span().end);
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: format!(
                                 "Unexpected disabled test: `{base_name}.skip()` — remove or re-enable"
                             ),
-                            Span::new(call.span.start, call.span.end),
-                        );
+                            span: Span::new(call.span.start, call.span.end),
+                            severity: Severity::Warning,
+                            help: Some(format!("Remove `.skip` from `{base_name}.skip`")),
+                            fix: Some(Fix {
+                                message: format!("Replace `{base_name}.skip` with `{base_name}`"),
+                                edits: vec![Edit {
+                                    span: callee_span,
+                                    replacement: base_name.to_owned(),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
                     }
                 }
             }

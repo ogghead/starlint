@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,7 +29,7 @@ impl NativeRule for PreferToBeObject {
             description: "Prefer `toBeTypeOf('object')` over `typeof` assertions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -80,14 +82,44 @@ impl NativeRule for PreferToBeObject {
         }
 
         // Check if the expect argument is a `typeof` unary expression.
-        if let Some(arg) = expect_call.arguments.first() {
-            if matches!(arg, Argument::UnaryExpression(unary) if unary.operator == oxc_ast::ast::UnaryOperator::Typeof)
-            {
-                ctx.report_warning(
-                    RULE_NAME,
-                    "Prefer `toBeTypeOf('object')` over `expect(typeof x).toBe('object')`",
-                    Span::new(call.span.start, call.span.end),
-                );
+        if let Some(Argument::UnaryExpression(unary)) = expect_call.arguments.first() {
+            if unary.operator == oxc_ast::ast::UnaryOperator::Typeof {
+                // Two edits:
+                // 1. Replace `typeof x` with `x` inside expect()
+                // 2. Replace `toBe` with `toBeTypeOf`
+                let source = ctx.source_text();
+                let operand_span = unary.argument.span();
+                let operand_text = source
+                    .get(
+                        usize::try_from(operand_span.start).unwrap_or(0)
+                            ..usize::try_from(operand_span.end).unwrap_or(0),
+                    )
+                    .unwrap_or("");
+                let typeof_span = Span::new(unary.span.start, unary.span.end);
+                let matcher_span = Span::new(member.property.span.start, member.property.span.end);
+
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "Prefer `toBeTypeOf('object')` over `expect(typeof x).toBe('object')`"
+                        .to_owned(),
+                    span: Span::new(call.span.start, call.span.end),
+                    severity: Severity::Warning,
+                    help: Some("Replace with `expect(x).toBeTypeOf('object')`".to_owned()),
+                    fix: Some(Fix {
+                        message: "Replace with `toBeTypeOf`".to_owned(),
+                        edits: vec![
+                            Edit {
+                                span: typeof_span,
+                                replacement: operand_text.to_owned(),
+                            },
+                            Edit {
+                                span: matcher_span,
+                                replacement: "toBeTypeOf".to_owned(),
+                            },
+                        ],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

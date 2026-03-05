@@ -3,7 +3,7 @@
 //! Deprecated hierarchy separator in title property.
 //! Checks for `|` in title strings (should use `/` instead).
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for HierarchySeparator {
             description: "Deprecated hierarchy separator in title property".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,11 +61,23 @@ impl NativeRule for HierarchySeparator {
                 if title_value.contains('|') {
                     let start = u32::try_from(value_start).unwrap_or(0);
                     let end = start.saturating_add(u32::try_from(close_pos).unwrap_or(0));
-                    ctx.report_warning(
-                        RULE_NAME,
-                        "Use `/` instead of `|` as hierarchy separator in title",
-                        Span::new(start, end),
-                    );
+                    let fixed_title = title_value.replace('|', "/");
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Use `/` instead of `|` as hierarchy separator in title"
+                            .to_owned(),
+                        span: Span::new(start, end),
+                        severity: Severity::Warning,
+                        help: Some("Replace `|` with `/`".to_owned()),
+                        fix: Some(Fix {
+                            message: "Replace `|` with `/`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(start, end),
+                                replacement: fixed_title,
+                            }],
+                        }),
+                        labels: vec![],
+                    });
                 }
 
                 search_pos = value_start.saturating_add(close_pos).saturating_add(1);

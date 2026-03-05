@@ -7,7 +7,7 @@
 //! immediately clear at the statement level that the import is type-only,
 //! which helps bundlers and readers alike.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for ConsistentTypeImports {
             description: "Prefer `import type` over inline `type` qualifiers in imports".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -33,15 +33,40 @@ impl NativeRule for ConsistentTypeImports {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let source = ctx.source_text();
-        let findings = find_inline_type_imports(source);
+        let findings = find_inline_type_imports(ctx.source_text());
 
-        for (start, end) in findings {
-            ctx.report_warning(
-                "typescript/consistent-type-imports",
-                "Use `import type { ... }` instead of `import { type ... }`",
-                Span::new(start, end),
-            );
+        // Collect fix data upfront to avoid borrow conflict with ctx
+        let fix_data: Vec<_> = findings
+            .iter()
+            .map(|(start, end)| {
+                let source = ctx.source_text();
+                let line_start = usize::try_from(*start).unwrap_or(0);
+                let line_end = usize::try_from(*end).unwrap_or(0);
+                let line_text = source.get(line_start..line_end).unwrap_or("");
+                let replacement = line_text
+                    .replacen("import ", "import type ", 1)
+                    .replace("type type ", "type ")
+                    .replace("{ type ", "{ ")
+                    .replace(", type ", ", ");
+                (*start, *end, replacement)
+            })
+            .collect();
+
+        for (start, end, replacement) in fix_data {
+            let span = Span::new(start, end);
+
+            ctx.report(Diagnostic {
+                rule_name: "typescript/consistent-type-imports".to_owned(),
+                message: "Use `import type { ... }` instead of `import { type ... }`".to_owned(),
+                span,
+                severity: Severity::Warning,
+                help: Some("Convert to `import type` syntax".to_owned()),
+                fix: Some(Fix {
+                    message: "Convert to `import type` syntax".to_owned(),
+                    edits: vec![Edit { span, replacement }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

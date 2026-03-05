@@ -2,7 +2,7 @@
 //!
 //! Enforce valid `JSDoc` tag names.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -99,7 +99,7 @@ impl NativeRule for CheckTagNames {
             description: "Enforce valid JSDoc tag names".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -118,6 +118,7 @@ impl NativeRule for CheckTagNames {
                 let abs_end = search_from.saturating_add(end).saturating_add(2);
                 let block = source.get(abs_start..abs_end).unwrap_or_default();
 
+                let mut line_offset = abs_start;
                 for line in block.lines() {
                     let trimmed = super::trim_jsdoc_line(line);
                     if let Some(after_at) = trimmed.strip_prefix('@') {
@@ -129,13 +130,52 @@ impl NativeRule for CheckTagNames {
                         if !tag_name.is_empty() && !VALID_TAGS.contains(&tag_name) {
                             let span_start = u32::try_from(abs_start).unwrap_or(0);
                             let span_end = u32::try_from(abs_end).unwrap_or(span_start);
-                            ctx.report_warning(
-                                "jsdoc/check-tag-names",
-                                &format!("Unknown JSDoc tag: `@{tag_name}`"),
-                                Span::new(span_start, span_end),
-                            );
+
+                            // Try to find a valid tag that matches case-insensitively
+                            let lower = tag_name.to_ascii_lowercase();
+                            let suggestion = VALID_TAGS
+                                .iter()
+                                .find(|t| t.to_ascii_lowercase() == lower)
+                                .copied();
+
+                            // Build a fix if we have a suggestion and can locate it
+                            let fix = suggestion.and_then(|correct_tag| {
+                                let tag_with_at = format!("@{tag_name}");
+                                let line_source = source.get(line_offset..).unwrap_or_default();
+                                line_source.find(&tag_with_at).map(|at_pos| {
+                                    // Span covers just the tag name (after `@`)
+                                    let tag_abs =
+                                        line_offset.saturating_add(at_pos).saturating_add(1); // skip `@`
+                                    let tag_start = u32::try_from(tag_abs).unwrap_or(0);
+                                    let tag_end = tag_start
+                                        .saturating_add(u32::try_from(tag_name.len()).unwrap_or(0));
+                                    Fix {
+                                        message: format!(
+                                            "Replace `@{tag_name}` with `@{correct_tag}`"
+                                        ),
+                                        edits: vec![Edit {
+                                            span: Span::new(tag_start, tag_end),
+                                            replacement: correct_tag.to_owned(),
+                                        }],
+                                    }
+                                })
+                            });
+
+                            let help = suggestion
+                                .map(|correct_tag| format!("Did you mean `@{correct_tag}`?"));
+
+                            ctx.report(Diagnostic {
+                                rule_name: "jsdoc/check-tag-names".to_owned(),
+                                message: format!("Unknown JSDoc tag: `@{tag_name}`"),
+                                span: Span::new(span_start, span_end),
+                                severity: Severity::Warning,
+                                help,
+                                fix,
+                                labels: vec![],
+                            });
                         }
                     }
+                    line_offset = line_offset.saturating_add(line.len()).saturating_add(1);
                 }
 
                 pos = abs_end;

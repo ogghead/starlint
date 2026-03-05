@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +25,7 @@ impl NativeRule for ArrowBodyStyle {
             description: "Enforce consistent arrow function body style".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -52,12 +53,41 @@ impl NativeRule for ArrowBodyStyle {
         };
 
         if let Statement::ReturnStatement(ret) = stmt {
-            if ret.argument.is_some() {
-                ctx.report_warning(
-                    "arrow-body-style",
-                    "Unexpected block statement surrounding arrow body; move the returned value immediately after `=>`",
-                    Span::new(arrow.span.start, arrow.span.end),
-                );
+            if let Some(arg) = &ret.argument {
+                let arrow_span = Span::new(arrow.span.start, arrow.span.end);
+                let body_span = Span::new(arrow.body.span.start, arrow.body.span.end);
+                // Extract the return value source text
+                let arg_span = arg.span();
+                let arg_text = ctx
+                    .source_text()
+                    .get(
+                        usize::try_from(arg_span.start).unwrap_or(0)
+                            ..usize::try_from(arg_span.end).unwrap_or(0),
+                    )
+                    .unwrap_or("")
+                    .to_owned();
+                // If the return value is an object literal, wrap in parens to avoid
+                // ambiguity with block body: `() => ({})` not `() => {}`
+                let replacement = if arg_text.starts_with('{') {
+                    format!("({arg_text})")
+                } else {
+                    arg_text
+                };
+                ctx.report(Diagnostic {
+                    rule_name: "arrow-body-style".to_owned(),
+                    message: "Unexpected block statement surrounding arrow body; move the returned value immediately after `=>`".to_owned(),
+                    span: arrow_span,
+                    severity: Severity::Warning,
+                    help: Some("Replace block body with expression body".to_owned()),
+                    fix: Some(Fix {
+                        message: "Convert to expression body".to_owned(),
+                        edits: vec![Edit {
+                            span: body_span,
+                            replacement,
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

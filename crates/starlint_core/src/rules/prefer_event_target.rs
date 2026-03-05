@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for PreferEventTarget {
             description: "Prefer `EventTarget` over `EventEmitter`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -35,27 +35,48 @@ impl NativeRule for PreferEventTarget {
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         match kind {
             AstKind::NewExpression(new_expr) => {
-                if matches!(
-                    &new_expr.callee,
-                    Expression::Identifier(id) if id.name.as_str() == "EventEmitter"
-                ) {
-                    ctx.report_warning(
-                        "prefer-event-target",
-                        "Prefer `EventTarget` over `EventEmitter`",
-                        Span::new(new_expr.span.start, new_expr.span.end),
-                    );
+                if let Expression::Identifier(id) = &new_expr.callee {
+                    if id.name.as_str() == "EventEmitter" {
+                        let id_span = Span::new(id.span.start, id.span.end);
+                        ctx.report(Diagnostic {
+                            rule_name: "prefer-event-target".to_owned(),
+                            message: "Prefer `EventTarget` over `EventEmitter`".to_owned(),
+                            span: Span::new(new_expr.span.start, new_expr.span.end),
+                            severity: Severity::Warning,
+                            help: Some("Replace `EventEmitter` with `EventTarget`".to_owned()),
+                            fix: Some(Fix {
+                                message: "Replace `EventEmitter` with `EventTarget`".to_owned(),
+                                edits: vec![Edit {
+                                    span: id_span,
+                                    replacement: "EventTarget".to_owned(),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
+                    }
                 }
             }
             AstKind::Class(class) => {
-                let is_event_emitter = class.super_class.as_ref().is_some_and(|sc| {
-                    matches!(sc, Expression::Identifier(id) if id.name.as_str() == "EventEmitter")
-                });
-                if is_event_emitter {
-                    ctx.report_warning(
-                        "prefer-event-target",
-                        "Prefer extending `EventTarget` over `EventEmitter`",
-                        Span::new(class.span.start, class.span.end),
-                    );
+                if let Some(Expression::Identifier(id)) = class.super_class.as_ref() {
+                    if id.name.as_str() == "EventEmitter" {
+                        let id_span = Span::new(id.span.start, id.span.end);
+                        ctx.report(Diagnostic {
+                            rule_name: "prefer-event-target".to_owned(),
+                            message: "Prefer extending `EventTarget` over `EventEmitter`"
+                                .to_owned(),
+                            span: Span::new(class.span.start, class.span.end),
+                            severity: Severity::Warning,
+                            help: Some("Replace `EventEmitter` with `EventTarget`".to_owned()),
+                            fix: Some(Fix {
+                                message: "Replace `EventEmitter` with `EventTarget`".to_owned(),
+                                edits: vec![Edit {
+                                    span: id_span,
+                                    replacement: "EventTarget".to_owned(),
+                                }],
+                            }),
+                            labels: vec![],
+                        });
+                    }
                 }
             }
             _ => {}

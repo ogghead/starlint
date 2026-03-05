@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeName, JSXAttributeValue, JSXExpression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -26,7 +26,7 @@ impl NativeRule for JsxBooleanValue {
             description: "Enforce omitting `={true}` for boolean JSX attributes".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -49,13 +49,24 @@ impl NativeRule for JsxBooleanValue {
                     JSXAttributeName::Identifier(ident) => ident.name.as_str(),
                     JSXAttributeName::NamespacedName(ns) => ns.name.name.as_str(),
                 };
-                ctx.report_warning(
-                    RULE_NAME,
-                    &format!(
+                let attr_span = Span::new(attr.span.start, attr.span.end);
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: format!(
                         "Unnecessary `={{true}}` for boolean attribute `{prop_name}` — just use `{prop_name}`"
                     ),
-                    Span::new(attr.span.start, attr.span.end),
-                );
+                    span: attr_span,
+                    severity: Severity::Warning,
+                    help: Some(format!("Remove `={{true}}` — just use `{prop_name}`")),
+                    fix: Some(Fix {
+                        message: "Remove explicit `={true}`".to_owned(),
+                        edits: vec![Edit {
+                            span: attr_span,
+                            replacement: prop_name.to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                });
             }
         }
     }

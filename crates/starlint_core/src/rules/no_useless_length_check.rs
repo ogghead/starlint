@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, Statement};
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -44,7 +45,7 @@ impl NativeRule for NoUselessLengthCheck {
             description: "Disallow useless .length check before iteration".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -65,12 +66,44 @@ impl NativeRule for NoUselessLengthCheck {
 
         // Check if the body only contains iteration method calls on the same array
         if body_only_calls_iteration_method(&if_stmt.consequent, array_name) {
-            ctx.report_warning(
-                "no-useless-length-check",
-                "The `.length` check is unnecessary; iteration methods are no-ops on empty arrays",
-                Span::new(if_stmt.span.start, if_stmt.span.end),
-            );
+            let if_span = Span::new(if_stmt.span.start, if_stmt.span.end);
+            // Extract the body text (the consequent statement)
+            let body_text = extract_body_text(&if_stmt.consequent, ctx.source_text());
+            ctx.report(Diagnostic {
+                rule_name: "no-useless-length-check".to_owned(),
+                message: "The `.length` check is unnecessary; iteration methods are no-ops on empty arrays".to_owned(),
+                span: if_span,
+                severity: Severity::Warning,
+                help: Some("Remove the `.length` check and keep the iteration call".to_owned()),
+                fix: Some(Fix {
+                    message: "Remove `.length` check".to_owned(),
+                    edits: vec![Edit {
+                        span: if_span,
+                        replacement: body_text,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
+    }
+}
+
+/// Extract the body text from an if-statement consequent.
+/// For a block statement like `{ arr.forEach(fn); }`, returns `arr.forEach(fn);`.
+/// For a bare expression statement, returns the full statement text.
+fn extract_body_text(stmt: &Statement<'_>, source: &str) -> String {
+    if let Statement::BlockStatement(block) = stmt {
+        if let Some(inner) = block.body.first() {
+            let start = usize::try_from(inner.span().start).unwrap_or(0);
+            let end = usize::try_from(inner.span().end).unwrap_or(0);
+            source.get(start..end).unwrap_or("").to_owned()
+        } else {
+            String::new()
+        }
+    } else {
+        let start = usize::try_from(stmt.span().start).unwrap_or(0);
+        let end = usize::try_from(stmt.span().end).unwrap_or(0);
+        source.get(start..end).unwrap_or("").to_owned()
     }
 }
 

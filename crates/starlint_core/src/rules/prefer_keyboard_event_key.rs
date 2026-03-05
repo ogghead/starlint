@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for PreferKeyboardEventKey {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,11 +46,22 @@ impl NativeRule for PreferKeyboardEventKey {
             return;
         }
 
-        ctx.report_warning(
-            "prefer-keyboard-event-key",
-            &format!("Use `KeyboardEvent.key` instead of deprecated `{prop}`"),
-            Span::new(member.span.start, member.span.end),
-        );
+        let prop_span = Span::new(member.property.span.start, member.property.span.end);
+        ctx.report(Diagnostic {
+            rule_name: "prefer-keyboard-event-key".to_owned(),
+            message: format!("Use `KeyboardEvent.key` instead of deprecated `{prop}`"),
+            span: Span::new(member.span.start, member.span.end),
+            severity: Severity::Warning,
+            help: Some(format!("Replace `{prop}` with `key`")),
+            fix: Some(Fix {
+                message: format!("Replace `{prop}` with `key`"),
+                edits: vec![Edit {
+                    span: prop_span,
+                    replacement: "key".to_owned(),
+                }],
+            }),
+            labels: vec![],
+        });
     }
 }
 

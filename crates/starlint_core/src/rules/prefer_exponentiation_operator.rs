@@ -46,8 +46,11 @@ impl NativeRule for PreferExponentiationOperator {
         }
 
         if matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Math") {
-            let fix = call.arguments.first().zip(call.arguments.get(1)).map(
-                |(first, second)| {
+            let fix = call
+                .arguments
+                .first()
+                .zip(call.arguments.get(1))
+                .map(|(first, second)| {
                     let source = ctx.source_text();
                     let f_start = usize::try_from(first.span().start).unwrap_or(0);
                     let f_end = usize::try_from(first.span().end).unwrap_or(0);
@@ -62,8 +65,7 @@ impl NativeRule for PreferExponentiationOperator {
                             replacement: format!("{first_text} ** {second_text}"),
                         }],
                     }
-                },
-            );
+                });
 
             ctx.report(Diagnostic {
                 rule_name: "prefer-exponentiation-operator".to_owned(),

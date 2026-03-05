@@ -8,8 +8,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +26,7 @@ impl NativeRule for SwitchCaseBraces {
             description: "Enforce braces around switch case bodies".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -48,11 +49,35 @@ impl NativeRule for SwitchCaseBraces {
             && matches!(case.consequent.first(), Some(Statement::BlockStatement(_)));
 
         if !is_wrapped_in_block {
-            ctx.report_warning(
-                "switch-case-braces",
-                "Switch case body should be wrapped in braces",
-                Span::new(case.span.start, case.span.end),
-            );
+            let case_span = Span::new(case.span.start, case.span.end);
+            // Wrap the consequent statements in braces
+            // Get the span from first to last statement
+            let first_start = case.consequent.first().map_or(0, |s| s.span().start);
+            let last_end = case.consequent.last().map_or(0, |s| s.span().end);
+            let body_span = Span::new(first_start, last_end);
+            let source = ctx.source_text();
+            let body_text = source
+                .get(
+                    usize::try_from(first_start).unwrap_or(0)
+                        ..usize::try_from(last_end).unwrap_or(0),
+                )
+                .unwrap_or("");
+            let replacement = format!("{{ {body_text} }}");
+            ctx.report(Diagnostic {
+                rule_name: "switch-case-braces".to_owned(),
+                message: "Switch case body should be wrapped in braces".to_owned(),
+                span: case_span,
+                severity: Severity::Warning,
+                help: Some("Wrap the case body in braces".to_owned()),
+                fix: Some(Fix {
+                    message: "Wrap in braces".to_owned(),
+                    edits: vec![Edit {
+                        span: body_span,
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

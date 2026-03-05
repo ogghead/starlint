@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for PreferLowercaseTitle {
             description: "Suggest lowercase titles for `it`/`test` calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -60,11 +60,27 @@ impl NativeRule for PreferLowercaseTitle {
             return;
         };
         if first_char.is_uppercase() {
-            ctx.report_warning(
-                "jest/prefer-lowercase-title",
-                "Test titles should start with a lowercase letter",
-                Span::new(title.span.start, title.span.end),
-            );
+            // Replace just the first character inside the string literal
+            // title.span includes quotes, so the first content char is at start+1
+            let char_start = title.span.start.saturating_add(1);
+            let char_end =
+                char_start.saturating_add(u32::try_from(first_char.len_utf8()).unwrap_or(1));
+            let lowered: String = first_char.to_lowercase().collect();
+            ctx.report(Diagnostic {
+                rule_name: "jest/prefer-lowercase-title".to_owned(),
+                message: "Test titles should start with a lowercase letter".to_owned(),
+                span: Span::new(title.span.start, title.span.end),
+                severity: Severity::Warning,
+                help: Some("Lowercase the first letter of the test title".to_owned()),
+                fix: Some(Fix {
+                    message: "Lowercase first letter".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(char_start, char_end),
+                        replacement: lowered,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }

@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::TSSignature;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -31,7 +31,7 @@ impl NativeRule for PreferFunctionType {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,17 +62,73 @@ impl NativeRule for PreferFunctionType {
             return;
         };
 
-        if matches!(member, TSSignature::TSCallSignatureDeclaration(_)) {
+        if let TSSignature::TSCallSignatureDeclaration(call_sig) = member {
             let name = decl.id.name.as_str();
-            ctx.report_warning(
-                RULE_NAME,
-                &format!(
-                    "Interface `{name}` has only a call signature — use a function type instead (e.g. `type {name} = (...) => ...`)"
-                ),
-                Span::new(decl.span.start, decl.span.end),
+            let message = format!(
+                "Interface `{name}` has only a call signature — use a function type instead (e.g. `type {name} = (...) => ...`)"
             );
+            let decl_span = Span::new(decl.span.start, decl.span.end);
+
+            // Build the fix: extract params and return type from source text
+            let source = ctx.source_text();
+            let sig_start = usize::try_from(call_sig.span.start).unwrap_or(0);
+            let sig_end = usize::try_from(call_sig.span.end).unwrap_or(0);
+            let sig_text = source.get(sig_start..sig_end).unwrap_or("");
+
+            // The call signature looks like `(params): ReturnType` or `(params)`
+            // Find the matching closing paren for the params
+            let fix = sig_text.find('(').and_then(|open| {
+                find_matching_paren(sig_text, open).map(|close| {
+                    let params = sig_text.get(open..close.saturating_add(1)).unwrap_or("()");
+                    // After the closing paren, look for `: ReturnType`
+                    let after_paren = sig_text.get(close.saturating_add(1)..).unwrap_or("").trim();
+                    let return_type = if let Some(stripped) = after_paren.strip_prefix(':') {
+                        stripped.trim().trim_end_matches(';').trim()
+                    } else {
+                        "void"
+                    };
+                    format!("type {name} = {params} => {return_type};")
+                })
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message,
+                span: decl_span,
+                severity: Severity::Warning,
+                help: Some(format!("Convert to `type {name} = (...) => ...`")),
+                fix: fix.map(|replacement| Fix {
+                    message: "Convert to function type alias".to_owned(),
+                    edits: vec![Edit {
+                        span: decl_span,
+                        replacement,
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
+}
+
+/// Find the matching closing parenthesis for an opening paren at `open_pos`.
+fn find_matching_paren(source: &str, open_pos: usize) -> Option<usize> {
+    let bytes = source.as_bytes();
+    let mut depth: usize = 0;
+    let mut pos = open_pos;
+    while pos < bytes.len() {
+        match bytes.get(pos) {
+            Some(b'(') => depth = depth.saturating_add(1),
+            Some(b')') => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    return Some(pos);
+                }
+            }
+            _ => {}
+        }
+        pos = pos.saturating_add(1);
+    }
+    None
 }
 
 #[cfg(test)]

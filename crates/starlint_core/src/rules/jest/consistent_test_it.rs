@@ -3,7 +3,7 @@
 //! Enforce using either `test` or `it` consistently. Flags when both `test(`
 //! and `it(` are used in the same file.
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for ConsistentTestIt {
             description: "Enforce consistent use of `test` or `it`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::None,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -57,13 +57,27 @@ impl NativeRule for ConsistentTestIt {
                     let msg = format!(
                         "Prefer `{majority_name}` over `{minority_name}` — use a consistent test function name"
                     );
-                    (msg, Span::new(start_u32, end_u32))
+                    (msg, Span::new(start_u32, end_u32), majority_name.to_owned(), minority_name.to_owned())
                 })
                 .collect::<Vec<_>>()
         };
 
-        for (msg, span) in &violations {
-            ctx.report_warning(RULE_NAME, msg, *span);
+        for (msg, span, majority, minority) in &violations {
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: msg.clone(),
+                span: *span,
+                severity: Severity::Warning,
+                help: Some(format!("Replace `{minority}` with `{majority}`")),
+                fix: Some(Fix {
+                    message: format!("Replace with `{majority}`"),
+                    edits: vec![Edit {
+                        span: *span,
+                        replacement: majority.clone(),
+                    }],
+                }),
+                labels: vec![],
+            });
         }
     }
 }
