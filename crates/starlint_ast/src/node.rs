@@ -206,6 +206,9 @@ pub enum AstNode {
     TSAnyKeyword(TSAnyKeywordNode),
     /// `void`
     TSVoidKeyword(TSVoidKeywordNode),
+
+    /// Placeholder for node types not yet mapped from oxc.
+    Unknown(UnknownNode),
 }
 
 impl AstNode {
@@ -297,6 +300,7 @@ impl AstNode {
             Self::TSTypeParameter(n) => n.span,
             Self::TSAnyKeyword(n) => n.span,
             Self::TSVoidKeyword(n) => n.span,
+            Self::Unknown(n) => n.span,
         }
     }
 }
@@ -1269,6 +1273,13 @@ pub struct TSAnyKeywordNode {
 /// TypeScript `void` keyword.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TSVoidKeywordNode {
+    /// Span.
+    pub span: Span,
+}
+
+/// Placeholder for node types not yet mapped from oxc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnknownNode {
     /// Span.
     pub span: Span,
 }

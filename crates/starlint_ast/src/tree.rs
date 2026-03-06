@@ -124,6 +124,36 @@ impl AstTree {
         node_children(node)
     }
 
+    /// Reserve a slot in the tree, returning its [`NodeId`].
+    ///
+    /// The slot is filled with a placeholder `Unknown` node. Call [`set`](Self::set)
+    /// to replace it with the real node after children have been pushed.
+    pub fn reserve(&mut self, parent: Option<NodeId>) -> NodeId {
+        self.push(
+            AstNode::Unknown(crate::node::UnknownNode {
+                span: crate::types::Span::EMPTY,
+            }),
+            parent,
+        )
+    }
+
+    /// Replace a previously reserved or pushed node at the given ID.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `id` is out of bounds.
+    #[allow(clippy::indexing_slicing)]
+    pub fn set(&mut self, id: NodeId, node: AstNode) {
+        self.nodes[id.index()] = node;
+    }
+
+    /// Return the [`NodeId`] that will be assigned to the next pushed node.
+    #[must_use]
+    #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
+    pub fn next_id(&self) -> NodeId {
+        NodeId(self.nodes.len() as u32)
+    }
+
     /// Borrow the underlying nodes slice.
     #[must_use]
     pub fn nodes(&self) -> &[AstNode] {
@@ -275,7 +305,8 @@ fn node_children(node: &AstNode) -> Vec<NodeId> {
         | AstNode::ImportSpecifier(_)
         | AstNode::ExportSpecifier(_)
         | AstNode::ExportAllDeclaration(_)
-        | AstNode::JSXNamespacedName(_) => Vec::new(),
+        | AstNode::JSXNamespacedName(_)
+        | AstNode::Unknown(_) => Vec::new(),
         AstNode::TemplateLiteral(n) => n.expressions.to_vec(),
         AstNode::TaggedTemplateExpression(n) => vec![n.tag, n.quasi],
         AstNode::ArrayExpression(n) => n.elements.to_vec(),

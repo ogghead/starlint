@@ -8,6 +8,7 @@ publish.workspace = true
 description = "Core linting engine for starlint"
 
 [dependencies]
+starlint_ast = { workspace = true }
 starlint_plugin_sdk = { workspace = true }
 starlint_config = { workspace = true }
 

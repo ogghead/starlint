@@ -2318,6 +2318,7 @@ dependencies = [
  "pretty_assertions",
  "rayon",
  "serde_json",
+ "starlint_ast",
  "starlint_config",
  "starlint_plugin_sdk",
  "thiserror 2.0.18",

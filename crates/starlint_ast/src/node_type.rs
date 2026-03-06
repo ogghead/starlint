@@ -116,10 +116,11 @@ pub enum AstNodeType {
     TSTypeParameter = 81,
     TSAnyKeyword = 82,
     TSVoidKeyword = 83,
+    Unknown = 84,
 }
 
 /// Total number of `AstNodeType` variants (for sizing dispatch tables).
-pub const AST_NODE_TYPE_COUNT: usize = 84;
+pub const AST_NODE_TYPE_COUNT: usize = 85;
 
 impl From<&AstNode> for AstNodeType {
     fn from(node: &AstNode) -> Self {
@@ -208,6 +209,7 @@ impl From<&AstNode> for AstNodeType {
             AstNode::TSTypeParameter(_) => Self::TSTypeParameter,
             AstNode::TSAnyKeyword(_) => Self::TSAnyKeyword,
             AstNode::TSVoidKeyword(_) => Self::TSVoidKeyword,
+            AstNode::Unknown(_) => Self::Unknown,
         }
     }
 }
@@ -236,9 +238,9 @@ mod tests {
 
     #[test]
     fn count_is_correct() {
-        // TSVoidKeyword is the last variant at index 83, so count should be 84.
+        // Unknown is the last variant at index 84, so count should be 85.
         assert_eq!(
-            AstNodeType::TSVoidKeyword.index() + 1,
+            AstNodeType::Unknown.index() + 1,
             AST_NODE_TYPE_COUNT,
             "count should match last discriminant + 1"
         );
