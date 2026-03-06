@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{ClassElement, Expression, PropertyKey};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -61,7 +61,13 @@ impl NativeRule for NoRedundantShouldComponentUpdate {
                     span: Span::new(method.span.start, method.span.end),
                     severity: Severity::Warning,
                     help: None,
-                    fix: None,
+                    fix: Some(Fix {
+                        message: "Remove redundant `shouldComponentUpdate` method".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(method.span.start, method.span.end),
+                            replacement: String::new(),
+                        }],
+                    }),
                     labels: vec![],
                 });
             }

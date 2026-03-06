@@ -10,7 +10,8 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::UnaryOperator;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,14 +46,31 @@ impl NativeRule for NoConfusingVoidExpression {
 
         // Check source text before the void expression to detect value positions.
         // This is a heuristic since single-pass traversal lacks parent context.
-        if is_in_value_position(ctx.source_text(), unary.span.start) {
+        let (in_value, arg_text) = {
+            let source = ctx.source_text();
+            let arg_span = unary.argument.span();
+            #[allow(clippy::as_conversions)]
+            let arg_start = arg_span.start as usize;
+            #[allow(clippy::as_conversions)]
+            let arg_end = arg_span.end as usize;
+            let text = source.get(arg_start..arg_end).unwrap_or("").to_owned();
+            (is_in_value_position(source, unary.span.start), text)
+        };
+
+        if in_value {
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-confusing-void-expression".to_owned(),
                 message: "Void expression used in a value position — use `undefined` or separate the side effect".to_owned(),
                 span: Span::new(unary.span.start, unary.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix: Some(Fix {
+                    message: "Remove `void` operator".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(unary.span.start, unary.span.end),
+                        replacement: arg_text,
+                    }],
+                }),
                 labels: vec![],
             });
         }

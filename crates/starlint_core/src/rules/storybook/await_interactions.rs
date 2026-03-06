@@ -3,7 +3,7 @@
 //! Interactions in play functions should be awaited.
 //! Detects `userEvent.*` or `within()` calls not preceded by `await` inside play functions.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -61,7 +61,13 @@ impl NativeRule for AwaitInteractions {
                         span: Span::new(start, end),
                         severity: Severity::Warning,
                         help: None,
-                        fix: None,
+                        fix: Some(Fix {
+                            message: "Add `await`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(start, start),
+                                replacement: "await ".to_owned(),
+                            }],
+                        }),
                         labels: vec![],
                     });
                 }

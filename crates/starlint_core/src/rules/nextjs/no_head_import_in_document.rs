@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -56,7 +56,13 @@ impl NativeRule for NoHeadImportInDocument {
                 span: Span::new(import.span.start, import.span.end),
                 severity: Severity::Error,
                 help: None,
-                fix: None,
+                fix: Some(Fix {
+                    message: "Remove `next/head` import".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(import.span.start, import.span.end),
+                        replacement: String::new(),
+                    }],
+                }),
                 labels: vec![],
             });
         }

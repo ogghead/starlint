@@ -3,7 +3,7 @@
 //! Forbid async function exports in client components (files with
 //! `"use client"` directive). Client components cannot be async in React.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -46,8 +46,9 @@ impl NativeRule for NoAsyncClientComponent {
             return;
         }
 
-        // Scan for async function exports
-        let findings: Vec<(u32, u32)> = source
+        // Scan for async function exports, computing fix positions up front
+        #[allow(clippy::type_complexity)]
+        let findings: Vec<(u32, u32, Option<(u32, u32)>)> = source
             .lines()
             .enumerate()
             .filter_map(|(idx, line)| {
@@ -64,19 +65,32 @@ impl NativeRule for NoAsyncClientComponent {
                         .sum();
                     let start = u32::try_from(line_offset).unwrap_or(0);
                     let end = u32::try_from(line_offset.saturating_add(trimmed.len())).unwrap_or(0);
-                    (start, end)
+                    let async_removal = trimmed.find("async ").map(|offset| {
+                        let async_start = start.saturating_add(u32::try_from(offset).unwrap_or(0));
+                        let async_end = async_start.saturating_add(6);
+                        (async_start, async_end)
+                    });
+                    (start, end, async_removal)
                 })
             })
             .collect();
 
-        for (start, end) in findings {
+        for (start, end, async_removal) in findings {
+            let fix = async_removal.map(|(a_start, a_end)| Fix {
+                message: "Remove `async` keyword".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(a_start, a_end),
+                    replacement: String::new(),
+                }],
+            });
+
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Client components cannot be async -- remove the `async` keyword or move to a server component".to_owned(),
                 span: Span::new(start, end),
                 severity: Severity::Error,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }
