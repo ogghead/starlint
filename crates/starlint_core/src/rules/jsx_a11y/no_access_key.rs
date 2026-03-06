@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,25 +37,33 @@ impl NativeRule for NoAccessKey {
             return;
         };
 
-        let has_access_key = opening.attributes.iter().any(|item| {
+        let access_key_span = opening.attributes.iter().find_map(|item| {
             if let JSXAttributeItem::Attribute(attr) = item {
                 match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "accessKey",
-                    JSXAttributeName::NamespacedName(_) => false,
+                    JSXAttributeName::Identifier(ident) if ident.name.as_str() == "accessKey" => {
+                        Some(Span::new(attr.span.start, attr.span.end))
+                    }
+                    _ => None,
                 }
             } else {
-                false
+                None
             }
         });
 
-        if has_access_key {
+        if let Some(attr_span) = access_key_span {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Do not use the `accessKey` attribute. Access keys create inconsistent keyboard shortcuts across browsers".to_owned(),
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix: Some(Fix {
+                    message: "Remove `accessKey` attribute".to_owned(),
+                    edits: vec![Edit {
+                        span: attr_span,
+                        replacement: String::new(),
+                    }],
+                }),
                 labels: vec![],
             });
         }

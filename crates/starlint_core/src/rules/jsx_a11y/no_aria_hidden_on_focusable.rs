@@ -6,7 +6,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -34,27 +34,6 @@ fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> b
     })
 }
 
-/// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value<'a>(
-    opening: &'a oxc_ast::ast::JSXOpeningElement<'a>,
-    attr_name: &str,
-) -> Option<&'a str> {
-    for item in &opening.attributes {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            let matches = match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name,
-                JSXAttributeName::NamespacedName(_) => false,
-            };
-            if matches {
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    return Some(lit.value.as_str());
-                }
-            }
-        }
-    }
-    None
-}
-
 impl NativeRule for NoAriaHiddenOnFocusable {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
@@ -75,11 +54,27 @@ impl NativeRule for NoAriaHiddenOnFocusable {
             return;
         };
 
-        // Check if aria-hidden="true"
-        let is_aria_hidden = get_attr_string_value(opening, "aria-hidden") == Some("true");
-        if !is_aria_hidden {
+        // Check if aria-hidden="true" and capture its attribute span
+        let aria_hidden_span = opening.attributes.iter().find_map(|item| {
+            if let JSXAttributeItem::Attribute(attr) = item {
+                let is_aria_hidden = match &attr.name {
+                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "aria-hidden",
+                    JSXAttributeName::NamespacedName(_) => false,
+                };
+                if is_aria_hidden {
+                    if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
+                        if lit.value.as_str() == "true" {
+                            return Some(Span::new(attr.span.start, attr.span.end));
+                        }
+                    }
+                }
+            }
+            None
+        });
+
+        let Some(attr_span) = aria_hidden_span else {
             return;
-        }
+        };
 
         let element_name = match &opening.name {
             JSXElementName::Identifier(ident) => ident.name.as_str(),
@@ -102,7 +97,13 @@ impl NativeRule for NoAriaHiddenOnFocusable {
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix: Some(Fix {
+                    message: "Remove `aria-hidden` attribute".to_owned(),
+                    edits: vec![Edit {
+                        span: attr_span,
+                        replacement: String::new(),
+                    }],
+                }),
                 labels: vec![],
             });
         }

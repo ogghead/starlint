@@ -6,7 +6,7 @@
 //! module rather than `require(...)`, because `require` bypasses Vitest's
 //! module resolution and can lead to inconsistencies.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,7 +45,13 @@ impl NativeRule for PreferImportInMock {
                 span,
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix: Some(Fix {
+                    message: "Replace with `await vi.importActual(`".to_owned(),
+                    edits: vec![Edit {
+                        span,
+                        replacement: "await vi.importActual(".to_owned(),
+                    }],
+                }),
                 labels: vec![],
             });
         }
