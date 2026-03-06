@@ -3,19 +3,20 @@
 //! Flag TypeScript `const enum` declarations. `const enum` has compatibility
 //! issues and doesn't work well with `--isolatedModules`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `const enum` declarations in TypeScript.
 #[derive(Debug)]
 pub struct NoConstEnum;
 
-impl NativeRule for NoConstEnum {
+impl LintRule for NoConstEnum {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-const-enum".to_owned(),
@@ -25,17 +26,16 @@ impl NativeRule for NoConstEnum {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSEnumDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSEnumDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSEnumDeclaration(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSEnumDeclaration(decl) = node else {
             return;
         };
 
-        if decl.r#const {
-            // Fix: remove "const " prefix — the enum keyword starts 6 bytes after the const keyword
+        if decl.is_const {
             let fix = Some(Fix {
                 kind: FixKind::SafeFix,
                 message: "Remove `const` keyword".to_owned(),
@@ -62,22 +62,12 @@ impl NativeRule for NoConstEnum {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConstEnum)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoConstEnum)];
+        lint_source(source, "test.ts", &rules)
     }
 
     #[test]
