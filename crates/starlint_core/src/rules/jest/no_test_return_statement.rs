@@ -5,7 +5,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -47,6 +47,15 @@ impl NativeRule for NoTestReturnStatement {
         let before = source.get(..pos).unwrap_or("");
 
         if is_inside_test_callback(before) {
+            // Build fix: replace `return <expr>;` with `return;`
+            let fix = ret.argument.as_ref().map(|_| Fix {
+                message: "Remove return value".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(ret.span.start, ret.span.end),
+                    replacement: "return;".to_owned(),
+                }],
+            });
+
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Unexpected return statement in test — tests should not return values"
@@ -54,7 +63,7 @@ impl NativeRule for NoTestReturnStatement {
                 span: Span::new(ret.span.start, ret.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

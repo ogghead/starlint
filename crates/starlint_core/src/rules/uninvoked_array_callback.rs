@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -77,6 +79,15 @@ impl NativeRule for UninvokedArrayCallback {
 
         for &(arr_method, func_name) in DANGEROUS_CALLBACKS {
             if method == arr_method && cb_name == func_name {
+                // Build a wrapping arrow function as a suggestion fix.
+                // parseInt gets a radix argument; others just forward the value.
+                let arg_span = first_arg.span();
+                let wrapper = if func_name == "parseInt" {
+                    format!("(x) => {func_name}(x, 10)")
+                } else {
+                    format!("(x) => {func_name}(x)")
+                };
+
                 ctx.report(Diagnostic {
                     rule_name: "uninvoked-array-callback".to_owned(),
                     message: format!(
@@ -86,7 +97,13 @@ impl NativeRule for UninvokedArrayCallback {
                     span: Span::new(call.span.start, call.span.end),
                     severity: Severity::Warning,
                     help: None,
-                    fix: None,
+                    fix: Some(Fix {
+                        message: format!("Wrap `{func_name}` in an arrow function"),
+                        edits: vec![Edit {
+                            span: Span::new(arg_span.start, arg_span.end),
+                            replacement: wrapper,
+                        }],
+                    }),
                     labels: vec![],
                 });
                 return;
