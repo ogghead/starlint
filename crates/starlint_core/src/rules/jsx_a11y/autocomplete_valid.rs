@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -124,13 +126,17 @@ impl NativeRule for AutocompleteValid {
                     let tokens: Vec<&str> = val.split_whitespace().collect();
                     if let Some(last) = tokens.last() {
                         if !VALID_AUTOCOMPLETE.contains(last) && !last.starts_with("section-") {
+                            let attr_span = Span::new(attr.span.start, attr.span.end);
+                            let fix = FixBuilder::new("Remove invalid `autoComplete` attribute")
+                                .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                                .build();
                             ctx.report(Diagnostic {
                                 rule_name: RULE_NAME.to_owned(),
                                 message: format!("`{val}` is not a valid `autocomplete` value"),
                                 span: Span::new(opening.span.start, opening.span.end),
                                 severity: Severity::Warning,
                                 help: None,
-                                fix: None,
+                                fix,
                                 labels: vec![],
                             });
                         }

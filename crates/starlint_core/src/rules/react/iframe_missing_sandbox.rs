@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags `<iframe>` JSX elements that lack a `sandbox` attribute.
@@ -57,6 +59,20 @@ impl NativeRule for IframeMissingSandbox {
         });
 
         if !has_sandbox {
+            // Insert `sandbox=""` before the closing `>` or `/>`
+            let source = ctx.source_text();
+            let end = usize::try_from(opening.span.end).unwrap_or(0);
+            let insert_pos =
+                if end > 1 && source.as_bytes().get(end.saturating_sub(2)) == Some(&b'/') {
+                    // Self-closing: insert before `/>`
+                    opening.span.end.saturating_sub(2)
+                } else {
+                    // Regular: insert before `>`
+                    opening.span.end.saturating_sub(1)
+                };
+            let fix = FixBuilder::new("Add `sandbox` attribute")
+                .edit(fix_utils::insert_before(insert_pos, " sandbox=\"\""))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "react/iframe-missing-sandbox".to_owned(),
                 message: "`<iframe>` elements should have a `sandbox` attribute for security"
@@ -64,7 +80,7 @@ impl NativeRule for IframeMissingSandbox {
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }
