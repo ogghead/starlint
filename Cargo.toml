@@ -48,6 +48,7 @@ tower-lsp = "0.20"
 tokio = { version = "1", features = ["rt", "io-std", "macros", "time"] }
 
 # Internal crates
+starlint_ast = { path = "crates/starlint_ast" }
 starlint_core = { path = "crates/starlint_core" }
 starlint_config = { path = "crates/starlint_config" }
 starlint_plugin_sdk = { path = "crates/starlint_plugin_sdk" }
