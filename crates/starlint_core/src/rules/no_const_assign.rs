@@ -11,6 +11,7 @@ use oxc_semantic::SymbolFlags;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags reassignment of `const` variables.
@@ -70,6 +71,12 @@ impl NativeRule for NoConstAssign {
                     .any(oxc_semantic::Reference::is_write);
 
                 if has_write {
+                    // Suggest changing `const` to `let` so reassignment is valid.
+                    let kw_span = Span::new(decl.span.start, decl.span.start.saturating_add(5));
+                    let fix = FixBuilder::new("Change `const` to `let`")
+                        .replace(kw_span, "let")
+                        .build();
+
                     ctx.report(Diagnostic {
                         rule_name: "no-const-assign".to_owned(),
                         message: format!(
@@ -78,8 +85,10 @@ impl NativeRule for NoConstAssign {
                         ),
                         span: Span::new(binding.span.start, binding.span.end),
                         severity: Severity::Error,
-                        help: None,
-                        fix: None,
+                        help: Some(
+                            "Use `let` instead of `const` if reassignment is intended".to_owned(),
+                        ),
+                        fix,
                         labels: vec![],
                     });
                 }

@@ -10,6 +10,7 @@ use oxc_semantic::SymbolFlags;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags reassignment of function declarations.
@@ -71,6 +72,24 @@ impl NativeRule for NoFuncAssign {
             .any(oxc_semantic::Reference::is_write);
 
         if has_write {
+            // Suggest converting function declaration to a `let` variable
+            // with a function expression, making reassignment valid.
+            let fix = if !func.r#async && !func.generator {
+                let name = &id.name;
+                let prefix_span = Span::new(func.span.start, id.span.end);
+                let mut builder = FixBuilder::new(format!("Convert to `let {name} = function`"))
+                    .replace(prefix_span, format!("let {name} = function"));
+                // Add trailing semicolon if not already present.
+                let source = ctx.source_text();
+                let func_end = usize::try_from(func.span.end).unwrap_or(0);
+                if source.as_bytes().get(func_end) != Some(&b';') {
+                    builder = builder.insert_at(func.span.end, ";");
+                }
+                builder.build()
+            } else {
+                None
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "no-func-assign".to_owned(),
                 message: format!(
@@ -79,8 +98,10 @@ impl NativeRule for NoFuncAssign {
                 ),
                 span: Span::new(id.span.start, id.span.end),
                 severity: Severity::Error,
-                help: None,
-                fix: None,
+                help: Some(
+                    "Use a variable declaration instead if reassignment is intended".to_owned(),
+                ),
+                fix,
                 labels: vec![],
             });
         }
