@@ -7,6 +7,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags `export let` and `export var` declarations.
@@ -29,7 +30,7 @@ impl NativeRule for NoMutableExports {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let findings: Vec<(u32, u32, &str)> = {
+        let findings: Vec<(u32, u32, &str, usize)> = {
             let source = ctx.source_text();
             source
                 .lines()
@@ -51,14 +52,23 @@ impl NativeRule for NoMutableExports {
                             } else {
                                 "var"
                             };
-                            (start, end, keyword)
+                            // Keyword starts at "export " (7 chars) offset within the trimmed line
+                            let leading_ws = line.len().saturating_sub(trimmed.len());
+                            let kw_offset =
+                                line_offset.saturating_add(leading_ws).saturating_add(7); // "export " = 7 chars
+                            (start, end, keyword, kw_offset)
                         },
                     )
                 })
                 .collect()
         };
 
-        for (start, end, keyword) in findings {
+        for (start, end, keyword, kw_offset) in findings {
+            let kw_start = u32::try_from(kw_offset).unwrap_or(0);
+            let kw_end = kw_start.saturating_add(u32::try_from(keyword.len()).unwrap_or(3));
+            let fix = FixBuilder::new(format!("Replace `{keyword}` with `const`"))
+                .replace(Span::new(kw_start, kw_end), "const")
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "import/no-mutable-exports".to_owned(),
                 message: format!(
@@ -67,7 +77,7 @@ impl NativeRule for NoMutableExports {
                 span: Span::new(start, end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

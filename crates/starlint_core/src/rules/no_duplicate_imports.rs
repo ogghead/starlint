@@ -65,8 +65,7 @@ impl NativeRule for NoDuplicateImports {
             duplicates
                 .iter()
                 .map(|(module_source, first_span, dup_span)| {
-                    let edits =
-                        fix_utils::merge_import_edits(source_text, *first_span, *dup_span);
+                    let edits = fix_utils::merge_import_edits(source_text, *first_span, *dup_span);
                     let fix = FixBuilder::new("Merge into first import")
                         .edits(edits)
                         .build();

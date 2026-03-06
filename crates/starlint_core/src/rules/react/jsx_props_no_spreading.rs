@@ -8,6 +8,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -38,13 +40,17 @@ impl NativeRule for JsxPropsNoSpreading {
             return;
         };
 
+        let spread_span = Span::new(spread.span.start, spread.span.end);
+        let fix = FixBuilder::new("Remove spread attribute")
+            .edit(fix_utils::remove_jsx_attr(ctx.source_text(), spread_span))
+            .build();
         ctx.report(Diagnostic {
             rule_name: RULE_NAME.to_owned(),
             message: "Avoid spreading props in JSX — pass props explicitly for clarity".to_owned(),
-            span: Span::new(spread.span.start, spread.span.end),
+            span: spread_span,
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

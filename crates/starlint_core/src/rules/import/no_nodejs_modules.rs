@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Known Node.js built-in module names.
@@ -92,13 +94,17 @@ impl NativeRule for NoNodejsModules {
         });
 
         if NODE_BUILTINS.contains(&base_module) {
+            let import_span = Span::new(import.span.start, import.span.end);
+            let fix = FixBuilder::new("Remove Node.js module import")
+                .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "import/no-nodejs-modules".to_owned(),
                 message: format!("Do not import Node.js built-in module `{source_value}`"),
-                span: Span::new(import.span.start, import.span.end),
+                span: import_span,
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -76,11 +78,11 @@ fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> b
     })
 }
 
-/// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value<'a>(
+/// Get string value and span of an attribute if it's a string literal.
+fn get_attr_string_value_and_span<'a>(
     opening: &'a oxc_ast::ast::JSXOpeningElement<'a>,
     attr_name: &str,
-) -> Option<&'a str> {
+) -> Option<(&'a str, oxc_span::Span)> {
     for item in &opening.attributes {
         if let JSXAttributeItem::Attribute(attr) = item {
             let matches = match &attr.name {
@@ -89,8 +91,27 @@ fn get_attr_string_value<'a>(
             };
             if matches {
                 if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    return Some(lit.value.as_str());
+                    return Some((lit.value.as_str(), attr.span));
                 }
+            }
+        }
+    }
+    None
+}
+
+/// Get the span of a named attribute (regardless of value type).
+fn get_attr_span(
+    opening: &oxc_ast::ast::JSXOpeningElement<'_>,
+    attr_name: &str,
+) -> Option<oxc_span::Span> {
+    for item in &opening.attributes {
+        if let JSXAttributeItem::Attribute(attr) = item {
+            let matches = match &attr.name {
+                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name,
+                JSXAttributeName::NamespacedName(_) => false,
+            };
+            if matches {
+                return Some(attr.span);
             }
         }
     }
@@ -138,11 +159,15 @@ impl NativeRule for NoNoninteractiveTabindex {
         }
 
         // Check for tabIndex attribute
-        let tabindex_val = get_attr_string_value(opening, "tabIndex");
-        if let Some(val) = tabindex_val {
+        let tabindex_info = get_attr_string_value_and_span(opening, "tabIndex");
+        if let Some((val, attr_oxc_span)) = tabindex_info {
             let parsed = val.parse::<i32>().unwrap_or(-1);
             // tabIndex="-1" is acceptable (removes from tab order)
             if parsed >= 0 {
+                let attr_span = Span::new(attr_oxc_span.start, attr_oxc_span.end);
+                let fix = FixBuilder::new("Remove `tabIndex` attribute")
+                    .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                    .build();
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: format!(
@@ -151,12 +176,16 @@ impl NativeRule for NoNoninteractiveTabindex {
                     span: Span::new(opening.span.start, opening.span.end),
                     severity: Severity::Warning,
                     help: None,
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }
-        } else if has_attribute(opening, "tabIndex") {
+        } else if let Some(attr_oxc_span) = get_attr_span(opening, "tabIndex") {
             // tabIndex without a value (boolean attribute) defaults to 0
+            let attr_span = Span::new(attr_oxc_span.start, attr_oxc_span.end);
+            let fix = FixBuilder::new("Remove `tabIndex` attribute")
+                .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!(
@@ -165,7 +194,7 @@ impl NativeRule for NoNoninteractiveTabindex {
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }
