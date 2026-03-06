@@ -102,6 +102,7 @@ impl NativeRule for JsxFragments {
             fix: Some(Fix {
                 message: "Replace with shorthand fragment syntax".to_owned(),
                 edits,
+                is_snippet: false,
             }),
             labels: vec![],
         });

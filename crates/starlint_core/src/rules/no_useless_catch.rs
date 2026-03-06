@@ -90,6 +90,7 @@ impl NativeRule for NoUselessCatch {
                         span: Span::new(stmt.block.span.end, catch_end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });
@@ -124,6 +125,7 @@ impl NativeRule for NoUselessCatch {
                     span: Span::new(stmt.span.start, stmt.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

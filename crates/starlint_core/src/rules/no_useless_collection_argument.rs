@@ -71,6 +71,7 @@ impl NativeRule for NoUselessCollectionArgument {
                         span: arg_span,
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -59,6 +59,7 @@ impl NativeRule for PreferDomNodeAppend {
                     span: prop_span,
                     replacement: "append".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

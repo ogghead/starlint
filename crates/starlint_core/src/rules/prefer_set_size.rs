@@ -59,6 +59,7 @@ impl NativeRule for PreferSetSize {
                         span: Span::new(member.span.start, member.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });
@@ -80,6 +81,7 @@ impl NativeRule for PreferSetSize {
                         span: Span::new(member.span.start, member.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

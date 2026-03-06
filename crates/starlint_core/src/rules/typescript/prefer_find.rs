@@ -79,6 +79,7 @@ fn build_filter_to_find_fix(span_text: &str, start: u32, end: u32) -> Option<Fix
                     span: Span::new(start, end),
                     replacement,
                 }],
+                is_snippet: false,
             });
         }
     }

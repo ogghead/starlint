@@ -71,6 +71,7 @@ impl NativeRule for NewCap {
                             span: Span::new(ident.span.start, ident.span.end),
                             replacement: capitalized,
                         }],
+                        is_snippet: false,
                     })
                 }
                 Expression::StaticMemberExpression(member) => {
@@ -84,6 +85,7 @@ impl NativeRule for NewCap {
                             span: Span::new(member.property.span.start, member.property.span.end),
                             replacement: capitalized,
                         }],
+                        is_snippet: false,
                     })
                 }
                 _ => None,

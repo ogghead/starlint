@@ -75,6 +75,7 @@ impl NativeRule for SwitchCaseBraces {
                         span: body_span,
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

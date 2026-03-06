@@ -84,6 +84,7 @@ impl NativeRule for ConstComparisons {
                     span: Span::new(logical.span.start, logical.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

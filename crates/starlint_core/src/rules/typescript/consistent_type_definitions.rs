@@ -67,6 +67,7 @@ impl NativeRule for ConsistentTypeDefinitions {
                     span: Span::new(decl.span.start, decl.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

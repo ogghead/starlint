@@ -109,6 +109,7 @@ impl NativeRule for PreferToHaveLength {
                         replacement: "toHaveLength".to_owned(),
                     },
                 ],
+                is_snippet: false,
             }),
             labels: vec![],
         });

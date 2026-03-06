@@ -117,6 +117,7 @@ impl NativeRule for NoInvalidVoidType {
                                 span: Span::new(void_start, void_end),
                                 replacement: "undefined".to_owned(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

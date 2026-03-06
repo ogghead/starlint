@@ -78,6 +78,7 @@ impl NativeRule for PreferLowercaseTitle {
                         span: Span::new(char_start, char_end),
                         replacement: lowered,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

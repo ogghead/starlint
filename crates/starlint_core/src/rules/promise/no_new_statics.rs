@@ -68,6 +68,7 @@ impl NativeRule for NoNewStatics {
                     span: Span::new(new_expr.span.start, member.span.start),
                     replacement: String::new(),
                 }],
+                is_snippet: false,
             });
             ctx.report(Diagnostic {
                 rule_name: "promise/no-new-statics".to_owned(),

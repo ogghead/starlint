@@ -70,6 +70,7 @@ impl NativeRule for ForDirection {
                                 span: Span::new(update_span.start, update_span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         })
                     })
             };

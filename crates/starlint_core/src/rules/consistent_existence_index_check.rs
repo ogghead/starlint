@@ -90,6 +90,7 @@ impl NativeRule for ConsistentExistenceIndexCheck {
                         span: Span::new(left_end, right_end),
                         replacement: format!(" {new_op} {new_val}"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

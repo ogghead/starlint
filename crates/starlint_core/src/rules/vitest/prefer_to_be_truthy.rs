@@ -74,6 +74,7 @@ impl NativeRule for PreferToBeTruthy {
                         span: fix_span,
                         replacement: "toBeTruthy()".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -63,6 +63,7 @@ impl NativeRule for ReturnAwait {
                         span: Span::new(arg.span().start, arg.span().end),
                         replacement: inner_owned,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

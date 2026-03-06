@@ -85,6 +85,7 @@ impl NativeRule for ArrowBodyStyle {
                             span: body_span,
                             replacement,
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

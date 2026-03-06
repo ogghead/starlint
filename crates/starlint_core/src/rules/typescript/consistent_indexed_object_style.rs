@@ -66,6 +66,7 @@ impl NativeRule for ConsistentIndexedObjectStyle {
                     span: Span::new(lit.span.start, lit.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }
         });
 

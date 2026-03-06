@@ -80,6 +80,7 @@ impl NativeRule for PreferStringReplaceAll {
                         span: prop_span,
                         replacement: "replaceAll".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

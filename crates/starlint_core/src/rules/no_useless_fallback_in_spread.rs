@@ -84,6 +84,7 @@ impl NativeRule for NoUselessFallbackInSpread {
                         span: arg_span,
                         replacement: left_text,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

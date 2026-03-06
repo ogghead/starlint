@@ -70,6 +70,7 @@ impl NativeRule for NoUnreachable {
                         span,
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 });
                 ctx.report(Diagnostic {
                     rule_name: "no-unreachable".to_owned(),

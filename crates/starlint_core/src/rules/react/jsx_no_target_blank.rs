@@ -118,6 +118,7 @@ impl NativeRule for JsxNoTargetBlank {
                         span: Span::new(rel.span.start, rel.span.end),
                         replacement: format!("rel=\"{new_value}\""),
                     }],
+                    is_snippet: false,
                 })
             } else {
                 // No rel attribute: insert before the closing `>` or `/>` of the opening tag
@@ -139,6 +140,7 @@ impl NativeRule for JsxNoTargetBlank {
                         span: insert_span,
                         replacement: " rel=\"noreferrer\"".to_owned(),
                     }],
+                    is_snippet: false,
                 })
             };
 

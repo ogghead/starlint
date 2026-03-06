@@ -58,6 +58,7 @@ impl NativeRule for NoUnusedLabels {
                         span: delete_span,
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -71,6 +71,7 @@ impl NativeRule for PreferOptionalChain {
                             span: Span::new(logical.span.start, logical.span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     }
                 })
             });

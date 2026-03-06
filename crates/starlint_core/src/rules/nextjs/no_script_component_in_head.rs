@@ -76,6 +76,7 @@ impl NativeRule for NoScriptComponentInHead {
                                 ),
                                 replacement: String::new(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

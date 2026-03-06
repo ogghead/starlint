@@ -11,7 +11,11 @@ use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix};
 /// Overlapping fixes are skipped.
 #[must_use]
 pub fn apply_fixes(source: &str, diagnostics: &[Diagnostic]) -> String {
-    let mut fixes: Vec<&Fix> = diagnostics.iter().filter_map(|d| d.fix.as_ref()).collect();
+    let mut fixes: Vec<&Fix> = diagnostics
+        .iter()
+        .filter_map(|d| d.fix.as_ref())
+        .filter(|f| !f.is_snippet)
+        .collect();
 
     if fixes.is_empty() {
         return source.to_owned();
@@ -78,6 +82,7 @@ mod tests {
                     span,
                     replacement: replacement.to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         }
@@ -136,6 +141,29 @@ mod tests {
         let diag = make_diag_with_fix(Span::new(1, 2), "X");
         let result = apply_fixes(source, &[diag]);
         assert_eq!(result, source, "mid-UTF-8 byte offset should be skipped");
+    }
+
+    #[test]
+    fn test_snippet_fixes_are_skipped() {
+        let source = "aaa bbb";
+        let diag = Diagnostic {
+            rule_name: "test".to_owned(),
+            message: "test".to_owned(),
+            span: Span::new(0, 3),
+            severity: Severity::Warning,
+            help: None,
+            fix: Some(Fix {
+                message: "snippet fix".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(0, 3),
+                    replacement: "${1:xxx}".to_owned(),
+                }],
+                is_snippet: true,
+            }),
+            labels: vec![],
+        };
+        let result = apply_fixes(source, &[diag]);
+        assert_eq!(result, source, "snippet fixes should be skipped by CLI");
     }
 
     #[test]

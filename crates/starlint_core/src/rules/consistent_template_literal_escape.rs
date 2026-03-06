@@ -119,6 +119,7 @@ impl NativeRule for ConsistentTemplateLiteralEscape {
             let fix = (!edits.is_empty()).then(|| Fix {
                 message: "Remove unnecessary escape sequences".to_owned(),
                 edits,
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

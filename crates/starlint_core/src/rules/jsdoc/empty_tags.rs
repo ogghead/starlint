@@ -103,6 +103,7 @@ impl NativeRule for EmptyTags {
                                                     span: Span::new(fix_start, fix_end),
                                                     replacement: String::new(),
                                                 }],
+                                                is_snippet: false,
                                             }),
                                             labels: vec![],
                                         });

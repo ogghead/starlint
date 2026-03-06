@@ -93,6 +93,7 @@ impl NativeRule for PreferConst {
                         span: let_span,
                         replacement: "const".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

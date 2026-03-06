@@ -74,6 +74,7 @@ impl NativeRule for PreferToBe {
                         span: prop_span,
                         replacement: "toBe".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

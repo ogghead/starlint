@@ -84,6 +84,7 @@ impl NativeRule for BanTypes {
                             span: ident_span,
                             replacement: r.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

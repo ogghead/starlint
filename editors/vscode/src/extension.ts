@@ -1,4 +1,4 @@
-import { workspace, ExtensionContext, window } from "vscode";
+import * as vscode from "vscode";
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -7,8 +7,19 @@ import {
 
 let client: LanguageClient | undefined;
 
-export function activate(context: ExtensionContext): void {
-  const config = workspace.getConfiguration("starlint");
+/** Shape of the SnippetWorkspaceEdit sent by the server. */
+interface SnippetTextEdit {
+  range: { start: { line: number; character: number }; end: { line: number; character: number } };
+  newText: string;
+  insertTextFormat: number;
+}
+
+interface SnippetWorkspaceEdit {
+  changes: Record<string, SnippetTextEdit[]>;
+}
+
+export function activate(context: vscode.ExtensionContext): void {
+  const config = vscode.workspace.getConfiguration("starlint");
 
   if (!config.get<boolean>("enable", true)) {
     return;
@@ -29,9 +40,44 @@ export function activate(context: ExtensionContext): void {
       { scheme: "file", language: "typescriptreact" },
     ],
     synchronize: {
-      fileEvents: workspace.createFileSystemWatcher("**/starlint.toml"),
+      fileEvents: vscode.workspace.createFileSystemWatcher("**/starlint.toml"),
+    },
+    initializationOptions: {
+      experimental: {
+        snippetTextEdit: true,
+      },
     },
   };
+
+  // Register the command handler for snippet workspace edits.
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      "starlint.applySnippetWorkspaceEdit",
+      async (edit: SnippetWorkspaceEdit) => {
+        if (!edit?.changes) {
+          return;
+        }
+
+        const wsEdit = new vscode.WorkspaceEdit();
+        for (const [uriStr, edits] of Object.entries(edit.changes)) {
+          const uri = vscode.Uri.parse(uriStr);
+          const snippetEdits = edits.map(
+            (e) =>
+              new vscode.SnippetTextEdit(
+                new vscode.Range(
+                  new vscode.Position(e.range.start.line, e.range.start.character),
+                  new vscode.Position(e.range.end.line, e.range.end.character),
+                ),
+                new vscode.SnippetString(e.newText),
+              ),
+          );
+          wsEdit.set(uri, snippetEdits);
+        }
+
+        await vscode.workspace.applyEdit(wsEdit);
+      },
+    ),
+  );
 
   client = new LanguageClient(
     "starlint",
@@ -43,7 +89,7 @@ export function activate(context: ExtensionContext): void {
   context.subscriptions.push(client);
 
   client.start().catch((err: Error) => {
-    window.showErrorMessage(
+    vscode.window.showErrorMessage(
       `Failed to start starlint LSP server: ${err.message}. ` +
         `Make sure the 'starlint' binary is installed and in your PATH, ` +
         `or set the 'starlint.path' setting.`,

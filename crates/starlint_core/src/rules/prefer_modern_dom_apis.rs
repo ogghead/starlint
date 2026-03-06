@@ -82,6 +82,7 @@ impl NativeRule for PreferModernDomApis {
                                 span: Span::new(call.span.start, call.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         })
                     })
                 }
@@ -97,6 +98,7 @@ impl NativeRule for PreferModernDomApis {
                                 span: Span::new(call.span.start, call.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         })
                     })
                 }
@@ -116,6 +118,7 @@ impl NativeRule for PreferModernDomApis {
                                 span: Span::new(call.span.start, call.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         })
                     })
                 }

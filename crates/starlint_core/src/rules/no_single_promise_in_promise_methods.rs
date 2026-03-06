@@ -85,6 +85,7 @@ impl NativeRule for NoSinglePromiseInPromiseMethods {
                         span: Span::new(call.span.start, call.span.end),
                         replacement: elem_text,
                     }],
+                    is_snippet: false,
                 })
             });
 

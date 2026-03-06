@@ -60,6 +60,7 @@ impl NativeRule for NoUnsafeFunctionType {
                     span: Span::new(type_ref.span.start, type_ref.span.end),
                     replacement: "(...args: any[]) => any".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

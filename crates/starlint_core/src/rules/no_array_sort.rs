@@ -53,6 +53,7 @@ impl NativeRule for NoArraySort {
                 span: Span::new(member.property.span.start, member.property.span.end),
                 replacement: "toSorted".to_owned(),
             }],
+            is_snippet: false,
         });
 
         ctx.report(Diagnostic {

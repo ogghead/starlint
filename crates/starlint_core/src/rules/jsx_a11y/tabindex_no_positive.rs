@@ -64,6 +64,7 @@ impl NativeRule for TabindexNoPositive {
                                         span: Span::new(lit.span.start, lit.span.end),
                                         replacement: "\"0\"".to_owned(),
                                     }],
+                                    is_snippet: false,
                                 }),
                                 labels: vec![],
                             });

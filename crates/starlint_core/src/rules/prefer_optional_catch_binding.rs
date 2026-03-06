@@ -113,6 +113,7 @@ impl NativeRule for PreferOptionalCatchBinding {
                     span: Span::new(clause.span.start, clause.body.span.start),
                     replacement: "catch ".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

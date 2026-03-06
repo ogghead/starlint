@@ -51,6 +51,7 @@ impl NativeRule for PreferEnumInitializers {
                         span: Span::new(member.span.end, member.span.end),
                         replacement: format!(" = {index}"),
                     }],
+                    is_snippet: false,
                 });
 
                 ctx.report(Diagnostic {

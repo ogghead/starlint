@@ -71,6 +71,7 @@ impl NativeRule for NoTestPrefixes {
                             span: id_span,
                             replacement: (*replacement).to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

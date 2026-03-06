@@ -94,6 +94,7 @@ fn check_index_of_comparison(
                 span: Span::new(expr.span.start, expr.span.end),
                 replacement: format!("{obj_text}.startsWith({arg_text})"),
             }],
+            is_snippet: false,
         })
     });
 
@@ -158,6 +159,7 @@ fn check_regex_test(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLin
                 span: Span::new(call.span.start, call.span.end),
                 replacement: format!("{arg_text}.{kind}('{literal_part}')"),
             }],
+            is_snippet: false,
         }
     });
 

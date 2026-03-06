@@ -71,6 +71,7 @@ impl NativeRule for NoDisabledTests {
                             span: id_span,
                             replacement: replacement.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });
@@ -104,6 +105,7 @@ impl NativeRule for NoDisabledTests {
                                     span: callee_span,
                                     replacement: base_name.to_owned(),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });

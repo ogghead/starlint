@@ -70,6 +70,7 @@ impl NativeRule for PreferDateNow {
                             span: Span::new(call.span.start, call.span.end),
                             replacement: "Date.now()".to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });
@@ -95,6 +96,7 @@ impl NativeRule for PreferDateNow {
                             span: Span::new(unary.span.start, unary.span.end),
                             replacement: "Date.now()".to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

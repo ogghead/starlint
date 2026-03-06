@@ -144,6 +144,7 @@ impl NativeRule for BadMinMaxFunc {
                                                         ),
                                                         replacement: result,
                                                     }],
+                                                    is_snippet: false,
                                                 }
                                             })
                                         }

@@ -90,6 +90,7 @@ impl NativeRule for ConsistentDateClone {
                 span: Span::new(arg_span.start, arg_span.end),
                 replacement: obj_text.clone(),
             }],
+            is_snippet: false,
         });
 
         ctx.report(Diagnostic {

@@ -59,6 +59,7 @@ impl NativeRule for NoHexEscape {
                         span: Span::new(lit.span.start, lit.span.end),
                         replacement: fixed,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -66,6 +66,7 @@ impl NativeRule for NoExtraBind {
                         span: Span::new(call.span.start, call.span.end),
                         replacement: obj_text.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

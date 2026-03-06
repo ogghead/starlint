@@ -86,6 +86,7 @@ impl NativeRule for NoTitleInDocumentHead {
                                 ),
                                 replacement: String::new(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

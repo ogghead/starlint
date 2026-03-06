@@ -62,6 +62,7 @@ impl NativeRule for Eqeqeq {
                         span: op_span,
                         replacement: replacement.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

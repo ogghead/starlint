@@ -72,6 +72,7 @@ impl NativeRule for MissingThrow {
                         span: Span::new(new_expr.span.start, new_expr.span.start),
                         replacement: "throw ".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -76,6 +76,7 @@ impl NativeRule for OperatorAssignment {
                         span: Span::new(assign.span.start, assign.span.end),
                         replacement: format!("{target_text} {op_str} {right_text}"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -46,6 +46,7 @@ impl NativeRule for TripleSlashReference {
                         span: Span::new(line_start, line_end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -63,6 +63,7 @@ impl NativeRule for NoUselessConcat {
                         span: Span::new(expr.span.start, expr.span.end),
                         replacement: format!("{quote}{left_inner}{right_inner}{quote}"),
                     }],
+                    is_snippet: false,
                 }
             });
 

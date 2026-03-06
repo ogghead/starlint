@@ -71,6 +71,7 @@ impl NativeRule for NoUnnecessaryTypeArguments {
                         span,
                         replacement: type_name.clone(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

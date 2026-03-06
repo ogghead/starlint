@@ -53,6 +53,7 @@ impl NativeRule for BadCharAtComparison {
                     span: Span::new(expr.span.start, expr.span.end),
                     replacement: "false".to_owned(),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

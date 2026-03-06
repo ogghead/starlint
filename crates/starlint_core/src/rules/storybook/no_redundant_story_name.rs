@@ -119,6 +119,7 @@ impl NativeRule for NoRedundantStoryName {
                                 span: Span::new(actual_start, fix_end),
                                 replacement: String::new(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

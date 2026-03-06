@@ -103,6 +103,7 @@ impl NativeRule for PreferFunctionType {
                         span: decl_span,
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

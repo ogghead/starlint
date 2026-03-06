@@ -84,6 +84,7 @@ impl NativeRule for BetterRegex {
                                 span: Span::new(regex_span.start, regex_span.end),
                                 replacement: new_regex,
                             }],
+                            is_snippet: false,
                         })
                     },
                 );

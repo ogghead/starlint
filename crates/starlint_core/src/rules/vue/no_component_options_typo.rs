@@ -84,6 +84,7 @@ impl NativeRule for NoComponentOptionsTypo {
                                 span: Span::new(start, end),
                                 replacement: (*correction).to_owned(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

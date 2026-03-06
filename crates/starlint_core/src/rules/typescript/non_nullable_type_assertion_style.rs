@@ -50,6 +50,7 @@ impl NativeRule for NonNullableTypeAssertionStyle {
                             span: Span::new(start, end),
                             replacement: format!("as {inner}!"),
                         }],
+                        is_snippet: false,
                     })
                 });
 

@@ -87,6 +87,7 @@ impl NativeRule for NoLengthAsSliceEnd {
                             span: remove_span,
                             replacement: String::new(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

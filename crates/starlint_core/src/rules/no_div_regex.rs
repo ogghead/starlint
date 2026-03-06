@@ -51,6 +51,7 @@ impl NativeRule for NoDivRegex {
                     span: Span::new(regex.span.start, regex.span.end),
                     replacement: format!("/[=]{rest}"),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

@@ -68,6 +68,7 @@ impl NativeRule for NoUselessSpread {
                                 span: outer_span,
                                 replacement: inner_text,
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

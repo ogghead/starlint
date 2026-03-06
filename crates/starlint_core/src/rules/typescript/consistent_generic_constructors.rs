@@ -63,6 +63,7 @@ impl NativeRule for ConsistentGenericConstructors {
                 fix: fix.map(|replacement| Fix {
                     message: "Move type arguments to constructor".to_owned(),
                     edits: vec![Edit { span, replacement }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

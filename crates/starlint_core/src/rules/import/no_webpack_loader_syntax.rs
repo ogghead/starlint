@@ -54,6 +54,7 @@ impl NativeRule for NoWebpackLoaderSyntax {
                         span: Span::new(inner_start, inner_end),
                         replacement: clean_path.to_owned(),
                     }],
+                    is_snippet: false,
                 })
             });
 

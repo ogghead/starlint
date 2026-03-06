@@ -53,6 +53,7 @@ impl NativeRule for NoSequences {
                         .unwrap_or("")
                         .to_owned(),
                 }],
+                is_snippet: false,
             }
         });
 

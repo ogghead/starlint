@@ -101,6 +101,7 @@ impl NativeRule for PreferNegativeIndex {
                                 span: Span::new(bin.span.start, bin.span.end),
                                 replacement: neg_val,
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

@@ -60,6 +60,12 @@ pub struct Fix {
     pub message: String,
     /// Ordered list of text edits to apply.
     pub edits: Vec<Edit>,
+    /// Whether edit replacements contain LSP snippet syntax (`$1`, `${1:placeholder}`).
+    ///
+    /// Snippet fixes are only applied by editors that support `SnippetTextEdit`
+    /// (e.g. VS Code). The CLI skips them.
+    #[serde(default)]
+    pub is_snippet: bool,
 }
 
 /// A single text edit (replace span contents with new text).

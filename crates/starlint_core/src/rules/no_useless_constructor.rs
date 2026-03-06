@@ -68,6 +68,7 @@ impl NativeRule for NoUselessConstructor {
                             span: method_span,
                             replacement: String::new(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });
@@ -91,6 +92,7 @@ impl NativeRule for NoUselessConstructor {
                                     span: method_span,
                                     replacement: String::new(),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });

@@ -53,6 +53,7 @@ impl NativeRule for PreferGlobalThis {
                         span: ident_span,
                         replacement: "globalThis".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

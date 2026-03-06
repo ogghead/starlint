@@ -108,6 +108,7 @@ impl NativeRule for NoUnnecessaryArraySpliceCount {
                             span: remove_span,
                             replacement: String::new(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

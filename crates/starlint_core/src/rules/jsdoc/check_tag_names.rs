@@ -157,6 +157,7 @@ impl NativeRule for CheckTagNames {
                                             span: Span::new(tag_start, tag_end),
                                             replacement: correct_tag.to_owned(),
                                         }],
+                                        is_snippet: false,
                                     }
                                 })
                             });

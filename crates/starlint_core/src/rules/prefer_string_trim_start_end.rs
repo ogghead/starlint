@@ -67,6 +67,7 @@ impl NativeRule for PreferStringTrimStartEnd {
                     span: Span::new(member.property.span.start, member.property.span.end),
                     replacement: replacement_method.to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

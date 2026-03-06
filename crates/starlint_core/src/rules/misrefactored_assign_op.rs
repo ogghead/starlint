@@ -106,6 +106,7 @@ impl NativeRule for MisrefactoredAssignOp {
                             span: Span::new(rhs_bin.span.start, rhs_bin.span.end),
                             replacement: right_text.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

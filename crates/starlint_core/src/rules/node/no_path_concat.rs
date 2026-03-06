@@ -76,6 +76,7 @@ impl NativeRule for NoPathConcat {
                 span: Span::new(expr.span.start, expr.span.end),
                 replacement: format!("path.join({left_text}, {right_text})"),
             }],
+            is_snippet: false,
         });
 
         ctx.report(Diagnostic {

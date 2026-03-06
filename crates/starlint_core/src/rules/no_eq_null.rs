@@ -70,6 +70,7 @@ impl NativeRule for NoEqNull {
                         span: Span::new(op_pos, op_pos.saturating_add(2)),
                         replacement: replacement_op.to_owned(),
                     }],
+                    is_snippet: false,
                 }
             });
 

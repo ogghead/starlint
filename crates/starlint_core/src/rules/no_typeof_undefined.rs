@@ -82,6 +82,7 @@ impl NativeRule for NoTypeofUndefined {
                     span: Span::new(expr.span.start, expr.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

@@ -63,6 +63,7 @@ impl NativeRule for NoExportsAssign {
                     span: Span::new(id.span.start, id.span.end),
                     replacement: "module.exports".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

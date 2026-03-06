@@ -62,6 +62,7 @@ impl NativeRule for NoHeadImportInDocument {
                         span: Span::new(import.span.start, import.span.end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

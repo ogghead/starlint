@@ -68,6 +68,7 @@ impl NativeRule for NoMultiStr {
                         span: Span::new(span_start, span_end),
                         replacement: converted,
                     }],
+                    is_snippet: false,
                 })
             };
 

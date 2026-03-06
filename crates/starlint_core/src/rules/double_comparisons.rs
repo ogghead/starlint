@@ -101,6 +101,7 @@ impl NativeRule for DoubleComparisons {
                         span: Span::new(logical.span.start, logical.span.end),
                         replacement: format!("{left_a} {replacement_op} {right_b}"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

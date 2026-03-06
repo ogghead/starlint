@@ -109,6 +109,7 @@ impl NativeRule for ApproxConstant {
                             span: Span::new(lit.span.start, lit.span.end),
                             replacement: constant.name.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

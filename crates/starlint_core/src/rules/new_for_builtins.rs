@@ -86,6 +86,7 @@ impl NativeRule for NewForBuiltins {
                             span: Span::new(id.span.start, id.span.start),
                             replacement: "new ".to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });
@@ -123,6 +124,7 @@ impl NativeRule for NewForBuiltins {
                             span: Span::new(new_expr.span.start, new_expr.span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

@@ -90,6 +90,7 @@ impl NativeRule for ConsistentVitestVi {
                         span: Span::new(obj.span.start, obj.span.end),
                         replacement: "vi".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

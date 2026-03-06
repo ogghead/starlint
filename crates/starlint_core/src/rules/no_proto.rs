@@ -49,6 +49,7 @@ impl NativeRule for NoProto {
                                     span: Span::new(member.span.start, member.span.end),
                                     replacement,
                                 }],
+                                is_snippet: false,
                             }
                         })
                 };

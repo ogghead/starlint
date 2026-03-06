@@ -75,6 +75,7 @@ impl NativeRule for ConsistentTestIt {
                         span: *span,
                         replacement: majority.clone(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

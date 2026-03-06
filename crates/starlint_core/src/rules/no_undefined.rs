@@ -42,6 +42,7 @@ impl NativeRule for NoUndefined {
                     span: Span::new(id.span.start, id.span.end),
                     replacement: "void 0".to_owned(),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

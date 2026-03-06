@@ -99,6 +99,7 @@ impl NativeRule for PreferArrayFlatMap {
                             replacement: String::new(),
                         },
                     ],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

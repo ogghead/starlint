@@ -64,6 +64,7 @@ impl NativeRule for ConstructorSuper {
                         span: Span::new(insert_pos, insert_pos),
                         replacement: " super();".to_owned(),
                     }],
+                    is_snippet: false,
                 });
                 ctx.report(Diagnostic {
                     rule_name: "constructor-super".to_owned(),

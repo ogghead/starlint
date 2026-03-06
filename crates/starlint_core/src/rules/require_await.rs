@@ -74,6 +74,7 @@ fn check_for_await(
                 span: Span::new(func_span.start, func_span.start.saturating_add(6)),
                 replacement: String::new(),
             }],
+            is_snippet: false,
         });
         ctx.report(Diagnostic {
             rule_name: "require-await".to_owned(),

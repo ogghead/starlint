@@ -77,6 +77,7 @@ impl NativeRule for NoUselessEscape {
                         span: Span::new(span_start, span_end),
                         replacement: fixed,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

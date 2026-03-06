@@ -66,6 +66,7 @@ impl NativeRule for RequireNumberToFixedDigitsArgument {
                     span: insert_span,
                     replacement: "0".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

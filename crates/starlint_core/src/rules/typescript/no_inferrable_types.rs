@@ -72,6 +72,7 @@ impl NativeRule for NoInferrableTypes {
                         span: Span::new(ann_start, ann_end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

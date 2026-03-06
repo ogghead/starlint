@@ -70,6 +70,7 @@ impl NativeRule for NoNamedDefault {
                         span: Span::new(start, end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }
             });
 

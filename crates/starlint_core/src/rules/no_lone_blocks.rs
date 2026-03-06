@@ -79,6 +79,7 @@ impl NativeRule for NoLoneBlocks {
                                     span,
                                     replacement: inner.to_owned(),
                                 }],
+                                is_snippet: false,
                             }
                         });
                     lone_blocks.push((span, fix));

@@ -92,6 +92,7 @@ impl NativeRule for NumericSeparatorsStyle {
                     span: Span::new(lit.span.start, lit.span.end),
                     replacement: fixed,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

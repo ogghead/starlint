@@ -59,6 +59,7 @@ impl NativeRule for DefaultCase {
                     span: Span::new(insert_pos, insert_pos),
                     replacement: " default: break; ".to_owned(),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

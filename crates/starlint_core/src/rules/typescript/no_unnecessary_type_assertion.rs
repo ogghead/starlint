@@ -64,6 +64,7 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
                         span: Span::new(expr.span.start, expr.span.end),
                         replacement: inner_text,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

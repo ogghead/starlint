@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -71,13 +73,21 @@ impl NativeRule for AnchorHasContent {
             has_attribute(opening, "aria-label") || has_attribute(opening, "aria-labelledby");
 
         if !has_accessible_content {
+            let insert_pos = fix_utils::jsx_attr_insert_offset(
+                ctx.source_text(),
+                Span::new(opening.span.start, opening.span.end),
+            );
+            let fix = FixBuilder::new("Add `aria-label` attribute")
+                .insert_at(insert_pos, " aria-label=\"${1:link text}\"")
+                .build_snippet();
+
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Anchors must have content. Provide child text, `aria-label`, or `aria-labelledby`".to_owned(),
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

@@ -80,6 +80,7 @@ impl NativeRule for NoMultiAsterisks {
                         fix: Some(Fix {
                             message: "Remove extra asterisks".to_owned(),
                             edits,
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

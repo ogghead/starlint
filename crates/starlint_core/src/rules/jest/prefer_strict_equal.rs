@@ -62,6 +62,7 @@ impl NativeRule for PreferStrictEqual {
                     span: prop_span,
                     replacement: "toStrictEqual".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

@@ -110,6 +110,7 @@ impl NativeRule for PreferNativeCoercionFunctions {
                     span: Span::new(arrow.span.start, arrow.span.end),
                     replacement: callee_name.to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

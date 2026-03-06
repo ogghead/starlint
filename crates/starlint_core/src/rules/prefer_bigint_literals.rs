@@ -69,6 +69,7 @@ impl NativeRule for PreferBigintLiterals {
                         span: Span::new(call.span.start, call.span.end),
                         replacement: format!("{literal_value}n"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

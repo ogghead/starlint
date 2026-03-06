@@ -48,6 +48,7 @@ impl NativeRule for NoEmptyStaticBlock {
                         span: Span::new(block.span.start, block.span.end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

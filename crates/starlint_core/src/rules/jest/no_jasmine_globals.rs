@@ -56,6 +56,7 @@ impl NativeRule for NoJasmineGlobals {
                             span: Span::new(call.span.start, call.span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     }
                 });
 
@@ -86,6 +87,7 @@ impl NativeRule for NoJasmineGlobals {
                             span: Span::new(call.span.start, call.span.end),
                             replacement: "jest.fn()".to_owned(),
                         }],
+                        is_snippet: false,
                     });
 
                     ctx.report(Diagnostic {

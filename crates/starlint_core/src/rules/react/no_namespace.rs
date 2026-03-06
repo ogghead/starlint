@@ -49,6 +49,7 @@ impl NativeRule for NoNamespace {
                     span: Span::new(ns_name.span.start, ns_name.span.end),
                     replacement: name.to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

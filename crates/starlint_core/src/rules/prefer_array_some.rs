@@ -53,6 +53,7 @@ impl NativeRule for PreferArraySome {
                         span: prop_span,
                         replacement: "some".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -114,6 +114,7 @@ impl NativeRule for NoTypos {
                         span,
                         replacement: (*correct).to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

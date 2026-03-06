@@ -57,6 +57,7 @@ impl NativeRule for NoForInArray {
                         span: Span::new(in_start, in_end),
                         replacement: "of".to_owned(),
                     }],
+                    is_snippet: false,
                 })
             })
         };

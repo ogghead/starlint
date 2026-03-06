@@ -70,6 +70,7 @@ impl NativeRule for PreferAddEventListener {
                             "{obj_text}.addEventListener('{event_name}', {rhs_text})"
                         ),
                     }],
+                    is_snippet: false,
                 })
             };
 

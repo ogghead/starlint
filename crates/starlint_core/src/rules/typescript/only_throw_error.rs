@@ -67,6 +67,7 @@ impl NativeRule for OnlyThrowError {
                                 span: Span::new(arg_span.start, arg_span.end),
                                 replacement: wrapped,
                             }],
+                            is_snippet: false,
                         }
                     })
             };

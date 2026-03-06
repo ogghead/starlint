@@ -61,6 +61,7 @@ impl NativeRule for PreferMathTrunc {
                                     span: Span::new(outer.span.start, outer.span.end),
                                     replacement: format!("Math.trunc({arg_text})"),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });
@@ -98,6 +99,7 @@ impl NativeRule for PreferMathTrunc {
                                 span: Span::new(expr.span.start, expr.span.end),
                                 replacement: format!("Math.trunc({left_text})"),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

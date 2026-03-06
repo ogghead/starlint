@@ -67,6 +67,7 @@ impl NativeRule for DotNotation {
                     span: Span::new(computed.span.start, computed.span.end),
                     replacement: format!("{obj_text}.{prop_owned}"),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

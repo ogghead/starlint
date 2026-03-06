@@ -72,6 +72,7 @@ impl NativeRule for PreferNamespaceKeyword {
                         span: Span::new(module_start, module_end),
                         replacement: "namespace".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

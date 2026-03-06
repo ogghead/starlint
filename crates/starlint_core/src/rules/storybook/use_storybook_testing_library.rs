@@ -63,6 +63,7 @@ impl NativeRule for UseStorybookTestingLibrary {
                         ),
                         replacement: "@storybook/test".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -63,6 +63,7 @@ impl NativeRule for PreferReturnThisType {
                             span: Span::new(name_start, name_end),
                             replacement: "this".to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 })

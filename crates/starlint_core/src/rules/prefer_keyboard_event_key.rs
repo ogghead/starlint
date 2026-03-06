@@ -59,6 +59,7 @@ impl NativeRule for PreferKeyboardEventKey {
                     span: prop_span,
                     replacement: "key".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

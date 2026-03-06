@@ -64,6 +64,7 @@ impl NativeRule for ConsistentTypeImports {
                 fix: Some(Fix {
                     message: "Convert to `import type` syntax".to_owned(),
                     edits: vec![Edit { span, replacement }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

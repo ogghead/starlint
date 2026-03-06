@@ -155,6 +155,7 @@ fn build_mock_shorthand_fix(
             span: Span::new(call.span.start, call.span.end),
             replacement,
         }],
+        is_snippet: false,
     })
 }
 

@@ -159,6 +159,7 @@ impl NativeRule for PreferIncludes {
                     span: Span::new(expr.span.start, expr.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

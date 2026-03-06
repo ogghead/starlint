@@ -58,6 +58,7 @@ impl NativeRule for NoVarRequires {
                                     span: Span::new(decl.span.start, decl.span.end),
                                     replacement,
                                 }],
+                                is_snippet: false,
                             })
                         } else {
                             None

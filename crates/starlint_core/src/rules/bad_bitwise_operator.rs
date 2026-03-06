@@ -64,6 +64,7 @@ impl NativeRule for BadBitwiseOperator {
                     span: Span::new(op_pos, op_pos.saturating_add(1)),
                     replacement: intended.to_owned(),
                 }],
+                is_snippet: false,
             }
         });
 

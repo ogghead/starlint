@@ -43,6 +43,7 @@ impl NativeRule for NoConstEnum {
                     span: Span::new(decl.span.start, decl.span.start.saturating_add(6)),
                     replacement: String::new(),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

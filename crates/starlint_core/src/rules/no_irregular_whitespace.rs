@@ -86,6 +86,7 @@ impl NativeRule for NoIrregularWhitespace {
                         span: char_span,
                         replacement: " ".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

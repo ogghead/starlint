@@ -60,6 +60,7 @@ impl NativeRule for JsxCurlyBracePresence {
                         span: container_span,
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

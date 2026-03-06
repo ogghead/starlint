@@ -68,6 +68,7 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
                         span: Span::new(ret.span.start, ret.span.end),
                         replacement: "return;".to_owned(),
                     }],
+                    is_snippet: false,
                 });
                 ctx.report(Diagnostic {
                     rule_name: "no-setter-return".to_owned(),

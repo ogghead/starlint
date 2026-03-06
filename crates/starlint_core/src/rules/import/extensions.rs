@@ -69,6 +69,7 @@ impl NativeRule for Extensions {
                             span: Span::new(import.source.span.start, import.source.span.end),
                             replacement: fixed,
                         }],
+                        is_snippet: false,
                     }
                 });
 

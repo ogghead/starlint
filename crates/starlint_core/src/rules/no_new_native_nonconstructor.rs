@@ -60,6 +60,7 @@ impl NativeRule for NoNewNativeNonconstructor {
                         span: Span::new(new_expr.span.start, new_expr.span.end),
                         replacement: call_text.to_owned(),
                     }],
+                    is_snippet: false,
                 })
             };
 

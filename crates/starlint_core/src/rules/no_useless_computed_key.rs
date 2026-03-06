@@ -70,6 +70,7 @@ impl NativeRule for NoUselessComputedKey {
                     span: Span::new(open_pos, close_pos),
                     replacement: key_source.to_owned(),
                 }],
+                is_snippet: false,
             })
         } else {
             None

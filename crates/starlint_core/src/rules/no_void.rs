@@ -49,6 +49,7 @@ impl NativeRule for NoVoid {
                         span: Span::new(unary.span.start, unary.span.end),
                         replacement: "undefined".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

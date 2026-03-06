@@ -64,6 +64,7 @@ impl NativeRule for RequireArrayJoinSeparator {
                         ),
                         replacement: "\",\"".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

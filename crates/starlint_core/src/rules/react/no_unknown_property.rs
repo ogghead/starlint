@@ -134,6 +134,7 @@ impl NativeRule for NoUnknownProperty {
                             span: name_span,
                             replacement: react_name.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

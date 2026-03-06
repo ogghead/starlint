@@ -44,6 +44,7 @@ impl NativeRule for NoExtraSemi {
                         span: Span::new(stmt.span.start, stmt.span.end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

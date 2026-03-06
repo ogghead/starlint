@@ -83,6 +83,7 @@ impl NativeRule for RelativeUrlStyle {
                     span: Span::new(inner_start, inner_end),
                     replacement: format!("./{path_owned}"),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

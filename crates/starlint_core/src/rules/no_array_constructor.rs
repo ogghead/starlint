@@ -53,6 +53,7 @@ impl NativeRule for NoArrayConstructor {
                                 span: Span::new(new_expr.span.start, new_expr.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });
@@ -76,6 +77,7 @@ impl NativeRule for NoArrayConstructor {
                                 span: Span::new(call.span.start, call.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

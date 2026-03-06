@@ -162,6 +162,7 @@ impl NativeRule for NoConstantCondition {
                                 span: Span::new(expr.span.start, expr.span.end),
                                 replacement: branch_text.to_owned(),
                             }],
+                            is_snippet: false,
                         })
                     });
                     ctx.report(Diagnostic {

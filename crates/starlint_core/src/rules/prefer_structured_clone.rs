@@ -80,6 +80,7 @@ impl NativeRule for PreferStructuredClone {
                             span: Span::new(call.span.start, call.span.end),
                             replacement: format!("structuredClone({arg_text})"),
                         }],
+                        is_snippet: false,
                     })
                 } else {
                     None

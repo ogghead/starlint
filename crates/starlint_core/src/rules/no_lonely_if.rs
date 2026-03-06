@@ -71,6 +71,7 @@ impl NativeRule for NoLonelyIf {
                     span: Span::new(block.span.start, block.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

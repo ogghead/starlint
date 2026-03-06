@@ -84,6 +84,24 @@ impl FixBuilder {
         Some(Fix {
             message: self.message,
             edits: self.edits,
+            is_snippet: false,
+        })
+    }
+
+    /// Build a snippet [`Fix`] whose replacements contain LSP snippet syntax
+    /// (`$1`, `${1:placeholder}`).
+    ///
+    /// Snippet fixes are only applied by editors that support `SnippetTextEdit`.
+    /// The CLI always skips them.
+    #[must_use]
+    pub fn build_snippet(self) -> Option<Fix> {
+        if self.edits.is_empty() {
+            return None;
+        }
+        Some(Fix {
+            message: self.message,
+            edits: self.edits,
+            is_snippet: true,
         })
     }
 }

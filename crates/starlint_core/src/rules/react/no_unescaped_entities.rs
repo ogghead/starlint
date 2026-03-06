@@ -62,6 +62,7 @@ impl NativeRule for NoUnescapedEntities {
                         span: Span::new(text.span.start, text.span.end),
                         replacement: replaced,
                     }],
+                    is_snippet: false,
                 });
 
                 ctx.report(Diagnostic {

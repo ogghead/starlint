@@ -86,6 +86,7 @@ fn check_condition(expr: &Expression<'_>, ctx: &mut NativeLintContext<'_>) {
                     span: Span::new(assign.span.start, assign.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             })
         };
 

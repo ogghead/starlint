@@ -82,6 +82,7 @@ impl NativeRule for NoZeroFractions {
                     span: Span::new(lit.span.start, lit.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

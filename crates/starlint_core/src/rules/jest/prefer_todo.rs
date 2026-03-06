@@ -81,6 +81,7 @@ impl NativeRule for PreferTodo {
                         span: Span::new(call.span.start, call.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }
             });
 

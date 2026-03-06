@@ -2321,6 +2321,7 @@ name = "starlint_lsp"
 version = "0.1.0"
 dependencies = [
  "miette",
+ "serde",
  "serde_json",
  "starlint_config",
  "starlint_core",

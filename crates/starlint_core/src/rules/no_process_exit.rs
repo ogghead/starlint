@@ -58,6 +58,7 @@ impl NativeRule for NoProcessExit {
                         span: Span::new(call.span.start, call.span.end),
                         replacement: format!("process.exitCode = {arg_text}"),
                     }],
+                    is_snippet: false,
                 })
             });
 

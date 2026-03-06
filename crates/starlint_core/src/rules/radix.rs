@@ -69,6 +69,7 @@ impl NativeRule for Radix {
                         ),
                         replacement: ", 10".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -109,6 +109,7 @@ impl NativeRule for NoConsoleSpaces {
             fix: Some(Fix {
                 message: "Remove space".to_owned(),
                 edits,
+                is_snippet: false,
             }),
             labels: vec![],
         });

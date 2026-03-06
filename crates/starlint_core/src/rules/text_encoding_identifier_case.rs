@@ -89,6 +89,7 @@ impl NativeRule for TextEncodingIdentifierCase {
                         span: Span::new(content_start, content_end),
                         replacement: canonical.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

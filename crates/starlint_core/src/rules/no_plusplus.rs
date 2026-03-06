@@ -61,6 +61,7 @@ impl NativeRule for NoPlusplus {
                 span: Span::new(update.span.start, update.span.end),
                 replacement,
             }],
+            is_snippet: false,
         });
 
         ctx.report(Diagnostic {

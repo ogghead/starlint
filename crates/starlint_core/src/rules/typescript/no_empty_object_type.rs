@@ -53,6 +53,7 @@ impl NativeRule for NoEmptyObjectType {
                     span: Span::new(lit.span.start, lit.span.end),
                     replacement: "object".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

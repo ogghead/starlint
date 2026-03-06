@@ -63,6 +63,7 @@ impl NativeRule for NoCaseDeclarations {
                                         replacement: " }".to_owned(),
                                     },
                                 ],
+                                is_snippet: false,
                             }
                         });
 

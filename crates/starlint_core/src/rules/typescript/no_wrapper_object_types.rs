@@ -75,6 +75,7 @@ impl NativeRule for NoWrapperObjectTypes {
                             span: ident_span,
                             replacement: primitive.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

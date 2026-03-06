@@ -50,6 +50,7 @@ impl NativeRule for PreferEventTarget {
                                     span: id_span,
                                     replacement: "EventTarget".to_owned(),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });
@@ -73,6 +74,7 @@ impl NativeRule for PreferEventTarget {
                                     span: id_span,
                                     replacement: "EventTarget".to_owned(),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });

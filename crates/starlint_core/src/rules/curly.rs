@@ -132,6 +132,7 @@ fn report_curly_fix(
                 span: Span::new(body_span.start, body_span.end),
                 replacement: format!("{{ {body_text} }}"),
             }],
+            is_snippet: false,
         }),
         labels: vec![],
     });

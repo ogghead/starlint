@@ -68,6 +68,7 @@ impl NativeRule for NoAbusiveEslintDisable {
                                 span: Span::new(span.start, delete_end),
                                 replacement: String::new(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     }

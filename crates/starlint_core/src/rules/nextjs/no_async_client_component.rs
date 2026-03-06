@@ -82,6 +82,7 @@ impl NativeRule for NoAsyncClientComponent {
                     span: Span::new(a_start, a_end),
                     replacement: String::new(),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

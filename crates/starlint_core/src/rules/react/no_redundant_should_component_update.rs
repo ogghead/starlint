@@ -67,6 +67,7 @@ impl NativeRule for NoRedundantShouldComponentUpdate {
                             span: Span::new(method.span.start, method.span.end),
                             replacement: String::new(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

@@ -58,6 +58,7 @@ impl NativeRule for NoImplicitCoercion {
                                     span: Span::new(outer.span.start, outer.span.end),
                                     replacement: format!("Boolean({arg_text})"),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });
@@ -88,6 +89,7 @@ impl NativeRule for NoImplicitCoercion {
                                 span: Span::new(expr.span.start, expr.span.end),
                                 replacement: format!("Number({arg_text})"),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });
@@ -117,6 +119,7 @@ impl NativeRule for NoImplicitCoercion {
                                 span: Span::new(expr.span.start, expr.span.end),
                                 replacement: format!("String({right_text})"),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

@@ -70,6 +70,7 @@ impl NativeRule for WarnTodo {
                     span: Span::new(member.property.span.start, member.property.span.end),
                     replacement: "skip".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

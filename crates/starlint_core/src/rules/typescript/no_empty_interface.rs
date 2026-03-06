@@ -61,6 +61,7 @@ impl NativeRule for NoEmptyInterface {
                         span: Span::new(decl.span.start, decl.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

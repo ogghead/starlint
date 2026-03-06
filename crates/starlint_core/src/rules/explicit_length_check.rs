@@ -86,6 +86,7 @@ fn check_condition(
                     span: condition_span,
                     replacement: format!("{member_text} > 0"),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });
@@ -120,6 +121,7 @@ fn check_condition(
                         span: unary_span,
                         replacement: format!("{member_text} === 0"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

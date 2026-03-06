@@ -73,6 +73,7 @@ impl NativeRule for NoNewBuffer {
                         span: Span::new(new_expr.span.start, new_expr.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -55,6 +55,7 @@ impl NativeRule for NoNonoctalDecimalEscape {
                     span: Span::new(lit.span.start, lit.span.end),
                     replacement: fixed,
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

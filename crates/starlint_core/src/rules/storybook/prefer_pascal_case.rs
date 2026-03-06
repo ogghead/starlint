@@ -113,6 +113,7 @@ impl NativeRule for PreferPascalCase {
                                 span: Span::new(start, end),
                                 replacement: pascal,
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

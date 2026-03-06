@@ -102,6 +102,7 @@ impl NativeRule for ConsistentTypeSpecifierStyle {
                         span: Span::new(import.span.start, import.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -75,6 +75,7 @@ impl NativeRule for HierarchySeparator {
                                 span: Span::new(start, end),
                                 replacement: fixed_title,
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

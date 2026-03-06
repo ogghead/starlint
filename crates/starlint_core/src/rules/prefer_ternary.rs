@@ -95,6 +95,7 @@ impl NativeRule for PreferTernary {
                     span: Span::new(if_stmt.span.start, if_stmt.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

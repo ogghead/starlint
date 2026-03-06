@@ -84,6 +84,7 @@ impl NativeRule for NoArrayMethodThisArgument {
                         span: Span::new(first_end, second_end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }
             });
 

@@ -59,6 +59,7 @@ impl NativeRule for ConsistentTypeAssertions {
                 span: Span::new(expr.span.start, expr.span.end),
                 replacement: format!("{expr_text} as {type_text}"),
             }],
+            is_snippet: false,
         });
 
         ctx.report(Diagnostic {

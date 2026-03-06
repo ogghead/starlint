@@ -49,6 +49,7 @@ impl NativeRule for NoExplicitAny {
                     span: Span::new(keyword.span.start, keyword.span.end),
                     replacement: "unknown".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

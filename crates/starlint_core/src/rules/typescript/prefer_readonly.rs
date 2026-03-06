@@ -69,6 +69,7 @@ impl NativeRule for PreferReadonly {
                             span: Span::new(insert_pos, insert_pos),
                             replacement: "readonly ".to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 })

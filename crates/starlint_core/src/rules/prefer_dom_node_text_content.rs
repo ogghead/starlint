@@ -54,6 +54,7 @@ impl NativeRule for PreferDomNodeTextContent {
                     span: prop_span,
                     replacement: "textContent".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

@@ -15,6 +15,7 @@
 pub mod convert;
 pub mod document;
 pub mod server;
+pub mod snippet;
 
 use tower_lsp::{LspService, Server};
 

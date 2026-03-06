@@ -123,6 +123,7 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
                         span: Span::new(expr.span.start, expr.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

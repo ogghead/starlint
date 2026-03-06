@@ -83,6 +83,7 @@ impl NativeRule for JsxNoUselessFragment {
                                 span: fragment_span,
                                 replacement: child_text.to_owned(),
                             }],
+                            is_snippet: false,
                         }
                     })
             } else {

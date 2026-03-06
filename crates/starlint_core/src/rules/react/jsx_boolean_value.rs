@@ -64,6 +64,7 @@ impl NativeRule for JsxBooleanValue {
                             span: attr_span,
                             replacement: prop_name.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

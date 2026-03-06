@@ -76,6 +76,7 @@ impl NativeRule for PreferPromiseRejectErrors {
                                     span: Span::new(arg_span.start, arg_span.end),
                                     replacement,
                                 }],
+                                is_snippet: false,
                             }
                         })
                 };

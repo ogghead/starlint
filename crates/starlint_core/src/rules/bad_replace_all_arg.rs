@@ -68,6 +68,7 @@ impl NativeRule for BadReplaceAllArg {
                             span: Span::new(re.span.start, re.span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     }
                 });
 

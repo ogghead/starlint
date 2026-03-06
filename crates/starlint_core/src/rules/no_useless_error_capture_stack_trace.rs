@@ -71,6 +71,7 @@ impl NativeRule for NoUselessErrorCaptureStackTrace {
                         span: fix_span,
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

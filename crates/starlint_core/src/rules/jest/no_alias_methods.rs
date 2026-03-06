@@ -74,6 +74,7 @@ impl NativeRule for NoAliasMethods {
                             span: prop_span,
                             replacement: (*canonical).to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

@@ -64,6 +64,7 @@ impl NativeRule for PreferExponentiationOperator {
                             span: Span::new(call.span.start, call.span.end),
                             replacement: format!("{first_text} ** {second_text}"),
                         }],
+                        is_snippet: false,
                     }
                 });
 

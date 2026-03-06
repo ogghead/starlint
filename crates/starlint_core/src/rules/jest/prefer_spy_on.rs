@@ -70,6 +70,7 @@ impl NativeRule for PreferSpyOn {
                         span: Span::new(assign.span.start, assign.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 })
             } else {
                 None

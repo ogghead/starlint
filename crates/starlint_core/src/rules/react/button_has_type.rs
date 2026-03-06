@@ -75,6 +75,7 @@ impl NativeRule for ButtonHasType {
                         span: Span::new(insert_pos, insert_pos),
                         replacement: " type=\"button\"".to_owned(),
                     }],
+                    is_snippet: false,
                 })
             });
 

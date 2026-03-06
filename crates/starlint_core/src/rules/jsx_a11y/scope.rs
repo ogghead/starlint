@@ -73,6 +73,7 @@ impl NativeRule for Scope {
                         span: attr_span,
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

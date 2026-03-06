@@ -57,6 +57,7 @@ impl NativeRule for ReactInJsxScope {
                     span: Span::new(0, 0),
                     replacement: "import React from 'react';\n".to_owned(),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

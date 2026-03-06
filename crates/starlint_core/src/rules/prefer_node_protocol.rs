@@ -114,6 +114,7 @@ impl NativeRule for PreferNodeProtocol {
                         span: inner_span,
                         replacement: format!("node:{source}"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

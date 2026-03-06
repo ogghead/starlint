@@ -70,6 +70,7 @@ impl NativeRule for NoFocusedTests {
                             span: id_span,
                             replacement: replacement.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });
@@ -103,6 +104,7 @@ impl NativeRule for NoFocusedTests {
                                     span: callee_span,
                                     replacement: base_name.to_owned(),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });

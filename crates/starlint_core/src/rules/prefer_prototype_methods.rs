@@ -100,6 +100,7 @@ impl NativeRule for PreferPrototypeMethods {
                     span: Span::new(literal_span.start, literal_span.end),
                     replacement,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

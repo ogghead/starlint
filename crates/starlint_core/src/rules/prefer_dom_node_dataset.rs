@@ -85,6 +85,7 @@ impl NativeRule for PreferDomNodeDataset {
                         span: Span::new(call.span.start, call.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 })
             } else if method_name == "setAttribute" && call.arguments.len() == 2 {
                 call.arguments.get(1).and_then(|val_arg| {
@@ -97,6 +98,7 @@ impl NativeRule for PreferDomNodeDataset {
                             span: Span::new(call.span.start, call.span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     })
                 })
             } else {

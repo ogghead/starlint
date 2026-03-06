@@ -68,6 +68,7 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
                         span: template_span,
                         replacement: expr_text.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });
@@ -106,6 +107,7 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
                             span: template_span,
                             replacement,
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

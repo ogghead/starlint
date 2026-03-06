@@ -79,6 +79,7 @@ impl NativeRule for PreferArrayFind {
                             replacement: String::new(),
                         },
                     ],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

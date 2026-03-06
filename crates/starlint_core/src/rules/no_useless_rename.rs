@@ -57,6 +57,7 @@ impl NativeRule for NoUselessRename {
                                 span: Span::new(spec.span.start, spec.span.end),
                                 replacement: local_str.to_owned(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });
@@ -91,6 +92,7 @@ impl NativeRule for NoUselessRename {
                                 span: Span::new(spec.span.start, spec.span.end),
                                 replacement: name.to_owned(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

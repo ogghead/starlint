@@ -67,6 +67,7 @@ impl NativeRule for ConsistentTypeExports {
                         span,
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

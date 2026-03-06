@@ -65,6 +65,7 @@ impl NativeRule for NoInstanceofArray {
                         span: Span::new(expr.span.start, expr.span.end),
                         replacement: format!("Array.isArray({left_text})"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -82,6 +82,7 @@ impl NativeRule for ConsistentAssert {
                     span: Span::new(member.property.span.start, member.property.span.end),
                     replacement: replacement.to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

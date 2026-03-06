@@ -67,6 +67,7 @@ impl NativeRule for NoDuplicateCase {
                         span: Span::new(case.span.start, case.span.end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 });
                 ctx.report(Diagnostic {
                     rule_name: "no-duplicate-case".to_owned(),

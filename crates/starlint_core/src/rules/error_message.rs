@@ -79,6 +79,7 @@ impl NativeRule for ErrorMessage {
                                 span: Span::new(insert_pos, insert_pos),
                                 replacement: "''".to_owned(),
                             }],
+                            is_snippet: false,
                         }
                     })
                 })

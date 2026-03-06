@@ -89,6 +89,7 @@ impl NativeRule for PreferAt {
                             span: Span::new(computed.span.start, computed.span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

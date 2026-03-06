@@ -56,6 +56,7 @@ impl NativeRule for NoEmptyFunction {
                         span: Span::new(span_start, span_end),
                         replacement: "{ /* empty */ }".to_owned(),
                     }],
+                    is_snippet: false,
                 });
 
                 ctx.report(Diagnostic {

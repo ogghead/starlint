@@ -69,6 +69,7 @@ impl NativeRule for EmptyBraceSpaces {
                     span: Span::new(obj.span.start, obj.span.end),
                     replacement: "{}".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

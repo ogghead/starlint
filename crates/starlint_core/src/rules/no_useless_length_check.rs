@@ -81,6 +81,7 @@ impl NativeRule for NoUselessLengthCheck {
                         span: if_span,
                         replacement: body_text,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -66,6 +66,7 @@ impl NativeRule for PreferNumberProperties {
                     span: Span::new(id.span.start, id.span.end),
                     replacement: (*replacement).to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

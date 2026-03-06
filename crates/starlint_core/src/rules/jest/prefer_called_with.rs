@@ -65,6 +65,7 @@ impl NativeRule for PreferCalledWith {
                     span: Span::new(member.property.span.start, member.property.span.end),
                     replacement: "toHaveBeenCalledWith".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

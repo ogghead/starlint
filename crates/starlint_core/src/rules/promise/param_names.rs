@@ -82,6 +82,7 @@ impl NativeRule for ParamNames {
                                 span: Span::new(id.span.start, id.span.end),
                                 replacement: "resolve".to_owned(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });
@@ -108,6 +109,7 @@ impl NativeRule for ParamNames {
                                 span: Span::new(id.span.start, id.span.end),
                                 replacement: "reject".to_owned(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

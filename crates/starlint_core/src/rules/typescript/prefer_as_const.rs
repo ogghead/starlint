@@ -55,6 +55,7 @@ impl NativeRule for PreferAsConst {
                                 span: Span::new(type_span.start, type_span.end),
                                 replacement: "const".to_owned(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });
@@ -82,6 +83,7 @@ impl NativeRule for PreferAsConst {
                                 span: Span::new(expr.span.start, expr.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

@@ -56,6 +56,7 @@ impl NativeRule for NoArrayReverse {
                 span: Span::new(member.property.span.start, member.property.span.end),
                 replacement: "toReversed".to_owned(),
             }],
+            is_snippet: false,
         });
 
         ctx.report(Diagnostic {

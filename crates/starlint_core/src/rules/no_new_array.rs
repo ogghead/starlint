@@ -62,6 +62,7 @@ impl NativeRule for NoNewArray {
                         span: Span::new(new_expr.span.start, new_expr.span.end),
                         replacement: without_new.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -70,6 +70,7 @@ impl NativeRule for NoConfusingVoidExpression {
                         span: Span::new(unary.span.start, unary.span.end),
                         replacement: arg_text,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

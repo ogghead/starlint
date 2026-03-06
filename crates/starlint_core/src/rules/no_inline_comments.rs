@@ -72,6 +72,7 @@ impl NativeRule for NoInlineComments {
                         span: Span::new(trim_start, end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 })
             };
             ctx.report(Diagnostic {

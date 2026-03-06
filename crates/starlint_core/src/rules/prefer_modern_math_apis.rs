@@ -53,6 +53,7 @@ impl NativeRule for PreferModernMathApis {
                                     span: Span::new(bin.span.start, bin.span.end),
                                     replacement: format!("Math.{method}({arg_text})"),
                                 }],
+                                is_snippet: false,
                             },
                         );
 
@@ -100,6 +101,7 @@ impl NativeRule for PreferModernMathApis {
                                     span: Span::new(call.span.start, call.span.end),
                                     replacement: format!("Math.sqrt({arg_text})"),
                                 }],
+                                is_snippet: false,
                             })
                         });
 

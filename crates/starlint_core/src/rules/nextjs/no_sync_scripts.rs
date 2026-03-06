@@ -96,6 +96,7 @@ impl NativeRule for NoSyncScripts {
                         span: Span::new(insert_pos, insert_pos),
                         replacement: " async".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

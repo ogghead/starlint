@@ -69,6 +69,7 @@ impl NativeRule for GoogleFontDisplay {
                         ),
                         replacement: fixed_url,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

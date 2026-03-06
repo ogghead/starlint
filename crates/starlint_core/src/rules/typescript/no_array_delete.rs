@@ -72,6 +72,7 @@ impl NativeRule for NoArrayDelete {
                         span: Span::new(expr.span.start, expr.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 })
             };
 

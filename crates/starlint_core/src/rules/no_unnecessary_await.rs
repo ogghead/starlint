@@ -65,6 +65,7 @@ impl NativeRule for NoUnnecessaryAwait {
                         span: await_span,
                         replacement: arg_text,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -67,6 +67,7 @@ impl NativeRule for PreferDomNodeRemove {
                     span: call_span,
                     replacement: format!("{child_text}.remove()"),
                 }],
+                is_snippet: false,
             })
         } else {
             None

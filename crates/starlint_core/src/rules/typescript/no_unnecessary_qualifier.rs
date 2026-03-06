@@ -51,6 +51,7 @@ impl NativeRule for NoUnnecessaryQualifier {
                         span,
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

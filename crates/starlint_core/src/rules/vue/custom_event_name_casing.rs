@@ -101,6 +101,7 @@ impl NativeRule for CustomEventNameCasing {
                         span: Span::new(inner_start, inner_end),
                         replacement: camel.clone(),
                     }],
+                    is_snippet: false,
                 }
             });
 

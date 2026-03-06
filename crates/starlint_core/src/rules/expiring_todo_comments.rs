@@ -63,6 +63,7 @@ impl NativeRule for ExpiringTodoComments {
                                 span: Span::new(span.start, delete_end),
                                 replacement: String::new(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     }

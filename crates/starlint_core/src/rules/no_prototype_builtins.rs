@@ -80,6 +80,7 @@ impl NativeRule for NoPrototypeBuiltins {
                             span: Span::new(call.span.start, call.span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     })
                 } else {
                     let all_args = if args.is_empty() {
@@ -94,6 +95,7 @@ impl NativeRule for NoPrototypeBuiltins {
                             span: Span::new(call.span.start, call.span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     })
                 }
             };

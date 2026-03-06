@@ -43,6 +43,7 @@ impl NativeRule for BanTsComment {
                     span: Span::new(start, end),
                     replacement: "@ts-expect-error".to_owned(),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

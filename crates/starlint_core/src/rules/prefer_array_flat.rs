@@ -72,6 +72,7 @@ impl NativeRule for PreferArrayFlat {
                     span: Span::new(member.property.span.start, call.span.end),
                     replacement: "flat()".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

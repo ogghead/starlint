@@ -88,6 +88,7 @@ impl NativeRule for NoAsyncPromiseExecutor {
                                     span: Span::new(async_start, async_end),
                                     replacement: String::new(),
                                 }],
+                                is_snippet: false,
                             }
                         })
                     })

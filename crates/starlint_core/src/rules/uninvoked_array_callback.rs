@@ -103,6 +103,7 @@ impl NativeRule for UninvokedArrayCallback {
                             span: Span::new(arg_span.start, arg_span.end),
                             replacement: wrapper,
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

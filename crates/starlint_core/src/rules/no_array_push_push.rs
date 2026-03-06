@@ -107,6 +107,7 @@ impl NativeRule for NoArrayPushPush {
                                     replacement: String::new(),
                                 },
                             ],
+                            is_snippet: false,
                         }
                     });
 

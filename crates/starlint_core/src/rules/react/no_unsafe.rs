@@ -63,6 +63,7 @@ impl NativeRule for NoUnsafe {
                         span: Span::new(id_span.start, id_span.end),
                         replacement: replacement.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -67,6 +67,7 @@ impl NativeRule for AwaitInteractions {
                                 span: Span::new(start, start),
                                 replacement: "await ".to_owned(),
                             }],
+                            is_snippet: false,
                         }),
                         labels: vec![],
                     });

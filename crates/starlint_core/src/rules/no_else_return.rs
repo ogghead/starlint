@@ -85,6 +85,7 @@ impl NativeRule for NoElseReturn {
                     span: Span::new(cons_end, if_stmt.span.end),
                     replacement: format!("\n{body_text}"),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

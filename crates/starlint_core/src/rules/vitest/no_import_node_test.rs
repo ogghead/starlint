@@ -65,6 +65,7 @@ impl NativeRule for NoImportNodeTest {
                         span: source_span,
                         replacement: format!("{quote_char}vitest{quote_char}"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

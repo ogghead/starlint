@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use tower_lsp::lsp_types;
 
+use crate::snippet::{APPLY_SNIPPET_COMMAND, SnippetTextEdit, SnippetWorkspaceEdit};
+
 /// Convert a byte offset in `source` to an LSP `Position` (0-based line, UTF-16 column).
 ///
 /// LSP positions use UTF-16 code unit offsets for the character field.
@@ -78,38 +80,80 @@ pub fn to_lsp_diagnostic(diag: &Diagnostic, source: &str) -> lsp_types::Diagnost
 
 /// Convert a starlint `Fix` to an LSP `CodeAction`.
 ///
-/// Returns `None` if the diagnostic has no fix. Accepts a pre-computed
-/// `lsp_diag` to avoid recomputing byte-offset-to-position conversions.
+/// Returns `None` if the diagnostic has no fix, or if the fix requires
+/// snippet support but the client doesn't advertise it.
+///
+/// Snippet fixes are delivered via a client-side command
+/// (`starlint.applySnippetWorkspaceEdit`) rather than a `WorkspaceEdit`,
+/// because `lsp-types` does not support `SnippetTextEdit` natively.
 #[must_use]
 pub fn fix_to_code_action(
     diag: &Diagnostic,
     lsp_diag: &lsp_types::Diagnostic,
     uri: &lsp_types::Url,
     source: &str,
+    supports_snippets: bool,
 ) -> Option<lsp_types::CodeAction> {
     let fix = diag.fix.as_ref()?;
 
-    let mut text_edits = Vec::new();
-    for edit in &fix.edits {
-        text_edits.push(lsp_types::TextEdit {
-            range: span_to_range(edit.span, source),
-            new_text: edit.replacement.clone(),
-        });
+    // Snippet fix without client support → no code action (no useless defaults).
+    if fix.is_snippet && !supports_snippets {
+        return None;
     }
 
-    let mut changes = HashMap::new();
-    changes.insert(uri.clone(), text_edits);
+    if fix.is_snippet {
+        // Deliver snippet edits via a command that the VS Code extension handles.
+        let snippet_edits: Vec<SnippetTextEdit> = fix
+            .edits
+            .iter()
+            .map(|edit| SnippetTextEdit {
+                range: span_to_range(edit.span, source),
+                new_text: edit.replacement.clone(),
+                insert_text_format: lsp_types::InsertTextFormat::SNIPPET,
+            })
+            .collect();
 
-    Some(lsp_types::CodeAction {
-        title: fix.message.clone(),
-        kind: Some(lsp_types::CodeActionKind::QUICKFIX),
-        diagnostics: Some(vec![lsp_diag.clone()]),
-        edit: Some(lsp_types::WorkspaceEdit {
-            changes: Some(changes),
+        let mut snippet_changes = HashMap::new();
+        snippet_changes.insert(uri.clone(), snippet_edits);
+        let snippet_edit = SnippetWorkspaceEdit {
+            changes: snippet_changes,
+        };
+
+        Some(lsp_types::CodeAction {
+            title: fix.message.clone(),
+            kind: Some(lsp_types::CodeActionKind::QUICKFIX),
+            diagnostics: Some(vec![lsp_diag.clone()]),
+            command: Some(lsp_types::Command {
+                title: fix.message.clone(),
+                command: APPLY_SNIPPET_COMMAND.to_owned(),
+                arguments: serde_json::to_value(&snippet_edit).ok().map(|v| vec![v]),
+            }),
             ..Default::default()
-        }),
-        ..Default::default()
-    })
+        })
+    } else {
+        // Standard TextEdit path.
+        let mut text_edits = Vec::new();
+        for edit in &fix.edits {
+            text_edits.push(lsp_types::TextEdit {
+                range: span_to_range(edit.span, source),
+                new_text: edit.replacement.clone(),
+            });
+        }
+
+        let mut changes = HashMap::new();
+        changes.insert(uri.clone(), text_edits);
+
+        Some(lsp_types::CodeAction {
+            title: fix.message.clone(),
+            kind: Some(lsp_types::CodeActionKind::QUICKFIX),
+            diagnostics: Some(vec![lsp_diag.clone()]),
+            edit: Some(lsp_types::WorkspaceEdit {
+                changes: Some(changes),
+                ..Default::default()
+            }),
+            ..Default::default()
+        })
+    }
 }
 
 #[cfg(test)]
@@ -289,12 +333,13 @@ mod tests {
                     span: Span::new(0, 1),
                     replacement: String::new(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         };
         let uri = test_url("file:///test.js");
         let lsp_diag = to_lsp_diagnostic(&diag, ";");
-        let maybe_action = fix_to_code_action(&diag, &lsp_diag, &uri, ";");
+        let maybe_action = fix_to_code_action(&diag, &lsp_diag, &uri, ";", false);
         assert!(maybe_action.is_some(), "should produce a code action");
 
         let action = maybe_action.unwrap();
@@ -321,7 +366,7 @@ mod tests {
         let uri = test_url("file:///test.js");
         let lsp_diag = to_lsp_diagnostic(&diag, "x");
         assert!(
-            fix_to_code_action(&diag, &lsp_diag, &uri, "x").is_none(),
+            fix_to_code_action(&diag, &lsp_diag, &uri, "x", false).is_none(),
             "no fix means no code action"
         );
     }

@@ -67,6 +67,7 @@ impl NativeRule for NoConfusingNonNullAssertion {
                         span: Span::new(non_null.span().start, non_null.span().end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

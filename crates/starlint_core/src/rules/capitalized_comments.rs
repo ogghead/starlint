@@ -198,6 +198,7 @@ impl NativeRule for CapitalizedComments {
                         span: Span::new(fix_start, fix_end),
                         replacement: upper,
                     }],
+                    is_snippet: false,
                 })
             });
 

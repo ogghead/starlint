@@ -59,6 +59,7 @@ impl NativeRule for NoRegexSpaces {
                         span: Span::new(regex.span.start, regex.span.end),
                         replacement: fixed,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -71,6 +71,7 @@ impl NativeRule for ConsistentEmptyArraySpread {
                     span: Span::new(arr.span.start, arr.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

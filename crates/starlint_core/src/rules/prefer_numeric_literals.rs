@@ -72,6 +72,7 @@ impl NativeRule for PreferNumericLiterals {
                                 span: Span::new(call.span.start, call.span.end),
                                 replacement: format!("{lit_prefix}{}", s.value.as_str()),
                             }],
+                            is_snippet: false,
                         })
                     } else {
                         None

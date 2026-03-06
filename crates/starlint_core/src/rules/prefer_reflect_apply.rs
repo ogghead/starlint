@@ -82,6 +82,7 @@ impl NativeRule for PreferReflectApply {
                         span: Span::new(call.span.start, call.span.end),
                         replacement: format!("Reflect.apply({fn_text}, {ctx_text}, {args_text})"),
                     }],
+                    is_snippet: false,
                 }
             });
 

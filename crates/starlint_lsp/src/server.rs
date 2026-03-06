@@ -43,6 +43,8 @@ pub struct Backend {
     documents: Arc<RwLock<HashMap<Url, DocumentState>>>,
     /// Resolved workspace root path.
     workspace_root: Arc<RwLock<Option<PathBuf>>>,
+    /// Whether the client supports `SnippetTextEdit` (experimental capability).
+    supports_snippets: Arc<RwLock<bool>>,
 }
 
 impl Backend {
@@ -53,6 +55,7 @@ impl Backend {
             session: Arc::new(RwLock::new(None)),
             documents: Arc::new(RwLock::new(HashMap::new())),
             workspace_root: Arc::new(RwLock::new(None)),
+            supports_snippets: Arc::new(RwLock::new(false)),
         }
     }
 
@@ -126,6 +129,8 @@ impl Backend {
             return;
         };
 
+        let supports_snippets = *self.supports_snippets.read().await;
+
         let mut docs = self.documents.write().await;
         let Some(doc) = docs.get_mut(uri) else {
             return;
@@ -143,7 +148,9 @@ impl Backend {
             lsp_diagnostics.push(lsp_diag.clone());
 
             // Cache code actions for fixes.
-            if let Some(action) = convert::fix_to_code_action(diag, &lsp_diag, uri, &doc.text) {
+            if let Some(action) =
+                convert::fix_to_code_action(diag, &lsp_diag, uri, &doc.text, supports_snippets)
+            {
                 cached_fixes.push(CachedFix {
                     diagnostic_range: lsp_diag.range,
                     action,
@@ -196,6 +203,28 @@ impl LanguageServer for Backend {
             if let Some(first) = folders.first() {
                 *self.workspace_root.write().await = Some(uri_to_path(&first.uri));
             }
+        }
+
+        // Detect snippet support: check capabilities.experimental (rust-analyzer pattern)
+        // and initializationOptions.experimental (our VS Code extension sends it here).
+        let has_snippets = params
+            .capabilities
+            .experimental
+            .as_ref()
+            .and_then(|v| v.get("snippetTextEdit"))
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+            || params
+                .initialization_options
+                .as_ref()
+                .and_then(|v| v.get("experimental"))
+                .and_then(|v| v.get("snippetTextEdit"))
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+
+        if has_snippets {
+            *self.supports_snippets.write().await = true;
+            tracing::info!("LSP: client supports SnippetTextEdit");
         }
 
         Ok(InitializeResult {

@@ -69,6 +69,7 @@ impl NativeRule for NoNewWrappers {
                             span: expr_span,
                             replacement: without_new,
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

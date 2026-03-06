@@ -117,6 +117,7 @@ impl NativeRule for PreferToBeObject {
                                 replacement: "toBeTypeOf".to_owned(),
                             },
                         ],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

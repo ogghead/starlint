@@ -60,6 +60,7 @@ impl NativeRule for EscapeCase {
                         span: Span::new(lit.span.start, lit.span.end),
                         replacement: fixed,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -83,6 +83,7 @@ impl NativeRule for NoDeprecatedFunctions {
                             span: callee_span,
                             replacement: replacement.to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

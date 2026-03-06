@@ -66,6 +66,7 @@ impl NativeRule for BanTslintComment {
                         span: Span::new(delete_start, delete_end),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

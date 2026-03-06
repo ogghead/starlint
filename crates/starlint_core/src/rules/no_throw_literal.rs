@@ -53,6 +53,7 @@ impl NativeRule for NoThrowLiteral {
                                 span: Span::new(arg_span.start, arg_span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         }
                     })
             };

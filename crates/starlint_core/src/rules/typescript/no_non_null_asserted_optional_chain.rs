@@ -78,6 +78,7 @@ impl NativeRule for NoNonNullAssertedOptionalChain {
                         span: Span::new(expr.span.start, expr.span.end),
                         replacement: inner_text.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

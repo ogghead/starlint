@@ -51,6 +51,7 @@ impl NativeRule for PreferImportInMock {
                         span,
                         replacement: "await vi.importActual(".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

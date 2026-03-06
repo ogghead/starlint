@@ -54,6 +54,7 @@ impl NativeRule for NoTestReturnStatement {
                     span: Span::new(ret.span.start, ret.span.end),
                     replacement: "return;".to_owned(),
                 }],
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

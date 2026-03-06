@@ -64,6 +64,7 @@ impl NativeRule for PreferCodePoint {
                     span: prop_span,
                     replacement: replacement.to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

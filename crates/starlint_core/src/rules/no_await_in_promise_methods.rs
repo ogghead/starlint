@@ -101,6 +101,7 @@ impl NativeRule for NoAwaitInPromiseMethods {
             let fix = (!edits.is_empty()).then(|| Fix {
                 message: "Remove `await` from array elements".to_owned(),
                 edits,
+                is_snippet: false,
             });
 
             ctx.report(Diagnostic {

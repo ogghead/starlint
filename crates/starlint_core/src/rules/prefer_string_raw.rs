@@ -89,6 +89,7 @@ impl NativeRule for PreferStringRaw {
                     span: Span::new(template.span.start, template.span.end),
                     replacement: format!("String.raw{tmpl_text}"),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

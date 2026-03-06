@@ -72,6 +72,7 @@ impl NativeRule for DefaultCaseLast {
                                 replacement: format!(" {default_text}"),
                             },
                         ],
+                        is_snippet: false,
                     })
                 });
 

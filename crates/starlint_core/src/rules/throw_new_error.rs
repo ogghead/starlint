@@ -78,6 +78,7 @@ impl NativeRule for ThrowNewError {
                     span: Span::new(callee_start, callee_start),
                     replacement: "new ".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

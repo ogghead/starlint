@@ -46,6 +46,7 @@ impl NativeRule for NoNull {
                     span: Span::new(lit.span.start, lit.span.end),
                     replacement: "undefined".to_owned(),
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

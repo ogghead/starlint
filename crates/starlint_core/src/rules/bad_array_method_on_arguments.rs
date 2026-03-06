@@ -93,6 +93,7 @@ impl NativeRule for BadArrayMethodOnArguments {
                             span: Span::new(call_span.start, call_span.end),
                             replacement,
                         }],
+                        is_snippet: false,
                     }
                 })
             };

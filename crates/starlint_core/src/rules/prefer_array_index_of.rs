@@ -136,6 +136,7 @@ impl NativeRule for PreferArrayIndexOf {
                                 replacement: val_text,
                             },
                         ],
+                        is_snippet: false,
                     }
                 });
 

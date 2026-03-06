@@ -51,6 +51,7 @@ impl NativeRule for NoVar {
                             span: var_span,
                             replacement: "let".to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

@@ -74,6 +74,7 @@ impl NativeRule for ErasingOp {
                         span: Span::new(expr.span.start, expr.span.end),
                         replacement: replacement.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

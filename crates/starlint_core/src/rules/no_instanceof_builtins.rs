@@ -77,6 +77,7 @@ impl NativeRule for NoInstanceofBuiltins {
                                 span: Span::new(bin.span.start, bin.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         }
                     })
             } else {

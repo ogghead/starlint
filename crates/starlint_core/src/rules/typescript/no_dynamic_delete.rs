@@ -64,6 +64,7 @@ impl NativeRule for NoDynamicDelete {
                                 span: Span::new(expr.span.start, expr.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         })
                     }
                     _ => None,

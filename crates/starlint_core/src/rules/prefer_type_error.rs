@@ -58,6 +58,7 @@ impl NativeRule for PreferTypeError {
                         span: error_id_span,
                         replacement: "TypeError".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

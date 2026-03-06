@@ -59,6 +59,7 @@ impl NativeRule for NoUselessEmptyExport {
                             span: Span::new(start, end),
                             replacement: String::new(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

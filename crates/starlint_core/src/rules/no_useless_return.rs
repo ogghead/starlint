@@ -57,6 +57,7 @@ impl NativeRule for NoUselessReturn {
                             span: ret_span,
                             replacement: String::new(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

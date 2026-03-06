@@ -67,6 +67,7 @@ impl NativeRule for NoCompareNegZero {
                                 span: Span::new(expr.span.start, expr.span.end),
                                 replacement,
                             }],
+                            is_snippet: false,
                         }
                     })
             };

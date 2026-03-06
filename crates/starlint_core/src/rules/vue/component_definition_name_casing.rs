@@ -114,6 +114,7 @@ impl NativeRule for ComponentDefinitionNameCasing {
                             span: Span::new(name_start, name_end),
                             replacement: pascal.clone(),
                         }],
+                        is_snippet: false,
                     }
                 });
 

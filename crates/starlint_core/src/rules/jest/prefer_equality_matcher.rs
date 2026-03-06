@@ -127,6 +127,7 @@ impl NativeRule for PreferEqualityMatcher {
                     span: Span::new(call.span.start, call.span.end),
                     replacement,
                 }],
+                is_snippet: false,
             })
         };
 

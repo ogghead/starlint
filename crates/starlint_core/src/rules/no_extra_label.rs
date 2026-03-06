@@ -84,6 +84,7 @@ impl NativeRule for NoExtraLabel {
             fix: Some(Fix {
                 message: format!("Remove label `{label_name}`"),
                 edits,
+                is_snippet: false,
             }),
             labels: vec![],
         });

@@ -93,6 +93,7 @@ impl NativeRule for ArrayType {
             fix: fix.map(|replacement| Fix {
                 message: suggestion.to_owned(),
                 edits: vec![Edit { span, replacement }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

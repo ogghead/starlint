@@ -53,6 +53,7 @@ impl NativeRule for NoUselessUndefined {
                                     span: remove_span,
                                     replacement: String::new(),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });
@@ -79,6 +80,7 @@ impl NativeRule for NoUselessUndefined {
                                     span: remove_span,
                                     replacement: String::new(),
                                 }],
+                                is_snippet: false,
                             }),
                             labels: vec![],
                         });

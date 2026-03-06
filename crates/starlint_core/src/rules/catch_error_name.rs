@@ -100,6 +100,7 @@ impl NativeRule for CatchErrorName {
                     span: Span::new(id.span.start, id.span.end),
                     replacement: expected,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

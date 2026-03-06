@@ -99,6 +99,7 @@ fn check_type_reference(
                         span: Span::new(reference.span.start, reference.span.end),
                         replacement: replacement.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });
@@ -129,6 +130,7 @@ fn check_empty_object_type(lit: &oxc_ast::ast::TSTypeLiteral<'_>, ctx: &mut Nati
                 span: Span::new(lit.span.start, lit.span.end),
                 replacement: "object".to_owned(),
             }],
+            is_snippet: false,
         }),
         labels: vec![],
     });

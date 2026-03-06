@@ -127,6 +127,7 @@ impl NativeRule for NumberLiteralCase {
                     span: Span::new(lit.span.start, lit.span.end),
                     replacement: normalized,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

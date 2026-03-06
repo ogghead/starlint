@@ -44,6 +44,7 @@ impl NativeRule for UnicodeBom {
                         span: Span::new(0, 3),
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

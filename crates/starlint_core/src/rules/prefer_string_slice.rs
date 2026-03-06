@@ -59,6 +59,7 @@ impl NativeRule for PreferStringSlice {
                             span: prop_span,
                             replacement: "slice".to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

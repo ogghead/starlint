@@ -143,6 +143,7 @@ fn report_promise_fix(
         fix: Some(Fix {
             message: fix_message,
             edits: vec![Edit { span, replacement }],
+            is_snippet: false,
         }),
         labels: vec![],
     });

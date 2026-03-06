@@ -60,6 +60,7 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
                         span: Span::new(cond.span.start, cond.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });
@@ -85,6 +86,7 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
                         span: Span::new(cond.span.start, cond.span.end),
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

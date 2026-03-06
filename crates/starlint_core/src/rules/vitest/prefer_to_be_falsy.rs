@@ -74,6 +74,7 @@ impl NativeRule for PreferToBeFalsy {
                         span: fix_span,
                         replacement: "toBeFalsy()".to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

@@ -65,6 +65,7 @@ impl NativeRule for Yoda {
                         span: Span::new(expr.span.start, expr.span.end),
                         replacement: format!("{right_text} {flipped} {left_text}"),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

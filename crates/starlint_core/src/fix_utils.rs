@@ -143,6 +143,47 @@ pub fn remove_jsx_attr(source: &str, attr_span: Span) -> Edit {
     }
 }
 
+// ── JSX utilities ───────────────────────────────────────────────────
+
+/// Find the byte offset just before the `>` or `/>` of a JSX opening element.
+///
+/// Returns a suitable position for inserting a new attribute (e.g. ` alt="..."`).
+/// Falls back to `opening_span.end - 1` if the closing delimiter can't be found.
+#[must_use]
+pub fn jsx_attr_insert_offset(source: &str, opening_span: Span) -> u32 {
+    let end = usize::try_from(opening_span.end).unwrap_or(0);
+    if end == 0 || end > source.len() {
+        return opening_span.end.saturating_sub(1);
+    }
+
+    // Walk backward from span end to find `>` or `/>`.
+    let mut pos = end;
+    while pos > 0 {
+        pos = pos.saturating_sub(1);
+        if source.as_bytes().get(pos) == Some(&b'>') {
+            // Check for `/>`
+            if pos > 0 && source.as_bytes().get(pos.saturating_sub(1)) == Some(&b'/') {
+                // Skip whitespace before />
+                let mut insert = pos.saturating_sub(1);
+                while insert > 0
+                    && matches!(
+                        source.as_bytes().get(insert.saturating_sub(1)),
+                        Some(b' ' | b'\t' | b'\n' | b'\r')
+                    )
+                {
+                    insert = insert.saturating_sub(1);
+                }
+                return u32::try_from(insert)
+                    .unwrap_or_else(|_| opening_span.end.saturating_sub(2));
+            }
+            // Plain `>` — insert before it.
+            return u32::try_from(pos).unwrap_or_else(|_| opening_span.end.saturating_sub(1));
+        }
+    }
+
+    opening_span.end.saturating_sub(1)
+}
+
 // ── Semantic utilities ───────────────────────────────────────────────
 
 /// Generate edits to rename a symbol (declaration + all references).

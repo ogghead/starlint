@@ -57,6 +57,7 @@ impl NativeRule for NoEmpty {
                             span,
                             replacement: "{ /* empty */ }".to_owned(),
                         }],
+                        is_snippet: false,
                     }),
                     labels: vec![],
                 });

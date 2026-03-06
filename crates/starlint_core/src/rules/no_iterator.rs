@@ -50,6 +50,7 @@ impl NativeRule for NoIterator {
                                     span: Span::new(member.span.start, member.span.end),
                                     replacement,
                                 }],
+                                is_snippet: false,
                             }
                         })
                 };

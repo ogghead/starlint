@@ -72,6 +72,7 @@ impl NativeRule for NoExtraBooleanCast {
                         span: Span::new(test.span().start, test.span().end),
                         replacement: inner_text.to_owned(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

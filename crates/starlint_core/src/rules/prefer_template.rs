@@ -73,6 +73,7 @@ impl NativeRule for PreferTemplate {
                     span: Span::new(expr.span.start, expr.span.end),
                     replacement: fix,
                 }],
+                is_snippet: false,
             }),
             labels: vec![],
         });

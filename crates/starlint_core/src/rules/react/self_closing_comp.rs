@@ -66,6 +66,7 @@ impl NativeRule for SelfClosingComp {
                         span: element_span,
                         replacement,
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });

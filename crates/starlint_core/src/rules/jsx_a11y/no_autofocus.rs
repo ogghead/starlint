@@ -65,6 +65,7 @@ impl NativeRule for NoAutofocus {
                         span: attr_span,
                         replacement: String::new(),
                     }],
+                    is_snippet: false,
                 }),
                 labels: vec![],
             });
