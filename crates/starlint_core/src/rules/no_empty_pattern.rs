@@ -41,7 +41,9 @@ impl NativeRule for NoEmptyPattern {
                     message: "Unexpected empty object pattern".to_owned(),
                     span: Span::new(pat.span.start, pat.span.end),
                     severity: Severity::Error,
-                    help: None,
+                    help: Some(
+                        "If this is a default value, use `= {}` instead of `: {}`".to_owned(),
+                    ),
                     fix: None,
                     labels: vec![],
                 });
@@ -52,7 +54,9 @@ impl NativeRule for NoEmptyPattern {
                     message: "Unexpected empty array pattern".to_owned(),
                     span: Span::new(pat.span.start, pat.span.end),
                     severity: Severity::Error,
-                    help: None,
+                    help: Some(
+                        "If this is a default value, use `= []` instead of `: []`".to_owned(),
+                    ),
                     fix: None,
                     labels: vec![],
                 });

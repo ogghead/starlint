@@ -8,9 +8,10 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags `alert()`, `confirm()`, and `prompt()` calls.
@@ -57,17 +58,20 @@ impl NativeRule for NoAlert {
             return;
         }
 
-        // The CallExpression span covers just the call — we need the
-        // enclosing ExpressionStatement to cleanly delete the whole line.
-        // Fall back to deleting only the call span if we can't find it.
         let call_span = Span::new(call.span.start, call.span.end);
+        let edit = fix_utils::delete_statement(ctx.source_text(), call_span);
+        let fix = Some(Fix {
+            message: "Remove this call".to_owned(),
+            edits: vec![edit],
+            is_snippet: false,
+        });
         ctx.report(Diagnostic {
             rule_name: "no-alert".to_owned(),
             message: "Unexpected `alert`, `confirm`, or `prompt`".to_owned(),
             span: call_span,
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

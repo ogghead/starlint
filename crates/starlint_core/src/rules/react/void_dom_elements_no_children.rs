@@ -8,9 +8,12 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::JSXAttributeItem;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// HTML void elements that cannot have children.
@@ -58,23 +61,42 @@ impl NativeRule for VoidDomElementsNoChildren {
         // Check for children
         let has_children = !element.children.is_empty();
 
-        // Check for children or dangerouslySetInnerHTML props
-        let has_children_prop = element.opening_element.attributes.iter().any(|attr| {
+        // Check for children or dangerouslySetInnerHTML props — collect the
+        // offending attribute span so we can offer a removal fix.
+        let bad_attr_span = element.opening_element.attributes.iter().find_map(|attr| {
             if let JSXAttributeItem::Attribute(a) = attr {
-                a.is_identifier("children") || a.is_identifier("dangerouslySetInnerHTML")
-            } else {
-                false
+                if a.is_identifier("children") || a.is_identifier("dangerouslySetInnerHTML") {
+                    let s = a.span();
+                    return Some(Span::new(s.start, s.end));
+                }
             }
+            None
         });
 
+        let has_children_prop = bad_attr_span.is_some();
+
         if has_children || has_children_prop {
+            // Only offer a fix when the violation is a removable prop.
+            // Child nodes are structural — removing them needs manual review.
+            let fix = if has_children {
+                None
+            } else {
+                bad_attr_span.map(|attr_span| {
+                    let edit = fix_utils::remove_jsx_attr(ctx.source_text(), attr_span);
+                    Fix {
+                        message: "Remove the prop".to_owned(),
+                        edits: vec![edit],
+                        is_snippet: false,
+                    }
+                })
+            };
             ctx.report(Diagnostic {
                 rule_name: "react/void-dom-elements-no-children".to_owned(),
                 message: format!("`<{tag_str}>` is a void element and must not have children"),
                 span: Span::new(element.span.start, element.span.end),
                 severity: Severity::Error,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

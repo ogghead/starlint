@@ -54,6 +54,29 @@ fn get_attr_string_value<'a>(
     None
 }
 
+/// Get the span of an attribute's value (including quotes) if it's a string literal.
+fn get_attr_value_span(
+    opening: &oxc_ast::ast::JSXOpeningElement<'_>,
+    attr_name_str: &str,
+) -> Option<Span> {
+    use oxc_span::GetSpan;
+    for item in &opening.attributes {
+        if let JSXAttributeItem::Attribute(attr) = item {
+            let matches = match &attr.name {
+                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name_str,
+                JSXAttributeName::NamespacedName(_) => false,
+            };
+            if matches {
+                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
+                    let s = lit.span();
+                    return Some(Span::new(s.start, s.end));
+                }
+            }
+        }
+    }
+    None
+}
+
 impl NativeRule for AnchorIsValid {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
@@ -108,13 +131,18 @@ impl NativeRule for AnchorIsValid {
         // Check for invalid href values
         if let Some(href) = get_attr_string_value(opening, "href") {
             if href == "#" || href.starts_with("javascript:") {
+                let fix = get_attr_value_span(opening, "href").and_then(|val_span| {
+                    FixBuilder::new("Replace with a valid URL")
+                        .replace(Span::new(val_span.start, val_span.end), "\"${1:/path}\"")
+                        .build_snippet()
+                });
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: "Anchors must have a valid `href` attribute. Avoid `#` or `javascript:` URLs".to_owned(),
                     span: Span::new(opening.span.start, opening.span.end),
                     severity: Severity::Warning,
-                    help: None,
-                    fix: None,
+                    help: Some("Replace with a valid URL".to_owned()),
+                    fix,
                     labels: vec![],
                 });
             }

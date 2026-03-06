@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -81,16 +83,70 @@ fn check_typeof_value(
 
     let value = lit.value.as_str();
     if !VALID_TYPEOF_VALUES.contains(&value) {
+        let suggestion = closest_typeof_value(value);
+        let fix = suggestion.map(|suggested| {
+            let lit_span = lit.span();
+            let replacement = format!("\"{suggested}\"");
+            Fix {
+                message: format!("Replace with `\"{suggested}\"`"),
+                edits: vec![Edit {
+                    span: Span::new(lit_span.start, lit_span.end),
+                    replacement,
+                }],
+                is_snippet: false,
+            }
+        });
+        let help = suggestion.map(|s| format!("Did you mean `\"{s}\"`?"));
         ctx.report(Diagnostic {
             rule_name: "valid-typeof".to_owned(),
             message: format!("Invalid typeof comparison value `\"{value}\"`"),
             span: Span::new(full_span.start, full_span.end),
             severity: Severity::Error,
-            help: None,
-            fix: None,
+            help,
+            fix,
             labels: vec![],
         });
     }
+}
+
+/// Find the closest valid typeof value using simple edit distance.
+fn closest_typeof_value(input: &str) -> Option<&'static str> {
+    let mut best: Option<(&str, usize)> = None;
+    for &candidate in VALID_TYPEOF_VALUES {
+        let dist = edit_distance(input, candidate);
+        if let Some((_, best_dist)) = best {
+            if dist < best_dist {
+                best = Some((candidate, dist));
+            }
+        } else {
+            best = Some((candidate, dist));
+        }
+    }
+    // Only suggest if the edit distance is at most half the input length + 1
+    best.and_then(|(c, d)| (d <= input.len().div_ceil(2)).then_some(c))
+}
+
+/// Simple Levenshtein edit distance.
+#[allow(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a_bytes = a.as_bytes();
+    let b_bytes = b.as_bytes();
+    let m = a_bytes.len();
+    let n = b_bytes.len();
+
+    let mut prev = (0..=n).collect::<Vec<_>>();
+    let mut curr = vec![0; n + 1];
+
+    for i in 1..=m {
+        curr[0] = i;
+        for j in 1..=n {
+            let cost = usize::from(a_bytes[i - 1] != b_bytes[j - 1]);
+            curr[j] = (prev[j] + 1).min(curr[j - 1] + 1).min(prev[j - 1] + cost);
+        }
+        std::mem::swap(&mut prev, &mut curr);
+    }
+
+    prev[n]
 }
 
 #[cfg(test)]

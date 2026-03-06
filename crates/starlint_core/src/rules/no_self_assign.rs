@@ -7,9 +7,10 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags assignments where the left and right sides are identical.
@@ -46,13 +47,20 @@ impl NativeRule for NoSelfAssign {
 
         if let (Some(left), Some(right)) = (left_name, right_name) {
             if left == right {
+                let stmt_span = Span::new(assign.span.start, assign.span.end);
+                let edit = fix_utils::delete_statement(ctx.source_text(), stmt_span);
+                let fix = Some(Fix {
+                    message: "Remove this self-assignment".to_owned(),
+                    edits: vec![edit],
+                    is_snippet: false,
+                });
                 ctx.report(Diagnostic {
                     rule_name: "no-self-assign".to_owned(),
                     message: format!("`{left}` is assigned to itself"),
-                    span: Span::new(assign.span.start, assign.span.end),
+                    span: stmt_span,
                     severity: Severity::Error,
                     help: Some("Remove this self-assignment".to_owned()),
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }

@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags JSX elements that have a `checked` prop but lack both `onChange`
@@ -64,13 +66,20 @@ impl NativeRule for CheckedRequiresOnchangeOrReadonly {
         }
 
         if has_checked && !has_on_change && !has_read_only {
+            let insert_pos = fix_utils::jsx_attr_insert_offset(
+                ctx.source_text(),
+                Span::new(opening.span.start, opening.span.end),
+            );
+            let fix = FixBuilder::new("Add `readOnly`")
+                .insert_at(insert_pos, " readOnly")
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "react/checked-requires-onchange-or-readonly".to_owned(),
                 message: "`checked` prop requires `onChange` or `readOnly` to avoid a read-only controlled input".to_owned(),
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
-                help: None,
-                fix: None,
+                help: Some("Add `readOnly` or `onChange`".to_owned()),
+                fix,
                 labels: vec![],
             });
         }

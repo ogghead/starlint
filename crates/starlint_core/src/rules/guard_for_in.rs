@@ -47,7 +47,7 @@ impl NativeRule for GuardForIn {
             message: "The body of a `for-in` should be wrapped in an `if` statement to filter unwanted properties from the prototype".to_owned(),
             span: Span::new(for_in.span.start, for_in.span.end),
             severity: Severity::Warning,
-            help: None,
+            help: Some("Add `if (obj.hasOwnProperty(key))` guard or use `Object.keys()` instead".to_owned()),
             fix: None,
             labels: vec![],
         });

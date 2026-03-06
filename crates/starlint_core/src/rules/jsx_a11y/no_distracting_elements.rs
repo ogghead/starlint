@@ -6,7 +6,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::JSXElementName;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -46,17 +48,57 @@ impl NativeRule for NoDistractingElements {
         };
 
         if DISTRACTING_ELEMENTS.contains(&element_name) {
+            let fix = build_replace_fix(ctx.source_text(), opening, element_name);
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!("`<{element_name}>` is distracting and must not be used"),
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
-                help: None,
-                fix: None,
+                help: Some("Replace with `<span>`".to_owned()),
+                fix,
                 labels: vec![],
             });
         }
     }
+}
+
+/// Build a fix that replaces both opening and closing tag names with `span`.
+#[allow(clippy::as_conversions)] // u32↔usize lossless on 32/64-bit
+fn build_replace_fix(
+    source: &str,
+    opening: &oxc_ast::ast::JSXOpeningElement<'_>,
+    element_name: &str,
+) -> Option<Fix> {
+    let ident_span = match &opening.name {
+        JSXElementName::Identifier(ident) => ident.span(),
+        _ => return None,
+    };
+
+    let mut edits = vec![Edit {
+        span: Span::new(ident_span.start, ident_span.end),
+        replacement: "span".to_owned(),
+    }];
+
+    // Find the closing tag name in the source after the opening element.
+    let opening_end = opening.span.end as usize;
+    let close_tag = format!("</{element_name}>");
+    if let Some(close_offset) = source.get(opening_end..)?.find(&close_tag) {
+        let close_name_start = opening_end.saturating_add(close_offset).saturating_add(2); // skip "</"
+        let close_name_end = close_name_start.saturating_add(element_name.len());
+        edits.push(Edit {
+            span: Span::new(
+                u32::try_from(close_name_start).ok()?,
+                u32::try_from(close_name_end).ok()?,
+            ),
+            replacement: "span".to_owned(),
+        });
+    }
+
+    Some(Fix {
+        message: format!("Replace `<{element_name}>` with `<span>`"),
+        edits,
+        is_snippet: false,
+    })
 }
 
 #[cfg(test)]
