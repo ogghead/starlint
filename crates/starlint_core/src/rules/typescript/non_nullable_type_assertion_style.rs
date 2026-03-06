@@ -44,7 +44,7 @@ impl NativeRule for NonNullableTypeAssertionStyle {
                     let inner_start = "as NonNullable<".len();
                     let inner = as_text.get(inner_start..as_text.len().saturating_sub(1))?;
                     (!inner.is_empty()).then(|| Fix {
-                        kind: FixKind::SuggestionFix,
+                        kind: FixKind::SafeFix,
                         message: "Use non-null assertion (`!`) instead".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(start, end),

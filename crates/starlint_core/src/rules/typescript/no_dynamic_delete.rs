@@ -58,7 +58,7 @@ impl NativeRule for NoDynamicDelete {
                     (Some(obj), Some(key)) => {
                         let replacement = format!("Reflect.deleteProperty({obj}, {key})");
                         Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),

@@ -54,7 +54,7 @@ impl NativeRule for NoUnsafeFunctionType {
             severity: Severity::Warning,
             help: Some("Replace with `(...args: any[]) => any`".to_owned()),
             fix: Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: "Replace with `(...args: any[]) => any`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(type_ref.span.start, type_ref.span.end),

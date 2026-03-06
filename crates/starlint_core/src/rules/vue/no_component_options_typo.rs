@@ -78,7 +78,7 @@ impl NativeRule for NoComponentOptionsTypo {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: format!("Rename to `{correction}`"),
                             edits: vec![Edit {
                                 span: Span::new(start, end),

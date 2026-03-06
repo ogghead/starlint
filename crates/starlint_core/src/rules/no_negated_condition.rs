@@ -65,7 +65,7 @@ impl NativeRule for NoNegatedCondition {
                         severity: Severity::Warning,
                         help: Some("Invert the condition and swap branches".to_owned()),
                         fix: Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: "Invert condition and swap branches".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),

@@ -80,7 +80,7 @@ fn check_condition(expr: &Expression<'_>, ctx: &mut NativeLintContext<'_>) {
                 .unwrap_or("");
             let replacement = format!("{left_text} === {right_text}");
             Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(assign.span.start, assign.span.end),

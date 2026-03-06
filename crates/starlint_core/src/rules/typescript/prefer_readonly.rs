@@ -63,7 +63,7 @@ impl NativeRule for PreferReadonly {
                     severity: Severity::Warning,
                     help: None,
                     fix: Some(Fix {
-                        kind: FixKind::SuggestionFix,
+                        kind: FixKind::SafeFix,
                         message: "Add `readonly` modifier".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(insert_pos, insert_pos),

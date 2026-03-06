@@ -61,7 +61,7 @@ impl NativeRule for AwaitInteractions {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: "Add `await`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(start, start),

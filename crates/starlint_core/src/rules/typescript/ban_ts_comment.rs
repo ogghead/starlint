@@ -37,7 +37,7 @@ impl NativeRule for BanTsComment {
         for (directive, start, end) in findings {
             // For @ts-ignore, suggest replacing with @ts-expect-error
             let fix = (directive == "@ts-ignore").then(|| Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: "Replace `@ts-ignore` with `@ts-expect-error`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(start, end),

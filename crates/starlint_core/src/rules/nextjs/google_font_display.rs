@@ -60,7 +60,7 @@ impl NativeRule for GoogleFontDisplay {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: "Add `display=swap` parameter".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(

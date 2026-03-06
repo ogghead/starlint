@@ -60,7 +60,7 @@ impl NativeRule for ConsistentGenericConstructors {
                 severity: Severity::Warning,
                 help: Some("Move type arguments to the constructor call".to_owned()),
                 fix: fix.map(|replacement| Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: "Move type arguments to constructor".to_owned(),
                     edits: vec![Edit { span, replacement }],
                     is_snippet: false,

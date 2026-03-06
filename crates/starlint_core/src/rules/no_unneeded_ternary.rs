@@ -84,7 +84,7 @@ impl NativeRule for NoUnneededTernary {
             severity: Severity::Warning,
             help: Some(format!("Replace with `{replacement}`")),
             fix: Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(expr.span.start, expr.span.end),

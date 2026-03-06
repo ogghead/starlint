@@ -64,7 +64,7 @@ impl NativeRule for ForDirection {
                     .and_then(|update_text| {
                         let replacement = swap_update_direction(update_text)?;
                         Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: format!("Replace `{update_text}` with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(update_span.start, update_span.end),

@@ -53,7 +53,7 @@ impl NativeRule for PreferSetSize {
                 severity: Severity::Warning,
                 help: Some(format!("Replace with `{replacement}`")),
                 fix: Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(member.span.start, member.span.end),
@@ -76,7 +76,7 @@ impl NativeRule for PreferSetSize {
                 severity: Severity::Warning,
                 help: Some(format!("Replace with `{replacement}`")),
                 fix: Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(member.span.start, member.span.end),

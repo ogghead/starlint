@@ -64,7 +64,7 @@ impl NativeRule for BadComparisonSequence {
                                 "{a_text} {left_op} {b_text} && {b_text} {right_op} {c_text}"
                             );
                             Some(Fix {
-                                kind: FixKind::SuggestionFix,
+                                kind: FixKind::SafeFix,
                                 message: format!("Replace with `{replacement}`"),
                                 edits: vec![Edit {
                                     span: Span::new(expr.span.start, expr.span.end),

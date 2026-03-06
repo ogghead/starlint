@@ -72,7 +72,7 @@ impl NativeRule for ThrowNewError {
             severity: Severity::Error,
             help: Some(format!("Add `new` before `{name}`")),
             fix: Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Add `new` before `{name}`"),
                 edits: vec![Edit {
                     span: Span::new(callee_start, callee_start),

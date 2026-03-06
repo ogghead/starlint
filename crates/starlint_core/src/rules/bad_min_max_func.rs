@@ -135,7 +135,7 @@ impl NativeRule for BadMinMaxFunc {
                                                     );
                                                 }
                                                 Fix {
-                                                    kind: FixKind::SuggestionFix,
+                                                    kind: FixKind::SafeFix,
                                                     message: format!("Replace with `{result}`"),
                                                     edits: vec![Edit {
                                                         span: Span::new(

@@ -73,7 +73,7 @@ fn build_filter_to_find_fix(span_text: &str, start: u32, end: u32) -> Option<Fix
             let new_len = replacement.len().saturating_sub(suffix.len());
             replacement.truncate(new_len);
             return Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: "Replace `.filter(...)` with `.find(...)`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(start, end),

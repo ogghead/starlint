@@ -153,7 +153,7 @@ impl NativeRule for NoConstantCondition {
                         let end = usize::try_from(branch_span.end).ok()?;
                         let branch_text = source.get(start..end)?;
                         Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: format!(
                                 "Replace with {} branch",
                                 if truthy { "consequent" } else { "alternate" }

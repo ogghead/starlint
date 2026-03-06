@@ -66,7 +66,7 @@ impl NativeRule for PreferArrayFlat {
             severity: Severity::Warning,
             help: Some("Replace with `.flat()`".to_owned()),
             fix: Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: "Replace with `.flat()`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(member.property.span.start, call.span.end),

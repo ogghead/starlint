@@ -103,7 +103,7 @@ impl NativeRule for ApproxConstant {
                     severity: Severity::Warning,
                     help: Some(format!("Replace with `{}`", constant.name)),
                     fix: Some(Fix {
-                        kind: FixKind::SuggestionFix,
+                        kind: FixKind::SafeFix,
                         message: format!("Replace with `{}`", constant.name),
                         edits: vec![Edit {
                             span: Span::new(lit.span.start, lit.span.end),

@@ -88,7 +88,7 @@ impl NativeRule for PreferToHaveBeenCalledTimes {
                         let replacement =
                             format!("expect({mock_name}).toHaveBeenCalledTimes({count_text})");
                         Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),

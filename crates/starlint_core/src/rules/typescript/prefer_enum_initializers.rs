@@ -45,7 +45,7 @@ impl NativeRule for PreferEnumInitializers {
 
                 // Insert ` = <index>` right after the member identifier (at end of member span)
                 let fix = Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: format!("Add initializer `= {index}`"),
                     edits: vec![Edit {
                         span: Span::new(member.span.end, member.span.end),

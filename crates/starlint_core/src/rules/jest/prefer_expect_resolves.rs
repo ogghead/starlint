@@ -75,7 +75,7 @@ impl NativeRule for PreferExpectResolves {
             // e.g. `.toBe(1)` — keep that suffix by only replacing the expect call itself
             let replacement = format!("await expect({inner_text}).resolves");
             Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(call.span.start, call.span.end),

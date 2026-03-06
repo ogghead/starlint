@@ -84,7 +84,7 @@ impl NativeRule for PreferMockReturnShorthand {
                             source.get(obj_span.start as usize..obj_span.end as usize)?;
                         let replacement = format!("{obj_text}.mockReturnValue({val_text})");
                         Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),

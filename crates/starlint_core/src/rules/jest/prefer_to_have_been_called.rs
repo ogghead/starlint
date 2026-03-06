@@ -98,7 +98,7 @@ impl NativeRule for PreferToHaveBeenCalled {
                 format!("expect({mock_name}).not.toHaveBeenCalled()")
             };
             Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(call.span.start, call.span.end),

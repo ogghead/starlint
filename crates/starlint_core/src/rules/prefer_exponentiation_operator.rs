@@ -58,7 +58,7 @@ impl NativeRule for PreferExponentiationOperator {
                     let first_text = source.get(f_start..f_end).unwrap_or("");
                     let second_text = source.get(s_start..s_end).unwrap_or("");
                     Fix {
-                        kind: FixKind::SuggestionFix,
+                        kind: FixKind::SafeFix,
                         message: "Use `**` operator".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

@@ -75,7 +75,7 @@ impl NativeRule for PreferTodo {
                 let title = source[sp.start as usize..sp.end as usize].to_owned();
                 let replacement = format!("{callee_name}.todo({title})");
                 Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

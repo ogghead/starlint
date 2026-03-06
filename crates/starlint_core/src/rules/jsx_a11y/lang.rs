@@ -82,7 +82,7 @@ impl NativeRule for Lang {
                     let val = lit.value.as_str().trim();
                     if val.is_empty() {
                         // Replace empty lang value with "en"
-                        let fix = FixBuilder::new("Set `lang` to `\"en\"`", FixKind::SuggestionFix)
+                        let fix = FixBuilder::new("Set `lang` to `\"en\"`", FixKind::SafeFix)
                             .replace(Span::new(lit.span.start, lit.span.end), "\"en\"")
                             .build();
                         ctx.report(Diagnostic {

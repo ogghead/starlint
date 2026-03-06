@@ -65,7 +65,7 @@ impl NativeRule for NoUselessSwitchCase {
                 if next_is_default {
                     // Fix: delete the useless case clause
                     let fix = Some(Fix {
-                        kind: FixKind::SuggestionFix,
+                        kind: FixKind::SafeFix,
                         message: "Remove useless case clause".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(case.span.start, case.span.end),
@@ -99,7 +99,7 @@ impl NativeRule for NoUselessSwitchCase {
                         if case_body == default_body && !case_body.is_empty() {
                             // Fix: delete the duplicate case clause
                             let fix = Some(Fix {
-                                kind: FixKind::SuggestionFix,
+                                kind: FixKind::SafeFix,
                                 message: "Remove duplicate case clause".to_owned(),
                                 edits: vec![Edit {
                                     span: Span::new(case.span.start, case.span.end),

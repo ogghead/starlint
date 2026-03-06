@@ -67,7 +67,7 @@ impl NativeRule for Scope {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: "Remove `scope` attribute".to_owned(),
                     edits: vec![Edit {
                         span: attr_span,

@@ -78,7 +78,7 @@ impl NativeRule for ConstComparisons {
                 "true".to_owned()
             };
             let fix = Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(logical.span.start, logical.span.end),

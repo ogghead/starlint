@@ -47,7 +47,7 @@ impl NativeRule for PreferModernMathApis {
                         // Extract the argument from the numerator Math.log(x)
                         let fix = extract_math_log_arg_text(ctx.source_text(), &bin.left).map(
                             |arg_text| Fix {
-                                kind: FixKind::SuggestionFix,
+                                kind: FixKind::SafeFix,
                                 message: format!("Replace with `Math.{method}({arg_text})`"),
                                 edits: vec![Edit {
                                     span: Span::new(bin.span.start, bin.span.end),
@@ -96,7 +96,7 @@ impl NativeRule for PreferModernMathApis {
                                 .get(arg_span.start as usize..arg_span.end as usize)?
                                 .to_owned();
                             (!arg_text.is_empty()).then(|| Fix {
-                                kind: FixKind::SuggestionFix,
+                                kind: FixKind::SafeFix,
                                 message: format!("Replace with `Math.sqrt({arg_text})`"),
                                 edits: vec![Edit {
                                     span: Span::new(call.span.start, call.span.end),

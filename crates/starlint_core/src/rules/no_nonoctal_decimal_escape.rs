@@ -49,7 +49,7 @@ impl NativeRule for NoNonoctalDecimalEscape {
             // Fix: remove backslash before 8 or 9
             let fixed = remove_nonoctal_escapes(raw);
             let fix = Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: "Remove the backslash before `8` or `9`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(lit.span.start, lit.span.end),

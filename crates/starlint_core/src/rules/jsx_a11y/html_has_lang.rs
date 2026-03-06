@@ -67,7 +67,7 @@ impl NativeRule for HtmlHasLang {
                 } else {
                     opening.span.end.saturating_sub(1)
                 };
-            let fix = FixBuilder::new("Add `lang` attribute", FixKind::SuggestionFix)
+            let fix = FixBuilder::new("Add `lang` attribute", FixKind::SafeFix)
                 .edit(fix_utils::insert_before(insert_pos, " lang=\"en\""))
                 .build();
             ctx.report(Diagnostic {

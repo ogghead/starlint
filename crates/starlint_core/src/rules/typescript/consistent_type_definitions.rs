@@ -61,7 +61,7 @@ impl NativeRule for ConsistentTypeDefinitions {
             severity: Severity::Warning,
             help: Some("Replace `type` with `interface`".to_owned()),
             fix: Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: "Replace `type` with `interface`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(decl.span.start, decl.span.end),

@@ -109,7 +109,7 @@ impl NativeRule for PreferToContain {
             };
             let replacement = format!("expect({arr_text}).{matcher}({val})");
             Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(call.span.start, call.span.end),

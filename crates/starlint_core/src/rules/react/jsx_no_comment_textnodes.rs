@@ -58,7 +58,7 @@ impl NativeRule for JsxNoCommentTextnodes {
                 .trim_start_matches("/*")
                 .trim_end_matches("*/")
                 .trim();
-            let fix = FixBuilder::new("Wrap in JSX expression comment", FixKind::SuggestionFix)
+            let fix = FixBuilder::new("Wrap in JSX expression comment", FixKind::SafeFix)
                 .replace(
                     Span::new(text.span.start, text.span.end),
                     format!("{{/* {comment_text} */}}"),

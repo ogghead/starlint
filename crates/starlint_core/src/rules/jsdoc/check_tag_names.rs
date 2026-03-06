@@ -149,7 +149,7 @@ impl NativeRule for CheckTagNames {
                                     let tag_end = tag_start
                                         .saturating_add(u32::try_from(tag_name.len()).unwrap_or(0));
                                     Fix {
-                                        kind: FixKind::SuggestionFix,
+                                        kind: FixKind::SafeFix,
                                         message: format!(
                                             "Replace `@{tag_name}` with `@{correct_tag}`"
                                         ),

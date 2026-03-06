@@ -60,7 +60,7 @@ impl NativeRule for ConsistentIndexedObjectStyle {
         let fix = extract_index_sig_types(lit_text).map(|(k, v)| {
             let replacement = format!("Record<{k}, {v}>");
             Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(lit.span.start, lit.span.end),

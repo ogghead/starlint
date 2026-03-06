@@ -108,7 +108,7 @@ impl NativeRule for NoTypos {
                 severity: Severity::Error,
                 help: None,
                 fix: Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: format!("Rename to `{correct}`"),
                     edits: vec![Edit {
                         span,

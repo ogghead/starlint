@@ -74,7 +74,7 @@ impl NativeRule for NoNegationInEqualityCheck {
                         .unwrap_or("");
                     let replacement = format!("{inner_text} {negated_op} {right_text}");
                     Some(Fix {
-                        kind: FixKind::SuggestionFix,
+                        kind: FixKind::SafeFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(expr.span.start, expr.span.end),

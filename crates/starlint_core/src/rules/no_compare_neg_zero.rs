@@ -61,7 +61,7 @@ impl NativeRule for NoCompareNegZero {
                     .map(|val_text| {
                         let replacement = format!("Object.is({val_text}, -0)");
                         Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),

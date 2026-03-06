@@ -67,7 +67,7 @@ impl NativeRule for UseIsnan {
                         format!("Number.isNaN({value_text})")
                     };
                     Fix {
-                        kind: FixKind::SuggestionFix,
+                        kind: FixKind::SafeFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(expr.span.start, expr.span.end),

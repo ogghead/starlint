@@ -101,7 +101,7 @@ impl NativeRule for AriaProps {
                     let attr_span = Span::new(attr.span.start, attr.span.end);
                     let fix = FixBuilder::new(
                         format!("Remove invalid `{name_str}` attribute"),
-                        FixKind::SuggestionFix,
+                        FixKind::SafeFix,
                     )
                     .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                     .build();

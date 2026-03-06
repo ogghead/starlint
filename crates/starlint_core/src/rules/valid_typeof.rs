@@ -87,7 +87,7 @@ fn check_typeof_value(
             let lit_span = lit.span();
             let replacement = format!("\"{suggested}\"");
             Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `\"{suggested}\"`"),
                 edits: vec![Edit {
                     span: Span::new(lit_span.start, lit_span.end),

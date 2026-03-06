@@ -149,7 +149,7 @@ fn build_mock_shorthand_fix(
 
     let replacement = format!("{obj_text}.{suggestion}({arg_text})");
     Some(Fix {
-        kind: FixKind::SuggestionFix,
+        kind: FixKind::SafeFix,
         message: format!("Replace with `.{suggestion}()`"),
         edits: vec![Edit {
             span: Span::new(call.span.start, call.span.end),
