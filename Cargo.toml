@@ -33,7 +33,7 @@ ignore = "0.4"
 rayon = "1.10"
 
 # Parsing (oxc)
-oxc_allocator = "0.114"
+oxc_allocator = "0.116"
 oxc_ast = "0.114"
 oxc_ast_visit = "0.114"
 oxc_parser = "0.114"
