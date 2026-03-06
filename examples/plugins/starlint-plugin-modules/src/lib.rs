@@ -1,4 +1,4 @@
-//! Modules WASM plugin for starlint.
+//! Modules WASM plugin for starlint (v2 — full AST tree + fix support).
 //!
 //! Implements import (33), node (6), and promise (16) lint rules
 //! as a single WASM component. These rules apply to ALL files
@@ -6,14 +6,13 @@
 //! call expressions, and source-text scanning.
 
 wit_bindgen::generate!({
-    world: "linter-plugin",
+    world: "linter-plugin-v2",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin::Guest;
+use exports::starlint::plugin::plugin_v2::Guest;
 use starlint::plugin::types::{
-    AstNode, Category, LintDiagnostic, NodeBatch, NodeInterest, PluginConfig, RuleMeta, Severity,
-    Span,
+    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity, Span,
 };
 
 struct ModulesPlugin;
@@ -88,17 +87,6 @@ impl Guest for ModulesPlugin {
         rules
     }
 
-    fn get_node_interests() -> NodeInterest {
-        NodeInterest::SOURCE_TEXT
-            | NodeInterest::IMPORT_DECLARATION
-            | NodeInterest::EXPORT_DEFAULT_DECLARATION
-            | NodeInterest::EXPORT_NAMED_DECLARATION
-            | NodeInterest::CALL_EXPRESSION
-            | NodeInterest::MEMBER_EXPRESSION
-            | NodeInterest::VARIABLE_DECLARATION
-            | NodeInterest::IDENTIFIER_REFERENCE
-    }
-
     fn get_file_patterns() -> Vec<String> {
         // These rules apply to ALL files
         Vec::new()
@@ -108,9 +96,14 @@ impl Guest for ModulesPlugin {
         Vec::new()
     }
 
-    fn lint_file(batch: NodeBatch) -> Vec<LintDiagnostic> {
-        let source = &batch.file.source_text;
-        let file_path = &batch.file.file_path;
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+        let tree: serde_json::Value = match serde_json::from_slice(&tree) {
+            Ok(v) => v,
+            Err(_) => serde_json::Value::Null,
+        };
+
+        let source = &file.source_text;
+        let file_path = &file.file_path;
         let mut diags = Vec::new();
 
         // --- Text-scanning rules ---
@@ -134,27 +127,26 @@ impl Guest for ModulesPlugin {
         check_promise_no_multiple_resolved(source, &mut diags);
 
         // --- AST-based rules ---
-        for node in &batch.nodes {
-            match node {
-                AstNode::ImportDecl(import) => {
-                    check_import_decl_rules(import, &mut diags);
+        if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+            for node in nodes {
+                if let Some(import) = node.get("ImportDeclaration") {
+                    check_import_decl_rules(import, &tree, &mut diags);
                 }
-                AstNode::ExportDefaultDecl(exp) => {
+                if let Some(exp) = node.get("ExportDefaultDeclaration") {
                     check_export_default_rules(exp, source, &mut diags);
                 }
-                AstNode::ExportNamedDecl(exp) => {
-                    check_export_named_rules(exp, &mut diags);
+                if let Some(exp) = node.get("ExportNamedDeclaration") {
+                    check_export_named_rules(exp, &tree, &mut diags);
                 }
-                AstNode::CallExpr(call) => {
-                    check_call_expr_rules(call, source, &mut diags);
+                if let Some(call) = node.get("CallExpression") {
+                    check_call_expr_rules(call, &tree, source, &mut diags);
                 }
-                AstNode::MemberExpr(member) => {
-                    check_member_expr_rules(member, &mut diags);
+                if let Some(member) = node.get("StaticMemberExpression") {
+                    check_member_expr_rules(member, &tree, &mut diags);
                 }
-                AstNode::IdentifierRef(ident) => {
+                if let Some(ident) = node.get("IdentifierReference") {
                     check_identifier_rules(ident, &mut diags);
                 }
-                _ => {}
             }
         }
 
@@ -173,32 +165,35 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnostic {
-    LintDiagnostic {
+fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span,
         severity: sev,
         help,
+        fix: None,
+        labels: vec![],
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Warning, None)
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Error, None)
 }
 
 // ==================== Import declaration rules ====================
 
 fn check_import_decl_rules(
-    import: &starlint::plugin::types::ImportDeclarationNode,
-    diags: &mut Vec<LintDiagnostic>,
+    import: &serde_json::Value,
+    tree: &serde_json::Value,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let source_mod = &import.source;
-    let span = import.span;
+    let source_mod = import.get("source").and_then(|s| s.as_str()).unwrap_or("");
+    let span = extract_span(import).unwrap_or(Span { start: 0, end: 0 });
 
     // --- import/no-absolute-path ---
     if source_mod.starts_with('/') {
@@ -218,7 +213,7 @@ fn check_import_decl_rules(
         "tls", "tty", "url", "util", "v8", "vm", "zlib",
     ];
     let stripped = source_mod.strip_prefix("node:").unwrap_or(source_mod);
-    if node_builtins.contains(&stripped.as_ref()) {
+    if node_builtins.contains(&stripped) {
         diags.push(diag("import/no-nodejs-modules", &format!("Do not import Node.js built-in module `{source_mod}`"), span, Severity::Warning, None));
     }
 
@@ -228,29 +223,54 @@ fn check_import_decl_rules(
     }
 
     // --- import/no-namespace ---
-    for spec in &import.specifiers {
-        if spec.local == "*" || spec.imported.as_deref() == Some("*") {
-            diags.push(diag("import/no-namespace", "Namespace imports are not allowed", span, Severity::Warning, None));
-            break;
+    if let Some(specifier_ids) = import.get("specifiers").and_then(|s| s.as_array()) {
+        for spec_id_val in specifier_ids {
+            if let Some(spec_id) = spec_id_val.as_u64() {
+                if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+                    if let Some(spec_node) = nodes.get(spec_id as usize) {
+                        if let Some(spec) = spec_node.get("ImportSpecifier") {
+                            let local = spec.get("local").and_then(|l| l.as_str()).unwrap_or("");
+                            let imported = spec.get("imported").and_then(|i| i.as_str());
+                            if local == "*" || imported == Some("*") {
+                                diags.push(diag("import/no-namespace", "Namespace imports are not allowed", span, Severity::Warning, None));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
     // --- import/no-empty-named-blocks ---
-    if import.specifiers.is_empty() && !source_mod.is_empty() {
+    let specifiers = import.get("specifiers").and_then(|s| s.as_array());
+    let specifiers_empty = specifiers.map_or(true, |s| s.is_empty());
+    if specifiers_empty && !source_mod.is_empty() {
         // Could be a side-effect import (import 'foo') or empty named (import {} from 'foo')
         // We flag if it looks like an empty named block — but can't distinguish without more context
     }
 
     // --- import/no-unassigned-import ---
-    if import.specifiers.is_empty() {
+    if specifiers_empty {
         diags.push(diag("import/no-unassigned-import", &format!("Unassigned (side-effect) import: `{source_mod}`"), span, Severity::Warning, None));
     }
 
     // --- import/consistent-type-specifier-style ---
-    // Check for inline type specifiers
-    for spec in &import.specifiers {
-        if spec.local.starts_with("type ") || spec.imported.as_deref().map_or(false, |s| s.starts_with("type ")) {
-            // Type specifier detected — this is fine in either style
+    if let Some(specifier_ids) = import.get("specifiers").and_then(|s| s.as_array()) {
+        for spec_id_val in specifier_ids {
+            if let Some(spec_id) = spec_id_val.as_u64() {
+                if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+                    if let Some(spec_node) = nodes.get(spec_id as usize) {
+                        if let Some(spec) = spec_node.get("ImportSpecifier") {
+                            let local = spec.get("local").and_then(|l| l.as_str()).unwrap_or("");
+                            let imported = spec.get("imported").and_then(|i| i.as_str());
+                            if local.starts_with("type ") || imported.map_or(false, |s| s.starts_with("type ")) {
+                                // Type specifier detected — this is fine in either style
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -266,11 +286,11 @@ fn check_import_decl_rules(
 // ==================== Export rules ====================
 
 fn check_export_default_rules(
-    exp: &starlint::plugin::types::ExportDefaultNode,
+    exp: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnostic>,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let span = exp.span;
+    let span = extract_span(exp).unwrap_or(Span { start: 0, end: 0 });
 
     // --- import/no-default-export ---
     diags.push(diag("import/no-default-export", "Default exports are not allowed", span, Severity::Warning, None));
@@ -285,14 +305,46 @@ fn check_export_default_rules(
 }
 
 fn check_export_named_rules(
-    exp: &starlint::plugin::types::ExportNamedNode,
-    diags: &mut Vec<LintDiagnostic>,
+    exp: &serde_json::Value,
+    tree: &serde_json::Value,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let span = exp.span;
+    let span = extract_span(exp).unwrap_or(Span { start: 0, end: 0 });
 
     // --- import/no-named-export ---
-    if !exp.names.is_empty() {
-        diags.push(diag("import/no-named-export", "Named exports are not allowed", span, Severity::Warning, None));
+    // In v2, ExportNamedDeclaration has specifiers (NodeIds) and an optional declaration.
+    // Check if there are specifiers or a declaration to determine if named exports exist.
+    let has_specifiers = exp
+        .get("specifiers")
+        .and_then(|s| s.as_array())
+        .map_or(false, |s| !s.is_empty());
+    let has_declaration = exp
+        .get("declaration")
+        .map_or(false, |d| !d.is_null());
+
+    if has_specifiers || has_declaration {
+        // Resolve specifier names for more detailed checks if needed
+        let mut names = Vec::new();
+        if let Some(specifier_ids) = exp.get("specifiers").and_then(|s| s.as_array()) {
+            if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+                for spec_id_val in specifier_ids {
+                    if let Some(spec_id) = spec_id_val.as_u64() {
+                        if let Some(spec_node) = nodes.get(spec_id as usize) {
+                            // ExportSpecifier nodes have a "local" field
+                            if let Some(spec) = spec_node.get("ExportSpecifier") {
+                                if let Some(name) = spec.get("local").and_then(|l| l.as_str()) {
+                                    names.push(name.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if !names.is_empty() || has_declaration {
+            diags.push(diag("import/no-named-export", "Named exports are not allowed", span, Severity::Warning, None));
+        }
     }
 
     // --- import/export (duplicate exports check) ---
@@ -302,12 +354,17 @@ fn check_export_named_rules(
 // ==================== CallExpression rules ====================
 
 fn check_call_expr_rules(
-    call: &starlint::plugin::types::CallExpressionNode,
+    call: &serde_json::Value,
+    tree: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnostic>,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let callee = &call.callee_path;
-    let span = call.span;
+    let callee = get_callee_path(tree, call);
+    let span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });
+    let argument_count = call
+        .get("arguments")
+        .and_then(|a| a.as_array())
+        .map_or(0, |a| a.len());
 
     // --- import/no-commonjs ---
     if callee == "require" {
@@ -320,7 +377,7 @@ fn check_call_expr_rules(
     }
 
     // --- import/no-dynamic-require ---
-    if callee == "require" && call.argument_count > 0 {
+    if callee == "require" && argument_count > 0 {
         let start = span.start as usize;
         let end = span.end as usize;
         let text = source.get(start..end.min(source.len())).unwrap_or("");
@@ -376,12 +433,12 @@ fn check_call_expr_rules(
 
     // --- promise/valid-params ---
     if callee == "Promise.all" || callee == "Promise.allSettled" || callee == "Promise.any" || callee == "Promise.race" {
-        if call.argument_count != 1 {
+        if argument_count != 1 {
             diags.push(diag("promise/valid-params", &format!("`{callee}()` requires exactly 1 argument"), span, Severity::Error, None));
         }
     }
     if callee == "Promise.resolve" || callee == "Promise.reject" {
-        if call.argument_count > 1 {
+        if argument_count > 1 {
             diags.push(diag("promise/valid-params", &format!("`{callee}()` takes at most 1 argument"), span, Severity::Error, None));
         }
     }
@@ -423,18 +480,24 @@ fn check_call_expr_rules(
 // ==================== MemberExpression rules ====================
 
 fn check_member_expr_rules(
-    member: &starlint::plugin::types::MemberExpressionNode,
-    diags: &mut Vec<LintDiagnostic>,
+    member: &serde_json::Value,
+    tree: &serde_json::Value,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let span = member.span;
+    let span = extract_span(member).unwrap_or(Span { start: 0, end: 0 });
+    let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
+
+    // Resolve the object to get its name
+    let object_id = member.get("object").and_then(|o| o.as_u64()).unwrap_or(0);
+    let object = resolve_callee(tree, object_id);
 
     // --- node/no-process-env ---
-    if member.object == "process" && member.property == "env" {
+    if object == "process" && property == "env" {
         diags.push(diag("node/no-process-env", "Avoid using `process.env` directly", span, Severity::Warning, None));
     }
 
     // --- import/no-commonjs (module.exports) ---
-    if member.object == "module" && member.property == "exports" {
+    if object == "module" && property == "exports" {
         diags.push(diag("import/no-commonjs", "Use ES module `export` instead of `module.exports`", span, Severity::Warning, None));
     }
 }
@@ -442,11 +505,13 @@ fn check_member_expr_rules(
 // ==================== IdentifierReference rules ====================
 
 fn check_identifier_rules(
-    ident: &starlint::plugin::types::IdentifierReferenceNode,
-    _diags: &mut Vec<LintDiagnostic>,
+    ident: &serde_json::Value,
+    _diags: &mut Vec<LintDiagnosticV2>,
 ) {
+    let name = ident.get("name").and_then(|n| n.as_str()).unwrap_or("");
+
     // --- promise/no-native ---
-    if ident.name == "Promise" {
+    if name == "Promise" {
         // This rule forbids native Promise — only flag in specific contexts
         // Skip — too noisy without configuration
     }
@@ -454,7 +519,7 @@ fn check_identifier_rules(
 
 // ==================== Text-scanning rules ====================
 
-fn check_import_first(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_import_first(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut found_non_import = false;
     for line in source.lines() {
         let trimmed = line.trim();
@@ -474,7 +539,7 @@ fn check_import_first(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_import_exports_last(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_import_exports_last(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut last_export_pos = 0;
     let mut found_after_export = false;
 
@@ -494,7 +559,7 @@ fn check_import_exports_last(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_import_no_duplicates(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_import_no_duplicates(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut seen_modules: Vec<String> = Vec::new();
 
     let import_pattern = "from '";
@@ -520,7 +585,7 @@ fn check_import_no_duplicates(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_import_no_mutable_exports(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_import_no_mutable_exports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["export let ", "export var "];
     for pattern in &patterns {
         let mut pos = 0;
@@ -532,7 +597,7 @@ fn check_import_no_mutable_exports(source: &str, diags: &mut Vec<LintDiagnostic>
     }
 }
 
-fn check_import_max_dependencies(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_import_max_dependencies(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let max: usize = 20;
     let import_count = count_occurrences(source, "import ");
     if import_count > max {
@@ -540,7 +605,7 @@ fn check_import_max_dependencies(source: &str, diags: &mut Vec<LintDiagnostic>) 
     }
 }
 
-fn check_import_no_self_import(source: &str, file_path: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_import_no_self_import(source: &str, file_path: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Check if any import references the current file
     let file_name = file_path.rsplit('/').next().unwrap_or(file_path);
     let stem = file_name.split('.').next().unwrap_or(file_name);
@@ -559,7 +624,7 @@ fn check_import_no_self_import(source: &str, file_path: &str, diags: &mut Vec<Li
     }
 }
 
-fn check_import_unambiguous(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_import_unambiguous(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     let has_import = source.contains("import ") || source.contains("import{");
     let has_export = source.contains("export ");
     if !has_import && !has_export {
@@ -567,12 +632,12 @@ fn check_import_unambiguous(source: &str, _diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_import_group_exports(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_import_group_exports(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Check if exports are scattered
     let _ = source;
 }
 
-fn check_import_prefer_default_export(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_import_prefer_default_export(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let named_export_count = count_occurrences(source, "export const ")
         + count_occurrences(source, "export function ")
         + count_occurrences(source, "export class ");
@@ -589,7 +654,7 @@ fn check_import_prefer_default_export(source: &str, diags: &mut Vec<LintDiagnost
     }
 }
 
-fn check_node_no_path_concat(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_node_no_path_concat(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["__dirname +", "__filename +", "__dirname+", "__filename+",
                      "+ __dirname", "+ __filename", "+__dirname", "+__filename"];
     for pattern in &patterns {
@@ -599,7 +664,7 @@ fn check_node_no_path_concat(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_node_no_exports_assign(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_node_no_exports_assign(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "exports =";
     if let Some(pos) = source.find(pattern) {
         // Check it's not module.exports
@@ -609,7 +674,7 @@ fn check_node_no_exports_assign(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_promise_always_return(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_promise_always_return(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = ".then(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -630,7 +695,7 @@ fn check_promise_always_return(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_promise_no_nesting(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_promise_no_nesting(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = ".then(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -646,7 +711,7 @@ fn check_promise_no_nesting(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_promise_no_return_in_finally(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_promise_no_return_in_finally(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = ".finally(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -662,7 +727,7 @@ fn check_promise_no_return_in_finally(source: &str, diags: &mut Vec<LintDiagnost
     }
 }
 
-fn check_promise_no_return_wrap(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_promise_no_return_wrap(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["return Promise.resolve(", "return Promise.reject("];
     for pattern in &patterns {
         let mut pos = 0;
@@ -674,12 +739,12 @@ fn check_promise_no_return_wrap(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_promise_prefer_await_to_then(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_promise_prefer_await_to_then(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Already handled in call expression rules
     let _ = source;
 }
 
-fn check_promise_param_names(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_promise_param_names(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "new Promise(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -708,7 +773,7 @@ fn check_promise_param_names(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_promise_no_multiple_resolved(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_promise_no_multiple_resolved(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "new Promise(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -761,4 +826,50 @@ fn find_matching_paren(source: &str, open_pos: usize) -> Option<usize> {
     }
 
     None
+}
+
+// ==================== AST tree navigation helpers ====================
+
+fn extract_span(node: &serde_json::Value) -> Option<Span> {
+    let span = node.get("span")?;
+    let start = span.get("start")?.as_u64()?;
+    let end = span.get("end")?.as_u64()?;
+    Some(Span {
+        start: start as u32,
+        end: end as u32,
+    })
+}
+
+fn get_callee_path(tree: &serde_json::Value, call: &serde_json::Value) -> String {
+    let callee_id = call.get("callee").and_then(|c| c.as_u64()).unwrap_or(0);
+    resolve_callee(tree, callee_id)
+}
+
+fn resolve_callee(tree: &serde_json::Value, id: u64) -> String {
+    let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) else {
+        return String::new();
+    };
+    let Some(node) = nodes.get(id as usize) else {
+        return String::new();
+    };
+    if let Some(ident) = node.get("IdentifierReference") {
+        return ident
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap_or("")
+            .to_string();
+    }
+    if let Some(member) = node.get("StaticMemberExpression") {
+        let object_id = member.get("object").and_then(|o| o.as_u64()).unwrap_or(0);
+        let property = member
+            .get("property")
+            .and_then(|p| p.as_str())
+            .unwrap_or("");
+        let object_path = resolve_callee(tree, object_id);
+        if object_path.is_empty() {
+            return property.to_string();
+        }
+        return format!("{object_path}.{property}");
+    }
+    String::new()
 }

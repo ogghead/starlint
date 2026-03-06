@@ -5,13 +5,13 @@
 //! analysis, and source-text scanning.
 
 wit_bindgen::generate!({
-    world: "linter-plugin",
+    world: "linter-plugin-v2",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin::Guest;
+use exports::starlint::plugin::plugin_v2::Guest;
 use starlint::plugin::types::{
-    AstNode, Category, LintDiagnostic, NodeBatch, NodeInterest, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -120,15 +120,6 @@ impl Guest for ReactPlugin {
         rules
     }
 
-    fn get_node_interests() -> NodeInterest {
-        NodeInterest::SOURCE_TEXT
-            | NodeInterest::JSX_OPENING_ELEMENT
-            | NodeInterest::CALL_EXPRESSION
-            | NodeInterest::IMPORT_DECLARATION
-            | NodeInterest::MEMBER_EXPRESSION
-            | NodeInterest::IDENTIFIER_REFERENCE
-    }
-
     fn get_file_patterns() -> Vec<String> {
         vec![
             "*.jsx".into(),
@@ -140,10 +131,16 @@ impl Guest for ReactPlugin {
         Vec::new()
     }
 
-    fn lint_file(batch: NodeBatch) -> Vec<LintDiagnostic> {
-        let source = &batch.file.source_text;
-        let ext = &batch.file.extension;
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+        let source = &file.source_text;
+        let ext = &file.extension;
         let mut diags = Vec::new();
+
+        // Deserialize the AST tree from JSON bytes.
+        let tree: serde_json::Value = match serde_json::from_slice(&tree) {
+            Ok(v) => v,
+            Err(_) => serde_json::Value::Null,
+        };
 
         // --- Text-scanning rules ---
         check_no_multi_comp(source, &mut diags);
@@ -168,23 +165,22 @@ impl Guest for ReactPlugin {
         check_no_unsafe(source, &mut diags);
 
         // --- AST-based rules ---
-        for node in &batch.nodes {
-            match node {
-                AstNode::JsxElement(jsx) => {
-                    check_jsx_rules(jsx, source, &mut diags);
-                    check_a11y_rules(jsx, &mut diags);
-                    check_react_perf_rules(jsx, source, &mut diags);
+        if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+            for node in nodes {
+                if let Some(jsx) = node.get("JSXOpeningElement") {
+                    check_jsx_rules(jsx, &tree, source, &mut diags);
+                    check_a11y_rules(jsx, &tree, &mut diags);
+                    check_react_perf_rules(jsx, &tree, source, &mut diags);
                 }
-                AstNode::CallExpr(call) => {
-                    check_call_expr_rules(call, source, &mut diags);
+                if let Some(call) = node.get("CallExpression") {
+                    check_call_expr_rules(call, &tree, source, &mut diags);
                 }
-                AstNode::ImportDecl(import) => {
+                if let Some(import) = node.get("ImportDeclaration") {
                     check_import_rules(import, &mut diags);
                 }
-                AstNode::MemberExpr(member) => {
-                    check_member_expr_rules(member, &mut diags);
+                if let Some(member) = node.get("StaticMemberExpression") {
+                    check_member_expr_rules(member, &tree, &mut diags);
                 }
-                _ => {}
             }
         }
 
@@ -203,81 +199,130 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnostic {
-    LintDiagnostic {
+fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span,
         severity: sev,
         help,
+        fix: None,
+        labels: vec![],
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Warning, None)
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Error, None)
 }
 
-fn has_attr(jsx: &starlint::plugin::types::JsxOpeningElementNode, name: &str) -> bool {
-    jsx.attributes.iter().any(|a| !a.is_spread && a.name == name)
+fn has_attr(jsx: &serde_json::Value, tree: &serde_json::Value, name: &str) -> bool {
+    let Some(attr_ids) = jsx.get("attributes").and_then(|a| a.as_array()) else { return false };
+    for attr_id in attr_ids {
+        if let Some(id) = attr_id.as_u64() {
+            if let Some((attr_name, _, is_spread)) = get_jsx_attr(tree, id) {
+                if !is_spread && attr_name == name {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
-fn get_attr_value(jsx: &starlint::plugin::types::JsxOpeningElementNode, name: &str) -> Option<String> {
-    jsx.attributes.iter()
-        .find(|a| !a.is_spread && a.name == name)
-        .and_then(|a| a.value.clone())
+fn get_attr_value(jsx: &serde_json::Value, tree: &serde_json::Value, name: &str) -> Option<String> {
+    let attr_ids = jsx.get("attributes").and_then(|a| a.as_array())?;
+    for attr_id in attr_ids {
+        if let Some(id) = attr_id.as_u64() {
+            if let Some((attr_name, value, is_spread)) = get_jsx_attr(tree, id) {
+                if !is_spread && attr_name == name {
+                    return value;
+                }
+            }
+        }
+    }
+    None
 }
 
-fn has_spread(jsx: &starlint::plugin::types::JsxOpeningElementNode) -> bool {
-    jsx.attributes.iter().any(|a| a.is_spread)
+fn has_spread(jsx: &serde_json::Value, tree: &serde_json::Value) -> bool {
+    let Some(attr_ids) = jsx.get("attributes").and_then(|a| a.as_array()) else { return false };
+    for attr_id in attr_ids {
+        if let Some(id) = attr_id.as_u64() {
+            if let Some((_, _, is_spread)) = get_jsx_attr(tree, id) {
+                if is_spread {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn is_html_element(name: &str) -> bool {
     name.chars().next().map_or(false, |c| c.is_lowercase())
 }
 
+/// Collect all attributes as (name, value, is_spread) tuples
+fn collect_attrs(jsx: &serde_json::Value, tree: &serde_json::Value) -> Vec<(String, Option<String>, bool)> {
+    let mut attrs = Vec::new();
+    let Some(attr_ids) = jsx.get("attributes").and_then(|a| a.as_array()) else { return attrs };
+    for attr_id in attr_ids {
+        if let Some(id) = attr_id.as_u64() {
+            if let Some(attr) = get_jsx_attr(tree, id) {
+                attrs.push(attr);
+            }
+        }
+    }
+    attrs
+}
+
 // ==================== JSX-based rules ====================
 
 fn check_jsx_rules(
-    jsx: &starlint::plugin::types::JsxOpeningElementNode,
+    jsx: &serde_json::Value,
+    tree: &serde_json::Value,
     _source: &str,
-    diags: &mut Vec<LintDiagnostic>,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let name = &jsx.name;
-    let span = jsx.span;
+    let name = jsx.get("name").and_then(|n| n.as_str()).unwrap_or("");
+    let span = extract_span(jsx).unwrap_or(Span { start: 0, end: 0 });
+    let self_closing = jsx.get("self_closing").and_then(|s| s.as_bool()).unwrap_or(false);
+    // v2 JSXOpeningElement doesn't have children_count, approximate with 0 for self-closing
+    let children_count: u32 = if self_closing { 0 } else { 1 }; // conservative: assume non-self-closing has children
+    let attrs = collect_attrs(jsx, tree);
 
     // --- react/button-has-type ---
-    if name == "button" && !has_attr(jsx, "type") {
+    if name == "button" && !has_attr(jsx, tree, "type") {
         diags.push(diag("react/button-has-type", "Missing explicit `type` attribute on button", span, Severity::Warning, None));
     }
 
     // --- react/checked-requires-onchange-or-readonly ---
-    if (name == "input") && has_attr(jsx, "checked") && !has_attr(jsx, "onChange") && !has_attr(jsx, "readOnly") {
+    if (name == "input") && has_attr(jsx, tree, "checked") && !has_attr(jsx, tree, "onChange") && !has_attr(jsx, tree, "readOnly") {
         diags.push(diag("react/checked-requires-onchange-or-readonly", "`checked` prop requires `onChange` or `readOnly`", span, Severity::Warning, None));
     }
 
     // --- react/iframe-missing-sandbox ---
-    if name == "iframe" && !has_attr(jsx, "sandbox") {
+    if name == "iframe" && !has_attr(jsx, tree, "sandbox") {
         diags.push(diag("react/iframe-missing-sandbox", "Missing `sandbox` attribute on iframe", span, Severity::Warning, None));
     }
 
     // --- react/jsx-boolean-value ---
-    for attr in &jsx.attributes {
-        if !attr.is_spread && attr.value.as_deref() == Some("true") {
-            diags.push(diag("react/jsx-boolean-value", &format!("Value of `{}` should be omitted (implicit true)", attr.name), span, Severity::Warning, None));
+    for (attr_name, attr_value, is_spread) in &attrs {
+        if !is_spread && attr_value.as_deref() == Some("true") {
+            diags.push(diag("react/jsx-boolean-value", &format!("Value of `{}` should be omitted (implicit true)", attr_name), span, Severity::Warning, None));
         }
     }
 
     // --- react/jsx-no-target-blank ---
     if name == "a" {
-        if let Some(target) = get_attr_value(jsx, "target") {
-            if target == "_blank" && !has_attr(jsx, "rel") {
+        if let Some(target) = get_attr_value(jsx, tree, "target") {
+            if target == "_blank" && !has_attr(jsx, tree, "rel") {
                 diags.push(diag("react/jsx-no-target-blank", "Missing `rel=\"noreferrer\"` with `target=\"_blank\"`", span, Severity::Error, Some("Add `rel=\"noreferrer\"` to prevent security issues".into())));
             } else if target == "_blank" {
-                if let Some(rel) = get_attr_value(jsx, "rel") {
+                if let Some(rel) = get_attr_value(jsx, tree, "rel") {
                     if !rel.contains("noreferrer") && !rel.contains("noopener") {
                         diags.push(diag("react/jsx-no-target-blank", "`rel` attribute should contain `noreferrer`", span, Severity::Error, None));
                     }
@@ -287,20 +332,20 @@ fn check_jsx_rules(
     }
 
     // --- react/jsx-no-duplicate-props ---
-    let mut seen_props: Vec<&str> = Vec::new();
-    for attr in &jsx.attributes {
-        if !attr.is_spread {
-            if seen_props.contains(&attr.name.as_str()) {
-                diags.push(diag("react/jsx-no-duplicate-props", &format!("Duplicate prop `{}`", attr.name), span, Severity::Error, None));
+    let mut seen_props: Vec<String> = Vec::new();
+    for (attr_name, _, is_spread) in &attrs {
+        if !is_spread {
+            if seen_props.iter().any(|s| s == attr_name) {
+                diags.push(diag("react/jsx-no-duplicate-props", &format!("Duplicate prop `{}`", attr_name), span, Severity::Error, None));
             } else {
-                seen_props.push(&attr.name);
+                seen_props.push(attr_name.clone());
             }
         }
     }
 
     // --- react/jsx-no-script-url ---
     if name == "a" {
-        if let Some(href) = get_attr_value(jsx, "href") {
+        if let Some(href) = get_attr_value(jsx, tree, "href") {
             if href.trim_start().starts_with("javascript:") {
                 diags.push(diag("react/jsx-no-script-url", "Disallow `javascript:` URLs", span, Severity::Error, None));
             }
@@ -316,27 +361,27 @@ fn check_jsx_rules(
     }
 
     // --- react/jsx-props-no-spreading ---
-    if has_spread(jsx) {
+    if has_spread(jsx, tree) {
         diags.push(diag("react/jsx-props-no-spreading", "Prop spreading is not recommended", span, Severity::Warning, None));
     }
 
     // --- react/jsx-props-no-spread-multi ---
-    let spread_count = jsx.attributes.iter().filter(|a| a.is_spread).count();
+    let spread_count = attrs.iter().filter(|(_, _, is_spread)| *is_spread).count();
     if spread_count > 1 {
         diags.push(diag("react/jsx-props-no-spread-multi", "Avoid multiple spread props on the same element", span, Severity::Warning, None));
     }
 
     // --- react/no-children-prop ---
-    if has_attr(jsx, "children") {
+    if has_attr(jsx, tree, "children") {
         diags.push(diag("react/no-children-prop", "Do not pass `children` as a prop", span, Severity::Warning, None));
     }
 
     // --- react/no-danger ---
-    if has_attr(jsx, "dangerouslySetInnerHTML") {
+    if has_attr(jsx, tree, "dangerouslySetInnerHTML") {
         diags.push(diag("react/no-danger", "Avoid using `dangerouslySetInnerHTML`", span, Severity::Warning, None));
 
         // --- react/no-danger-with-children ---
-        if jsx.children_count > 0 {
+        if !self_closing {
             diags.push(diag("react/no-danger-with-children", "Do not use both `dangerouslySetInnerHTML` and children", span, Severity::Error, None));
         }
     }
@@ -347,13 +392,13 @@ fn check_jsx_rules(
     }
 
     // --- react/self-closing-comp ---
-    if !jsx.self_closing && jsx.children_count == 0 && !is_html_element(name) {
+    if !self_closing && children_count == 0 && !is_html_element(name) {
         diags.push(diag("react/self-closing-comp", "Components without children should be self-closing", span, Severity::Warning, None));
     }
 
     // --- react/style-prop-object ---
-    if has_attr(jsx, "style") {
-        if let Some(val) = get_attr_value(jsx, "style") {
+    if has_attr(jsx, tree, "style") {
+        if let Some(val) = get_attr_value(jsx, tree, "style") {
             if val.starts_with('"') || val.starts_with('\'') {
                 diags.push(diag("react/style-prop-object", "Style prop value must be an object, not a string", span, Severity::Warning, None));
             }
@@ -362,19 +407,19 @@ fn check_jsx_rules(
 
     // --- react/void-dom-elements-no-children ---
     let void_elements = ["area", "base", "br", "col", "embed", "hr", "img", "input", "keygen", "link", "meta", "param", "source", "track", "wbr"];
-    if void_elements.contains(&name.as_str()) && (jsx.children_count > 0 || has_attr(jsx, "children") || has_attr(jsx, "dangerouslySetInnerHTML")) {
-        diags.push(diag("react/void-dom-elements-no-children", &format!("`<{name}>` is a void element — it must not have children"), span, Severity::Error, None));
+    if void_elements.contains(&name) && (!self_closing || has_attr(jsx, tree, "children") || has_attr(jsx, tree, "dangerouslySetInnerHTML")) {
+        diags.push(diag("react/void-dom-elements-no-children", &format!("`<{name}>` is a void element -- it must not have children"), span, Severity::Error, None));
     }
 
     // --- react/no-unknown-property ---
     if is_html_element(name) {
         let unknown_props = ["class", "for", "tabindex", "onclick", "onchange", "onfocus", "onblur"];
         let correct_props = ["className", "htmlFor", "tabIndex", "onClick", "onChange", "onFocus", "onBlur"];
-        for attr in &jsx.attributes {
-            if !attr.is_spread {
+        for (attr_name, _, is_spread) in &attrs {
+            if !is_spread {
                 for (i, wrong) in unknown_props.iter().enumerate() {
-                    if attr.name == *wrong {
-                        diags.push(diag("react/no-unknown-property", &format!("Unknown property `{wrong}` — did you mean `{}`?", correct_props[i]), span, Severity::Warning, None));
+                    if attr_name == wrong {
+                        diags.push(diag("react/no-unknown-property", &format!("Unknown property `{wrong}` -- did you mean `{}`?", correct_props[i]), span, Severity::Warning, None));
                     }
                 }
             }
@@ -382,11 +427,11 @@ fn check_jsx_rules(
     }
 
     // --- react/jsx-handler-names ---
-    for attr in &jsx.attributes {
-        if !attr.is_spread && attr.name.starts_with("on") && attr.name.len() > 2 {
-            if let Some(val) = &attr.value {
+    for (attr_name, attr_value, is_spread) in &attrs {
+        if !is_spread && attr_name.starts_with("on") && attr_name.len() > 2 {
+            if let Some(val) = attr_value {
                 if !val.starts_with("handle") && !val.starts_with("on") && !val.contains('.') {
-                    // Skip — this is a string value, not a handler reference
+                    // Skip -- this is a string value, not a handler reference
                 }
             }
         }
@@ -396,34 +441,38 @@ fn check_jsx_rules(
 // ==================== JSX-A11y rules ====================
 
 fn check_a11y_rules(
-    jsx: &starlint::plugin::types::JsxOpeningElementNode,
-    diags: &mut Vec<LintDiagnostic>,
+    jsx: &serde_json::Value,
+    tree: &serde_json::Value,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let name = &jsx.name;
-    let span = jsx.span;
+    let name = jsx.get("name").and_then(|n| n.as_str()).unwrap_or("");
+    let span = extract_span(jsx).unwrap_or(Span { start: 0, end: 0 });
+    let self_closing = jsx.get("self_closing").and_then(|s| s.as_bool()).unwrap_or(false);
+    let children_count: u32 = if self_closing { 0 } else { 1 };
+    let attrs = collect_attrs(jsx, tree);
 
     // --- jsx-a11y/alt-text ---
-    if name == "img" && !has_attr(jsx, "alt") {
+    if name == "img" && !has_attr(jsx, tree, "alt") {
         diags.push(diag("jsx-a11y/alt-text", "img elements must have an alt attribute", span, Severity::Error, None));
     }
-    if name == "area" && !has_attr(jsx, "alt") {
+    if name == "area" && !has_attr(jsx, tree, "alt") {
         diags.push(diag("jsx-a11y/alt-text", "area elements must have an alt attribute", span, Severity::Error, None));
     }
-    if (name == "input") && get_attr_value(jsx, "type").as_deref() == Some("image") && !has_attr(jsx, "alt") {
+    if (name == "input") && get_attr_value(jsx, tree, "type").as_deref() == Some("image") && !has_attr(jsx, tree, "alt") {
         diags.push(diag("jsx-a11y/alt-text", "input type=\"image\" must have an alt attribute", span, Severity::Error, None));
     }
 
     // --- jsx-a11y/anchor-has-content ---
-    if name == "a" && jsx.children_count == 0 && !has_attr(jsx, "aria-label") && !has_attr(jsx, "aria-labelledby") {
+    if name == "a" && children_count == 0 && !has_attr(jsx, tree, "aria-label") && !has_attr(jsx, tree, "aria-labelledby") {
         diags.push(diag("jsx-a11y/anchor-has-content", "Anchors must have content", span, Severity::Warning, None));
     }
 
     // --- jsx-a11y/anchor-is-valid ---
     if name == "a" {
-        let href = get_attr_value(jsx, "href");
+        let href = get_attr_value(jsx, tree, "href");
         match href.as_deref() {
             None => {
-                if !has_attr(jsx, "href") {
+                if !has_attr(jsx, tree, "href") {
                     diags.push(diag("jsx-a11y/anchor-is-valid", "Anchor must have an `href` attribute", span, Severity::Warning, None));
                 }
             }
@@ -436,11 +485,11 @@ fn check_a11y_rules(
 
     // --- jsx-a11y/anchor-ambiguous-text ---
     if name == "a" {
-        // Text content would be in children — check common patterns via attr
+        // Text content would be in children -- check common patterns via attr
     }
 
     // --- jsx-a11y/aria-activedescendant-has-tabindex ---
-    if has_attr(jsx, "aria-activedescendant") && !has_attr(jsx, "tabIndex") && !has_attr(jsx, "tabindex") {
+    if has_attr(jsx, tree, "aria-activedescendant") && !has_attr(jsx, tree, "tabIndex") && !has_attr(jsx, tree, "tabindex") {
         diags.push(diag("jsx-a11y/aria-activedescendant-has-tabindex", "Element with `aria-activedescendant` must have `tabIndex`", span, Severity::Warning, None));
     }
 
@@ -459,14 +508,14 @@ fn check_a11y_rules(
         "aria-rowspan", "aria-selected", "aria-setsize", "aria-sort",
         "aria-valuemax", "aria-valuemin", "aria-valuenow", "aria-valuetext",
     ];
-    for attr in &jsx.attributes {
-        if !attr.is_spread && attr.name.starts_with("aria-") && !valid_aria.contains(&attr.name.as_str()) {
-            diags.push(diag("jsx-a11y/aria-props", &format!("Invalid ARIA prop `{}`", attr.name), span, Severity::Error, None));
+    for (attr_name, _, is_spread) in &attrs {
+        if !is_spread && attr_name.starts_with("aria-") && !valid_aria.contains(&attr_name.as_str()) {
+            diags.push(diag("jsx-a11y/aria-props", &format!("Invalid ARIA prop `{}`", attr_name), span, Severity::Error, None));
         }
     }
 
     // --- jsx-a11y/aria-role ---
-    if let Some(role) = get_attr_value(jsx, "role") {
+    if let Some(role) = get_attr_value(jsx, tree, "role") {
         let valid_roles = [
             "alert", "alertdialog", "application", "article", "banner", "button",
             "cell", "checkbox", "columnheader", "combobox", "complementary",
@@ -488,9 +537,9 @@ fn check_a11y_rules(
 
     // --- jsx-a11y/aria-unsupported-elements ---
     let unsupported = ["meta", "html", "script", "style", "head", "title", "base", "link", "template"];
-    if unsupported.contains(&name.as_str()) {
-        for attr in &jsx.attributes {
-            if !attr.is_spread && (attr.name.starts_with("aria-") || attr.name == "role") {
+    if unsupported.contains(&name) {
+        for (attr_name, _, is_spread) in &attrs {
+            if !is_spread && (attr_name.starts_with("aria-") || attr_name == "role") {
                 diags.push(diag("jsx-a11y/aria-unsupported-elements", &format!("`<{name}>` does not support ARIA attributes"), span, Severity::Warning, None));
                 break;
             }
@@ -498,32 +547,32 @@ fn check_a11y_rules(
     }
 
     // --- jsx-a11y/click-events-have-key-events ---
-    if has_attr(jsx, "onClick") && !has_attr(jsx, "onKeyDown") && !has_attr(jsx, "onKeyUp") && !has_attr(jsx, "onKeyPress") {
-        if is_html_element(name) && !has_attr(jsx, "role") {
+    if has_attr(jsx, tree, "onClick") && !has_attr(jsx, tree, "onKeyDown") && !has_attr(jsx, tree, "onKeyUp") && !has_attr(jsx, tree, "onKeyPress") {
+        if is_html_element(name) && !has_attr(jsx, tree, "role") {
             diags.push(diag("jsx-a11y/click-events-have-key-events", "Element with `onClick` must also have a keyboard event handler", span, Severity::Warning, None));
         }
     }
 
     // --- jsx-a11y/heading-has-content ---
-    if matches!(name.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
-        if jsx.children_count == 0 && !has_attr(jsx, "aria-label") && !has_attr(jsx, "dangerouslySetInnerHTML") {
+    if matches!(name, "h1" | "h2" | "h3" | "h4" | "h5" | "h6") {
+        if children_count == 0 && !has_attr(jsx, tree, "aria-label") && !has_attr(jsx, tree, "dangerouslySetInnerHTML") {
             diags.push(diag("jsx-a11y/heading-has-content", "Heading elements must have content", span, Severity::Warning, None));
         }
     }
 
     // --- jsx-a11y/html-has-lang ---
-    if name == "html" && !has_attr(jsx, "lang") {
+    if name == "html" && !has_attr(jsx, tree, "lang") {
         diags.push(diag("jsx-a11y/html-has-lang", "`<html>` element must have a `lang` attribute", span, Severity::Warning, None));
     }
 
     // --- jsx-a11y/iframe-has-title ---
-    if name == "iframe" && !has_attr(jsx, "title") {
+    if name == "iframe" && !has_attr(jsx, tree, "title") {
         diags.push(diag("jsx-a11y/iframe-has-title", "`<iframe>` must have a `title` attribute", span, Severity::Warning, None));
     }
 
     // --- jsx-a11y/img-redundant-alt ---
     if name == "img" {
-        if let Some(alt) = get_attr_value(jsx, "alt") {
+        if let Some(alt) = get_attr_value(jsx, tree, "alt") {
             let lower = alt.to_lowercase();
             if lower.contains("image") || lower.contains("picture") || lower.contains("photo") {
                 diags.push(diag("jsx-a11y/img-redundant-alt", "Alt text should not contain \"image\", \"picture\", or \"photo\"", span, Severity::Warning, None));
@@ -532,40 +581,40 @@ fn check_a11y_rules(
     }
 
     // --- jsx-a11y/media-has-caption ---
-    if matches!(name.as_str(), "audio" | "video") && !has_attr(jsx, "muted") {
-        let has_track = jsx.children_count > 0; // rough heuristic
+    if matches!(name, "audio" | "video") && !has_attr(jsx, tree, "muted") {
+        let has_track = children_count > 0; // rough heuristic
         if !has_track {
             diags.push(diag("jsx-a11y/media-has-caption", "Media elements must have a <track> element for captions", span, Severity::Warning, None));
         }
     }
 
     // --- jsx-a11y/mouse-events-have-key-events ---
-    if has_attr(jsx, "onMouseOver") && !has_attr(jsx, "onFocus") {
+    if has_attr(jsx, tree, "onMouseOver") && !has_attr(jsx, tree, "onFocus") {
         diags.push(diag("jsx-a11y/mouse-events-have-key-events", "`onMouseOver` must have a corresponding `onFocus`", span, Severity::Warning, None));
     }
-    if has_attr(jsx, "onMouseOut") && !has_attr(jsx, "onBlur") {
+    if has_attr(jsx, tree, "onMouseOut") && !has_attr(jsx, tree, "onBlur") {
         diags.push(diag("jsx-a11y/mouse-events-have-key-events", "`onMouseOut` must have a corresponding `onBlur`", span, Severity::Warning, None));
     }
 
     // --- jsx-a11y/no-access-key ---
-    if has_attr(jsx, "accessKey") {
+    if has_attr(jsx, tree, "accessKey") {
         diags.push(diag("jsx-a11y/no-access-key", "Avoid using the `accessKey` attribute", span, Severity::Warning, None));
     }
 
     // --- jsx-a11y/no-aria-hidden-on-focusable ---
-    if get_attr_value(jsx, "aria-hidden").as_deref() == Some("true") {
-        if has_attr(jsx, "tabIndex") || has_attr(jsx, "tabindex") || matches!(name.as_str(), "a" | "button" | "input" | "select" | "textarea") {
+    if get_attr_value(jsx, tree, "aria-hidden").as_deref() == Some("true") {
+        if has_attr(jsx, tree, "tabIndex") || has_attr(jsx, tree, "tabindex") || matches!(name, "a" | "button" | "input" | "select" | "textarea") {
             diags.push(diag("jsx-a11y/no-aria-hidden-on-focusable", "Do not use `aria-hidden=\"true\"` on focusable elements", span, Severity::Warning, None));
         }
     }
 
     // --- jsx-a11y/no-autofocus ---
-    if has_attr(jsx, "autoFocus") || has_attr(jsx, "autofocus") {
+    if has_attr(jsx, tree, "autoFocus") || has_attr(jsx, tree, "autofocus") {
         diags.push(diag("jsx-a11y/no-autofocus", "Avoid using `autoFocus`", span, Severity::Warning, None));
     }
 
     // --- jsx-a11y/no-distracting-elements ---
-    if matches!(name.as_str(), "marquee" | "blink") {
+    if matches!(name, "marquee" | "blink") {
         diags.push(diag("jsx-a11y/no-distracting-elements", &format!("`<{name}>` is distracting and should not be used"), span, Severity::Warning, None));
     }
 
@@ -577,10 +626,10 @@ fn check_a11y_rules(
         ("aside", "complementary"), ("footer", "contentinfo"),
         ("header", "banner"), ("main", "main"), ("section", "region"),
     ];
-    if let Some(role_val) = get_attr_value(jsx, "role") {
+    if let Some(role_val) = get_attr_value(jsx, tree, "role") {
         for (elem, implicit_role) in implicit_roles {
             if name == *elem && role_val == *implicit_role {
-                diags.push(diag("jsx-a11y/no-redundant-roles", &format!("`<{name}>` has implicit role `{implicit_role}` — remove explicit `role`"), span, Severity::Warning, None));
+                diags.push(diag("jsx-a11y/no-redundant-roles", &format!("`<{name}>` has implicit role `{implicit_role}` -- remove explicit `role`"), span, Severity::Warning, None));
                 break;
             }
         }
@@ -588,22 +637,22 @@ fn check_a11y_rules(
 
     // --- jsx-a11y/no-noninteractive-tabindex ---
     let interactive_elements = ["a", "button", "input", "select", "textarea", "details", "summary"];
-    if has_attr(jsx, "tabIndex") || has_attr(jsx, "tabindex") {
-        if is_html_element(name) && !interactive_elements.contains(&name.as_str()) && !has_attr(jsx, "role") {
+    if has_attr(jsx, tree, "tabIndex") || has_attr(jsx, tree, "tabindex") {
+        if is_html_element(name) && !interactive_elements.contains(&name) && !has_attr(jsx, tree, "role") {
             diags.push(diag("jsx-a11y/no-noninteractive-tabindex", "Non-interactive elements should not have `tabIndex`", span, Severity::Warning, None));
         }
     }
 
     // --- jsx-a11y/no-static-element-interactions ---
     let static_elements = ["div", "span", "section", "article", "header", "footer", "main", "nav", "aside"];
-    if static_elements.contains(&name.as_str()) {
-        if (has_attr(jsx, "onClick") || has_attr(jsx, "onKeyDown") || has_attr(jsx, "onKeyUp")) && !has_attr(jsx, "role") {
+    if static_elements.contains(&name) {
+        if (has_attr(jsx, tree, "onClick") || has_attr(jsx, tree, "onKeyDown") || has_attr(jsx, tree, "onKeyUp")) && !has_attr(jsx, tree, "role") {
             diags.push(diag("jsx-a11y/no-static-element-interactions", "Static elements should not have event handlers without a `role`", span, Severity::Warning, None));
         }
     }
 
     // --- jsx-a11y/prefer-tag-over-role ---
-    if let Some(role_val) = get_attr_value(jsx, "role") {
+    if let Some(role_val) = get_attr_value(jsx, tree, "role") {
         let tag_for_role: &[(&str, &str)] = &[
             ("button", "button"), ("link", "a"), ("navigation", "nav"),
             ("heading", "h1-h6"), ("img", "img"), ("table", "table"),
@@ -619,12 +668,12 @@ fn check_a11y_rules(
     }
 
     // --- jsx-a11y/scope ---
-    if has_attr(jsx, "scope") && name != "th" {
+    if has_attr(jsx, tree, "scope") && name != "th" {
         diags.push(diag("jsx-a11y/scope", "`scope` attribute should only be used on `<th>` elements", span, Severity::Warning, None));
     }
 
     // --- jsx-a11y/tabindex-no-positive ---
-    if let Some(val) = get_attr_value(jsx, "tabIndex").or_else(|| get_attr_value(jsx, "tabindex")) {
+    if let Some(val) = get_attr_value(jsx, tree, "tabIndex").or_else(|| get_attr_value(jsx, tree, "tabindex")) {
         if let Ok(n) = val.parse::<i32>() {
             if n > 0 {
                 diags.push(diag("jsx-a11y/tabindex-no-positive", "Avoid positive `tabIndex` values", span, Severity::Warning, None));
@@ -633,8 +682,8 @@ fn check_a11y_rules(
     }
 
     // --- jsx-a11y/autocomplete-valid ---
-    if has_attr(jsx, "autoComplete") || has_attr(jsx, "autocomplete") {
-        if let Some(val) = get_attr_value(jsx, "autoComplete").or_else(|| get_attr_value(jsx, "autocomplete")) {
+    if has_attr(jsx, tree, "autoComplete") || has_attr(jsx, tree, "autocomplete") {
+        if let Some(val) = get_attr_value(jsx, tree, "autoComplete").or_else(|| get_attr_value(jsx, tree, "autocomplete")) {
             let valid_autocomplete = [
                 "off", "on", "name", "honorific-prefix", "given-name", "additional-name",
                 "family-name", "honorific-suffix", "nickname", "email", "username",
@@ -656,13 +705,13 @@ fn check_a11y_rules(
     }
 
     // --- jsx-a11y/label-has-associated-control ---
-    if name == "label" && !has_attr(jsx, "htmlFor") && !has_attr(jsx, "for") && jsx.children_count == 0 {
+    if name == "label" && !has_attr(jsx, tree, "htmlFor") && !has_attr(jsx, tree, "for") && children_count == 0 {
         diags.push(diag("jsx-a11y/label-has-associated-control", "Labels must have an associated control", span, Severity::Warning, None));
     }
 
     // --- jsx-a11y/lang ---
     if name == "html" {
-        if let Some(lang) = get_attr_value(jsx, "lang") {
+        if let Some(lang) = get_attr_value(jsx, tree, "lang") {
             if lang.is_empty() {
                 diags.push(diag("jsx-a11y/lang", "lang attribute must have a valid value", span, Severity::Warning, None));
             }
@@ -670,7 +719,7 @@ fn check_a11y_rules(
     }
 
     // --- jsx-a11y/role-has-required-aria-props ---
-    if let Some(role_val) = get_attr_value(jsx, "role") {
+    if let Some(role_val) = get_attr_value(jsx, tree, "role") {
         let required: &[(&str, &[&str])] = &[
             ("checkbox", &["aria-checked"]),
             ("radio", &["aria-checked"]),
@@ -685,7 +734,7 @@ fn check_a11y_rules(
         for (role, required_props) in required {
             if role_val == *role {
                 for prop in *required_props {
-                    if !has_attr(jsx, prop) {
+                    if !has_attr(jsx, tree, prop) {
                         diags.push(diag("jsx-a11y/role-has-required-aria-props", &format!("Role `{role}` requires `{prop}`"), span, Severity::Error, None));
                     }
                 }
@@ -698,57 +747,58 @@ fn check_a11y_rules(
 // ==================== React-Perf rules ====================
 
 fn check_react_perf_rules(
-    jsx: &starlint::plugin::types::JsxOpeningElementNode,
+    jsx: &serde_json::Value,
+    tree: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnostic>,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let span = jsx.span;
+    let span = extract_span(jsx).unwrap_or(Span { start: 0, end: 0 });
     let start_usize = span.start as usize;
     let end_usize = span.end as usize;
     let jsx_text = source.get(start_usize..end_usize.min(source.len())).unwrap_or("");
+    let attrs = collect_attrs(jsx, tree);
 
-    for attr in &jsx.attributes {
-        if attr.is_spread {
+    for (attr_name, attr_value, is_spread) in &attrs {
+        if *is_spread {
             continue;
         }
 
         // --- react-perf/jsx-no-new-function-as-prop ---
-        if let Some(val) = &attr.value {
+        if let Some(val) = attr_value {
             if val.contains("=>") || val.starts_with("function") || val.contains(".bind(") {
-                diags.push(diag("react-perf/jsx-no-new-function-as-prop", &format!("Avoid creating new functions in `{}` prop (causes re-renders)", attr.name), span, Severity::Warning, None));
+                diags.push(diag("react-perf/jsx-no-new-function-as-prop", &format!("Avoid creating new functions in `{}` prop (causes re-renders)", attr_name), span, Severity::Warning, None));
             }
         }
 
         // --- react-perf/jsx-no-new-object-as-prop ---
-        if attr.value.is_none() && !attr.is_spread {
-            // Expression attribute — check source text
-            // Look for the attribute in source
-            if let Some(attr_pos) = jsx_text.find(&format!("{}=", attr.name)) {
+        if attr_value.is_none() && !is_spread {
+            // Expression attribute -- check source text
+            if let Some(attr_pos) = jsx_text.find(&format!("{}=", attr_name)) {
                 let after = &jsx_text[attr_pos..];
                 if after.contains("={{") || after.contains("= {{") {
-                    diags.push(diag("react-perf/jsx-no-new-object-as-prop", &format!("Avoid creating new objects in `{}` prop", attr.name), span, Severity::Warning, None));
+                    diags.push(diag("react-perf/jsx-no-new-object-as-prop", &format!("Avoid creating new objects in `{}` prop", attr_name), span, Severity::Warning, None));
                 }
             }
         }
 
         // --- react-perf/jsx-no-new-array-as-prop ---
-        if attr.value.is_none() && !attr.is_spread {
-            if let Some(attr_pos) = jsx_text.find(&format!("{}=", attr.name)) {
+        if attr_value.is_none() && !is_spread {
+            if let Some(attr_pos) = jsx_text.find(&format!("{}=", attr_name)) {
                 let after = &jsx_text[attr_pos..];
                 if after.contains("={[") || after.contains("= {[") {
-                    diags.push(diag("react-perf/jsx-no-new-array-as-prop", &format!("Avoid creating new arrays in `{}` prop", attr.name), span, Severity::Warning, None));
+                    diags.push(diag("react-perf/jsx-no-new-array-as-prop", &format!("Avoid creating new arrays in `{}` prop", attr_name), span, Severity::Warning, None));
                 }
             }
         }
     }
 
     // --- react-perf/jsx-no-jsx-as-prop ---
-    for attr in &jsx.attributes {
-        if !attr.is_spread && attr.value.is_none() {
-            if let Some(attr_pos) = jsx_text.find(&format!("{}=", attr.name)) {
+    for (attr_name, attr_value, is_spread) in &attrs {
+        if !is_spread && attr_value.is_none() {
+            if let Some(attr_pos) = jsx_text.find(&format!("{}=", attr_name)) {
                 let after = &jsx_text[attr_pos..];
                 if after.contains("={<") || after.contains("= {<") {
-                    diags.push(diag("react-perf/jsx-no-jsx-as-prop", &format!("Avoid inline JSX in `{}` prop", attr.name), span, Severity::Warning, None));
+                    diags.push(diag("react-perf/jsx-no-jsx-as-prop", &format!("Avoid inline JSX in `{}` prop", attr_name), span, Severity::Warning, None));
                 }
             }
         }
@@ -758,12 +808,13 @@ fn check_react_perf_rules(
 // ==================== CallExpression-based rules ====================
 
 fn check_call_expr_rules(
-    call: &starlint::plugin::types::CallExpressionNode,
+    call: &serde_json::Value,
+    tree: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnostic>,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let callee = &call.callee_path;
-    let span = call.span;
+    let callee = get_callee_path(tree, call);
+    let span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });
 
     // --- react/no-find-dom-node ---
     if callee == "ReactDOM.findDOMNode" || callee == "findDOMNode" {
@@ -796,7 +847,7 @@ fn check_call_expr_rules(
         let call_text = source.get(start_usize..end_usize.min(source.len())).unwrap_or("");
         // Check for key={index} or key={i} patterns
         if call_text.contains("key={index}") || call_text.contains("key={i}") || call_text.contains("key={idx}") {
-            diags.push(diag("react/no-array-index-key", "Avoid using array index as `key` — use a stable identifier", span, Severity::Warning, None));
+            diags.push(diag("react/no-array-index-key", "Avoid using array index as `key` -- use a stable identifier", span, Severity::Warning, None));
         }
     }
 
@@ -827,28 +878,36 @@ fn check_call_expr_rules(
 // ==================== Import-based rules ====================
 
 fn check_import_rules(
-    import: &starlint::plugin::types::ImportDeclarationNode,
-    _diags: &mut Vec<LintDiagnostic>,
+    import: &serde_json::Value,
+    _diags: &mut Vec<LintDiagnosticV2>,
 ) {
     // Most import-related react rules are handled by text scanning
-    let _source = &import.source;
+    let _source = import.get("source").and_then(|s| s.as_str()).unwrap_or("");
 }
 
 // ==================== MemberExpression-based rules ====================
 
 fn check_member_expr_rules(
-    member: &starlint::plugin::types::MemberExpressionNode,
-    diags: &mut Vec<LintDiagnostic>,
+    member: &serde_json::Value,
+    tree: &serde_json::Value,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
+    let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
+    let span = extract_span(member).unwrap_or(Span { start: 0, end: 0 });
+
     // --- react/no-is-mounted (AST) ---
-    if member.property == "isMounted" && member.object.contains("this") {
-        diags.push(diag("react/no-is-mounted", "`isMounted` is deprecated", member.span, Severity::Warning, None));
+    if property == "isMounted" {
+        let object_id = member.get("object").and_then(|o| o.as_u64()).unwrap_or(0);
+        let object_path = resolve_callee(tree, object_id);
+        if object_path.contains("this") {
+            diags.push(diag("react/no-is-mounted", "`isMounted` is deprecated", span, Severity::Warning, None));
+        }
     }
 }
 
 // ==================== Text-scanning rules ====================
 
-fn check_no_multi_comp(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_multi_comp(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["extends Component", "extends React.Component", "extends PureComponent"];
     let mut comp_count = 0;
     for pattern in &patterns {
@@ -861,11 +920,11 @@ fn check_no_multi_comp(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_unescaped_entities(_source: &str, _diags: &mut Vec<LintDiagnostic>) {
-    // Skip — requires JSX text node detection which is complex in text scanning
+fn check_no_unescaped_entities(_source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+    // Skip -- requires JSX text node detection which is complex in text scanning
 }
 
-fn check_jsx_no_comment_textnodes(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_jsx_no_comment_textnodes(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Look for HTML comments inside JSX
     let pattern = "<!-- ";
     let mut pos = 0;
@@ -884,7 +943,7 @@ fn check_jsx_no_comment_textnodes(source: &str, diags: &mut Vec<LintDiagnostic>)
     }
 }
 
-fn check_only_export_components(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_only_export_components(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Check if file exports non-component items alongside components
     let has_jsx = source.contains("<") && source.contains("/>");
     if !has_jsx {
@@ -925,11 +984,11 @@ fn check_only_export_components(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_react_in_jsx_scope(_source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_react_in_jsx_scope(_source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // In modern React (17+), this is not needed. Skip.
 }
 
-fn check_no_direct_mutation_state(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_direct_mutation_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "this.state.";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -943,7 +1002,7 @@ fn check_no_direct_mutation_state(source: &str, diags: &mut Vec<LintDiagnostic>)
                 if before_eq != Some(&b'=') && before_eq != Some(&b'!') && before_eq != Some(&b'>') && before_eq != Some(&b'<') {
                     diags.push(err(
                         "react/no-direct-mutation-state",
-                        "Do not mutate `this.state` directly — use `setState()`",
+                        "Do not mutate `this.state` directly -- use `setState()`",
                         abs, abs + pattern.len(),
                     ));
                 }
@@ -953,14 +1012,14 @@ fn check_no_direct_mutation_state(source: &str, diags: &mut Vec<LintDiagnostic>)
     }
 }
 
-fn check_no_string_refs(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_string_refs(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "ref=\"";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
         let abs = pos + found;
         diags.push(err(
             "react/no-string-refs",
-            "String refs are deprecated — use `createRef()` or `useRef()`",
+            "String refs are deprecated -- use `createRef()` or `useRef()`",
             abs, abs + pattern.len(),
         ));
         pos = abs + 1;
@@ -972,44 +1031,44 @@ fn check_no_string_refs(source: &str, diags: &mut Vec<LintDiagnostic>) {
         let abs = pos + found;
         diags.push(err(
             "react/no-string-refs",
-            "String refs are deprecated — use `createRef()` or `useRef()`",
+            "String refs are deprecated -- use `createRef()` or `useRef()`",
             abs, abs + pattern2.len(),
         ));
         pos = abs + 1;
     }
 }
 
-fn check_no_this_in_sfc(_source: &str, _diags: &mut Vec<LintDiagnostic>) {
-    // Skip — requires component type detection
+fn check_no_this_in_sfc(_source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+    // Skip -- requires component type detection
 }
 
-fn check_jsx_filename_extension(_ext: &str, _diags: &mut Vec<LintDiagnostic>) {
-    // File pattern already restricts to jsx/tsx — this rule is about enforcing that
+fn check_jsx_filename_extension(_ext: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+    // File pattern already restricts to jsx/tsx -- this rule is about enforcing that
 }
 
-fn check_no_did_mount_set_state(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_did_mount_set_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     check_lifecycle_set_state(source, "componentDidMount", "react/no-did-mount-set-state", diags);
 }
 
-fn check_no_will_update_set_state(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_will_update_set_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     check_lifecycle_set_state(source, "componentWillUpdate", "react/no-will-update-set-state", diags);
 }
 
-fn check_no_set_state(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_set_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "this.setState(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
         let abs = pos + found;
         diags.push(warn(
             "react/no-set-state",
-            "Avoid using `this.setState()` — prefer functional components with hooks",
+            "Avoid using `this.setState()` -- prefer functional components with hooks",
             abs, abs + pattern.len(),
         ));
         pos = abs + 1;
     }
 }
 
-fn check_lifecycle_set_state(source: &str, lifecycle: &str, rule_name: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_lifecycle_set_state(source: &str, lifecycle: &str, rule_name: &str, diags: &mut Vec<LintDiagnosticV2>) {
     if let Some(lifecycle_pos) = source.find(lifecycle) {
         let after = &source[lifecycle_pos..];
         if let Some(body_start) = after.find('{') {
@@ -1026,7 +1085,7 @@ fn check_lifecycle_set_state(source: &str, lifecycle: &str, rule_name: &str, dia
     }
 }
 
-fn check_no_is_mounted(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_is_mounted(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "this.isMounted()";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1040,7 +1099,7 @@ fn check_no_is_mounted(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_jsx_fragments(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_jsx_fragments(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "<React.Fragment>";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1058,7 +1117,7 @@ fn check_jsx_fragments(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_rules_of_hooks(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_rules_of_hooks(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let hooks = ["useState(", "useEffect(", "useCallback(", "useMemo(", "useRef(", "useContext(", "useReducer("];
 
     for hook in &hooks {
@@ -1086,12 +1145,12 @@ fn check_rules_of_hooks(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_display_name(source: &str, _diags: &mut Vec<LintDiagnostic>) {
-    // Skip — complex to detect anonymous components reliably via text scanning
+fn check_display_name(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+    // Skip -- complex to detect anonymous components reliably via text scanning
     let _ = source;
 }
 
-fn check_require_render_return(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_require_render_return(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     if let Some(render_pos) = source.find("render()") {
         let after = &source[render_pos..];
         if let Some(body_start) = after.find('{') {
@@ -1124,7 +1183,7 @@ fn check_require_render_return(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_state_in_constructor(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_state_in_constructor(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Check for state assignment outside constructor
     if source.contains("state = {") && !source.contains("constructor(") {
         if let Some(pos) = source.find("state = {") {
@@ -1137,7 +1196,7 @@ fn check_state_in_constructor(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_prefer_es6_class(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_es6_class(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "React.createClass(";
     if let Some(pos) = source.find(pattern) {
         diags.push(warn(
@@ -1148,7 +1207,7 @@ fn check_prefer_es6_class(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_unsafe(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_unsafe(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let unsafe_methods = [
         "UNSAFE_componentWillMount",
         "UNSAFE_componentWillReceiveProps",
@@ -1176,4 +1235,58 @@ fn count_occurrences(source: &str, pattern: &str) -> usize {
         pos += found + 1;
     }
     count
+}
+
+// ==================== Tree navigation helpers ====================
+
+fn extract_span(node: &serde_json::Value) -> Option<Span> {
+    let span = node.get("span")?;
+    let start = span.get("start")?.as_u64()?;
+    let end = span.get("end")?.as_u64()?;
+    Some(Span { start: start as u32, end: end as u32 })
+}
+
+fn get_callee_path(tree: &serde_json::Value, call: &serde_json::Value) -> String {
+    let callee_id = call.get("callee").and_then(|c| c.as_u64()).unwrap_or(0);
+    resolve_callee(tree, callee_id)
+}
+
+fn resolve_callee(tree: &serde_json::Value, id: u64) -> String {
+    let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) else { return String::new() };
+    let Some(node) = nodes.get(id as usize) else { return String::new() };
+    if let Some(ident) = node.get("IdentifierReference") {
+        return ident.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+    }
+    if let Some(member) = node.get("StaticMemberExpression") {
+        let object_id = member.get("object").and_then(|o| o.as_u64()).unwrap_or(0);
+        let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
+        let object_path = resolve_callee(tree, object_id);
+        if object_path.is_empty() {
+            return property.to_string();
+        }
+        return format!("{object_path}.{property}");
+    }
+    String::new()
+}
+
+fn get_jsx_attr(tree: &serde_json::Value, attr_id: u64) -> Option<(String, Option<String>, bool)> {
+    let nodes = tree.get("nodes")?.as_array()?;
+    let node = nodes.get(attr_id as usize)?;
+    if let Some(attr) = node.get("JSXAttribute") {
+        let name = attr.get("name")?.as_str()?.to_string();
+        let value = attr.get("value").and_then(|v| {
+            if v.is_null() { return None; }
+            let vid = v.as_u64()?;
+            let value_node = nodes.get(vid as usize)?;
+            if let Some(lit) = value_node.get("StringLiteral") {
+                return lit.get("value").and_then(|v| v.as_str()).map(|s| s.to_string());
+            }
+            None
+        });
+        return Some((name, value, false));
+    }
+    if node.get("JSXSpreadAttribute").is_some() {
+        return Some(("".to_string(), None, true));
+    }
+    None
 }

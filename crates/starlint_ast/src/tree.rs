@@ -9,7 +9,7 @@ use crate::node_type::AstNodeType;
 use crate::types::{NodeId, Span};
 
 /// A flat indexed AST. Nodes reference children by [`NodeId`] index.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AstTree {
     /// All nodes in depth-first preorder.
     nodes: Vec<AstNode>,

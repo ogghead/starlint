@@ -4,13 +4,13 @@
 //! using source-text scanning to parse and validate JSDoc comment blocks.
 
 wit_bindgen::generate!({
-    world: "linter-plugin",
+    world: "linter-plugin-v2",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin::Guest;
+use exports::starlint::plugin::plugin_v2::Guest;
 use starlint::plugin::types::{
-    Category, LintDiagnostic, NodeBatch, NodeInterest, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -42,10 +42,6 @@ impl Guest for JsdocPlugin {
         ]
     }
 
-    fn get_node_interests() -> NodeInterest {
-        NodeInterest::SOURCE_TEXT
-    }
-
     fn get_file_patterns() -> Vec<String> {
         vec![
             "*.js".into(), "*.jsx".into(), "*.ts".into(), "*.tsx".into(),
@@ -57,8 +53,8 @@ impl Guest for JsdocPlugin {
         Vec::new()
     }
 
-    fn lint_file(batch: NodeBatch) -> Vec<LintDiagnostic> {
-        let source = &batch.file.source_text;
+    fn lint_file(file: FileContext, _tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+        let source = &file.source_text;
         let mut diags = Vec::new();
 
         // Extract all JSDoc blocks and validate them
@@ -199,20 +195,22 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
-    LintDiagnostic {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
         severity: Severity::Warning,
         help: None,
+        fix: None,
+        labels: vec![],
     }
 }
 
 // ==================== Tag validation rules ====================
 
 /// jsdoc/check-access: validate @access values
-fn check_access(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_access(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     for tag in &block.tags {
         if tag.name == "@access" {
             let valid = ["public", "private", "protected", "package"];
@@ -229,7 +227,7 @@ fn check_access(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// jsdoc/check-tag-names: validate tag names against known tags
-fn check_tag_names(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_tag_names(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     let known_tags = [
         "@abstract", "@access", "@alias", "@async", "@augments", "@author",
         "@borrows", "@callback", "@class", "@classdesc", "@constant", "@constructs",
@@ -262,7 +260,7 @@ fn check_tag_names(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// jsdoc/check-types: enforce type casing (object not Object, etc.)
-fn check_types(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_types(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     let type_fixes: &[(&str, &str)] = &[
         ("Object", "object"),
         ("Boolean", "boolean"),
@@ -299,7 +297,7 @@ fn check_types(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// jsdoc/check-values: validate @version/@since/@license values
-fn check_values(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_values(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     for tag in &block.tags {
         if tag.name == "@version" || tag.name == "@since" {
             let value = tag.content.trim();
@@ -325,7 +323,7 @@ fn check_values(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// jsdoc/empty-tags: certain tags should have no content
-fn check_empty_tags(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_empty_tags(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     let empty_tags = [
         "@abstract", "@async", "@generator", "@global", "@hideconstructor",
         "@ignore", "@inner", "@instance", "@override", "@readonly",
@@ -344,7 +342,7 @@ fn check_empty_tags(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// jsdoc/no-defaults: disallow @default and @defaultvalue tags
-fn check_no_defaults(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_defaults(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     for tag in &block.tags {
         if tag.name == "@default" || tag.name == "@defaultvalue" {
             diags.push(warn(
@@ -357,7 +355,7 @@ fn check_no_defaults(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// jsdoc/no-multi-asterisks: disallow multiple asterisks at line start
-fn check_no_multi_asterisks(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_multi_asterisks(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     for line in block.content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("**") && !trimmed.starts_with("**/") {
@@ -373,7 +371,7 @@ fn check_no_multi_asterisks(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>)
 }
 
 /// jsdoc/no-restricted-syntax: disallow @todo by default
-fn check_no_restricted_syntax(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_restricted_syntax(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     for tag in &block.tags {
         if tag.name == "@todo" {
             diags.push(warn(
@@ -386,7 +384,7 @@ fn check_no_restricted_syntax(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic
 }
 
 /// jsdoc/match-description: descriptions should start with uppercase
-fn check_match_description(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_match_description(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     if !block.description.is_empty() {
         let first_char = block.description.chars().next().unwrap_or('A');
         if first_char.is_lowercase() {
@@ -400,7 +398,7 @@ fn check_match_description(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) 
 }
 
 /// jsdoc/require-param-description: @param should have descriptions
-fn check_param_descriptions(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_param_descriptions(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     for tag in &block.tags {
         if tag.name == "@param" {
             // Content format: {type} name description
@@ -421,7 +419,7 @@ fn check_param_descriptions(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>)
 }
 
 /// jsdoc/require-param-type: @param should have type annotations
-fn check_param_types(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_param_types(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     for tag in &block.tags {
         if tag.name == "@param" {
             let content = tag.content.trim();
@@ -437,7 +435,7 @@ fn check_param_types(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// jsdoc/check-property-names: no duplicate @property names
-fn check_property_names(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
+fn check_property_names(block: &JsdocBlock, diags: &mut Vec<LintDiagnosticV2>) {
     let mut seen: Vec<&str> = Vec::new();
     for tag in &block.tags {
         if tag.name == "@property" || tag.name == "@prop" {
@@ -461,7 +459,7 @@ fn check_property_names(block: &JsdocBlock, diags: &mut Vec<LintDiagnostic>) {
 // ==================== Context-aware rules ====================
 
 /// jsdoc/require-param: require @param for all function parameters
-fn check_require_param(source: &str, blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnostic>) {
+fn check_require_param(source: &str, blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnosticV2>) {
     for block in blocks {
         // Look for function declaration after this JSDoc block
         let after = &source[block.end..];
@@ -501,7 +499,7 @@ fn check_require_param(source: &str, blocks: &[JsdocBlock], diags: &mut Vec<Lint
 }
 
 /// jsdoc/require-returns: require @returns for functions with return
-fn check_require_returns(source: &str, blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnostic>) {
+fn check_require_returns(source: &str, blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnosticV2>) {
     for block in blocks {
         let after = &source[block.end..];
         let trimmed = after.trim_start();
@@ -528,7 +526,7 @@ fn check_require_returns(source: &str, blocks: &[JsdocBlock], diags: &mut Vec<Li
 }
 
 /// jsdoc/require-description: require non-empty description in JSDoc
-fn check_require_description(blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnostic>) {
+fn check_require_description(blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnosticV2>) {
     for block in blocks {
         if block.description.is_empty() && !block.tags.is_empty() {
             diags.push(warn(
@@ -541,7 +539,7 @@ fn check_require_description(blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnost
 }
 
 /// jsdoc/implements-on-classes: @implements only on class declarations
-fn check_implements_on_classes(source: &str, blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnostic>) {
+fn check_implements_on_classes(source: &str, blocks: &[JsdocBlock], diags: &mut Vec<LintDiagnosticV2>) {
     for block in blocks {
         let has_implements = block.tags.iter().any(|t| t.name == "@implements");
         if !has_implements {

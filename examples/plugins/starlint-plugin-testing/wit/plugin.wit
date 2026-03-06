@@ -1,11 +1,19 @@
 /// starlint plugin interface.
 ///
 /// Defines the contract between starlint and WASM plugins.
-/// Plugins implement the `plugin` interface and export it via the
-/// `linter-plugin` world.
+/// Two worlds are available:
+///   - `linter-plugin`    (v1): Simplified AST nodes via `node-batch`.
+///   - `linter-plugin-v2` (v2): Full AST tree + fix support.
+///
+/// New plugins should target `linter-plugin-v2`. The v1 world is kept
+/// for backward compatibility with existing compiled plugins.
 package starlint:plugin@0.1.0;
 
 interface types {
+    // ----------------------------------------------------------------
+    // Shared types (used by both v1 and v2)
+    // ----------------------------------------------------------------
+
     /// Byte-offset span in source text.
     record span {
         start: u32,
@@ -36,7 +44,21 @@ interface types {
         default-severity: severity,
     }
 
-    /// A lint diagnostic emitted by a rule.
+    /// Opaque JSON configuration string.
+    type plugin-config = string;
+
+    /// Context about the file being linted.
+    record file-context {
+        file-path: string,
+        source-text: string,
+        extension: string,
+    }
+
+    // ----------------------------------------------------------------
+    // v1 types (simplified AST nodes, no fix support)
+    // ----------------------------------------------------------------
+
+    /// A lint diagnostic emitted by a rule (v1 — no fix support).
     record lint-diagnostic {
         rule-name: string,
         message: string,
@@ -68,7 +90,7 @@ interface types {
         source-text,
     }
 
-    /// Simplified AST node representations for the WASM boundary.
+    /// Simplified AST node representations for the WASM boundary (v1).
     variant ast-node {
         import-decl(import-declaration-node),
         export-default-decl(export-default-node),
@@ -201,23 +223,82 @@ interface types {
         children-count: u32,
     }
 
-    /// Context about the file being linted.
-    record file-context {
-        file-path: string,
-        source-text: string,
-        extension: string,
-    }
-
-    /// A batch of nodes for a single file.
+    /// A batch of nodes for a single file (v1).
     record node-batch {
         file: file-context,
         nodes: list<ast-node>,
     }
 
-    /// Opaque JSON configuration string.
-    type plugin-config = string;
+    // ----------------------------------------------------------------
+    // v2 types (full AST tree + fix support)
+    // ----------------------------------------------------------------
+
+    /// Safety classification of a fix.
+    enum fix-kind {
+        /// Fix is safe and preserves semantics.
+        safe-fix,
+        /// Fix is a suggestion that may change semantics.
+        suggestion-fix,
+        /// Fix may change semantics in a breaking way.
+        dangerous-fix,
+    }
+
+    /// A single text edit (replace span contents with new text).
+    record edit {
+        /// Span to replace.
+        span: span,
+        /// Replacement text.
+        replacement: string,
+    }
+
+    /// An auto-fix consisting of one or more text edits.
+    record fix {
+        /// Safety classification.
+        kind: fix-kind,
+        /// Human-readable description of the fix.
+        message: string,
+        /// Ordered list of text edits to apply.
+        edits: list<edit>,
+        /// Whether edit replacements contain LSP snippet syntax.
+        is-snippet: bool,
+    }
+
+    /// A labeled source span for additional context in diagnostics.
+    record label {
+        /// Source span.
+        span: span,
+        /// Label message.
+        message: string,
+    }
+
+    /// A lint diagnostic with full fix support (v2).
+    record lint-diagnostic-v2 {
+        rule-name: string,
+        message: string,
+        span: span,
+        severity: severity,
+        help: option<string>,
+        /// Optional auto-fix.
+        fix: option<fix>,
+        /// Additional labeled spans for context.
+        labels: list<label>,
+    }
+
+    /// Serialized AST tree (JSON-encoded `starlint_ast::AstTree`).
+    ///
+    /// The full AST is serialized as JSON bytes rather than defined as
+    /// 85+ WIT records. Plugins deserialize using the `starlint_ast` crate
+    /// (or any JSON parser for non-Rust plugins).
+    ///
+    /// The tree is a flat indexed structure where nodes reference children
+    /// by `u32` index. See `starlint_ast` crate documentation for the
+    /// exact schema.
+    type serialized-ast-tree = list<u8>;
 }
 
+/// v1 plugin interface (simplified AST nodes, no fix support).
+///
+/// Kept for backward compatibility with existing compiled plugins.
 interface plugin {
     use types.{rule-meta, lint-diagnostic, node-interest, node-batch, plugin-config};
 
@@ -238,7 +319,33 @@ interface plugin {
     lint-file: func(batch: node-batch) -> list<lint-diagnostic>;
 }
 
-/// The world that plugins must target.
+/// v2 plugin interface (full AST tree + fix support).
+///
+/// New plugins should target this interface. Receives the complete AST
+/// tree for each file, enabling deep navigation and fix production.
+interface plugin-v2 {
+    use types.{rule-meta, lint-diagnostic-v2, file-context, serialized-ast-tree, plugin-config};
+
+    /// Return metadata for all rules provided by this plugin.
+    get-rules: func() -> list<rule-meta>;
+
+    /// Declare file-path glob patterns this plugin applies to.
+    /// Empty list = all files (default). Example: ["*.stories.*", "*.test.*"]
+    get-file-patterns: func() -> list<string>;
+
+    /// Configure the plugin. Returns a list of validation errors (empty = OK).
+    configure: func(config: plugin-config) -> list<string>;
+
+    /// Lint a file. Receives the full AST tree, returns diagnostics with fix support.
+    lint-file: func(file: file-context, tree: serialized-ast-tree) -> list<lint-diagnostic-v2>;
+}
+
+/// v1 world — plugins export the simplified `plugin` interface.
 world linter-plugin {
     export plugin;
+}
+
+/// v2 world — plugins export the full `plugin-v2` interface.
+world linter-plugin-v2 {
+    export plugin-v2;
 }

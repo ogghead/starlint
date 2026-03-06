@@ -4,13 +4,13 @@
 //! using a mix of source-text scanning and AST node inspection.
 
 wit_bindgen::generate!({
-    world: "linter-plugin",
+    world: "linter-plugin-v2",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin::Guest;
+use exports::starlint::plugin::plugin_v2::Guest;
 use starlint::plugin::types::{
-    AstNode, Category, LintDiagnostic, NodeBatch, NodeInterest, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -39,13 +39,6 @@ impl Guest for StorybookPlugin {
         ]
     }
 
-    fn get_node_interests() -> NodeInterest {
-        // SOURCE_TEXT for text-scanning rules + AST nodes for the 2 AST-based rules.
-        NodeInterest::SOURCE_TEXT
-            | NodeInterest::CALL_EXPRESSION
-            | NodeInterest::IMPORT_DECLARATION
-    }
-
     fn get_file_patterns() -> Vec<String> {
         vec![
             "*.stories.*".into(),
@@ -57,10 +50,10 @@ impl Guest for StorybookPlugin {
         Vec::new()
     }
 
-    fn lint_file(batch: NodeBatch) -> Vec<LintDiagnostic> {
-        let source = &batch.file.source_text;
-        let file_path = &batch.file.file_path;
-        let ext = &batch.file.extension;
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+        let source = &file.source_text;
+        let file_path = &file.file_path;
+        let ext = &file.extension;
         let mut diags = Vec::new();
 
         // --- Text-scanning rules ---
@@ -83,33 +76,44 @@ impl Guest for StorybookPlugin {
         }
 
         // --- AST-based rules ---
-        for node in &batch.nodes {
-            match node {
-                AstNode::CallExpr(call) => {
+        let tree: serde_json::Value = match serde_json::from_slice(&tree) {
+            Ok(v) => v,
+            Err(_) => serde_json::Value::Null,
+        };
+
+        if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+            for node in nodes {
+                if let Some(call) = node.get("CallExpression") {
+                    let callee_path = get_callee_path(&tree, call);
+                    let span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });
+
                     // storybook/no-stories-of
-                    if call.callee_path == "storiesOf" {
+                    if callee_path == "storiesOf" {
                         diags.push(diag(
                             "storybook/no-stories-of",
                             "`storiesOf` is deprecated — use CSF (Component Story Format) instead",
-                            call.span,
+                            span,
                             Severity::Error,
                             None,
                         ));
                     }
                 }
-                AstNode::ImportDecl(import) => {
+
+                if let Some(import) = node.get("ImportDeclaration") {
+                    let source_val = import.get("source").and_then(|s| s.as_str()).unwrap_or("");
+                    let span = extract_span(import).unwrap_or(Span { start: 0, end: 0 });
+
                     // storybook/use-storybook-testing-library
-                    if import.source.starts_with("@testing-library/") {
+                    if source_val.starts_with("@testing-library/") {
                         diags.push(diag(
                             "storybook/use-storybook-testing-library",
                             "Import from `@storybook/test` instead of `@testing-library/` directly",
-                            import.span,
+                            span,
                             Severity::Warning,
                             Some("Replace `@testing-library/` imports with `@storybook/test`".into()),
                         ));
                     }
                 }
-                _ => {}
             }
         }
 
@@ -128,23 +132,25 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnostic {
-    LintDiagnostic {
+fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span,
         severity: sev,
         help,
+        fix: None,
+        labels: vec![],
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Warning, None)
 }
 
 // --- Text-scanning rule implementations ---
 
-fn check_default_exports(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_default_exports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     if !source.contains("export default") {
         diags.push(warn(
             "storybook/default-exports",
@@ -154,7 +160,7 @@ fn check_default_exports(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_story_exports(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_story_exports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let has_named = source.contains("export const ")
         || source.contains("export let ")
         || source.contains("export function ")
@@ -170,7 +176,7 @@ fn check_story_exports(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_hierarchy_separator(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_hierarchy_separator(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["title: '", "title: \"", "title:'", "title:\""];
 
     for pattern in &patterns {
@@ -197,7 +203,7 @@ fn check_hierarchy_separator(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_csf_component(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_csf_component(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let Some(default_pos) = source.find("export default") else { return };
     let after = &source[default_pos..];
     let Some(brace_off) = after.find('{') else { return };
@@ -213,7 +219,7 @@ fn check_csf_component(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_await_interactions(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_await_interactions(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["userEvent.", "within("];
 
     for pattern in &patterns {
@@ -235,7 +241,7 @@ fn check_await_interactions(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_context_in_play_function(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_context_in_play_function(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = ".play()";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -249,7 +255,7 @@ fn check_context_in_play_function(source: &str, diags: &mut Vec<LintDiagnostic>)
     }
 }
 
-fn check_no_title_property_in_meta(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_title_property_in_meta(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let Some(default_pos) = source.find("export default") else { return };
     let after = &source[default_pos..];
     let Some(brace_off) = after.find('{') else { return };
@@ -282,7 +288,7 @@ fn check_no_title_property_in_meta(source: &str, diags: &mut Vec<LintDiagnostic>
     }
 }
 
-fn check_meta_inline_properties(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_meta_inline_properties(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let Some(default_pos) = source.find("export default") else { return };
     let after = &source[default_pos..];
     let Some(brace_off) = after.find('{') else { return };
@@ -314,7 +320,7 @@ fn check_meta_inline_properties(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_prefer_pascal_case(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_pascal_case(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["export const ", "export let "];
 
     for pattern in &patterns {
@@ -351,7 +357,7 @@ fn is_pascal_case(s: &str) -> bool {
     first.is_ascii_uppercase() && !s.contains('-')
 }
 
-fn check_no_redundant_story_name(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_redundant_story_name(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "export const ";
     let mut pos = 0;
 
@@ -383,7 +389,7 @@ fn check_no_redundant_story_name(source: &str, diags: &mut Vec<LintDiagnostic>) 
     }
 }
 
-fn check_meta_satisfies_type(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_meta_satisfies_type(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let Some(default_pos) = source.find("export default") else { return };
     let after = &source[default_pos..];
 
@@ -397,7 +403,7 @@ fn check_meta_satisfies_type(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_use_storybook_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_use_storybook_expect(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     if !source.contains("expect(") {
         return;
     }
@@ -417,7 +423,7 @@ fn check_use_storybook_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_uninstalled_addons(source: &str, file_path: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_uninstalled_addons(source: &str, file_path: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Only applies to storybook config files.
     let is_config = file_path.contains(".storybook") && file_path.contains("main");
     if !is_config || !source.contains("addons") {
@@ -441,4 +447,36 @@ fn check_no_uninstalled_addons(source: &str, file_path: &str, diags: &mut Vec<Li
             pos = abs + 1;
         }
     }
+}
+
+// --- Tree navigation helpers ---
+
+fn extract_span(node: &serde_json::Value) -> Option<Span> {
+    let span = node.get("span")?;
+    let start = span.get("start")?.as_u64()?;
+    let end = span.get("end")?.as_u64()?;
+    Some(Span { start: start as u32, end: end as u32 })
+}
+
+fn get_callee_path(tree: &serde_json::Value, call: &serde_json::Value) -> String {
+    let callee_id = call.get("callee").and_then(|c| c.as_u64()).unwrap_or(0);
+    resolve_callee(tree, callee_id)
+}
+
+fn resolve_callee(tree: &serde_json::Value, id: u64) -> String {
+    let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) else { return String::new() };
+    let Some(node) = nodes.get(id as usize) else { return String::new() };
+    if let Some(ident) = node.get("IdentifierReference") {
+        return ident.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+    }
+    if let Some(member) = node.get("StaticMemberExpression") {
+        let object_id = member.get("object").and_then(|o| o.as_u64()).unwrap_or(0);
+        let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
+        let object_path = resolve_callee(tree, object_id);
+        if object_path.is_empty() {
+            return property.to_string();
+        }
+        return format!("{object_path}.{property}");
+    }
+    String::new()
 }

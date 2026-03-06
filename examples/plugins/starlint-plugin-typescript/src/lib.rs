@@ -6,13 +6,13 @@
 //! 17 rules requiring semantic analysis are registered but not actively checked.
 
 wit_bindgen::generate!({
-    world: "linter-plugin",
+    world: "linter-plugin-v2",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin::Guest;
+use exports::starlint::plugin::plugin_v2::Guest;
 use starlint::plugin::types::{
-    AstNode, Category, LintDiagnostic, NodeBatch, NodeInterest, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -124,17 +124,6 @@ impl Guest for TypeScriptPlugin {
         rules
     }
 
-    fn get_node_interests() -> NodeInterest {
-        NodeInterest::SOURCE_TEXT
-            | NodeInterest::IMPORT_DECLARATION
-            | NodeInterest::CALL_EXPRESSION
-            | NodeInterest::MEMBER_EXPRESSION
-            | NodeInterest::EXPORT_NAMED_DECLARATION
-            | NodeInterest::EXPORT_DEFAULT_DECLARATION
-            | NodeInterest::VARIABLE_DECLARATION
-            | NodeInterest::IDENTIFIER_REFERENCE
-    }
-
     fn get_file_patterns() -> Vec<String> {
         vec!["*.ts".into(), "*.tsx".into(), "*.mts".into(), "*.cts".into()]
     }
@@ -143,9 +132,15 @@ impl Guest for TypeScriptPlugin {
         Vec::new()
     }
 
-    fn lint_file(batch: NodeBatch) -> Vec<LintDiagnostic> {
-        let source = &batch.file.source_text;
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+        let source = &file.source_text;
         let mut diags = Vec::new();
+
+        // Deserialize the AST tree from JSON bytes.
+        let tree: serde_json::Value = match serde_json::from_slice(&tree) {
+            Ok(v) => v,
+            Err(_) => serde_json::Value::Null,
+        };
 
         // --- Source-text scanning rules ---
         check_ban_ts_comment(source, &mut diags);
@@ -184,18 +179,17 @@ impl Guest for TypeScriptPlugin {
         check_no_unnecessary_type_constraint(source, &mut diags);
 
         // --- AST-based rules ---
-        for node in &batch.nodes {
-            match node {
-                AstNode::CallExpr(call) => {
-                    check_call_expr_rules(call, &mut diags);
+        if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+            for node in nodes {
+                if let Some(call) = node.get("CallExpression") {
+                    check_call_expr_rules(call, &tree, &mut diags);
                 }
-                AstNode::MemberExpr(member) => {
-                    check_member_expr_rules(member, source, &mut diags);
+                if let Some(member) = node.get("StaticMemberExpression") {
+                    check_member_expr_rules(member, &tree, source, &mut diags);
                 }
-                AstNode::ImportDecl(import) => {
+                if let Some(import) = node.get("ImportDeclaration") {
                     check_import_rules(import, &mut diags);
                 }
-                _ => {}
             }
         }
 
@@ -214,30 +208,34 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
-    LintDiagnostic {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
         severity: Severity::Warning,
         help: None,
+        fix: None,
+        labels: vec![],
     }
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
-    LintDiagnostic {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
         severity: Severity::Error,
         help: None,
+        fix: None,
+        labels: vec![],
     }
 }
 
 // ==================== Source-text scanning rules ====================
 
 /// typescript/ban-ts-comment: disallow @ts-ignore, @ts-nocheck, etc.
-fn check_ban_ts_comment(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_ban_ts_comment(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let directives = ["@ts-ignore", "@ts-nocheck", "@ts-check"];
     for directive in &directives {
         let mut search_from = 0;
@@ -258,7 +256,7 @@ fn check_ban_ts_comment(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/ban-tslint-comment: disallow tslint comments
-fn check_ban_tslint_comment(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_ban_tslint_comment(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["tslint:disable", "tslint:enable"];
     for pattern in &patterns {
         let mut search_from = 0;
@@ -275,7 +273,7 @@ fn check_ban_tslint_comment(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/ban-types: disallow certain types
-fn check_ban_types(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_ban_types(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let banned: &[(&str, &str)] = &[
         (": Object", "Use object or Record<string, unknown> instead of Object"),
         (": String", "Use string instead of String"),
@@ -301,7 +299,7 @@ fn check_ban_types(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-explicit-any: disallow the any type
-fn check_no_explicit_any(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_explicit_any(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = [": any", ": any;", ": any,", ": any)", ": any>", "<any>", "<any,"];
     for pattern in &patterns {
         let mut search_from = 0;
@@ -318,7 +316,7 @@ fn check_no_explicit_any(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-namespace: disallow TypeScript namespaces
-fn check_no_namespace(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_namespace(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("namespace ") {
         let abs_pos = search_from + pos;
@@ -336,7 +334,7 @@ fn check_no_namespace(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-non-null-assertion: disallow ! non-null assertion
-fn check_no_non_null_assertion(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_non_null_assertion(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let bytes = source.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
@@ -365,7 +363,7 @@ fn check_no_non_null_assertion(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-extra-non-null-assertion: disallow !!
-fn check_no_extra_non_null_assertion(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_extra_non_null_assertion(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("!!") {
         let abs_pos = search_from + pos;
@@ -383,7 +381,7 @@ fn check_no_extra_non_null_assertion(source: &str, diags: &mut Vec<LintDiagnosti
 }
 
 /// typescript/no-var-requires: disallow require statements
-fn check_no_var_requires(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_var_requires(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("= require(") {
         let abs_pos = search_from + pos;
@@ -397,7 +395,7 @@ fn check_no_var_requires(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-require-imports: disallow require() imports
-fn check_no_require_imports(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_require_imports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("require(") {
         let abs_pos = search_from + pos;
@@ -417,7 +415,7 @@ fn check_no_require_imports(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/triple-slash-reference: disallow /// <reference> directives
-fn check_triple_slash_reference(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_triple_slash_reference(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("/// <reference") {
         let abs_pos = search_from + pos;
@@ -431,7 +429,7 @@ fn check_triple_slash_reference(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/prefer-ts-expect-error: prefer @ts-expect-error over @ts-ignore
-fn check_prefer_ts_expect_error(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_ts_expect_error(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("@ts-ignore") {
         let abs_pos = search_from + pos;
@@ -445,7 +443,7 @@ fn check_prefer_ts_expect_error(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/prefer-as-const: prefer as const over literal type
-fn check_prefer_as_const(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_as_const(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Look for patterns like: as "literal" or as 42
     let patterns = [" as \"", " as '"];
     for pattern in &patterns {
@@ -463,7 +461,7 @@ fn check_prefer_as_const(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/prefer-namespace-keyword: prefer namespace over module
-fn check_prefer_namespace_keyword(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_namespace_keyword(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("module ") {
         let abs_pos = search_from + pos;
@@ -481,7 +479,7 @@ fn check_prefer_namespace_keyword(source: &str, diags: &mut Vec<LintDiagnostic>)
 }
 
 /// typescript/consistent-type-imports: enforce type-only imports
-fn check_consistent_type_imports(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_consistent_type_imports(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Look for imports used only as types — simplified heuristic
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("import {") {
@@ -502,13 +500,13 @@ fn check_consistent_type_imports(source: &str, _diags: &mut Vec<LintDiagnostic>)
 }
 
 /// typescript/consistent-type-exports: enforce type-only exports
-fn check_consistent_type_exports(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_consistent_type_exports(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Simplified — would need type analysis to be accurate
     let _ = source;
 }
 
 /// typescript/no-empty-interface: disallow empty interfaces
-fn check_no_empty_interface(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_empty_interface(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("interface ") {
         let abs_pos = search_from + pos;
@@ -530,7 +528,7 @@ fn check_no_empty_interface(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-empty-object-type: disallow {}
-fn check_no_empty_object_type(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_empty_object_type(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = [": {}", "= {}"];
     for pattern in &patterns {
         let mut search_from = 0;
@@ -550,19 +548,19 @@ fn check_no_empty_object_type(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/consistent-type-definitions: prefer interface or type
-fn check_consistent_type_definitions(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_consistent_type_definitions(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Config-dependent — skip without configuration
     let _ = source;
 }
 
 /// typescript/array-type: enforce Array<T> or T[] style
-fn check_array_type(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_array_type(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Config-dependent — skip without configuration
     let _ = source;
 }
 
 /// typescript/no-duplicate-enum-values: disallow duplicate enum values
-fn check_no_duplicate_enum_values(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_duplicate_enum_values(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("enum ") {
         let abs_pos = search_from + pos;
@@ -594,7 +592,7 @@ fn check_no_duplicate_enum_values(source: &str, diags: &mut Vec<LintDiagnostic>)
 }
 
 /// typescript/no-mixed-enums: disallow mixing number and string members
-fn check_no_mixed_enums(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_mixed_enums(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("enum ") {
         let abs_pos = search_from + pos;
@@ -629,7 +627,7 @@ fn check_no_mixed_enums(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/prefer-enum-initializers: require explicit enum values
-fn check_prefer_enum_initializers(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_enum_initializers(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("enum ") {
         let abs_pos = search_from + pos;
@@ -655,13 +653,13 @@ fn check_prefer_enum_initializers(source: &str, diags: &mut Vec<LintDiagnostic>)
 }
 
 /// typescript/prefer-literal-enum-member: require literal enum values
-fn check_prefer_literal_enum_member(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_literal_enum_member(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Complex analysis needed — skip
     let _ = source;
 }
 
 /// typescript/no-inferrable-types: disallow explicit types when easily inferred
-fn check_no_inferrable_types(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_inferrable_types(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Look for obvious cases: const x: number = 42, const s: string = "hello"
     let patterns: &[(&str, &str)] = &[
         (": number = ", "Type number is trivially inferred"),
@@ -678,7 +676,7 @@ fn check_no_inferrable_types(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-this-alias: disallow aliasing this
-fn check_no_this_alias(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_this_alias(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["= this;", "= this,", "= this "];
     for pattern in &patterns {
         let mut search_from = 0;
@@ -699,7 +697,7 @@ fn check_no_this_alias(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-useless-empty-export: disallow empty export {}
-fn check_no_useless_empty_export(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_useless_empty_export(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     if let Some(pos) = source.find("export {}") {
         // Check if there are other exports/imports that already make this a module
         let has_other_export = source.contains("export ") && source.find("export ") != Some(pos);
@@ -715,19 +713,19 @@ fn check_no_useless_empty_export(source: &str, diags: &mut Vec<LintDiagnostic>) 
 }
 
 /// typescript/no-import-type-side-effects: disallow import type with side effects
-fn check_no_import_type_side_effects(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_no_import_type_side_effects(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Complex analysis needed
     let _ = source;
 }
 
 /// typescript/adjacent-overload-signatures: require adjacent overloads
-fn check_adjacent_overload_signatures(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_adjacent_overload_signatures(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Would need detailed function declaration tracking
     let _ = source;
 }
 
 /// typescript/no-misused-new: enforce valid new/constructor
-fn check_no_misused_new(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_misused_new(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Check for `new()` in interface (should be constructor)
     if let Some(pos) = source.find("interface ") {
         let after = &source[pos..];
@@ -746,7 +744,7 @@ fn check_no_misused_new(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-unsafe-declaration-merging: disallow unsafe merging
-fn check_no_unsafe_declaration_merging(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_unsafe_declaration_merging(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Find names declared as both interface and class
     let mut interface_names: Vec<String> = Vec::new();
     let mut search_from = 0;
@@ -772,7 +770,7 @@ fn check_no_unsafe_declaration_merging(source: &str, diags: &mut Vec<LintDiagnos
 }
 
 /// typescript/no-wrapper-object-types: disallow String, Number, Boolean as types
-fn check_no_wrapper_object_types(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_wrapper_object_types(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let types: &[(&str, &str)] = &[
         (": String", "string"),
         (": Number", "number"),
@@ -795,7 +793,7 @@ fn check_no_wrapper_object_types(source: &str, diags: &mut Vec<LintDiagnostic>) 
 }
 
 /// typescript/no-unsafe-function-type: disallow Function type
-fn check_no_unsafe_function_type(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_unsafe_function_type(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = [": Function", ": Function;", ": Function,", ": Function)"];
     for pattern in &patterns {
         let mut search_from = 0;
@@ -812,7 +810,7 @@ fn check_no_unsafe_function_type(source: &str, diags: &mut Vec<LintDiagnostic>) 
 }
 
 /// typescript/prefer-for-of: prefer for-of over index-based for
-fn check_prefer_for_of(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_for_of(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Look for: for (let i = 0; i < arr.length; i++)
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("for (let i = 0;") {
@@ -830,7 +828,7 @@ fn check_prefer_for_of(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// typescript/no-unnecessary-type-constraint: disallow extends unknown/any
-fn check_no_unnecessary_type_constraint(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_unnecessary_type_constraint(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["extends unknown", "extends any"];
     for pattern in &patterns {
         let mut search_from = 0;
@@ -849,14 +847,17 @@ fn check_no_unnecessary_type_constraint(source: &str, diags: &mut Vec<LintDiagno
 // ==================== AST-based rules ====================
 
 fn check_call_expr_rules(
-    call: &starlint::plugin::types::CallExpressionNode,
-    diags: &mut Vec<LintDiagnostic>,
+    call: &serde_json::Value,
+    tree: &serde_json::Value,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let start = call.span.start as usize;
-    let end = call.span.end as usize;
+    let span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });
+    let start = span.start as usize;
+    let end = span.end as usize;
+    let callee = get_callee_path(tree, call);
 
     // --- typescript/prefer-includes ---
-    if call.callee_path.ends_with(".indexOf") {
+    if callee.ends_with(".indexOf") {
         diags.push(warn(
             "typescript/prefer-includes",
             "Use .includes() instead of .indexOf() !== -1",
@@ -865,12 +866,12 @@ fn check_call_expr_rules(
     }
 
     // --- typescript/prefer-string-starts-ends-with ---
-    if call.callee_path.ends_with(".match") || call.callee_path.ends_with(".charAt") {
+    if callee.ends_with(".match") || callee.ends_with(".charAt") {
         // Simplified: flag .match() and .charAt(0) patterns
     }
 
     // --- typescript/prefer-regexp-exec ---
-    if call.callee_path.ends_with(".match") {
+    if callee.ends_with(".match") {
         diags.push(warn(
             "typescript/prefer-regexp-exec",
             "Use RegExp.exec() instead of String.match()",
@@ -879,7 +880,8 @@ fn check_call_expr_rules(
     }
 
     // --- typescript/require-array-sort-compare ---
-    if call.callee_path.ends_with(".sort") && call.argument_count == 0 {
+    let arg_count = call.get("arguments").and_then(|a| a.as_array()).map_or(0, |a| a.len());
+    if callee.ends_with(".sort") && arg_count == 0 {
         diags.push(warn(
             "typescript/require-array-sort-compare",
             "Provide a compare function to .sort()",
@@ -888,7 +890,7 @@ fn check_call_expr_rules(
     }
 
     // --- typescript/prefer-find ---
-    if call.callee_path.ends_with(".filter") {
+    if callee.ends_with(".filter") {
         diags.push(warn(
             "typescript/prefer-find",
             "Consider using .find() instead of .filter()[0]",
@@ -898,19 +900,51 @@ fn check_call_expr_rules(
 }
 
 fn check_member_expr_rules(
-    _member: &starlint::plugin::types::MemberExpressionNode,
+    _member: &serde_json::Value,
+    _tree: &serde_json::Value,
     _source: &str,
-    _diags: &mut Vec<LintDiagnostic>,
+    _diags: &mut Vec<LintDiagnosticV2>,
 ) {
     // Member expression checks for TypeScript rules
     // Most TS rules need type information which isn't available
 }
 
 fn check_import_rules(
-    import: &starlint::plugin::types::ImportDeclarationNode,
-    _diags: &mut Vec<LintDiagnostic>,
+    _import: &serde_json::Value,
+    _diags: &mut Vec<LintDiagnosticV2>,
 ) {
     // Import-based TypeScript rules
     // consistent-type-imports is handled by source-text scanning
-    let _ = import;
+}
+
+// ==================== Tree navigation helpers ====================
+
+fn extract_span(node: &serde_json::Value) -> Option<Span> {
+    let span = node.get("span")?;
+    let start = span.get("start")?.as_u64()?;
+    let end = span.get("end")?.as_u64()?;
+    Some(Span { start: start as u32, end: end as u32 })
+}
+
+fn get_callee_path(tree: &serde_json::Value, call: &serde_json::Value) -> String {
+    let callee_id = call.get("callee").and_then(|c| c.as_u64()).unwrap_or(0);
+    resolve_callee(tree, callee_id)
+}
+
+fn resolve_callee(tree: &serde_json::Value, id: u64) -> String {
+    let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) else { return String::new() };
+    let Some(node) = nodes.get(id as usize) else { return String::new() };
+    if let Some(ident) = node.get("IdentifierReference") {
+        return ident.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+    }
+    if let Some(member) = node.get("StaticMemberExpression") {
+        let object_id = member.get("object").and_then(|o| o.as_u64()).unwrap_or(0);
+        let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
+        let object_path = resolve_callee(tree, object_id);
+        if object_path.is_empty() {
+            return property.to_string();
+        }
+        return format!("{object_path}.{property}");
+    }
+    String::new()
 }

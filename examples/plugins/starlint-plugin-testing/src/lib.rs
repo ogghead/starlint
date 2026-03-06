@@ -4,13 +4,13 @@
 //! using a mix of AST node inspection and source-text scanning.
 
 wit_bindgen::generate!({
-    world: "linter-plugin",
+    world: "linter-plugin-v2",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin::Guest;
+use exports::starlint::plugin::plugin_v2::Guest;
 use starlint::plugin::types::{
-    AstNode, Category, LintDiagnostic, NodeBatch, NodeInterest, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -100,15 +100,6 @@ impl Guest for TestingPlugin {
         rules
     }
 
-    fn get_node_interests() -> NodeInterest {
-        NodeInterest::SOURCE_TEXT
-            | NodeInterest::CALL_EXPRESSION
-            | NodeInterest::IMPORT_DECLARATION
-            | NodeInterest::EXPORT_NAMED_DECLARATION
-            | NodeInterest::EXPORT_DEFAULT_DECLARATION
-            | NodeInterest::VARIABLE_DECLARATION
-    }
-
     fn get_file_patterns() -> Vec<String> {
         vec![
             "*.test.*".into(),
@@ -122,10 +113,16 @@ impl Guest for TestingPlugin {
         Vec::new()
     }
 
-    fn lint_file(batch: NodeBatch) -> Vec<LintDiagnostic> {
-        let source = &batch.file.source_text;
-        let file_path = &batch.file.file_path;
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+        let source = &file.source_text;
+        let file_path = &file.file_path;
         let mut diags = Vec::new();
+
+        // Deserialize the AST tree from JSON bytes.
+        let tree: serde_json::Value = match serde_json::from_slice(&tree) {
+            Ok(v) => v,
+            Err(_) => serde_json::Value::Null,
+        };
 
         // --- Text-scanning rules ---
         check_consistent_test_it(source, &mut diags);
@@ -161,35 +158,41 @@ impl Guest for TestingPlugin {
         check_vitest_require_local_test_context(source, &mut diags);
 
         // --- AST-based rules ---
-        for node in &batch.nodes {
-            match node {
-                AstNode::CallExpr(call) => {
-                    check_call_expr_rules(call, source, &mut diags);
+        if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+            for node in nodes {
+                if let Some(call) = node.get("CallExpression") {
+                    check_call_expr_rules(call, &tree, source, &mut diags);
                 }
-                AstNode::ImportDecl(import) => {
-                    check_import_rules(import, &mut diags);
+                if let Some(import) = node.get("ImportDeclaration") {
+                    check_import_rules(import, &tree, &mut diags);
                 }
-                AstNode::ExportDefaultDecl(exp) => {
+                if node.get("ExportDefaultDeclaration").is_some() {
+                    let span = extract_span_from_node(node).unwrap_or(Span { start: 0, end: 0 });
                     diags.push(diag(
                         "jest/no-export",
                         "Do not export from test files",
-                        exp.span,
+                        span,
                         Severity::Error,
                         None,
                     ));
                 }
-                AstNode::ExportNamedDecl(exp) => {
-                    if !exp.names.is_empty() {
+                if let Some(export) = node.get("ExportNamedDeclaration") {
+                    // Check if it has named specifiers
+                    let has_names = export.get("specifiers")
+                        .and_then(|s| s.as_array())
+                        .map_or(false, |a| !a.is_empty());
+                    let has_declaration = export.get("declaration").map_or(false, |d| !d.is_null());
+                    if has_names || has_declaration {
+                        let span = extract_span(export).unwrap_or(Span { start: 0, end: 0 });
                         diags.push(diag(
                             "jest/no-export",
                             "Do not export from test files",
-                            exp.span,
+                            span,
                             Severity::Error,
                             None,
                         ));
                     }
                 }
-                _ => {}
             }
         }
 
@@ -208,33 +211,37 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnostic {
-    LintDiagnostic {
+fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span,
         severity: sev,
         help,
+        fix: None,
+        labels: vec![],
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Warning, None)
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Error, None)
 }
 
 // ==================== CallExpression-based rules ====================
 
 fn check_call_expr_rules(
-    call: &starlint::plugin::types::CallExpressionNode,
+    call: &serde_json::Value,
+    tree: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnostic>,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let callee = &call.callee_path;
-    let span = call.span;
+    let callee = get_callee_path(tree, call);
+    let span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });
+    let arg_count = call.get("arguments").and_then(|a| a.as_array()).map_or(0, |a| a.len() as u32);
 
     // --- jest/no-disabled-tests ---
     if matches!(callee.as_str(),
@@ -291,17 +298,17 @@ fn check_call_expr_rules(
     }
 
     // --- jest/no-alias-methods ---
-    check_no_alias_methods(callee, span, diags);
+    check_no_alias_methods(&callee, span, diags);
 
     // --- jest/prefer-to-be / prefer-strict-equal / prefer-to-contain / prefer-to-have-length ---
-    check_matcher_preferences(callee, span, source, diags);
+    check_matcher_preferences(&callee, span, source, diags);
 
     // --- jest/prefer-called-with / prefer-to-have-been-called / prefer-to-have-been-called-times ---
-    check_called_preferences(callee, span, call.argument_count, diags);
+    check_called_preferences(&callee, span, arg_count, diags);
 
     // --- jest/require-to-throw-message ---
     if callee.ends_with(".toThrow") || callee.ends_with(".toThrowError") {
-        if call.argument_count == 0 {
+        if arg_count == 0 {
             diags.push(diag("jest/require-to-throw-message", "Add a message argument to `toThrow()`", span, Severity::Warning, None));
         }
     }
@@ -318,7 +325,7 @@ fn check_call_expr_rules(
     }
 
     // --- jest/prefer-jest-mocked ---
-    if callee == "jest.fn" && call.argument_count == 0 {
+    if callee == "jest.fn" && arg_count == 0 {
         // Check context for type casting
         let start_usize = span.start as usize;
         let before = source.get(start_usize.saturating_sub(30)..start_usize).unwrap_or("");
@@ -344,7 +351,7 @@ fn check_call_expr_rules(
     }
 
     // --- jest/no-untyped-mock-factory ---
-    if callee == "jest.mock" && call.argument_count >= 2 {
+    if callee == "jest.mock" && arg_count >= 2 {
         let start_usize = span.start as usize;
         let end_usize = span.end as usize;
         let call_text = source.get(start_usize..end_usize.min(source.len())).unwrap_or("");
@@ -417,7 +424,7 @@ fn check_call_expr_rules(
     }
 
     // --- vitest/prefer-to-be-falsy / truthy / object ---
-    check_vitest_prefer_matchers(callee, span, source, diags);
+    check_vitest_prefer_matchers(&callee, span, source, diags);
 
     // --- vitest/warn-todo (AST version) ---
     if callee == "test.todo" || callee == "it.todo" {
@@ -425,7 +432,7 @@ fn check_call_expr_rules(
     }
 }
 
-fn check_no_alias_methods(callee: &str, span: Span, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_alias_methods(callee: &str, span: Span, diags: &mut Vec<LintDiagnosticV2>) {
     let aliases = [
         ("toBeCalled", "toHaveBeenCalled"),
         ("toBeCalledWith", "toHaveBeenCalledWith"),
@@ -454,7 +461,7 @@ fn check_no_alias_methods(callee: &str, span: Span, diags: &mut Vec<LintDiagnost
     }
 }
 
-fn check_matcher_preferences(callee: &str, span: Span, source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_matcher_preferences(callee: &str, span: Span, source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let start_usize = span.start as usize;
     let end_usize = span.end as usize;
     let call_text = source.get(start_usize..end_usize.min(source.len())).unwrap_or("");
@@ -510,7 +517,7 @@ fn check_matcher_preferences(callee: &str, span: Span, source: &str, diags: &mut
     }
 }
 
-fn check_called_preferences(callee: &str, span: Span, arg_count: u32, diags: &mut Vec<LintDiagnostic>) {
+fn check_called_preferences(callee: &str, span: Span, arg_count: u32, diags: &mut Vec<LintDiagnosticV2>) {
     // --- jest/prefer-called-with ---
     if callee.ends_with(".toHaveBeenCalled") || callee.ends_with(".toBeCalled") {
         if arg_count == 0 && !callee.ends_with("Times") && !callee.ends_with("With") {
@@ -525,7 +532,7 @@ fn check_called_preferences(callee: &str, span: Span, arg_count: u32, diags: &mu
     // (Fires when using toBe(N) on mock.calls.length — handled in text scanning)
 }
 
-fn check_vitest_prefer_matchers(callee: &str, span: Span, source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_vitest_prefer_matchers(callee: &str, span: Span, source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let start_usize = span.start as usize;
     let end_usize = span.end as usize;
     let call_text = source.get(start_usize..end_usize.min(source.len())).unwrap_or("");
@@ -562,44 +569,61 @@ fn is_primitive_literal(s: &str) -> bool {
 // ==================== Import-based rules ====================
 
 fn check_import_rules(
-    import: &starlint::plugin::types::ImportDeclarationNode,
-    diags: &mut Vec<LintDiagnostic>,
+    import: &serde_json::Value,
+    tree: &serde_json::Value,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
+    let source_module = import.get("source").and_then(|s| s.as_str()).unwrap_or("");
+    let span = extract_span(import).unwrap_or(Span { start: 0, end: 0 });
+
     // --- jest/no-mocks-import ---
-    if import.source.contains("__mocks__") {
+    if source_module.contains("__mocks__") {
         diags.push(diag(
             "jest/no-mocks-import",
             "Do not import from `__mocks__` directory; use `jest.mock()` instead",
-            import.span,
+            span,
             Severity::Error,
             None,
         ));
     }
 
     // --- vitest/no-import-node-test ---
-    if import.source == "node:test" {
+    if source_module == "node:test" {
         diags.push(diag(
             "vitest/no-import-node-test",
             "Do not import from `node:test` in vitest files",
-            import.span,
+            span,
             Severity::Error,
             None,
         ));
     }
 
     // --- vitest/no-importing-vitest-globals ---
-    if import.source == "vitest" {
+    if source_module == "vitest" {
         let global_names = ["describe", "it", "test", "expect", "vi", "beforeEach", "afterEach", "beforeAll", "afterAll"];
-        for spec in &import.specifiers {
-            let name = spec.imported.as_deref().unwrap_or(&spec.local);
-            if global_names.contains(&name.as_ref()) {
-                diags.push(diag(
-                    "vitest/no-importing-vitest-globals",
-                    &format!("`{name}` is a vitest global — no import needed"),
-                    import.span,
-                    Severity::Warning,
-                    Some("Remove the import; vitest globals are available automatically".into()),
-                ));
+        if let Some(specifier_ids) = import.get("specifiers").and_then(|s| s.as_array()) {
+            let nodes = tree.get("nodes").and_then(|n| n.as_array());
+            for spec_id in specifier_ids {
+                if let Some(id) = spec_id.as_u64() {
+                    if let Some(nodes_arr) = nodes {
+                        if let Some(spec_node) = nodes_arr.get(id as usize) {
+                            if let Some(spec) = spec_node.get("ImportSpecifier") {
+                                let imported = spec.get("imported").and_then(|i| i.as_str()).unwrap_or("");
+                                let local = spec.get("local").and_then(|l| l.as_str()).unwrap_or(imported);
+                                let name = if imported.is_empty() { local } else { imported };
+                                if global_names.contains(&name) {
+                                    diags.push(diag(
+                                        "vitest/no-importing-vitest-globals",
+                                        &format!("`{name}` is a vitest global -- no import needed"),
+                                        span,
+                                        Severity::Warning,
+                                        Some("Remove the import; vitest globals are available automatically".into()),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -607,7 +631,7 @@ fn check_import_rules(
 
 // ==================== Text-scanning rules ====================
 
-fn check_consistent_test_it(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_consistent_test_it(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let has_it = contains_call(source, "it(");
     let has_test = contains_call(source, "test(");
 
@@ -615,14 +639,14 @@ fn check_consistent_test_it(source: &str, diags: &mut Vec<LintDiagnostic>) {
         if let Some(pos) = source.find("it(") {
             diags.push(warn(
                 "jest/consistent-test-it",
-                "Inconsistent use of `it` and `test` — pick one style",
+                "Inconsistent use of `it` and `test` -- pick one style",
                 pos, pos + 3,
             ));
         }
     }
 }
 
-fn check_no_commented_out_tests(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_commented_out_tests(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["// it(", "// test(", "// describe(", "// it.skip(", "// test.skip(",
                      "/* it(", "/* test(", "/* describe("];
 
@@ -632,7 +656,7 @@ fn check_no_commented_out_tests(source: &str, diags: &mut Vec<LintDiagnostic>) {
             let abs = pos + found;
             diags.push(warn(
                 "jest/no-commented-out-tests",
-                "Commented out test detected — remove or uncomment",
+                "Commented out test detected -- remove or uncomment",
                 abs, abs + pattern.len(),
             ));
             pos = abs + 1;
@@ -640,7 +664,7 @@ fn check_no_commented_out_tests(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_duplicate_hooks(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_duplicate_hooks(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let hooks = ["beforeEach(", "afterEach(", "beforeAll(", "afterAll("];
 
     for hook in &hooks {
@@ -652,7 +676,7 @@ fn check_no_duplicate_hooks(source: &str, diags: &mut Vec<LintDiagnostic>) {
                     let abs = first + 1 + second_offset;
                     diags.push(warn(
                         "jest/no-duplicate-hooks",
-                        &format!("Duplicate `{}` hook — combine into one", &hook[..hook.len() - 1]),
+                        &format!("Duplicate `{}` hook -- combine into one", &hook[..hook.len() - 1]),
                         abs, abs + hook.len(),
                     ));
                 }
@@ -661,7 +685,7 @@ fn check_no_duplicate_hooks(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_identical_title(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_identical_title(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let call_patterns = ["it(", "test("];
 
     for pattern in &call_patterns {
@@ -682,7 +706,7 @@ fn check_no_identical_title(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_max_nested_describe(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_max_nested_describe(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let max_depth: u32 = 5;
     let mut depth: u32 = 0;
     let mut pos = 0;
@@ -712,7 +736,7 @@ fn check_max_nested_describe(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_padding_around_test_blocks(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_padding_around_test_blocks(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let block_patterns = ["it(", "test(", "describe("];
 
     for pattern in &block_patterns {
@@ -748,7 +772,7 @@ fn check_padding_around_test_blocks(source: &str, diags: &mut Vec<LintDiagnostic
     }
 }
 
-fn check_prefer_lowercase_title(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_lowercase_title(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let call_patterns = ["it(", "test("];
 
     for pattern in &call_patterns {
@@ -767,7 +791,7 @@ fn check_prefer_lowercase_title(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_prefer_todo(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_todo(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["it(", "test("];
 
     for pattern in &patterns {
@@ -786,7 +810,7 @@ fn check_prefer_todo(source: &str, diags: &mut Vec<LintDiagnostic>) {
                         // Only a title, no callback — should be test.todo
                         diags.push(warn(
                             "jest/prefer-todo",
-                            "Empty test — prefer `test.todo()`",
+                            "Empty test -- prefer `test.todo()`",
                             abs, abs + pattern.len(),
                         ));
                     }
@@ -795,7 +819,7 @@ fn check_prefer_todo(source: &str, diags: &mut Vec<LintDiagnostic>) {
                         if after_comma == "() => {}" || after_comma == "function() {}" || after_comma.is_empty() {
                             diags.push(warn(
                                 "jest/prefer-todo",
-                                "Test with empty body — prefer `test.todo()`",
+                                "Test with empty body -- prefer `test.todo()`",
                                 abs, abs + pattern.len(),
                             ));
                         }
@@ -808,7 +832,7 @@ fn check_prefer_todo(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_require_top_level_describe(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_require_top_level_describe(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let test_patterns = ["it(", "test("];
 
     for pattern in &test_patterns {
@@ -832,7 +856,7 @@ fn check_require_top_level_describe(source: &str, diags: &mut Vec<LintDiagnostic
     }
 }
 
-fn check_no_conditional_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_conditional_expect(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Find expect() calls that are inside if/try blocks within test bodies
     let test_patterns = ["it(", "test("];
 
@@ -864,7 +888,7 @@ fn check_no_conditional_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_conditional_in_test(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_conditional_in_test(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let test_patterns = ["it(", "test("];
 
     for pattern in &test_patterns {
@@ -896,7 +920,7 @@ fn check_no_conditional_in_test(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_standalone_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_standalone_expect(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut pos = 0;
     while let Some(found) = source[pos..].find("expect(") {
         let abs = pos + found;
@@ -922,7 +946,7 @@ fn check_no_standalone_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_valid_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_valid_expect(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut pos = 0;
     while let Some(found) = source[pos..].find("expect(") {
         let abs = pos + found;
@@ -946,7 +970,7 @@ fn check_valid_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_max_expects(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_max_expects(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let max: usize = 5;
     let test_patterns = ["it(", "test("];
 
@@ -974,7 +998,7 @@ fn check_max_expects(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_interpolation_in_snapshots(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_interpolation_in_snapshots(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let snapshot_patterns = [".toMatchInlineSnapshot(", ".toMatchSnapshot(", ".toThrowErrorMatchingInlineSnapshot("];
 
     for pattern in &snapshot_patterns {
@@ -999,7 +1023,7 @@ fn check_no_interpolation_in_snapshots(source: &str, diags: &mut Vec<LintDiagnos
     }
 }
 
-fn check_no_test_return_statement(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_test_return_statement(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let test_patterns = ["it(", "test("];
 
     for pattern in &test_patterns {
@@ -1033,7 +1057,7 @@ fn check_no_test_return_statement(source: &str, diags: &mut Vec<LintDiagnostic>)
     }
 }
 
-fn check_prefer_hooks_in_order(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_hooks_in_order(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let hooks_order = ["beforeAll(", "beforeEach(", "afterEach(", "afterAll("];
     let mut last_hook_idx: Option<usize> = None;
     let mut last_hook_pos: usize = 0;
@@ -1060,7 +1084,7 @@ fn check_prefer_hooks_in_order(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_prefer_hooks_on_top(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_hooks_on_top(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let hooks = ["beforeEach(", "afterEach(", "beforeAll(", "afterAll("];
     let test_markers = ["it(", "test("];
 
@@ -1088,7 +1112,7 @@ fn check_prefer_hooks_on_top(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_no_large_snapshots(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_large_snapshots(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let max_lines: usize = 50;
     let pattern = ".toMatchInlineSnapshot(";
 
@@ -1113,7 +1137,7 @@ fn check_no_large_snapshots(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_prefer_spy_on(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_spy_on(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Look for obj.method = jest.fn() pattern
     let pattern = "= jest.fn(";
     let mut pos = 0;
@@ -1134,7 +1158,7 @@ fn check_prefer_spy_on(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_expect_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_expect_expect(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let test_patterns = ["it(", "test("];
 
     for pattern in &test_patterns {
@@ -1148,7 +1172,7 @@ fn check_expect_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
                 if !body.contains("expect(") && !body.contains("assert") {
                     diags.push(warn(
                         "jest/expect-expect",
-                        "Test has no expectations — add `expect()` calls",
+                        "Test has no expectations -- add `expect()` calls",
                         abs, abs + pattern.len(),
                     ));
                 }
@@ -1159,7 +1183,7 @@ fn check_expect_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_valid_describe_callback(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_valid_describe_callback(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "describe(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1196,7 +1220,7 @@ fn check_valid_describe_callback(source: &str, diags: &mut Vec<LintDiagnostic>) 
     }
 }
 
-fn check_valid_title(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_valid_title(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let call_patterns = ["it(", "test(", "describe("];
 
     for pattern in &call_patterns {
@@ -1222,7 +1246,7 @@ fn check_valid_title(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_require_hook(source: &str, _diags: &mut Vec<LintDiagnostic>) {
+fn check_require_hook(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     // Look for setup code outside hooks in describe blocks
     let pattern = "describe(";
     let mut pos = 0;
@@ -1254,7 +1278,7 @@ fn check_require_hook(source: &str, _diags: &mut Vec<LintDiagnostic>) {
 
 // --- Vitest text-scanning rules ---
 
-fn check_vitest_consistent_test_filename(source: &str, file_path: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_vitest_consistent_test_filename(source: &str, file_path: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Check if file matches expected test file naming
     let is_test = file_path.contains(".test.") || file_path.contains(".spec.");
     let has_test_content = source.contains("it(") || source.contains("test(") || source.contains("describe(");
@@ -1268,7 +1292,7 @@ fn check_vitest_consistent_test_filename(source: &str, file_path: &str, diags: &
     }
 }
 
-fn check_vitest_hoisted_apis_on_top(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_vitest_hoisted_apis_on_top(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let pattern = "vi.hoisted(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1300,7 +1324,7 @@ fn check_vitest_hoisted_apis_on_top(source: &str, diags: &mut Vec<LintDiagnostic
     }
 }
 
-fn check_vitest_warn_todo(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_vitest_warn_todo(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let patterns = ["test.todo(", "it.todo("];
     for pattern in &patterns {
         let mut pos = 0;
@@ -1316,7 +1340,7 @@ fn check_vitest_warn_todo(source: &str, diags: &mut Vec<LintDiagnostic>) {
     }
 }
 
-fn check_vitest_no_conditional_tests(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_vitest_no_conditional_tests(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let test_patterns = ["it(", "test("];
     let conditional_patterns = ["if (", "if(", "switch (", "switch(", "? "];
 
@@ -1347,7 +1371,7 @@ fn check_vitest_no_conditional_tests(source: &str, diags: &mut Vec<LintDiagnosti
     }
 }
 
-fn check_vitest_require_local_test_context(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_vitest_require_local_test_context(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Look for .concurrent tests using snapshots without local test context
     let pattern = ".concurrent(";
     let mut pos = 0;
@@ -1452,4 +1476,49 @@ fn find_matching_paren(source: &str, open_pos: usize) -> Option<usize> {
     }
 
     None
+}
+
+// ==================== Tree navigation helpers ====================
+
+fn extract_span(node: &serde_json::Value) -> Option<Span> {
+    let span = node.get("span")?;
+    let start = span.get("start")?.as_u64()?;
+    let end = span.get("end")?.as_u64()?;
+    Some(Span { start: start as u32, end: end as u32 })
+}
+
+/// Extract span from a top-level node wrapper (e.g. node that has "ExportDefaultDeclaration" key)
+fn extract_span_from_node(node: &serde_json::Value) -> Option<Span> {
+    // Try to get span from any inner node value
+    if let Some(obj) = node.as_object() {
+        for (_key, value) in obj {
+            if let Some(span) = extract_span(value) {
+                return Some(span);
+            }
+        }
+    }
+    None
+}
+
+fn get_callee_path(tree: &serde_json::Value, call: &serde_json::Value) -> String {
+    let callee_id = call.get("callee").and_then(|c| c.as_u64()).unwrap_or(0);
+    resolve_callee(tree, callee_id)
+}
+
+fn resolve_callee(tree: &serde_json::Value, id: u64) -> String {
+    let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) else { return String::new() };
+    let Some(node) = nodes.get(id as usize) else { return String::new() };
+    if let Some(ident) = node.get("IdentifierReference") {
+        return ident.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+    }
+    if let Some(member) = node.get("StaticMemberExpression") {
+        let object_id = member.get("object").and_then(|o| o.as_u64()).unwrap_or(0);
+        let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
+        let object_path = resolve_callee(tree, object_id);
+        if object_path.is_empty() {
+            return property.to_string();
+        }
+        return format!("{object_path}.{property}");
+    }
+    String::new()
 }

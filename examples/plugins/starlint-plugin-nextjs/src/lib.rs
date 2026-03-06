@@ -1,17 +1,16 @@
-//! Next.js WASM plugin for starlint.
+//! Next.js WASM plugin for starlint (v2 — full AST tree + fix support).
 //!
 //! Implements 22 Next.js lint rules as a single WASM component,
 //! using JSX node inspection, import analysis, and source-text scanning.
 
 wit_bindgen::generate!({
-    world: "linter-plugin",
+    world: "linter-plugin-v2",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin::Guest;
+use exports::starlint::plugin::plugin_v2::Guest;
 use starlint::plugin::types::{
-    AstNode, Category, LintDiagnostic, NodeBatch, NodeInterest, PluginConfig, RuleMeta, Severity,
-    Span,
+    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity, Span,
 };
 
 struct NextjsPlugin;
@@ -46,13 +45,6 @@ impl Guest for NextjsPlugin {
         ]
     }
 
-    fn get_node_interests() -> NodeInterest {
-        NodeInterest::SOURCE_TEXT
-            | NodeInterest::JSX_OPENING_ELEMENT
-            | NodeInterest::IMPORT_DECLARATION
-            | NodeInterest::CALL_EXPRESSION
-    }
-
     fn get_file_patterns() -> Vec<String> {
         // Next.js rules apply to all JS/TS files
         vec![
@@ -65,9 +57,14 @@ impl Guest for NextjsPlugin {
         Vec::new()
     }
 
-    fn lint_file(batch: NodeBatch) -> Vec<LintDiagnostic> {
-        let source = &batch.file.source_text;
-        let file_path = &batch.file.file_path;
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+        let tree: serde_json::Value = match serde_json::from_slice(&tree) {
+            Ok(v) => v,
+            Err(_) => serde_json::Value::Null,
+        };
+
+        let source = &file.source_text;
+        let file_path = &file.file_path;
         let mut diags = Vec::new();
 
         // Derive file context for path-sensitive rules
@@ -89,15 +86,14 @@ impl Guest for NextjsPlugin {
         check_google_font_display(source, &mut diags);
 
         // --- AST-based rules ---
-        for node in &batch.nodes {
-            match node {
-                AstNode::JsxElement(jsx) => {
-                    check_jsx_rules(jsx, source, file_stem, is_document, is_app, &mut diags);
+        if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+            for node in nodes {
+                if let Some(jsx) = node.get("JSXOpeningElement") {
+                    check_jsx_rules(jsx, &tree, source, file_stem, is_document, is_app, &mut diags);
                 }
-                AstNode::ImportDecl(import) => {
+                if let Some(import) = node.get("ImportDeclaration") {
                     check_import_rules(import, is_document, &mut diags);
                 }
-                _ => {}
             }
         }
 
@@ -116,40 +112,64 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
-    LintDiagnostic {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
         severity: Severity::Warning,
         help: None,
+        fix: None,
+        labels: vec![],
     }
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
-    LintDiagnostic {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
         severity: Severity::Error,
         help: None,
+        fix: None,
+        labels: vec![],
     }
 }
 
-fn has_attr(jsx: &starlint::plugin::types::JsxOpeningElementNode, name: &str) -> bool {
-    jsx.attributes.iter().any(|a| !a.is_spread && a.name == name)
+fn has_attr(tree: &serde_json::Value, jsx: &serde_json::Value, name: &str) -> bool {
+    let Some(attr_ids) = jsx.get("attributes").and_then(|a| a.as_array()) else {
+        return false;
+    };
+    for attr_id_val in attr_ids {
+        if let Some(attr_id) = attr_id_val.as_u64() {
+            if let Some((attr_name, _value, is_spread)) = get_jsx_attr(tree, attr_id) {
+                if !is_spread && attr_name == name {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
-fn get_attr_value(jsx: &starlint::plugin::types::JsxOpeningElementNode, name: &str) -> Option<String> {
-    jsx.attributes.iter()
-        .find(|a| !a.is_spread && a.name == name)
-        .and_then(|a| a.value.clone())
+fn get_attr_value(tree: &serde_json::Value, jsx: &serde_json::Value, name: &str) -> Option<String> {
+    let attr_ids = jsx.get("attributes").and_then(|a| a.as_array())?;
+    for attr_id_val in attr_ids {
+        if let Some(attr_id) = attr_id_val.as_u64() {
+            if let Some((attr_name, value, is_spread)) = get_jsx_attr(tree, attr_id) {
+                if !is_spread && attr_name == name {
+                    return value;
+                }
+            }
+        }
+    }
+    None
 }
 
 // ==================== Source-text scanning rules ====================
 
 /// nextjs/no-async-client-component: async exports in "use client" files
-fn check_no_async_client_component(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_async_client_component(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     if !source.contains("\"use client\"") && !source.contains("'use client'") {
         return;
     }
@@ -171,7 +191,7 @@ fn check_no_async_client_component(source: &str, diags: &mut Vec<LintDiagnostic>
 }
 
 /// nextjs/no-duplicate-head: multiple Head imports/usages
-fn check_no_duplicate_head(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_duplicate_head(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut count = 0;
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("<Head") {
@@ -193,10 +213,10 @@ fn check_no_duplicate_head(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// nextjs/no-typos: common Next.js API name typos
-fn check_no_typos(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_typos(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let typos: &[(&str, &str)] = &[
         ("getstaticprops", "getStaticProps"),
-        ("## getStaticprops", "getStaticProps"),
+        ("getStaticprops", "getStaticProps"),
         ("getstaticPaths", "getStaticPaths"),
         ("getStaticpaths", "getStaticPaths"),
         ("getserverSideProps", "getServerSideProps"),
@@ -216,8 +236,8 @@ fn check_no_typos(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// nextjs/no-assign-module-variable: assignment to module variable
-fn check_no_assign_module_variable(source: &str, diags: &mut Vec<LintDiagnostic>) {
-    // Look for `module.exports =` or `module =`
+fn check_no_assign_module_variable(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+    // Look for `module.exports =` or `module.exports=`
     let patterns = ["module.exports =", "module.exports="];
     for pattern in &patterns {
         if let Some(pos) = source.find(pattern) {
@@ -231,7 +251,7 @@ fn check_no_assign_module_variable(source: &str, diags: &mut Vec<LintDiagnostic>
 }
 
 /// nextjs/google-font-display: Google Fonts URLs should have display param
-fn check_google_font_display(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_google_font_display(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("fonts.googleapis.com") {
         let abs_pos = search_from + pos;
@@ -252,16 +272,18 @@ fn check_google_font_display(source: &str, diags: &mut Vec<LintDiagnostic>) {
 // ==================== JSX-based rules ====================
 
 fn check_jsx_rules(
-    jsx: &starlint::plugin::types::JsxOpeningElementNode,
+    jsx: &serde_json::Value,
+    tree: &serde_json::Value,
     source: &str,
     _file_stem: &str,
     is_document: bool,
     is_app: bool,
-    diags: &mut Vec<LintDiagnostic>,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let name = &jsx.name;
-    let start = jsx.span.start as usize;
-    let end = jsx.span.end as usize;
+    let name = jsx.get("name").and_then(|n| n.as_str()).unwrap_or("");
+    let span = extract_span(jsx).unwrap_or(Span { start: 0, end: 0 });
+    let start = span.start as usize;
+    let end = span.end as usize;
 
     // --- nextjs/no-img-element ---
     if name == "img" {
@@ -283,7 +305,7 @@ fn check_jsx_rules(
 
     // --- nextjs/no-html-link-for-pages ---
     if name == "a" {
-        if let Some(href) = get_attr_value(jsx, "href") {
+        if let Some(href) = get_attr_value(tree, jsx, "href") {
             if href.starts_with('/') && !href.starts_with("//") {
                 diags.push(warn(
                     "nextjs/no-html-link-for-pages",
@@ -296,7 +318,7 @@ fn check_jsx_rules(
 
     // --- nextjs/no-css-tags ---
     if name == "link" {
-        if let Some(rel) = get_attr_value(jsx, "rel") {
+        if let Some(rel) = get_attr_value(tree, jsx, "rel") {
             if rel == "stylesheet" {
                 diags.push(warn(
                     "nextjs/no-css-tags",
@@ -309,7 +331,7 @@ fn check_jsx_rules(
 
     // --- nextjs/no-sync-scripts ---
     if name == "script" {
-        if has_attr(jsx, "src") && !has_attr(jsx, "async") && !has_attr(jsx, "defer") {
+        if has_attr(tree, jsx, "src") && !has_attr(tree, jsx, "async") && !has_attr(tree, jsx, "defer") {
             diags.push(warn(
                 "nextjs/no-sync-scripts",
                 "Synchronous <script> is not allowed. Add async or defer attribute",
@@ -320,11 +342,11 @@ fn check_jsx_rules(
 
     // --- nextjs/google-font-preconnect ---
     if name == "link" {
-        if let Some(href) = get_attr_value(jsx, "href") {
+        if let Some(href) = get_attr_value(tree, jsx, "href") {
             if href.contains("fonts.googleapis.com") || href.contains("fonts.gstatic.com") {
-                let has_preconnect = get_attr_value(jsx, "rel")
+                let has_preconnect = get_attr_value(tree, jsx, "rel")
                     .map_or(false, |r| r == "preconnect");
-                if !has_preconnect && !get_attr_value(jsx, "rel").map_or(false, |r| r == "stylesheet") {
+                if !has_preconnect && !get_attr_value(tree, jsx, "rel").map_or(false, |r| r == "stylesheet") {
                     // Only flag if it's not already a stylesheet link (those are flagged by no-css-tags)
                 } else if href.contains("fonts.gstatic.com") && !has_preconnect {
                     diags.push(warn(
@@ -339,7 +361,7 @@ fn check_jsx_rules(
 
     // --- nextjs/no-unwanted-polyfillio ---
     if name == "script" {
-        if let Some(src) = get_attr_value(jsx, "src") {
+        if let Some(src) = get_attr_value(tree, jsx, "src") {
             if src.contains("polyfill.io") || src.contains("polyfill-fastly.io") {
                 diags.push(warn(
                     "nextjs/no-unwanted-polyfillio",
@@ -351,9 +373,12 @@ fn check_jsx_rules(
     }
 
     // --- nextjs/inline-script-id ---
-    if name == "Script" && !has_attr(jsx, "src") && !has_attr(jsx, "id") {
-        // Inline Script without id
-        if jsx.children_count > 0 || has_attr(jsx, "dangerouslySetInnerHTML") {
+    if name == "Script" && !has_attr(tree, jsx, "src") && !has_attr(tree, jsx, "id") {
+        // Inline Script without id — check if it has children or dangerouslySetInnerHTML
+        // In v2, children_count isn't directly available on JSXOpeningElement,
+        // so we check for dangerouslySetInnerHTML attribute or use a heuristic
+        let is_self_closing = jsx.get("self_closing").and_then(|s| s.as_bool()).unwrap_or(false);
+        if !is_self_closing || has_attr(tree, jsx, "dangerouslySetInnerHTML") {
             diags.push(warn(
                 "nextjs/inline-script-id",
                 "Inline <Script> requires an id attribute",
@@ -364,7 +389,7 @@ fn check_jsx_rules(
 
     // --- nextjs/next-script-for-ga ---
     if name == "script" {
-        if let Some(src) = get_attr_value(jsx, "src") {
+        if let Some(src) = get_attr_value(tree, jsx, "src") {
             if src.contains("googletagmanager.com") || src.contains("google-analytics.com") {
                 diags.push(warn(
                     "nextjs/next-script-for-ga",
@@ -391,7 +416,7 @@ fn check_jsx_rules(
 
     // --- nextjs/no-styled-jsx-in-document ---
     if is_document && name == "style" {
-        if has_attr(jsx, "jsx") {
+        if has_attr(tree, jsx, "jsx") {
             diags.push(warn(
                 "nextjs/no-styled-jsx-in-document",
                 "styled-jsx should not be used in _document. Move to _app or page components",
@@ -402,7 +427,7 @@ fn check_jsx_rules(
 
     // --- nextjs/no-page-custom-font ---
     if !is_document && !is_app && name == "link" {
-        if let Some(href) = get_attr_value(jsx, "href") {
+        if let Some(href) = get_attr_value(tree, jsx, "href") {
             if href.contains("fonts.googleapis.com") || href.contains("fonts.gstatic.com") {
                 diags.push(warn(
                     "nextjs/no-page-custom-font",
@@ -415,7 +440,7 @@ fn check_jsx_rules(
 
     // --- nextjs/no-before-interactive-script-outside-document ---
     if !is_document && name == "Script" {
-        if let Some(strategy) = get_attr_value(jsx, "strategy") {
+        if let Some(strategy) = get_attr_value(tree, jsx, "strategy") {
             if strategy == "beforeInteractive" {
                 diags.push(warn(
                     "nextjs/no-before-interactive-script-outside-document",
@@ -443,13 +468,14 @@ fn check_jsx_rules(
 // ==================== Import-based rules ====================
 
 fn check_import_rules(
-    import: &starlint::plugin::types::ImportDeclarationNode,
+    import: &serde_json::Value,
     is_document: bool,
-    diags: &mut Vec<LintDiagnostic>,
+    diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    let source_module = &import.source;
-    let start = import.span.start as usize;
-    let end = import.span.end as usize;
+    let source_module = import.get("source").and_then(|s| s.as_str()).unwrap_or("");
+    let span = extract_span(import).unwrap_or(Span { start: 0, end: 0 });
+    let start = span.start as usize;
+    let end = span.end as usize;
 
     // --- nextjs/no-document-import-in-page ---
     if !is_document && source_module == "next/document" {
@@ -474,4 +500,43 @@ fn check_import_rules(
         // This is informational — server-only import is valid in server components
         // Flag only in client components
     }
+}
+
+// ==================== AST tree navigation helpers ====================
+
+fn extract_span(node: &serde_json::Value) -> Option<Span> {
+    let span = node.get("span")?;
+    let start = span.get("start")?.as_u64()?;
+    let end = span.get("end")?.as_u64()?;
+    Some(Span {
+        start: start as u32,
+        end: end as u32,
+    })
+}
+
+fn get_jsx_attr(
+    tree: &serde_json::Value,
+    attr_id: u64,
+) -> Option<(String, Option<String>, bool)> {
+    let nodes = tree.get("nodes")?.as_array()?;
+    let node = nodes.get(attr_id as usize)?;
+    if let Some(attr) = node.get("JSXAttribute") {
+        let name = attr.get("name")?.as_str()?.to_string();
+        let value = attr.get("value").and_then(|v| {
+            if v.is_null() {
+                return None;
+            }
+            let vid = v.as_u64()?;
+            let value_node = nodes.get(vid as usize)?;
+            if let Some(lit) = value_node.get("StringLiteral") {
+                return lit.get("value").and_then(|v| v.as_str()).map(|s| s.to_string());
+            }
+            None
+        });
+        return Some((name, value, false));
+    }
+    if node.get("JSXSpreadAttribute").is_some() {
+        return Some(("".to_string(), None, true));
+    }
+    None
 }

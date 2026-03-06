@@ -5,13 +5,13 @@
 //! and composition API patterns.
 
 wit_bindgen::generate!({
-    world: "linter-plugin",
+    world: "linter-plugin-v2",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin::Guest;
+use exports::starlint::plugin::plugin_v2::Guest;
 use starlint::plugin::types::{
-    AstNode, Category, LintDiagnostic, NodeBatch, NodeInterest, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -42,12 +42,6 @@ impl Guest for VuePlugin {
         ]
     }
 
-    fn get_node_interests() -> NodeInterest {
-        NodeInterest::SOURCE_TEXT
-            | NodeInterest::CALL_EXPRESSION
-            | NodeInterest::MEMBER_EXPRESSION
-    }
-
     fn get_file_patterns() -> Vec<String> {
         vec![
             "*.vue".into(), "*.js".into(), "*.ts".into(),
@@ -59,8 +53,8 @@ impl Guest for VuePlugin {
         Vec::new()
     }
 
-    fn lint_file(batch: NodeBatch) -> Vec<LintDiagnostic> {
-        let source = &batch.file.source_text;
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+        let source = &file.source_text;
         let mut diags = Vec::new();
 
         // --- Source-text scanning rules (majority of Vue rules) ---
@@ -79,12 +73,16 @@ impl Guest for VuePlugin {
         check_no_reserved_component_names(source, &mut diags);
 
         // --- AST-based rules ---
-        for node in &batch.nodes {
-            match node {
-                AstNode::CallExpr(call) => {
-                    check_custom_event_name_casing(call, &mut diags);
+        let tree: serde_json::Value = match serde_json::from_slice(&tree) {
+            Ok(v) => v,
+            Err(_) => serde_json::Value::Null,
+        };
+
+        if let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) {
+            for node in nodes {
+                if let Some(call) = node.get("CallExpression") {
+                    check_custom_event_name_casing(call, &tree, &mut diags);
                 }
-                _ => {}
             }
         }
 
@@ -103,30 +101,34 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
-    LintDiagnostic {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
         severity: Severity::Warning,
         help: None,
+        fix: None,
+        labels: vec![],
     }
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
-    LintDiagnostic {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+    LintDiagnosticV2 {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
         severity: Severity::Error,
         help: None,
+        fix: None,
+        labels: vec![],
     }
 }
 
 // ==================== Source-text scanning rules ====================
 
 /// vue/no-arrow-functions-in-watch: watch option should use regular functions
-fn check_no_arrow_functions_in_watch(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_arrow_functions_in_watch(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Look for watch: { ... } with arrow functions inside
     if let Some(watch_pos) = source.find("watch:") {
         let after = &source[watch_pos..];
@@ -160,7 +162,7 @@ fn check_no_arrow_functions_in_watch(source: &str, diags: &mut Vec<LintDiagnosti
 }
 
 /// vue/no-async-in-computed-properties: computed properties should not be async
-fn check_no_async_in_computed(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_async_in_computed(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     if let Some(computed_pos) = source.find("computed:") {
         let after = &source[computed_pos..];
         if let Some(brace) = after.find('{') {
@@ -179,13 +181,13 @@ fn check_no_async_in_computed(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// vue/no-expose-after-await: expose() should be called before await in setup()
-fn check_no_expose_after_await(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_expose_after_await(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     check_after_await(source, "expose(", "vue/no-expose-after-await",
         "expose() should be called before any await in setup()", diags);
 }
 
 /// vue/no-lifecycle-after-await: lifecycle hooks should be called before await in setup()
-fn check_no_lifecycle_after_await(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_lifecycle_after_await(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let hooks = [
         "onMounted(", "onUpdated(", "onUnmounted(", "onBeforeMount(",
         "onBeforeUpdate(", "onBeforeUnmount(", "onActivated(", "onDeactivated(",
@@ -199,7 +201,7 @@ fn check_no_lifecycle_after_await(source: &str, diags: &mut Vec<LintDiagnostic>)
 }
 
 /// vue/no-watch-after-await: watch() should be called before await in setup()
-fn check_no_watch_after_await(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_watch_after_await(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     check_after_await(source, "watch(", "vue/no-watch-after-await",
         "watch() should be called before any await in setup()", diags);
     check_after_await(source, "watchEffect(", "vue/no-watch-after-await",
@@ -207,7 +209,7 @@ fn check_no_watch_after_await(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// Helper: check if a call appears after `await` inside setup()
-fn check_after_await(source: &str, call: &str, rule_name: &str, msg: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_after_await(source: &str, call: &str, rule_name: &str, msg: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Find setup() function
     if let Some(setup_pos) = source.find("setup(") {
         let after_setup = &source[setup_pos..];
@@ -227,7 +229,7 @@ fn check_after_await(source: &str, call: &str, rule_name: &str, msg: &str, diags
 }
 
 /// vue/no-setup-props-reactivity-loss: destructuring props loses reactivity
-fn check_no_setup_props_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_setup_props_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Look for setup(props) or setup({ ... }) patterns
     if let Some(pos) = source.find("setup(") {
         let after = &source[pos + 6..];
@@ -243,7 +245,7 @@ fn check_no_setup_props_reactivity_loss(source: &str, diags: &mut Vec<LintDiagno
 }
 
 /// vue/no-child-content: elements with v-html/v-text should not have children
-fn check_no_child_content(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_child_content(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let directives = ["v-html", "v-text"];
     for directive in &directives {
         let mut search_from = 0;
@@ -269,7 +271,7 @@ fn check_no_child_content(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// vue/no-ref-object-reactivity-loss: destructuring ref() loses reactivity
-fn check_no_ref_object_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_ref_object_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Pattern: const { value } = ref(...)
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("} = ref(") {
@@ -295,7 +297,7 @@ fn check_no_ref_object_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnos
 }
 
 /// vue/prefer-define-options: prefer defineOptions() in <script setup>
-fn check_prefer_define_options(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_prefer_define_options(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Only relevant in <script setup> context
     if !source.contains("<script setup") {
         return;
@@ -310,7 +312,7 @@ fn check_prefer_define_options(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// vue/no-dupe-keys: duplicate keys across data, computed, methods, etc.
-fn check_no_dupe_keys(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_dupe_keys(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Collect property names from known sections
     let sections = ["data()", "computed:", "methods:", "props:"];
     let mut all_keys: Vec<(&str, usize)> = Vec::new();
@@ -359,7 +361,7 @@ fn check_no_dupe_keys(source: &str, diags: &mut Vec<LintDiagnostic>) {
 }
 
 /// vue/no-component-options-typo: detect common typos in Vue options
-fn check_no_component_options_typo(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_component_options_typo(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let typos: &[(&str, &str)] = &[
         ("beforeCreated:", "beforeCreate:"),
         ("created:", "created:"), // valid, skip
@@ -391,7 +393,7 @@ fn check_no_component_options_typo(source: &str, diags: &mut Vec<LintDiagnostic>
 }
 
 /// vue/component-definition-name-casing: enforce PascalCase component names
-fn check_component_definition_name_casing(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_component_definition_name_casing(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     // Check defineComponent({ name: 'xxx' }) or name: 'xxx' in export default
     let pattern = "name:";
     let mut search_from = 0;
@@ -418,7 +420,7 @@ fn check_component_definition_name_casing(source: &str, diags: &mut Vec<LintDiag
 }
 
 /// vue/no-reserved-component-names: disallow reserved HTML element names
-fn check_no_reserved_component_names(source: &str, diags: &mut Vec<LintDiagnostic>) {
+fn check_no_reserved_component_names(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     let reserved = [
         "html", "body", "base", "head", "link", "meta", "style", "title",
         "address", "article", "aside", "footer", "header", "h1", "h2", "h3",
@@ -456,19 +458,24 @@ fn check_no_reserved_component_names(source: &str, diags: &mut Vec<LintDiagnosti
 
 /// vue/custom-event-name-casing: enforce camelCase in $emit() calls
 fn check_custom_event_name_casing(
-    call: &starlint::plugin::types::CallExpressionNode,
-    _diags: &mut Vec<LintDiagnostic>,
+    call: &serde_json::Value,
+    tree: &serde_json::Value,
+    _diags: &mut Vec<LintDiagnosticV2>,
 ) {
-    // Check for $emit or this.$emit
-    let is_emit = call.callee_path == "$emit"
-        || call.callee_path.ends_with(".$emit");
+    let callee_path = get_callee_path(tree, call);
+    let _span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });
+    let argument_count = call.get("arguments").and_then(|a| a.as_array()).map_or(0, |a| a.len());
 
-    if !is_emit || call.argument_count == 0 {
+    // Check for $emit or this.$emit
+    let is_emit = callee_path == "$emit"
+        || callee_path.ends_with(".$emit");
+
+    if !is_emit || argument_count == 0 {
         return;
     }
 
     // The event name is in the first argument — we can check via callee context
-    // Since we don't have argument values in WIT, we'll skip the actual value check
+    // Since we don't have argument values in the simplified AST, we'll skip the actual value check
     // and just flag $emit calls as a reminder to use camelCase
     // (This is a simplified version — full implementation would need argument access)
 }
@@ -485,4 +492,36 @@ fn is_pascal_case(s: &str) -> bool {
     }
     // PascalCase: starts with uppercase, no hyphens or underscores
     !s.contains('-') && !s.contains('_')
+}
+
+// ==================== Tree navigation helpers ====================
+
+fn extract_span(node: &serde_json::Value) -> Option<Span> {
+    let span = node.get("span")?;
+    let start = span.get("start")?.as_u64()?;
+    let end = span.get("end")?.as_u64()?;
+    Some(Span { start: start as u32, end: end as u32 })
+}
+
+fn get_callee_path(tree: &serde_json::Value, call: &serde_json::Value) -> String {
+    let callee_id = call.get("callee").and_then(|c| c.as_u64()).unwrap_or(0);
+    resolve_callee(tree, callee_id)
+}
+
+fn resolve_callee(tree: &serde_json::Value, id: u64) -> String {
+    let Some(nodes) = tree.get("nodes").and_then(|n| n.as_array()) else { return String::new() };
+    let Some(node) = nodes.get(id as usize) else { return String::new() };
+    if let Some(ident) = node.get("IdentifierReference") {
+        return ident.get("name").and_then(|n| n.as_str()).unwrap_or("").to_string();
+    }
+    if let Some(member) = node.get("StaticMemberExpression") {
+        let object_id = member.get("object").and_then(|o| o.as_u64()).unwrap_or(0);
+        let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
+        let object_path = resolve_callee(tree, object_id);
+        if object_path.is_empty() {
+            return property.to_string();
+        }
+        return format!("{object_path}.{property}");
+    }
+    String::new()
 }
