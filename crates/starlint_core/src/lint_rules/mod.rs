@@ -35,6 +35,14 @@ pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(rules::no_multi_assign::NoMultiAssign),
         Box::new(rules::no_script_url::NoScriptUrl),
         Box::new(rules::no_void::NoVoid),
+        // Batch 3
+        Box::new(rules::no_caller::NoCaller),
+        Box::new(rules::no_delete_var::NoDeleteVar),
+        Box::new(rules::no_empty_function::NoEmptyFunction),
+        Box::new(rules::no_nested_ternary::NoNestedTernary),
+        Box::new(rules::no_new::NoNew),
+        Box::new(rules::no_proto::NoProto),
+        Box::new(rules::prefer_rest_params::PreferRestParams),
     ]
 }
 
@@ -43,19 +51,26 @@ pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
 /// These must be excluded from the native rule set to avoid duplicate diagnostics.
 pub const MIGRATED_RULE_NAMES: &[&str] = &[
     "eqeqeq",
+    "no-caller",
     "no-const-enum",
     "no-continue",
     "no-debugger",
+    "no-delete-var",
     "no-empty",
+    "no-empty-function",
     "no-empty-static-block",
     "no-extra-semi",
     "no-iterator",
     "no-labels",
     "no-multi-assign",
+    "no-nested-ternary",
+    "no-new",
     "no-null",
+    "no-proto",
     "no-script-url",
     "no-ternary",
     "no-var",
     "no-void",
     "no-with",
+    "prefer-rest-params",
 ];

@@ -4,20 +4,20 @@
 //! read and should be refactored into `if`/`else` statements or extracted
 //! into separate variables.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags ternary expressions that contain nested ternary sub-expressions.
 #[derive(Debug)]
 pub struct NoNestedTernary;
 
-impl NativeRule for NoNestedTernary {
+impl LintRule for NoNestedTernary {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-nested-ternary".to_owned(),
@@ -27,17 +27,23 @@ impl NativeRule for NoNestedTernary {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ConditionalExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ConditionalExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ConditionalExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ConditionalExpression(expr) = node else {
             return;
         };
 
-        let nested_in_consequent = matches!(&expr.consequent, Expression::ConditionalExpression(_));
-        let nested_in_alternate = matches!(&expr.alternate, Expression::ConditionalExpression(_));
+        let nested_in_consequent = matches!(
+            ctx.node(expr.consequent),
+            Some(AstNode::ConditionalExpression(_))
+        );
+        let nested_in_alternate = matches!(
+            ctx.node(expr.alternate),
+            Some(AstNode::ConditionalExpression(_))
+        );
 
         if !nested_in_consequent && !nested_in_alternate {
             return;
@@ -59,22 +65,12 @@ impl NativeRule for NoNestedTernary {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoNestedTernary)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNestedTernary)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
