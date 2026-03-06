@@ -16,7 +16,7 @@
 //! Allowed patterns:
 //! - `methodName(): this { ... return this; }`
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,21 +45,32 @@ impl NativeRule for PreferReturnThisType {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let source = ctx.source_text();
-        let findings = find_class_name_return_types(source);
+        let diagnostics = {
+            let source = ctx.source_text();
+            find_class_name_return_types(source)
+                .into_iter()
+                .map(|(start, end, name_start, name_end)| Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message:
+                        "Use `this` as the return type instead of the class name for chainable methods"
+                            .to_owned(),
+                    span: Span::new(start, end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: Some(Fix {
+                        message: "Replace class name with `this`".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(name_start, name_end),
+                            replacement: "this".to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                })
+                .collect::<Vec<_>>()
+        };
 
-        for (start, end) in findings {
-            ctx.report(Diagnostic {
-                rule_name: RULE_NAME.to_owned(),
-                message:
-                    "Use `this` as the return type instead of the class name for chainable methods"
-                        .to_owned(),
-                span: Span::new(start, end),
-                severity: Severity::Warning,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
+        for diag in diagnostics {
+            ctx.report(diag);
         }
     }
 }
@@ -67,8 +78,10 @@ impl NativeRule for PreferReturnThisType {
 /// Scan source text for class declarations and find methods that return the
 /// class type by name instead of `this`.
 ///
-/// Returns a list of `(start_offset, end_offset)` for each flagged line.
-fn find_class_name_return_types(source: &str) -> Vec<(u32, u32)> {
+/// Returns `(line_start, line_end, class_name_start, class_name_end)` for each
+/// flagged line. The class name span points to just the class name token in the
+/// return type annotation.
+fn find_class_name_return_types(source: &str) -> Vec<(u32, u32, u32, u32)> {
     let mut results = Vec::new();
 
     // Phase 1: collect all class names
@@ -98,7 +111,13 @@ fn find_class_name_return_types(source: &str) -> Vec<(u32, u32)> {
                                     .unwrap_or(0);
                             let start = byte_offset.saturating_add(leading_ws);
                             let end = byte_offset.saturating_add(line_len);
-                            results.push((start, end));
+                            // Position of the class name within the line:
+                            // ret_pos + 3 skips "): " to reach the class name
+                            let name_offset = u32::try_from(ret_pos.saturating_add(3)).unwrap_or(0);
+                            let name_len = u32::try_from(name.len()).unwrap_or(0);
+                            let name_start = start.saturating_add(name_offset);
+                            let name_end = name_start.saturating_add(name_len);
+                            results.push((start, end, name_start, name_end));
                             break;
                         }
                     }

@@ -21,7 +21,7 @@
 //! - `readonly #name: string;`
 //! - `static name: string;`
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -51,21 +51,32 @@ impl NativeRule for PreferReadonly {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let source = ctx.source_text();
-        let findings = find_non_readonly_properties(source);
+        let diagnostics = {
+            let source = ctx.source_text();
+            find_non_readonly_properties(source)
+                .into_iter()
+                .map(|(start, end, insert_pos)| Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message:
+                        "This property could be `readonly` — consider adding the `readonly` modifier"
+                            .to_owned(),
+                    span: Span::new(start, end),
+                    severity: Severity::Warning,
+                    help: None,
+                    fix: Some(Fix {
+                        message: "Add `readonly` modifier".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(insert_pos, insert_pos),
+                            replacement: "readonly ".to_owned(),
+                        }],
+                    }),
+                    labels: vec![],
+                })
+                .collect::<Vec<_>>()
+        };
 
-        for (start, end) in findings {
-            ctx.report(Diagnostic {
-                rule_name: RULE_NAME.to_owned(),
-                message:
-                    "This property could be `readonly` — consider adding the `readonly` modifier"
-                        .to_owned(),
-                span: Span::new(start, end),
-                severity: Severity::Warning,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
+        for diag in diagnostics {
+            ctx.report(diag);
         }
     }
 }
@@ -79,8 +90,9 @@ const VISIBILITY_KEYWORDS: &[&str] = &["private ", "protected "];
 /// (or use `#` private field syntax) without the `readonly` keyword, and that
 /// contain either `:` (type annotation) or `=` (initializer).
 ///
-/// Returns a list of `(start_offset, end_offset)` for each occurrence.
-fn find_non_readonly_properties(source: &str) -> Vec<(u32, u32)> {
+/// Returns `(start, end, insert_pos)` for each occurrence, where `insert_pos`
+/// is the absolute offset where `readonly ` should be inserted.
+fn find_non_readonly_properties(source: &str) -> Vec<(u32, u32, u32)> {
     let mut results = Vec::new();
     let mut byte_offset: u32 = 0;
 
@@ -90,13 +102,13 @@ fn find_non_readonly_properties(source: &str) -> Vec<(u32, u32)> {
 
         // Skip lines that already have `readonly`
         if !trimmed.contains("readonly") {
-            let is_property = is_non_readonly_property_line(trimmed);
-            if is_property {
+            if let Some(insert_offset) = non_readonly_property_insert_offset(trimmed) {
                 let leading_ws =
                     u32::try_from(line.len().saturating_sub(trimmed.len())).unwrap_or(0);
                 let start = byte_offset.saturating_add(leading_ws);
                 let end = byte_offset.saturating_add(line_len);
-                results.push((start, end));
+                let insert_pos = start.saturating_add(u32::try_from(insert_offset).unwrap_or(0));
+                results.push((start, end, insert_pos));
             }
         }
 
@@ -108,34 +120,31 @@ fn find_non_readonly_properties(source: &str) -> Vec<(u32, u32)> {
 }
 
 /// Check if a trimmed line looks like a class property declaration without
-/// `readonly` — either using a visibility keyword or `#` private field syntax.
+/// `readonly`. Returns the offset within the trimmed line where `readonly `
+/// should be inserted, or `None` if the line is not a fixable property.
 ///
-/// Returns `true` for lines like:
-/// - `private name: string;`
-/// - `protected count = 0;`
-/// - `#secret: string;`
-///
-/// Returns `false` for lines like:
-/// - `private readonly name: string;` (already readonly)
-/// - `static count = 0;` (static, not instance property)
-/// - `private getName() {` (method declaration)
-/// - `constructor(` (constructor)
-fn is_non_readonly_property_line(trimmed: &str) -> bool {
+/// For `private name: string;` → insert after `private ` (offset 8)
+/// For `protected count = 0;` → insert after `protected ` (offset 10)
+/// For `#secret: string;` → insert at offset 0 (before `#`)
+fn non_readonly_property_insert_offset(trimmed: &str) -> Option<usize> {
     // Skip static properties — they have different semantics
     if trimmed.starts_with("static ") {
-        return false;
+        return None;
     }
 
     // Skip constructor lines
     if trimmed.starts_with("constructor") {
-        return false;
+        return None;
     }
 
     // Check for visibility-keyword-prefixed properties: `private x: T;`
     for keyword in VISIBILITY_KEYWORDS {
         if trimmed.starts_with(keyword) {
             let after_keyword = trimmed.get(keyword.len()..).unwrap_or("");
-            return is_property_body(after_keyword);
+            if is_property_body(after_keyword) {
+                return Some(keyword.len());
+            }
+            return None;
         }
     }
 
@@ -147,12 +156,13 @@ fn is_non_readonly_property_line(trimmed: &str) -> bool {
             .chars()
             .next()
             .is_some_and(|c| c.is_alphabetic() || c == '_')
+            && is_property_body(after_hash)
         {
-            return is_property_body(after_hash);
+            return Some(0);
         }
     }
 
-    false
+    None
 }
 
 /// Check if text after the visibility keyword (or `#`) looks like a property
