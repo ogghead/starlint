@@ -9,6 +9,7 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -81,13 +82,17 @@ impl NativeRule for Lang {
                 if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
                     let val = lit.value.as_str().trim();
                     if val.is_empty() {
+                        // Replace empty lang value with "en"
+                        let fix = FixBuilder::new("Set `lang` to `\"en\"`")
+                            .replace(Span::new(lit.span.start, lit.span.end), "\"en\"")
+                            .build();
                         ctx.report(Diagnostic {
                             rule_name: RULE_NAME.to_owned(),
                             message: "The `lang` attribute must not be empty".to_owned(),
                             span: Span::new(opening.span.start, opening.span.end),
                             severity: Severity::Warning,
-                            help: None,
-                            fix: None,
+                            help: Some("Set `lang` to a valid BCP 47 tag like `\"en\"`".to_owned()),
+                            fix,
                             labels: vec![],
                         });
                     } else {
@@ -98,7 +103,9 @@ impl NativeRule for Lang {
                                 message: format!("`{val}` is not a valid BCP 47 language tag"),
                                 span: Span::new(opening.span.start, opening.span.end),
                                 severity: Severity::Warning,
-                                help: None,
+                                help: Some(
+                                    "Use a valid BCP 47 language tag like `\"en\"`".to_owned(),
+                                ),
                                 fix: None,
                                 labels: vec![],
                             });

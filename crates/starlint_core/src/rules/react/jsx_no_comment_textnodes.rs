@@ -9,6 +9,7 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -51,13 +52,27 @@ impl NativeRule for JsxNoCommentTextnodes {
         let has_block_comment = value.contains("/*") && value.contains("*/");
 
         if has_line_comment || has_block_comment {
+            // Wrap the text in a JSX expression comment: {/* text */}
+            let trimmed = value.trim();
+            let comment_text = trimmed
+                .trim_start_matches("//")
+                .trim_start_matches("/*")
+                .trim_end_matches("*/")
+                .trim();
+            let fix = FixBuilder::new("Wrap in JSX expression comment")
+                .replace(
+                    Span::new(text.span.start, text.span.end),
+                    format!("{{/* {comment_text} */}}"),
+                )
+                .build();
+
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Comments inside JSX children will be rendered as text. Use JSX expression containers `{/* comment */}` instead".to_owned(),
                 span: Span::new(text.span.start, text.span.end),
                 severity: Severity::Warning,
-                help: None,
-                fix: None,
+                help: Some("Wrap in `{/* ... */}` to make it a proper JSX comment".to_owned()),
+                fix,
                 labels: vec![],
             });
         }

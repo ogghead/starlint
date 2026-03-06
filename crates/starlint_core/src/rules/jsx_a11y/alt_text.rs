@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -68,6 +70,27 @@ fn is_input_type_image(opening: &oxc_ast::ast::JSXOpeningElement<'_>) -> bool {
     get_attr_string_value(opening, "type") == Some("image")
 }
 
+/// Build a fix that inserts an attribute before the closing bracket of an opening element.
+fn insert_attr_fix(
+    source: &str,
+    opening: &oxc_ast::ast::JSXOpeningElement<'_>,
+    attr_name: &str,
+    attr_value: &str,
+) -> Option<starlint_plugin_sdk::diagnostic::Fix> {
+    let end = usize::try_from(opening.span.end).unwrap_or(0);
+    let insert_pos = if end > 1 && source.as_bytes().get(end.saturating_sub(2)) == Some(&b'/') {
+        opening.span.end.saturating_sub(2)
+    } else {
+        opening.span.end.saturating_sub(1)
+    };
+    FixBuilder::new(format!("Add `{attr_name}` attribute"))
+        .edit(fix_utils::insert_before(
+            insert_pos,
+            format!(" {attr_name}={attr_value}"),
+        ))
+        .build()
+}
+
 impl NativeRule for AltText {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
@@ -109,24 +132,26 @@ impl NativeRule for AltText {
 
         if name == "object" {
             if !has_alt && !has_aria_label {
+                let fix = insert_attr_fix(ctx.source_text(), opening, "alt", "\"\"");
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: "`<object>` elements must have an `alt`, `aria-label`, or `aria-labelledby` attribute".to_owned(),
                     span: Span::new(opening.span.start, opening.span.end),
                     severity: Severity::Warning,
-                    help: None,
-                    fix: None,
+                    help: Some("Add an `alt`, `aria-label`, or `aria-labelledby` attribute".to_owned()),
+                    fix,
                     labels: vec![],
                 });
             }
         } else if !has_alt {
+            let fix = insert_attr_fix(ctx.source_text(), opening, "alt", "\"\"");
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!("`<{name}>` elements must have an `alt` attribute"),
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
-                help: None,
-                fix: None,
+                help: Some("Add an `alt` attribute".to_owned()),
+                fix,
                 labels: vec![],
             });
         }
