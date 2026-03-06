@@ -12,6 +12,8 @@ pub mod file_discovery;
 pub mod fix;
 pub mod fix_builder;
 pub mod fix_utils;
+pub mod lint_rule;
+pub mod lint_rules;
 pub mod overrides;
 pub mod parser;
 pub mod plugin;

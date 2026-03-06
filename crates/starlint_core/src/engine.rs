@@ -8,13 +8,17 @@ use std::path::{Path, PathBuf};
 use oxc_allocator::Allocator;
 use rayon::prelude::*;
 
+use crate::ast_converter;
 use crate::diagnostic::OutputFormat;
 use crate::error::LintError;
+use crate::lint_rule::LintRule;
 use crate::overrides::OverrideSet;
 use crate::parser::{build_semantic, parse_file};
 use crate::plugin::PluginHost;
 use crate::rule::NativeRule;
-use crate::traversal::{DispatchTable, traverse_with_prebuilt};
+use crate::traversal::{
+    DispatchTable, LintDispatchTable, traverse_ast_tree, traverse_with_prebuilt,
+};
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
 
 /// Diagnostics collected for a single file.
@@ -33,8 +37,10 @@ pub struct FileDiagnostics {
 /// Holds the set of active rules, optional plugin host, and severity
 /// overrides from config. Lints files in parallel.
 pub struct LintSession {
-    /// Active native rules.
+    /// Active native rules (legacy, using oxc `AstKind`).
     native_rules: Vec<Box<dyn NativeRule>>,
+    /// Active lint rules (unified, using `AstTree`).
+    lint_rules: Vec<Box<dyn LintRule>>,
     /// Optional external plugin host (e.g., WASM).
     plugin_host: Option<Box<dyn PluginHost>>,
     /// Output format.
@@ -47,19 +53,34 @@ pub struct LintSession {
     disabled_rules: HashSet<String>,
     /// Pre-computed: whether any active rule needs semantic analysis.
     needs_semantic: bool,
-    /// Pre-built dispatch table mapping `AstType` → rule indices.
+    /// Pre-built dispatch table mapping `AstType` → native rule indices.
     dispatch_table: DispatchTable,
-    /// Indices of rules that only run via `run_once` (no traversal).
+    /// Indices of native rules that only run via `run_once` (no traversal).
     run_once_indices: Vec<usize>,
+    /// Pre-built dispatch table for `LintRule`s mapping `AstNodeType` → rule indices.
+    lint_dispatch_table: LintDispatchTable,
+    /// Indices of `LintRule`s that only run via `run_once` (no traversal).
+    lint_run_once_indices: Vec<usize>,
 }
 
 impl LintSession {
-    /// Create a new lint session with the given rules.
+    /// Create a new lint session with native rules only.
     #[must_use]
     pub fn new(native_rules: Vec<Box<dyn NativeRule>>, output_format: OutputFormat) -> Self {
-        let needs_semantic = native_rules.iter().any(|r| r.needs_semantic());
+        Self::new_dual(native_rules, vec![], output_format)
+    }
 
-        // Pre-compute traversal vs run_once partitions (file-invariant).
+    /// Create a new lint session with both native and unified lint rules.
+    #[must_use]
+    pub fn new_dual(
+        native_rules: Vec<Box<dyn NativeRule>>,
+        lint_rules: Vec<Box<dyn LintRule>>,
+        output_format: OutputFormat,
+    ) -> Self {
+        let needs_semantic = native_rules.iter().any(|r| r.needs_semantic())
+            || lint_rules.iter().any(|r| r.needs_semantic());
+
+        // Native rules: pre-compute traversal vs run_once partitions.
         let traversal_indices: Vec<usize> = native_rules
             .iter()
             .enumerate()
@@ -74,8 +95,25 @@ impl LintSession {
             .collect();
         let dispatch_table = DispatchTable::build_from_indices(&native_rules, &traversal_indices);
 
+        // Lint rules: pre-compute traversal vs run_once partitions.
+        let lint_traversal_indices: Vec<usize> = lint_rules
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.needs_traversal())
+            .map(|(i, _)| i)
+            .collect();
+        let lint_run_once_indices: Vec<usize> = lint_rules
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| !r.needs_traversal())
+            .map(|(i, _)| i)
+            .collect();
+        let lint_dispatch_table =
+            LintDispatchTable::build_from_indices(&lint_rules, &lint_traversal_indices);
+
         Self {
             native_rules,
+            lint_rules,
             plugin_host: None,
             output_format,
             severity_overrides: HashMap::new(),
@@ -84,6 +122,8 @@ impl LintSession {
             needs_semantic,
             dispatch_table,
             run_once_indices,
+            lint_dispatch_table,
+            lint_run_once_indices,
         }
     }
 
@@ -175,6 +215,21 @@ impl LintSession {
                     file_path,
                     semantic.as_ref(),
                 );
+
+                // Unified lint rules via AstTree traversal.
+                if !self.lint_rules.is_empty() {
+                    let tree = ast_converter::convert(program);
+                    let lint_diags = traverse_ast_tree(
+                        &tree,
+                        &self.lint_rules,
+                        &self.lint_dispatch_table,
+                        &self.lint_run_once_indices,
+                        source_text,
+                        file_path,
+                        semantic.as_ref(),
+                    );
+                    diags.extend(lint_diags);
+                }
 
                 // External plugin host (WASM, etc.).
                 if let Some(host) = &self.plugin_host {
