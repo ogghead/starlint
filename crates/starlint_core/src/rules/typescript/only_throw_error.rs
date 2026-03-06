@@ -10,7 +10,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -43,13 +45,39 @@ impl NativeRule for OnlyThrowError {
         };
 
         if is_non_error_literal(&throw.argument) {
+            // Fix: throw "msg" → throw new Error("msg")
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let arg_span = throw.argument.span();
+                source
+                    .get(arg_span.start as usize..arg_span.end as usize)
+                    .map(|text| {
+                        let wrapped = if matches!(
+                            throw.argument,
+                            Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
+                        ) {
+                            format!("new Error({text})")
+                        } else {
+                            format!("new Error(String({text}))")
+                        };
+                        Fix {
+                            message: format!("Replace with `throw {wrapped}`"),
+                            edits: vec![Edit {
+                                span: Span::new(arg_span.start, arg_span.end),
+                                replacement: wrapped,
+                            }],
+                        }
+                    })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Expected an Error object to be thrown — do not throw literals".to_owned(),
                 span: Span::new(throw.span.start, throw.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

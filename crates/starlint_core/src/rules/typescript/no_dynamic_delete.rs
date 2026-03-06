@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -44,7 +46,30 @@ impl NativeRule for NoDynamicDelete {
 
         // Only flag when the operand is a computed member expression (bracket access).
         // `delete obj.prop` (static access) is fine.
-        if matches!(&expr.argument, Expression::ComputedMemberExpression(_)) {
+        if let Expression::ComputedMemberExpression(computed) = &expr.argument {
+            // Fix: delete obj[key] → Reflect.deleteProperty(obj, key)
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let obj_span = computed.object.span();
+                let key_span = computed.expression.span();
+                let obj_text = source.get(obj_span.start as usize..obj_span.end as usize);
+                let key_text = source.get(key_span.start as usize..key_span.end as usize);
+                match (obj_text, key_text) {
+                    (Some(obj), Some(key)) => {
+                        let replacement = format!("Reflect.deleteProperty({obj}, {key})");
+                        Some(Fix {
+                            message: format!("Replace with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(expr.span.start, expr.span.end),
+                                replacement,
+                            }],
+                        })
+                    }
+                    _ => None,
+                }
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-dynamic-delete".to_owned(),
                 message: "Do not `delete` dynamically computed keys — use `Map` or `Set` instead"
@@ -52,7 +77,7 @@ impl NativeRule for NoDynamicDelete {
                 span: Span::new(expr.span.start, expr.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

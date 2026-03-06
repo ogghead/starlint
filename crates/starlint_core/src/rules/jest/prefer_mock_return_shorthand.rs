@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -68,6 +70,35 @@ impl NativeRule for PreferMockReturnShorthand {
         };
 
         if is_simple_return {
+            // Fix: .mockImplementation(() => x) → .mockReturnValue(x)
+            // Extract the return value from the arrow body
+            #[allow(clippy::as_conversions)]
+            let fix = if let Expression::ArrowFunctionExpression(arrow) = arg_expr {
+                arrow.body.statements.first().and_then(|stmt| {
+                    if let oxc_ast::ast::Statement::ExpressionStatement(es) = stmt {
+                        let source = ctx.source_text();
+                        let val_span = es.expression.span();
+                        let val_text =
+                            source.get(val_span.start as usize..val_span.end as usize)?;
+                        let obj_span = member.object.span();
+                        let obj_text =
+                            source.get(obj_span.start as usize..obj_span.end as usize)?;
+                        let replacement = format!("{obj_text}.mockReturnValue({val_text})");
+                        Some(Fix {
+                            message: format!("Replace with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(call.span.start, call.span.end),
+                                replacement,
+                            }],
+                        })
+                    } else {
+                        None
+                    }
+                })
+            } else {
+                None
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "jest/prefer-mock-return-shorthand".to_owned(),
                 message: "Use `.mockReturnValue(x)` instead of `.mockImplementation(() => x)`"
@@ -75,7 +106,7 @@ impl NativeRule for PreferMockReturnShorthand {
                 span: Span::new(call.span.start, call.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

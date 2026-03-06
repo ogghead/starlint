@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -60,6 +62,27 @@ impl NativeRule for NoInstanceofBuiltins {
 
         let name = right_id.name.as_str();
         if let Some((_builtin, suggestion)) = BUILTIN_TYPES.iter().find(|(b, _)| *b == name) {
+            // For `x instanceof Array`, offer fix → `Array.isArray(x)`
+            #[allow(clippy::as_conversions)]
+            let fix = if name == "Array" {
+                let source = ctx.source_text();
+                let left_span = bin.left.span();
+                source
+                    .get(left_span.start as usize..left_span.end as usize)
+                    .map(|left_text| {
+                        let replacement = format!("Array.isArray({left_text})");
+                        Fix {
+                            message: format!("Replace with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(bin.span.start, bin.span.end),
+                                replacement,
+                            }],
+                        }
+                    })
+            } else {
+                None
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "no-instanceof-builtins".to_owned(),
                 message: format!(
@@ -67,8 +90,8 @@ impl NativeRule for NoInstanceofBuiltins {
                 ),
                 span: Span::new(bin.span.start, bin.span.end),
                 severity: Severity::Warning,
-                help: None,
-                fix: None,
+                help: Some((*suggestion).to_owned()),
+                fix,
                 labels: vec![],
             });
         }

@@ -9,7 +9,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -47,13 +47,29 @@ impl NativeRule for NoNewNativeNonconstructor {
 
         let name = callee.name.as_str();
         if NON_CONSTRUCTORS.contains(&name) {
+            // Fix: `new Symbol('foo')` → `Symbol('foo')`
+            // Remove the `new ` prefix
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let callee_start = callee.span.start as usize;
+                let end = new_expr.span.end as usize;
+                source.get(callee_start..end).map(|call_text| Fix {
+                    message: format!("Remove `new` — call `{name}()` directly"),
+                    edits: vec![Edit {
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        replacement: call_text.to_owned(),
+                    }],
+                })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "no-new-native-nonconstructor".to_owned(),
                 message: format!("`{name}` is not a constructor"),
                 span: Span::new(new_expr.span.start, new_expr.span.end),
                 severity: Severity::Error,
-                help: None,
-                fix: None,
+                help: Some(format!("Call `{name}()` without `new`")),
+                fix,
                 labels: vec![],
             });
         }

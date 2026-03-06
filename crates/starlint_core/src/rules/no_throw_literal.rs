@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -37,13 +39,33 @@ impl NativeRule for NoThrowLiteral {
         };
 
         if is_literal_or_non_error(&throw.argument) {
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let arg_span = throw.argument.span();
+                let source = ctx.source_text();
+                source
+                    .get(arg_span.start as usize..arg_span.end as usize)
+                    .map(|arg_text| {
+                        let replacement = format!("new Error({arg_text})");
+                        Fix {
+                            message: format!("Replace with `throw {replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(arg_span.start, arg_span.end),
+                                replacement,
+                            }],
+                        }
+                    })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "no-throw-literal".to_owned(),
                 message: "Expected an Error object to be thrown".to_owned(),
                 span: Span::new(throw.span.start, throw.span.end),
                 severity: Severity::Error,
-                help: None,
-                fix: None,
+                help: Some(
+                    "Wrap the thrown value in `new Error(...)` for better stack traces".to_owned(),
+                ),
+                fix,
                 labels: vec![],
             });
         }

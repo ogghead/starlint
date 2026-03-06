@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Argument, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -61,6 +63,29 @@ impl NativeRule for PreferSetHas {
             return;
         }
 
+        // Fix: [1,2,3].includes(x) → new Set([1,2,3]).has(x)
+        #[allow(clippy::as_conversions)]
+        let fix = {
+            let source = ctx.source_text();
+            let arr_span = member.object.span();
+            let arr_text = source
+                .get(arr_span.start as usize..arr_span.end as usize)
+                .unwrap_or("");
+            let arg = call.arguments.first();
+            arg.and_then(|a| {
+                let a_span = a.span();
+                let a_text = source.get(a_span.start as usize..a_span.end as usize)?;
+                let replacement = format!("new Set({arr_text}).has({a_text})");
+                Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement,
+                    }],
+                })
+            })
+        };
+
         ctx.report(Diagnostic {
             rule_name: "prefer-set-has".to_owned(),
             message:
@@ -69,7 +94,7 @@ impl NativeRule for PreferSetHas {
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

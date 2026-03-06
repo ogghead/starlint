@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -58,6 +60,69 @@ impl NativeRule for PreferModernDomApis {
             return;
         };
 
+        // Build fix for appendChild(child) → parent.append(child)
+        // and removeChild(child) → child.remove()
+        #[allow(clippy::as_conversions)]
+        let fix = {
+            let source = ctx.source_text();
+            let obj_span = member.object.span();
+            let obj_text = source
+                .get(obj_span.start as usize..obj_span.end as usize)
+                .unwrap_or("");
+            match method_name {
+                "appendChild" if call.arguments.len() == 1 => {
+                    call.arguments.first().and_then(|arg| {
+                        let arg_span = arg.span();
+                        let arg_text =
+                            source.get(arg_span.start as usize..arg_span.end as usize)?;
+                        let replacement = format!("{obj_text}.append({arg_text})");
+                        Some(Fix {
+                            message: format!("Replace with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(call.span.start, call.span.end),
+                                replacement,
+                            }],
+                        })
+                    })
+                }
+                "removeChild" if call.arguments.len() == 1 => {
+                    call.arguments.first().and_then(|arg| {
+                        let arg_span = arg.span();
+                        let arg_text =
+                            source.get(arg_span.start as usize..arg_span.end as usize)?;
+                        let replacement = format!("{arg_text}.remove()");
+                        Some(Fix {
+                            message: format!("Replace with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(call.span.start, call.span.end),
+                                replacement,
+                            }],
+                        })
+                    })
+                }
+                "replaceChild" if call.arguments.len() == 2 => {
+                    call.arguments.first().and_then(|new_arg| {
+                        let old_arg = call.arguments.get(1)?;
+                        let new_span = new_arg.span();
+                        let old_span = old_arg.span();
+                        let new_text =
+                            source.get(new_span.start as usize..new_span.end as usize)?;
+                        let old_text =
+                            source.get(old_span.start as usize..old_span.end as usize)?;
+                        let replacement = format!("{old_text}.replaceWith({new_text})");
+                        Some(Fix {
+                            message: format!("Replace with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(call.span.start, call.span.end),
+                                replacement,
+                            }],
+                        })
+                    })
+                }
+                _ => None,
+            }
+        };
+
         ctx.report(Diagnostic {
             rule_name: "prefer-modern-dom-apis".to_owned(),
             message: format!("Prefer `{modern}` over `{method_name}`"),
@@ -66,7 +131,7 @@ impl NativeRule for PreferModernDomApis {
             help: Some(format!(
                 "Use `{modern}` instead of `{method_name}` for cleaner, more readable code"
             )),
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

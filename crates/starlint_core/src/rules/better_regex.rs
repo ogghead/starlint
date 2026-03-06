@@ -6,7 +6,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -27,6 +29,16 @@ const IMPROVABLE_PATTERNS: &[(&str, &str)] = &[
         "[A-Za-z]",
         "[A-Za-z] (consider \\w or a unicode-aware class)",
     ),
+];
+
+/// Patterns that can be directly replaced (the replacement is a valid regex shorthand).
+const FIXABLE_PATTERNS: &[(&str, &str)] = &[
+    ("[0-9]", "\\d"),
+    ("[^0-9]", "\\D"),
+    ("[a-zA-Z0-9_]", "\\w"),
+    ("[A-Za-z0-9_]", "\\w"),
+    ("[^a-zA-Z0-9_]", "\\W"),
+    ("[^A-Za-z0-9_]", "\\W"),
 ];
 
 /// Flags regex literals with character classes that have shorter alternatives.
@@ -57,6 +69,25 @@ impl NativeRule for BetterRegex {
 
         for &(class, replacement) in IMPROVABLE_PATTERNS {
             if pattern.contains(class) {
+                // Build fix for patterns with direct shorthand replacements
+                #[allow(clippy::as_conversions)]
+                let fix = FIXABLE_PATTERNS.iter().find(|(c, _)| *c == class).and_then(
+                    |(_, shorthand)| {
+                        let source = ctx.source_text();
+                        let regex_span = regex.span();
+                        let regex_text =
+                            source.get(regex_span.start as usize..regex_span.end as usize)?;
+                        let new_regex = regex_text.replacen(class, shorthand, 1);
+                        Some(Fix {
+                            message: format!("Replace `{class}` with `{shorthand}`"),
+                            edits: vec![Edit {
+                                span: Span::new(regex_span.start, regex_span.end),
+                                replacement: new_regex,
+                            }],
+                        })
+                    },
+                );
+
                 ctx.report(Diagnostic {
                     rule_name: "better-regex".to_owned(),
                     message: format!(
@@ -65,7 +96,7 @@ impl NativeRule for BetterRegex {
                     span: Span::new(regex.span.start, regex.span.end),
                     severity: Severity::Warning,
                     help: None,
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
                 // Report only the first match per regex to avoid noise.

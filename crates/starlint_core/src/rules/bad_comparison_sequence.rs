@@ -5,10 +5,12 @@
 //! compared to `c` — almost never the intended behavior.
 
 use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
+use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,6 +47,35 @@ impl NativeRule for BadComparisonSequence {
         // Check if the left operand is also a comparison — that makes it a chain
         if let Expression::BinaryExpression(left) = &expr.left {
             if left.operator.is_compare() {
+                // Fix: a < b < c → a < b && b < c
+                #[allow(clippy::as_conversions)]
+                let fix = {
+                    let source = ctx.source_text();
+                    let a_span = left.left.span();
+                    let b_span = left.right.span();
+                    let c_span = expr.right.span();
+                    let a = source.get(a_span.start as usize..a_span.end as usize);
+                    let b = source.get(b_span.start as usize..b_span.end as usize);
+                    let c = source.get(c_span.start as usize..c_span.end as usize);
+                    match (a, b, c) {
+                        (Some(a_text), Some(b_text), Some(c_text)) => {
+                            let left_op = operator_str(left.operator);
+                            let right_op = operator_str(expr.operator);
+                            let replacement = format!(
+                                "{a_text} {left_op} {b_text} && {b_text} {right_op} {c_text}"
+                            );
+                            Some(Fix {
+                                message: format!("Replace with `{replacement}`"),
+                                edits: vec![Edit {
+                                    span: Span::new(expr.span.start, expr.span.end),
+                                    replacement,
+                                }],
+                            })
+                        }
+                        _ => None,
+                    }
+                };
+
                 ctx.report(Diagnostic {
                     rule_name: "bad-comparison-sequence".to_owned(),
                     message: "Chained comparisons like `a < b < c` do not work as expected in JavaScript — \
@@ -52,11 +83,22 @@ impl NativeRule for BadComparisonSequence {
                     span: Span::new(expr.span.start, expr.span.end),
                     severity: Severity::Warning,
                     help: None,
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }
         }
+    }
+}
+
+/// Convert a comparison operator to its source string.
+const fn operator_str(op: BinaryOperator) -> &'static str {
+    match op {
+        BinaryOperator::LessThan => "<",
+        BinaryOperator::GreaterThan => ">",
+        BinaryOperator::LessEqualThan => "<=",
+        BinaryOperator::GreaterEqualThan => ">=",
+        _ => "??",
     }
 }
 

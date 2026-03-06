@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -36,14 +36,22 @@ impl NativeRule for NoUndefined {
         };
 
         if id.name.as_str() == "undefined" {
+            let fix = Some(Fix {
+                message: "Replace with `void 0`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(id.span.start, id.span.end),
+                    replacement: "void 0".to_owned(),
+                }],
+            });
+
             ctx.report(Diagnostic {
                 rule_name: "no-undefined".to_owned(),
                 message: "Unexpected use of `undefined` — use `void 0` instead if needed"
                     .to_owned(),
                 span: Span::new(id.span.start, id.span.end),
                 severity: Severity::Warning,
-                help: None,
-                fix: None,
+                help: Some("Replace `undefined` with `void 0`".to_owned()),
+                fix,
                 labels: vec![],
             });
         }

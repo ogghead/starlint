@@ -9,7 +9,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -38,6 +40,27 @@ impl NativeRule for NoForInArray {
             return;
         };
 
+        // Fix: for (x in arr) → for (x of arr)
+        #[allow(clippy::as_conversions)]
+        let fix = {
+            let source = ctx.source_text();
+            let left_end = stmt.left.span().end as usize;
+            let right_start = stmt.right.span().start as usize;
+            let between = source.get(left_end..right_start).unwrap_or("");
+            between.find(" in ").and_then(|pos| {
+                let in_start =
+                    u32::try_from(left_end.saturating_add(pos).saturating_add(1)).ok()?;
+                let in_end = in_start.saturating_add(2);
+                Some(Fix {
+                    message: "Replace `in` with `of`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(in_start, in_end),
+                        replacement: "of".to_owned(),
+                    }],
+                })
+            })
+        };
+
         ctx.report(Diagnostic {
             rule_name: "typescript/no-for-in-array".to_owned(),
             message: "`for...in` iterates over string keys, not values — use `for...of` instead"
@@ -45,7 +68,7 @@ impl NativeRule for NoForInArray {
             span: Span::new(stmt.span.start, stmt.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -53,6 +55,34 @@ impl NativeRule for NoNegationInEqualityCheck {
                 } else {
                     "==="
                 };
+                let negated_op = if expr.operator == BinaryOperator::Equality {
+                    "!="
+                } else {
+                    "!=="
+                };
+
+                // Fix: `!a == b` → `a != b`, `!a === b` → `a !== b`
+                #[allow(clippy::as_conversions)]
+                let fix = {
+                    let source = ctx.source_text();
+                    let inner_span = unary.argument.span();
+                    let right_span = expr.right.span();
+                    let inner_text = source
+                        .get(inner_span.start as usize..inner_span.end as usize)
+                        .unwrap_or("");
+                    let right_text = source
+                        .get(right_span.start as usize..right_span.end as usize)
+                        .unwrap_or("");
+                    let replacement = format!("{inner_text} {negated_op} {right_text}");
+                    Some(Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(expr.span.start, expr.span.end),
+                            replacement,
+                        }],
+                    })
+                };
+
                 ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
                     rule_name: "no-negation-in-equality-check".to_owned(),
                     message: format!(
@@ -61,9 +91,9 @@ impl NativeRule for NoNegationInEqualityCheck {
                     span: Span::new(expr.span.start, expr.span.end),
                     severity: Severity::Warning,
                     help: Some(format!(
-                        "Use `a != b` or `a !== b` instead, or wrap in parentheses: `(!a) {op_str} b`"
+                        "Use `a {negated_op} b` instead, or wrap in parentheses: `(!a) {op_str} b`"
                     )),
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }

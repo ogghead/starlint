@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -39,13 +39,37 @@ impl NativeRule for NoTemplateCurlyInString {
 
         let value = lit.value.as_str();
         if contains_template_placeholder(value) {
+            // Fix: convert string quotes to backticks to make a template literal
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let start = lit.span.start as usize;
+                let end = lit.span.end as usize;
+                source.get(start..end).and_then(|raw| {
+                    // Get the raw source content (without surrounding quotes)
+                    let inner = raw.get(1..raw.len().saturating_sub(1))?;
+                    // Escape any backticks in the content
+                    let escaped = inner.replace('`', "\\`");
+                    let replacement = format!("`{escaped}`");
+                    Some(Fix {
+                        message: "Convert to template literal".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(lit.span.start, lit.span.end),
+                            replacement,
+                        }],
+                    })
+                })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "no-template-curly-in-string".to_owned(),
                 message: "Unexpected template string expression in a regular string".to_owned(),
                 span: Span::new(lit.span.start, lit.span.end),
                 severity: Severity::Error,
-                help: None,
-                fix: None,
+                help: Some(
+                    "Use a template literal (backticks) instead of a regular string".to_owned(),
+                ),
+                fix,
                 labels: vec![],
             });
         }

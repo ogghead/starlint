@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -51,13 +53,35 @@ impl NativeRule for NoArrayDelete {
         };
 
         if is_numeric_index(&member.expression) {
+            // Fix: `delete arr[i]` → `arr.splice(i, 1)`
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let obj_span = member.object.span();
+                let idx_span = member.expression.span();
+                let obj_text = source
+                    .get(obj_span.start as usize..obj_span.end as usize)
+                    .unwrap_or("");
+                let idx_text = source
+                    .get(idx_span.start as usize..idx_span.end as usize)
+                    .unwrap_or("");
+                let replacement = format!("{obj_text}.splice({idx_text}, 1)");
+                Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement,
+                    }],
+                })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-array-delete".to_owned(),
                 message: "Do not `delete` array elements — it creates a sparse array hole. Use `splice` instead".to_owned(),
                 span: Span::new(expr.span.start, expr.span.end),
                 severity: Severity::Error,
-                help: None,
-                fix: None,
+                help: Some("Use `.splice(index, 1)` to remove the element".to_owned()),
+                fix,
                 labels: vec![],
             });
         }

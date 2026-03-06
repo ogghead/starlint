@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -77,6 +79,24 @@ impl NativeRule for BadArrayMethodOnArguments {
 
         let method = member.property.name.as_str();
         if ARRAY_METHODS.contains(&method) {
+            // Fix: arguments.method(...) → Array.from(arguments).method(...)
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let call_span = call.span();
+                let call_text = source.get(call_span.start as usize..call_span.end as usize);
+                call_text.map(|text| {
+                    let replacement = text.replacen("arguments.", "Array.from(arguments).", 1);
+                    Fix {
+                        message: format!("Replace with `Array.from(arguments).{method}()`"),
+                        edits: vec![Edit {
+                            span: Span::new(call_span.start, call_span.end),
+                            replacement,
+                        }],
+                    }
+                })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "bad-array-method-on-arguments".to_owned(),
                 message: format!(
@@ -86,7 +106,7 @@ impl NativeRule for BadArrayMethodOnArguments {
                 span: Span::new(call.span.start, call.span.end),
                 severity: Severity::Error,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

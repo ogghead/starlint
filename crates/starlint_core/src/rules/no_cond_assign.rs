@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -65,13 +67,35 @@ impl NativeRule for NoCondAssign {
 /// Check if an expression (used as a condition) is an assignment.
 fn check_condition(expr: &Expression<'_>, ctx: &mut NativeLintContext<'_>) {
     if let Expression::AssignmentExpression(assign) = expr {
+        // Fix: replace `=` with `===`
+        #[allow(clippy::as_conversions)]
+        let fix = {
+            let source = ctx.source_text();
+            let left_span = assign.left.span();
+            let right_span = assign.right.span();
+            let left_text = source
+                .get(left_span.start as usize..left_span.end as usize)
+                .unwrap_or("");
+            let right_text = source
+                .get(right_span.start as usize..right_span.end as usize)
+                .unwrap_or("");
+            let replacement = format!("{left_text} === {right_text}");
+            Some(Fix {
+                message: format!("Replace with `{replacement}`"),
+                edits: vec![Edit {
+                    span: Span::new(assign.span.start, assign.span.end),
+                    replacement,
+                }],
+            })
+        };
+
         ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
             rule_name: "no-cond-assign".to_owned(),
             message: "Unexpected assignment in conditional expression".to_owned(),
             span: Span::new(assign.span.start, assign.span.end),
             severity: Severity::Error,
             help: Some("Did you mean `===` instead of `=`?".to_owned()),
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

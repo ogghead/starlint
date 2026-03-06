@@ -9,7 +9,9 @@ use oxc_ast::ast::{
     AssignmentOperator, BinaryOperator, Expression, SimpleAssignmentTarget, UpdateOperator,
 };
 use oxc_ast::ast_kind::AstType;
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -53,6 +55,25 @@ impl NativeRule for ForDirection {
 
         // Check whether the update moves the counter in the wrong direction.
         if moves_wrong_direction(update, counter_name, direction) {
+            // Fix: swap the update direction
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let update_span = update.span();
+                source
+                    .get(update_span.start as usize..update_span.end as usize)
+                    .and_then(|update_text| {
+                        let replacement = swap_update_direction(update_text)?;
+                        Some(Fix {
+                            message: format!("Replace `{update_text}` with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(update_span.start, update_span.end),
+                                replacement,
+                            }],
+                        })
+                    })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "for-direction".to_owned(),
                 message: format!(
@@ -64,7 +85,7 @@ impl NativeRule for ForDirection {
                     "The loop counter should move toward the stop condition, not away from it"
                         .to_owned(),
                 ),
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }
@@ -173,6 +194,34 @@ fn is_positive_numeric(expr: &Expression<'_>) -> bool {
         lit.value > 0.0
     } else {
         false
+    }
+}
+
+/// Swap the direction of an update expression in source text.
+/// `i++` → `i--`, `i--` → `i++`, `i += 1` → `i -= 1`, `i -= 1` → `i += 1`
+fn swap_update_direction(text: &str) -> Option<String> {
+    if text.ends_with("++") {
+        Some(format!("{}--", &text[..text.len().saturating_sub(2)]))
+    } else if text.ends_with("--") {
+        Some(format!("{}++", &text[..text.len().saturating_sub(2)]))
+    } else if let Some(rest) = text.strip_prefix("++") {
+        Some(format!("--{rest}"))
+    } else if let Some(rest) = text.strip_prefix("--") {
+        Some(format!("++{rest}"))
+    } else if let Some(pos) = text.find("+=") {
+        let mut result = String::with_capacity(text.len());
+        result.push_str(&text[..pos]);
+        result.push_str("-=");
+        result.push_str(&text[pos.saturating_add(2)..]);
+        Some(result)
+    } else if let Some(pos) = text.find("-=") {
+        let mut result = String::with_capacity(text.len());
+        result.push_str(&text[..pos]);
+        result.push_str("+=");
+        result.push_str(&text[pos.saturating_add(2)..]);
+        Some(result)
+    } else {
+        None
     }
 }
 

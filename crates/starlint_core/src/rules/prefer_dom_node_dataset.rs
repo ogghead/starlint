@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -66,6 +68,42 @@ impl NativeRule for PreferDomNodeDataset {
             return;
         }
 
+        let dataset_key = data_attr_to_camel_case(lit.value.as_str());
+
+        #[allow(clippy::as_conversions)]
+        let fix = {
+            let source = ctx.source_text();
+            let obj_span = member.object.span();
+            let obj_text = source
+                .get(obj_span.start as usize..obj_span.end as usize)
+                .unwrap_or("");
+            if method_name == "getAttribute" {
+                let replacement = format!("{obj_text}.dataset.{dataset_key}");
+                Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement,
+                    }],
+                })
+            } else if method_name == "setAttribute" && call.arguments.len() == 2 {
+                call.arguments.get(1).and_then(|val_arg| {
+                    let val_span = val_arg.span();
+                    let val_text = source.get(val_span.start as usize..val_span.end as usize)?;
+                    let replacement = format!("{obj_text}.dataset.{dataset_key} = {val_text}");
+                    Some(Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement,
+                        }],
+                    })
+                })
+            } else {
+                None
+            }
+        };
+
         ctx.report(Diagnostic {
             rule_name: "prefer-dom-node-dataset".to_owned(),
             message: format!(
@@ -74,10 +112,29 @@ impl NativeRule for PreferDomNodeDataset {
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }
+}
+
+/// Convert a `data-*` attribute name to its camelCase dataset key.
+/// e.g. `data-foo-bar` → `fooBar`
+fn data_attr_to_camel_case(attr: &str) -> String {
+    let without_prefix = attr.strip_prefix("data-").unwrap_or(attr);
+    let mut result = String::new();
+    let mut capitalize_next = false;
+    for ch in without_prefix.chars() {
+        if ch == '-' {
+            capitalize_next = true;
+        } else if capitalize_next {
+            result.extend(ch.to_uppercase());
+            capitalize_next = false;
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }
 
 #[cfg(test)]

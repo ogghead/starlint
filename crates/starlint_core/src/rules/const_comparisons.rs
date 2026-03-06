@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression, LogicalOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -71,13 +71,28 @@ impl NativeRule for ConstComparisons {
         };
 
         if let Some(message) = finding {
+            // Fix: replace always-false with `false`, always-true with `true`
+            let is_always_false = message.contains("always false");
+            let replacement = if is_always_false {
+                "false".to_owned()
+            } else {
+                "true".to_owned()
+            };
+            let fix = Some(Fix {
+                message: format!("Replace with `{replacement}`"),
+                edits: vec![Edit {
+                    span: Span::new(logical.span.start, logical.span.end),
+                    replacement,
+                }],
+            });
+
             ctx.report(Diagnostic {
                 rule_name: "const-comparisons".to_owned(),
                 message: message.to_owned(),
                 span: Span::new(logical.span.start, logical.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

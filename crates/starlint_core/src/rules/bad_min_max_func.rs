@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -32,6 +34,7 @@ impl NativeRule for BadMinMaxFunc {
         Some(&[AstType::CallExpression])
     }
 
+    #[allow(clippy::too_many_lines)]
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         let AstKind::CallExpression(call) = kind else {
             return;
@@ -77,6 +80,80 @@ impl NativeRule for BadMinMaxFunc {
                     };
 
                     if inverted {
+                        // Fix: swap the bounds
+                        // e.g. Math.min(Math.max(val, 10), 5) → Math.min(Math.max(val, 5), 10)
+                        #[allow(clippy::as_conversions)]
+                        let fix = {
+                            let source = ctx.source_text();
+                            let inner_num_span = find_numeric_literal_span(inner_call);
+                            let outer_num_span =
+                                find_numeric_literal_span_excluding(call, inner_call);
+                            match (inner_num_span, outer_num_span) {
+                                (Some(i_span), Some(o_span)) => {
+                                    let i_text =
+                                        source.get(i_span.start as usize..i_span.end as usize);
+                                    let o_text =
+                                        source.get(o_span.start as usize..o_span.end as usize);
+                                    match (i_text, o_text) {
+                                        (Some(inner_t), Some(outer_t)) => {
+                                            // Swap: replace inner num with outer num and vice versa
+                                            // Build by replacing in the full expression
+                                            let call_span = call.span();
+                                            let full_text = source.get(
+                                                call_span.start as usize..call_span.end as usize,
+                                            );
+                                            full_text.map(|text| {
+                                                // We need to swap the two numeric literals
+                                                // Since spans are absolute, convert to relative
+                                                let base = call_span.start as usize;
+                                                let i_rel_start =
+                                                    (i_span.start as usize).saturating_sub(base);
+                                                let i_rel_end =
+                                                    (i_span.end as usize).saturating_sub(base);
+                                                let o_rel_start =
+                                                    (o_span.start as usize).saturating_sub(base);
+                                                let o_rel_end =
+                                                    (o_span.end as usize).saturating_sub(base);
+                                                let mut result = text.to_owned();
+                                                // Replace the later span first to preserve positions
+                                                if i_rel_start > o_rel_start {
+                                                    result.replace_range(
+                                                        i_rel_start..i_rel_end,
+                                                        outer_t,
+                                                    );
+                                                    result.replace_range(
+                                                        o_rel_start..o_rel_end,
+                                                        inner_t,
+                                                    );
+                                                } else {
+                                                    result.replace_range(
+                                                        o_rel_start..o_rel_end,
+                                                        inner_t,
+                                                    );
+                                                    result.replace_range(
+                                                        i_rel_start..i_rel_end,
+                                                        outer_t,
+                                                    );
+                                                }
+                                                Fix {
+                                                    message: format!("Replace with `{result}`"),
+                                                    edits: vec![Edit {
+                                                        span: Span::new(
+                                                            call_span.start,
+                                                            call_span.end,
+                                                        ),
+                                                        replacement: result,
+                                                    }],
+                                                }
+                                            })
+                                        }
+                                        _ => None,
+                                    }
+                                }
+                                _ => None,
+                            }
+                        };
+
                         ctx.report(Diagnostic {
                             rule_name: "bad-min-max-func".to_owned(),
                             message: "Nested Math.min/Math.max have inverted bounds — \
@@ -85,7 +162,7 @@ impl NativeRule for BadMinMaxFunc {
                             span: Span::new(call.span.start, call.span.end),
                             severity: Severity::Warning,
                             help: None,
-                            fix: None,
+                            fix,
                             labels: vec![],
                         });
                     }
@@ -138,6 +215,40 @@ fn get_numeric_arg_from_inner(inner: &oxc_ast::ast::CallExpression<'_>) -> Optio
         };
         if let Expression::NumericLiteral(n) = expr {
             return Some(n.value);
+        }
+    }
+    None
+}
+
+/// Find the span of the numeric literal argument in a call.
+fn find_numeric_literal_span(call: &oxc_ast::ast::CallExpression<'_>) -> Option<Span> {
+    for arg in &call.arguments {
+        let Some(expr) = arg.as_expression() else {
+            continue;
+        };
+        if let Expression::NumericLiteral(n) = expr {
+            return Some(Span::new(n.span.start, n.span.end));
+        }
+    }
+    None
+}
+
+/// Find the span of the numeric literal in the outer call, excluding the inner call's args.
+fn find_numeric_literal_span_excluding(
+    outer: &oxc_ast::ast::CallExpression<'_>,
+    inner: &oxc_ast::ast::CallExpression<'_>,
+) -> Option<Span> {
+    for arg in &outer.arguments {
+        let Some(expr) = arg.as_expression() else {
+            continue;
+        };
+        if let Expression::CallExpression(c) = expr {
+            if c.span == inner.span {
+                continue;
+            }
+        }
+        if let Expression::NumericLiteral(n) = expr {
+            return Some(Span::new(n.span.start, n.span.end));
         }
     }
     None

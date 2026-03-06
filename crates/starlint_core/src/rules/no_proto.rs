@@ -6,7 +6,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -33,6 +35,24 @@ impl NativeRule for NoProto {
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         if let AstKind::StaticMemberExpression(member) = kind {
             if member.property.name.as_str() == "__proto__" {
+                #[allow(clippy::as_conversions)]
+                let fix = {
+                    let source = ctx.source_text();
+                    let obj_span = member.object.span();
+                    source
+                        .get(obj_span.start as usize..obj_span.end as usize)
+                        .map(|obj_text| {
+                            let replacement = format!("Object.getPrototypeOf({obj_text})");
+                            Fix {
+                                message: format!("Replace with `{replacement}`"),
+                                edits: vec![Edit {
+                                    span: Span::new(member.span.start, member.span.end),
+                                    replacement,
+                                }],
+                            }
+                        })
+                };
+
                 ctx.report(Diagnostic {
                     rule_name: "no-proto".to_owned(),
                     message:
@@ -40,8 +60,8 @@ impl NativeRule for NoProto {
                             .to_owned(),
                     span: Span::new(member.span.start, member.span.end),
                     severity: Severity::Warning,
-                    help: None,
-                    fix: None,
+                    help: Some("Replace `.__proto__` with `Object.getPrototypeOf()`".to_owned()),
+                    fix,
                     labels: vec![],
                 });
             }

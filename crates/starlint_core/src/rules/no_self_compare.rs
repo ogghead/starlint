@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -56,13 +56,29 @@ impl NativeRule for NoSelfCompare {
 
         if let (Some(left), Some(right)) = (left_text, right_text) {
             if !left.is_empty() && left == right {
+                // For `x !== x`, offer fix to `Number.isNaN(x)`
+                let fix = matches!(
+                    expr.operator,
+                    oxc_ast::ast::BinaryOperator::StrictInequality
+                )
+                .then(|| {
+                    let replacement = format!("Number.isNaN({left})");
+                    Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(expr.span.start, expr.span.end),
+                            replacement,
+                        }],
+                    }
+                });
+
                 ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
                     rule_name: "no-self-compare".to_owned(),
                     message: format!("Comparing `{left}` against itself is always predictable"),
                     span: Span::new(expr.span.start, expr.span.end),
                     severity: Severity::Error,
                     help: Some("If testing for NaN, use `Number.isNaN(value)` instead".to_owned()),
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }

@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,6 +47,30 @@ impl NativeRule for NoCompareNegZero {
         let has_neg_zero = is_negative_zero(&expr.left) || is_negative_zero(&expr.right);
 
         if has_neg_zero {
+            // Fix: `x === -0` → `Object.is(x, -0)`
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let (value_expr, _neg_zero_expr) = if is_negative_zero(&expr.right) {
+                    (&expr.left, &expr.right)
+                } else {
+                    (&expr.right, &expr.left)
+                };
+                let val_span = value_expr.span();
+                source
+                    .get(val_span.start as usize..val_span.end as usize)
+                    .map(|val_text| {
+                        let replacement = format!("Object.is({val_text}, -0)");
+                        Fix {
+                            message: format!("Replace with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(expr.span.start, expr.span.end),
+                                replacement,
+                            }],
+                        }
+                    })
+            };
+
             ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
                 rule_name: "no-compare-neg-zero".to_owned(),
                 message: format!(
@@ -54,7 +80,7 @@ impl NativeRule for NoCompareNegZero {
                 span: Span::new(expr.span.start, expr.span.end),
                 severity: Severity::Error,
                 help: Some("Use `Object.is(x, -0)` to test for negative zero".to_owned()),
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

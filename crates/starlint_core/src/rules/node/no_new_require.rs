@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -43,13 +45,32 @@ impl NativeRule for NoNewRequire {
         );
 
         if is_require {
+            // Fix: new require('x') → new (require('x'))()
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let callee_span = new_expr.callee.span();
+                let args_end = new_expr.span.end;
+                let require_text = source.get(callee_span.start as usize..args_end as usize);
+                require_text.map(|text| {
+                    let replacement = format!("new ({text})()");
+                    Fix {
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(new_expr.span.start, new_expr.span.end),
+                            replacement,
+                        }],
+                    }
+                })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "node/no-new-require".to_owned(),
                 message: "`require` is not a constructor \u{2014} use `new (require('module'))()` to instantiate the export".to_owned(),
                 span: Span::new(new_expr.span.start, new_expr.span.end),
                 severity: Severity::Error,
                 help: Some("Wrap the require call: `new (require('module'))()`".to_owned()),
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

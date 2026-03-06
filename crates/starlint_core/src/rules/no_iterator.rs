@@ -6,7 +6,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -33,13 +35,32 @@ impl NativeRule for NoIterator {
     fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
         if let AstKind::StaticMemberExpression(member) = kind {
             if member.property.name.as_str() == "__iterator__" {
+                // Fix: obj.__iterator__ → obj[Symbol.iterator]
+                #[allow(clippy::as_conversions)]
+                let fix = {
+                    let source = ctx.source_text();
+                    let obj_span = member.object.span();
+                    source
+                        .get(obj_span.start as usize..obj_span.end as usize)
+                        .map(|obj_text| {
+                            let replacement = format!("{obj_text}[Symbol.iterator]");
+                            Fix {
+                                message: format!("Replace with `{replacement}`"),
+                                edits: vec![Edit {
+                                    span: Span::new(member.span.start, member.span.end),
+                                    replacement,
+                                }],
+                            }
+                        })
+                };
+
                 ctx.report(Diagnostic {
                     rule_name: "no-iterator".to_owned(),
                     message: "Use `Symbol.iterator` instead of `__iterator__`".to_owned(),
                     span: Span::new(member.span.start, member.span.end),
                     severity: Severity::Warning,
-                    help: None,
-                    fix: None,
+                    help: Some("Replace `.__iterator__` with `[Symbol.iterator]`".to_owned()),
+                    fix,
                     labels: vec![],
                 });
             }

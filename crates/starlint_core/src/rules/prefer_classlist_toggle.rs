@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -61,13 +63,46 @@ impl NativeRule for PreferClasslistToggle {
             return;
         }
 
+        // Fix: el.classList.add('x') → el.classList.toggle('x', true)
+        //      el.classList.remove('x') → el.classList.toggle('x', false)
+        #[allow(clippy::as_conversions)]
+        let fix = (call.arguments.len() == 1)
+            .then(|| {
+                let source = ctx.source_text();
+                let el_span = inner.object.span();
+                let arg_span = call.arguments.first().map(oxc_span::GetSpan::span);
+                match (
+                    source.get(el_span.start as usize..el_span.end as usize),
+                    arg_span.and_then(|s| source.get(s.start as usize..s.end as usize)),
+                ) {
+                    (Some(el_text), Some(arg_text)) => {
+                        let force = if method_name == "add" {
+                            "true"
+                        } else {
+                            "false"
+                        };
+                        let replacement =
+                            format!("{el_text}.classList.toggle({arg_text}, {force})");
+                        Some(Fix {
+                            message: format!("Replace with `{replacement}`"),
+                            edits: vec![Edit {
+                                span: Span::new(call.span.start, call.span.end),
+                                replacement,
+                            }],
+                        })
+                    }
+                    _ => None,
+                }
+            })
+            .flatten();
+
         ctx.report(Diagnostic {
             rule_name: "prefer-classlist-toggle".to_owned(),
             message: format!("Prefer `classList.toggle()` over `classList.{method_name}()`"),
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

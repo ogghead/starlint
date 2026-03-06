@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -49,13 +49,22 @@ impl NativeRule for NoArrayReverse {
             return;
         }
 
+        // Fix: replace `.reverse` with `.toReversed` in the property name
+        let fix = Some(Fix {
+            message: "Replace `.reverse()` with `.toReversed()`".to_owned(),
+            edits: vec![Edit {
+                span: Span::new(member.property.span.start, member.property.span.end),
+                replacement: "toReversed".to_owned(),
+            }],
+        });
+
         ctx.report(Diagnostic {
             rule_name: "no-array-reverse".to_owned(),
             message: "`.reverse()` mutates the array — consider `.toReversed()` instead".to_owned(),
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
-            help: None,
-            fix: None,
+            help: Some("Replace `.reverse()` with `.toReversed()`".to_owned()),
+            fix,
             labels: vec![],
         });
     }

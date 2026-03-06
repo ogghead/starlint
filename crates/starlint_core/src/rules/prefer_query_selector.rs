@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -60,13 +62,43 @@ impl NativeRule for PreferQuerySelector {
 
         let suggestion = suggested_replacement(method_name);
 
+        // Build fix for getElementById/getElementsByClassName/getElementsByTagName
+        #[allow(clippy::as_conversions)]
+        let fix = (call.arguments.len() == 1)
+            .then(|| {
+                call.arguments.first().and_then(|arg| {
+                    let arg_expr = arg.as_expression()?;
+                    let Expression::StringLiteral(lit) = arg_expr else {
+                        return None;
+                    };
+                    let source = ctx.source_text();
+                    let obj_span = member.object.span();
+                    let obj_text = source.get(obj_span.start as usize..obj_span.end as usize)?;
+                    let (method, selector) = match method_name {
+                        "getElementById" => ("querySelector", format!("#{}", lit.value)),
+                        "getElementsByClassName" => ("querySelectorAll", format!(".{}", lit.value)),
+                        "getElementsByTagName" => ("querySelectorAll", lit.value.to_string()),
+                        _ => return None,
+                    };
+                    let replacement = format!("{obj_text}.{method}('{selector}')");
+                    Some(Fix {
+                        message: format!("Replace with `{method}('{selector}')`"),
+                        edits: vec![Edit {
+                            span: Span::new(call.span.start, call.span.end),
+                            replacement,
+                        }],
+                    })
+                })
+            })
+            .flatten();
+
         ctx.report(Diagnostic {
             rule_name: "prefer-query-selector".to_owned(),
             message: format!("Prefer `{suggestion}` over `{method_name}`"),
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: Some(format!("Use `{suggestion}` with a CSS selector instead")),
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

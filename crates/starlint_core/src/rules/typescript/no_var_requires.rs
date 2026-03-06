@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -42,13 +42,41 @@ impl NativeRule for NoVarRequires {
         };
 
         if is_require_call(init) {
+            // Fix: const x = require("foo") → import x from "foo" (simple identifier case)
+            #[allow(clippy::as_conversions)]
+            let fix = if let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = &decl.id {
+                if let Expression::CallExpression(call) = init {
+                    call.arguments.first().and_then(|arg| {
+                        let arg_expr = arg.as_expression()?;
+                        if let Expression::StringLiteral(lit) = arg_expr {
+                            let name = id.name.as_str();
+                            let module = lit.value.as_str();
+                            let replacement = format!("import {name} from \"{module}\"");
+                            Some(Fix {
+                                message: format!("Replace with `{replacement}`"),
+                                edits: vec![Edit {
+                                    span: Span::new(decl.span.start, decl.span.end),
+                                    replacement,
+                                }],
+                            })
+                        } else {
+                            None
+                        }
+                    })
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-var-requires".to_owned(),
                 message: "Use `import` instead of `require()` in variable declarations".to_owned(),
                 span: Span::new(decl.span.start, decl.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

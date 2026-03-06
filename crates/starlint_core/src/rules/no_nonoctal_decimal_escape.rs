@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -47,17 +47,60 @@ impl NativeRule for NoNonoctalDecimalEscape {
         };
 
         if contains_nonoctal_escape(raw) {
+            // Fix: remove backslash before 8 or 9
+            let fixed = remove_nonoctal_escapes(raw);
+            let fix = Some(Fix {
+                message: "Remove the backslash before `8` or `9`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(lit.span.start, lit.span.end),
+                    replacement: fixed,
+                }],
+            });
+
             ctx.report(Diagnostic {
                 rule_name: "no-nonoctal-decimal-escape".to_owned(),
                 message: "Don't use `\\8` or `\\9` escape sequences in string literals".to_owned(),
                 span: Span::new(lit.span.start, lit.span.end),
                 severity: Severity::Error,
-                help: None,
-                fix: None,
+                help: Some(
+                    "Remove the backslash — `\\8` and `\\9` are not valid octal escapes".to_owned(),
+                ),
+                fix,
                 labels: vec![],
             });
         }
     }
+}
+
+/// Remove `\8` and `\9` escape sequences by stripping the backslash.
+fn remove_nonoctal_escapes(raw: &str) -> String {
+    let mut result = String::with_capacity(raw.len());
+    let bytes = raw.as_bytes();
+    let len = bytes.len();
+    let mut i = 0;
+    while i < len {
+        if bytes.get(i).copied() == Some(b'\\') {
+            let next = i.checked_add(1).unwrap_or(len);
+            let next_byte = bytes.get(next).copied();
+            if next_byte == Some(b'8') || next_byte == Some(b'9') {
+                // Skip the backslash, keep the digit
+                i = next;
+                continue;
+            }
+            // Keep the backslash and skip the escaped char
+            result.push('\\');
+            if let Some(&b) = bytes.get(next) {
+                result.push(char::from(b));
+            }
+            i = next.checked_add(1).unwrap_or(len);
+        } else {
+            if let Some(&b) = bytes.get(i) {
+                result.push(char::from(b));
+            }
+            i = i.checked_add(1).unwrap_or(len);
+        }
+    }
+    result
 }
 
 /// Check if a raw string source contains `\8` or `\9` escape sequences.
