@@ -62,12 +62,10 @@ impl NativeRule for NoInlineComments {
                 let source = ctx.source_text();
                 // Find the start of whitespace before the comment
                 #[allow(clippy::as_conversions)]
-                let trim_start = source
-                    .get(..start as usize)
-                    .map_or(start, |before| {
-                        let trimmed_len = before.trim_end().len();
-                        u32::try_from(trimmed_len).unwrap_or(start)
-                    });
+                let trim_start = source.get(..start as usize).map_or(start, |before| {
+                    let trimmed_len = before.trim_end().len();
+                    u32::try_from(trimmed_len).unwrap_or(start)
+                });
                 Some(Fix {
                     message: "Remove inline comment".to_owned(),
                     edits: vec![Edit {

@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -34,7 +34,7 @@ impl NativeRule for NoNewStatics {
             description: "Forbid `new` on Promise static methods".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,13 +61,21 @@ impl NativeRule for NoNewStatics {
 
         let method = member.property.name.as_str();
         if PROMISE_STATICS.contains(&method) {
+            // Remove `new ` prefix: from new_expr start to callee (member expr) start
+            let fix = Some(Fix {
+                message: "Remove `new` keyword".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(new_expr.span.start, member.span.start),
+                    replacement: String::new(),
+                }],
+            });
             ctx.report(Diagnostic {
                 rule_name: "promise/no-new-statics".to_owned(),
                 message: format!("`Promise.{method}` is a static method — do not use `new`"),
                 span: Span::new(new_expr.span.start, new_expr.span.end),
                 severity: Severity::Error,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

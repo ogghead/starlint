@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -23,7 +23,7 @@ impl NativeRule for RequireAwait {
             description: "Disallow async functions which have no await expression".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -67,13 +67,21 @@ fn check_for_await(
 
     if !has_await {
         let fn_name = name.unwrap_or("(anonymous)");
+        // Remove `async ` (6 chars) from the start of the function
+        let fix = Some(Fix {
+            message: "Remove `async` keyword".to_owned(),
+            edits: vec![Edit {
+                span: Span::new(func_span.start, func_span.start.saturating_add(6)),
+                replacement: String::new(),
+            }],
+        });
         ctx.report(Diagnostic {
             rule_name: "require-await".to_owned(),
             message: format!("Async function '{fn_name}' has no 'await' expression"),
             span: Span::new(func_span.start, func_span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

@@ -8,7 +8,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{BinaryOperator, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -25,7 +27,7 @@ impl NativeRule for PreferComparisonMatcher {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -89,6 +91,30 @@ impl NativeRule for PreferComparisonMatcher {
             _ => return,
         };
 
+        // Build fix: extract left/right operands and construct matcher call
+        #[allow(clippy::as_conversions)]
+        let fix = {
+            let source = ctx.source_text();
+            let left_span = binary.left.span();
+            let right_span = binary.right.span();
+            let left_text = source
+                .get(left_span.start as usize..left_span.end as usize)
+                .unwrap_or("");
+            let right_text = source
+                .get(right_span.start as usize..right_span.end as usize)
+                .unwrap_or("");
+            let is_true = matches!(arg_expr, Expression::BooleanLiteral(b) if b.value);
+            let negated = if is_true { "" } else { ".not" };
+            let replacement = format!("expect({left_text}){negated}.{suggestion}({right_text})");
+            (!left_text.is_empty() && !right_text.is_empty()).then(|| Fix {
+                message: format!("Replace with `{replacement}`"),
+                edits: vec![Edit {
+                    span: Span::new(call.span.start, call.span.end),
+                    replacement,
+                }],
+            })
+        };
+
         ctx.report(Diagnostic {
             rule_name: "jest/prefer-comparison-matcher".to_owned(),
             message: format!(
@@ -98,7 +124,7 @@ impl NativeRule for PreferComparisonMatcher {
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

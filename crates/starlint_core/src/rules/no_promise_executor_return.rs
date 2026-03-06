@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Expression, Statement};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -24,7 +24,7 @@ impl NativeRule for NoPromiseExecutorReturn {
             description: "Disallow returning a value from a Promise executor".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -77,7 +77,14 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
     match stmt {
         Statement::ReturnStatement(ret) => {
             if ret.argument.is_some() {
-                ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
+                let fix = Some(Fix {
+                    message: "Replace with bare `return;`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(ret.span.start, ret.span.end),
+                        replacement: "return;".to_owned(),
+                    }],
+                });
+                ctx.report(Diagnostic {
                     rule_name: "no-promise-executor-return".to_owned(),
                     message: "Return statement in Promise executor is ignored".to_owned(),
                     span: Span::new(ret.span.start, ret.span.end),
@@ -85,7 +92,7 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
                     help: Some(
                         "Use `resolve(value)` or `reject(error)` instead of `return`".to_owned(),
                     ),
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }
