@@ -3,7 +3,7 @@
 //! Detect common typos in Vue component option names (e.g., `compued` instead
 //! of `computed`, `destory` instead of `destroy`).
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -78,7 +78,13 @@ impl NativeRule for NoComponentOptionsTypo {
                         span: Span::new(start, end),
                         severity: Severity::Warning,
                         help: None,
-                        fix: None,
+                        fix: Some(Fix {
+                            message: format!("Rename to `{correction}`"),
+                            edits: vec![Edit {
+                                span: Span::new(start, end),
+                                replacement: (*correction).to_owned(),
+                            }],
+                        }),
                         labels: vec![],
                     });
                 }

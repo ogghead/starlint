@@ -7,7 +7,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -99,7 +99,13 @@ impl NativeRule for PreventAbbreviations {
                 span: Span::new(ident.span.start, ident.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix: Some(Fix {
+                    message: format!("Rename to `{expansion}`"),
+                    edits: vec![Edit {
+                        span: Span::new(ident.span.start, ident.span.end),
+                        replacement: (*expansion).to_owned(),
+                    }],
+                }),
                 labels: vec![],
             });
         }

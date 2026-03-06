@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -78,13 +78,25 @@ impl NativeRule for NoSyncScripts {
         });
 
         if !has_async_or_defer {
+            // Insert `async` after the element name
+            let insert_pos = match &opening.name {
+                JSXElementName::Identifier(ident) => ident.span.end,
+                _ => opening.span.end,
+            };
+
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Synchronous scripts block page rendering -- add `async` or `defer` to `<script>` elements".to_owned(),
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix: Some(Fix {
+                    message: "Add `async` attribute".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(insert_pos, insert_pos),
+                        replacement: " async".to_owned(),
+                    }],
+                }),
                 labels: vec![],
             });
         }
