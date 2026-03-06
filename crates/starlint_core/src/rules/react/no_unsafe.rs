@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::PropertyKey;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -15,13 +15,6 @@ use crate::rule::{NativeLintContext, NativeRule};
 /// Flags usage of `UNSAFE_` lifecycle methods.
 #[derive(Debug)]
 pub struct NoUnsafe;
-
-/// Unsafe lifecycle method names that should not be used.
-const UNSAFE_METHODS: &[&str] = &[
-    "UNSAFE_componentWillMount",
-    "UNSAFE_componentWillReceiveProps",
-    "UNSAFE_componentWillUpdate",
-];
 
 impl NativeRule for NoUnsafe {
     fn meta(&self) -> RuleMeta {
@@ -43,12 +36,19 @@ impl NativeRule for NoUnsafe {
             return;
         };
 
-        let method_name = match &method.key {
-            PropertyKey::StaticIdentifier(id) => id.name.as_str(),
+        let (method_name, id_span) = match &method.key {
+            PropertyKey::StaticIdentifier(id) => (id.name.as_str(), id.span),
             _ => return,
         };
 
-        if UNSAFE_METHODS.contains(&method_name) {
+        let safe_name = match method_name {
+            "UNSAFE_componentWillMount" => Some("componentDidMount"),
+            "UNSAFE_componentWillReceiveProps" => Some("componentDidUpdate"),
+            "UNSAFE_componentWillUpdate" => Some("getSnapshotBeforeUpdate"),
+            _ => None,
+        };
+
+        if let Some(replacement) = safe_name {
             ctx.report(Diagnostic {
                 rule_name: "react/no-unsafe".to_owned(),
                 message: format!(
@@ -56,8 +56,14 @@ impl NativeRule for NoUnsafe {
                 ),
                 span: Span::new(method.span.start, method.span.end),
                 severity: Severity::Warning,
-                help: None,
-                fix: None,
+                help: Some(format!("Replace with `{replacement}`")),
+                fix: Some(Fix {
+                    message: format!("Rename to `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(id_span.start, id_span.end),
+                        replacement: replacement.to_owned(),
+                    }],
+                }),
                 labels: vec![],
             });
         }
