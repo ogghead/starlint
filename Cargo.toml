@@ -35,10 +35,10 @@ rayon = "1.10"
 # Parsing (oxc)
 oxc_allocator = "0.116"
 oxc_ast = "0.116"
-oxc_ast_visit = "0.114"
+oxc_ast_visit = "0.116"
 oxc_parser = "0.116"
 oxc_semantic = "0.116"
-oxc_span = "0.114"
+oxc_span = "0.116"
 
 # WASM runtime
 wasmtime = { version = "42", features = ["component-model", "winch"] }
