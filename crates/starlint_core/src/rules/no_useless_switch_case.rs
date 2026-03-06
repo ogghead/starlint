@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -64,13 +64,22 @@ impl NativeRule for NoUselessSwitchCase {
                     .is_some_and(|next| next.test.is_none());
 
                 if next_is_default {
+                    // Fix: delete the useless case clause
+                    let fix = Some(Fix {
+                        message: "Remove useless case clause".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(case.span.start, case.span.end),
+                            replacement: String::new(),
+                        }],
+                    });
+
                     ctx.report(Diagnostic {
                         rule_name: "no-useless-switch-case".to_owned(),
                         message: "Useless case — falls through to default".to_owned(),
                         span: Span::new(case.span.start, case.span.end),
                         severity: Severity::Warning,
                         help: None,
-                        fix: None,
+                        fix,
                         labels: vec![],
                     });
                 }
@@ -87,13 +96,22 @@ impl NativeRule for NoUselessSwitchCase {
                         let case_body = get_consequent_text(source, case);
                         let default_body = get_consequent_text(source, dc);
                         if case_body == default_body && !case_body.is_empty() {
+                            // Fix: delete the duplicate case clause
+                            let fix = Some(Fix {
+                                message: "Remove duplicate case clause".to_owned(),
+                                edits: vec![Edit {
+                                    span: Span::new(case.span.start, case.span.end),
+                                    replacement: String::new(),
+                                }],
+                            });
+
                             ctx.report(Diagnostic {
                                 rule_name: "no-useless-switch-case".to_owned(),
                                 message: "Useless case — has the same body as default".to_owned(),
                                 span: Span::new(case.span.start, case.span.end),
                                 severity: Severity::Warning,
                                 help: None,
-                                fix: None,
+                                fix,
                                 labels: vec![],
                             });
                         }

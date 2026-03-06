@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -47,13 +47,37 @@ impl NativeRule for NoMultiStr {
         let span_end = lit.span.end;
 
         if has_continuation {
+            // Fix: convert to template literal — replace quotes with backticks
+            // and remove backslash-newline continuations
+            let fix = {
+                let mut converted = raw_text.to_owned();
+                // Remove backslash-newline continuations
+                converted = converted.replace("\\\r\n", "\n");
+                converted = converted.replace("\\\n", "\n");
+                // Replace outer quotes with backticks
+                if converted.starts_with('\'') || converted.starts_with('"') {
+                    converted.replace_range(..1, "`");
+                }
+                if converted.ends_with('\'') || converted.ends_with('"') {
+                    let last = converted.len().saturating_sub(1);
+                    converted.replace_range(last.., "`");
+                }
+                Some(Fix {
+                    message: "Convert to template literal".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(span_start, span_end),
+                        replacement: converted,
+                    }],
+                })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "no-multi-str".to_owned(),
                 message: "Multiline strings using `\\` are not recommended".to_owned(),
                 span: Span::new(span_start, span_end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

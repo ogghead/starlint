@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -46,6 +46,15 @@ impl NativeRule for BadCharAtComparison {
             || (is_multi_char_string(&expr.left) && is_char_at_call(&expr.right));
 
         if flagged {
+            // Fix: replace the entire comparison with `false`
+            let fix = Some(Fix {
+                message: "Replace with `false`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(expr.span.start, expr.span.end),
+                    replacement: "false".to_owned(),
+                }],
+            });
+
             ctx.report(Diagnostic {
                 rule_name: "bad-char-at-comparison".to_owned(),
                 message: "`.charAt()` returns a single character — comparing to a multi-character \
@@ -54,7 +63,7 @@ impl NativeRule for BadCharAtComparison {
                 span: Span::new(expr.span.start, expr.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

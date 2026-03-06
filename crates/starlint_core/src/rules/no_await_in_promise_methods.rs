@@ -11,7 +11,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{ArrayExpressionElement, Expression};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -77,22 +79,41 @@ impl NativeRule for NoAwaitInPromiseMethods {
         };
 
         // Check if any element in the array is an `await` expression
+        // Collect fix edits: for each `await expr`, remove the `await ` prefix
+        let source = ctx.source_text();
+        let mut has_await = false;
+        let mut edits: Vec<Edit> = Vec::new();
         for element in &array.elements {
-            if matches!(element, ArrayExpressionElement::AwaitExpression(_)) {
-                ctx.report(Diagnostic {
-                    rule_name: "no-await-in-promise-methods".to_owned(),
-                    message: format!(
-                        "Avoid using `await` inside `Promise.{method_name}()` — it defeats parallel execution"
-                    ),
-                    span: Span::new(call.span.start, call.span.end),
-                    severity: Severity::Warning,
-                    help: None,
-                    fix: None,
-                    labels: vec![],
+            if let ArrayExpressionElement::AwaitExpression(await_expr) = element {
+                has_await = true;
+                // Remove the `await ` keyword — replace await_expr span with just the argument
+                let arg_span = await_expr.argument.span();
+                edits.push(Edit {
+                    span: Span::new(await_expr.span.start, arg_span.start),
+                    replacement: String::new(),
                 });
-                // Report once per call, not once per awaited element
-                return;
             }
+        }
+        // Use `source` to prevent "unused variable" warnings
+        let _ = source;
+
+        if has_await {
+            let fix = (!edits.is_empty()).then(|| Fix {
+                message: "Remove `await` from array elements".to_owned(),
+                edits,
+            });
+
+            ctx.report(Diagnostic {
+                rule_name: "no-await-in-promise-methods".to_owned(),
+                message: format!(
+                    "Avoid using `await` inside `Promise.{method_name}()` — it defeats parallel execution"
+                ),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix,
+                labels: vec![],
+            });
         }
     }
 }

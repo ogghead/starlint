@@ -10,7 +10,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -68,6 +70,23 @@ impl NativeRule for NoArrayMethodThisArgument {
             return;
         }
 
+        // Fix: remove the thisArg (second argument) — delete from end of first arg to end of second
+        let fix = call
+            .arguments
+            .first()
+            .zip(call.arguments.get(1))
+            .map(|(first, second)| {
+                let first_end = first.span().end;
+                let second_end = second.span().end;
+                Fix {
+                    message: "Remove the `thisArg` parameter".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(first_end, second_end),
+                        replacement: String::new(),
+                    }],
+                }
+            });
+
         ctx.report(Diagnostic {
             rule_name: "no-array-method-this-argument".to_owned(),
             message: format!(
@@ -76,7 +95,7 @@ impl NativeRule for NoArrayMethodThisArgument {
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

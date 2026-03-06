@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -53,26 +53,47 @@ impl NativeRule for NoLoneBlocks {
             return;
         };
 
-        // Collect spans first to avoid borrow conflict
-        let mut lone_spans: Vec<Span> = Vec::new();
+        // Collect spans and fixes first to avoid borrow conflict
+        let source = ctx.source_text().to_owned();
+        let mut lone_blocks: Vec<(Span, Option<Fix>)> = Vec::new();
 
         for stmt in stmts {
             if let Statement::BlockStatement(block) = stmt {
                 // If the block contains no block-scoped declarations, it's unnecessary
                 if !has_block_scoped_declaration(&block.body) {
-                    lone_spans.push(Span::new(block.span.start, block.span.end));
+                    let span = Span::new(block.span.start, block.span.end);
+                    // Fix: unwrap the block — replace `{ body }` with just `body`
+                    #[allow(clippy::as_conversions)]
+                    let fix = source
+                        .get(block.span.start as usize..block.span.end as usize)
+                        .map(|text| {
+                            // Strip leading `{` and trailing `}`, trim
+                            let inner = text
+                                .strip_prefix('{')
+                                .and_then(|t| t.strip_suffix('}'))
+                                .unwrap_or(text)
+                                .trim();
+                            Fix {
+                                message: "Remove unnecessary block".to_owned(),
+                                edits: vec![Edit {
+                                    span,
+                                    replacement: inner.to_owned(),
+                                }],
+                            }
+                        });
+                    lone_blocks.push((span, fix));
                 }
             }
         }
 
-        for span in lone_spans {
+        for (span, fix) in lone_blocks {
             ctx.report(Diagnostic {
                 rule_name: "no-lone-blocks".to_owned(),
                 message: "Unnecessary block statement".to_owned(),
                 span,
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

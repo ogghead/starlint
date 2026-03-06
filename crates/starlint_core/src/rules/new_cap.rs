@@ -8,7 +8,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -58,6 +58,37 @@ impl NativeRule for NewCap {
         };
 
         if ch.is_lowercase() {
+            // Fix: capitalize the first letter of the constructor name
+            let fix = match &new_expr.callee {
+                Expression::Identifier(ident) => {
+                    let capitalized: String = ch
+                        .to_uppercase()
+                        .chain(callee_name.chars().skip(1))
+                        .collect();
+                    Some(Fix {
+                        message: format!("Capitalize to `{capitalized}`"),
+                        edits: vec![Edit {
+                            span: Span::new(ident.span.start, ident.span.end),
+                            replacement: capitalized,
+                        }],
+                    })
+                }
+                Expression::StaticMemberExpression(member) => {
+                    let capitalized: String = ch
+                        .to_uppercase()
+                        .chain(callee_name.chars().skip(1))
+                        .collect();
+                    Some(Fix {
+                        message: format!("Capitalize to `{capitalized}`"),
+                        edits: vec![Edit {
+                            span: Span::new(member.property.span.start, member.property.span.end),
+                            replacement: capitalized,
+                        }],
+                    })
+                }
+                _ => None,
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "new-cap".to_owned(),
                 message: format!(
@@ -66,7 +97,7 @@ impl NativeRule for NewCap {
                 span: Span::new(new_expr.span.start, new_expr.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

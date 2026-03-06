@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -45,13 +45,37 @@ impl NativeRule for SymbolDescription {
         }
 
         if call.arguments.is_empty() {
+            // Fix: Symbol() → Symbol('') — insert empty description
+            // Find the closing paren and insert '' before it
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                source
+                    .get(call.span.start as usize..call.span.end as usize)
+                    .and_then(|text| {
+                        text.rfind(')').map(|paren_pos| {
+                            let insert_pos = call
+                                .span
+                                .start
+                                .saturating_add(u32::try_from(paren_pos).unwrap_or(0));
+                            Fix {
+                                message: "Add empty description `''`".to_owned(),
+                                edits: vec![Edit {
+                                    span: Span::new(insert_pos, insert_pos),
+                                    replacement: "''".to_owned(),
+                                }],
+                            }
+                        })
+                    })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "symbol-description".to_owned(),
                 message: "Provide a description for `Symbol()` to aid debugging".to_owned(),
                 span: Span::new(call.span.start, call.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

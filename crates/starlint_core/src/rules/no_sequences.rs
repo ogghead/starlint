@@ -6,7 +6,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -35,13 +37,32 @@ impl NativeRule for NoSequences {
             return;
         };
 
+        // Fix: replace sequence with the last expression (the value of a sequence)
+        let fix = seq.expressions.last().map(|last_expr| {
+            let last_span = last_expr.span();
+            Fix {
+                message: "Replace with the last expression".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(seq.span.start, seq.span.end),
+                    replacement: ctx
+                        .source_text()
+                        .get(
+                            usize::try_from(last_span.start).unwrap_or(0)
+                                ..usize::try_from(last_span.end).unwrap_or(0),
+                        )
+                        .unwrap_or("")
+                        .to_owned(),
+                }],
+            }
+        });
+
         ctx.report(Diagnostic {
             rule_name: "no-sequences".to_owned(),
             message: "Unexpected use of comma operator".to_owned(),
             span: Span::new(seq.span.start, seq.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

@@ -12,7 +12,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -62,13 +64,42 @@ impl NativeRule for NoAsyncPromiseExecutor {
         };
 
         if is_async {
+            // Fix: remove the `async` keyword from the executor function/arrow
+            #[allow(clippy::as_conversions)]
+            let fix = {
+                let source = ctx.source_text();
+                let arg_span = match first_arg {
+                    oxc_ast::ast::Argument::FunctionExpression(func) => func.span(),
+                    oxc_ast::ast::Argument::ArrowFunctionExpression(arrow) => arrow.span(),
+                    _ => new_expr.span,
+                };
+                source
+                    .get(arg_span.start as usize..arg_span.end as usize)
+                    .and_then(|text| {
+                        text.find("async").map(|pos| {
+                            // Remove "async " (with trailing space)
+                            let async_start = arg_span
+                                .start
+                                .saturating_add(u32::try_from(pos).unwrap_or(0));
+                            let async_end = async_start.saturating_add(6); // "async " = 6 chars
+                            Fix {
+                                message: "Remove `async` from the Promise executor".to_owned(),
+                                edits: vec![Edit {
+                                    span: Span::new(async_start, async_end),
+                                    replacement: String::new(),
+                                }],
+                            }
+                        })
+                    })
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "no-async-promise-executor".to_owned(),
                 message: "Promise executor should not be an async function".to_owned(),
                 span: Span::new(new_expr.span.start, new_expr.span.end),
                 severity: Severity::Error,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

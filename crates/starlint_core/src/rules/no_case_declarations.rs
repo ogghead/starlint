@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{Statement, VariableDeclarationKind};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -41,13 +43,36 @@ impl NativeRule for NoCaseDeclarations {
 
         for stmt in &case.consequent {
             if let Some(span) = lexical_declaration_span(stmt) {
+                // Fix: wrap the entire case body in { }
+                let fix =
+                    case.consequent
+                        .first()
+                        .zip(case.consequent.last())
+                        .map(|(first, last)| {
+                            let body_start = first.span().start;
+                            let body_end = last.span().end;
+                            Fix {
+                                message: "Wrap case body in a block `{ }`".to_owned(),
+                                edits: vec![
+                                    Edit {
+                                        span: Span::new(body_start, body_start),
+                                        replacement: "{ ".to_owned(),
+                                    },
+                                    Edit {
+                                        span: Span::new(body_end, body_end),
+                                        replacement: " }".to_owned(),
+                                    },
+                                ],
+                            }
+                        });
+
                 ctx.report(Diagnostic {
                     rule_name: "no-case-declarations".to_owned(),
                     message: "Unexpected lexical declaration in case clause".to_owned(),
                     span,
                     severity: Severity::Error,
                     help: None,
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }

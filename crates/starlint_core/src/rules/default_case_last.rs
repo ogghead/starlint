@@ -8,7 +8,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -51,6 +51,30 @@ impl NativeRule for DefaultCaseLast {
             let is_last = i.saturating_add(1) >= case_count;
 
             if is_default && !is_last {
+                // Fix: move the default case to the end by deleting it from
+                // its current position and inserting it after the last case.
+                #[allow(clippy::as_conversions)]
+                let fix = cases.last().and_then(|last_case| {
+                    let source = ctx.source_text();
+                    let default_text =
+                        source.get(case.span.start as usize..case.span.end as usize)?;
+                    Some(Fix {
+                        message: "Move `default` case to the end".to_owned(),
+                        edits: vec![
+                            // Delete the default case from current position
+                            Edit {
+                                span: Span::new(case.span.start, case.span.end),
+                                replacement: String::new(),
+                            },
+                            // Insert it after the last case
+                            Edit {
+                                span: Span::new(last_case.span.end, last_case.span.end),
+                                replacement: format!(" {default_text}"),
+                            },
+                        ],
+                    })
+                });
+
                 ctx.report(Diagnostic {
                     rule_name: "default-case-last".to_owned(),
                     message: "The `default` case should be the last case in a `switch` statement"
@@ -58,7 +82,7 @@ impl NativeRule for DefaultCaseLast {
                     span: Span::new(case.span.start, case.span.end),
                     severity: Severity::Warning,
                     help: None,
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }
