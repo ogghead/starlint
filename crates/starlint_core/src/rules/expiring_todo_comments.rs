@@ -4,7 +4,7 @@
 //! Pattern: `TODO [YYYY-MM-DD]` or `TODO (YYYY-MM-DD)` or `FIXME [YYYY-MM-DD]`.
 //! Dates before `2026-01-01` are considered expired.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -29,7 +29,7 @@ impl NativeRule for ExpiringTodoComments {
             description: "Flag TODO/FIXME comments with expired dates".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -38,19 +38,40 @@ impl NativeRule for ExpiringTodoComments {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let source = ctx.source_text();
-        let findings = find_expired_todos(source);
+        let diagnostics = {
+            let source = ctx.source_text();
+            let findings = find_expired_todos(source);
+            findings
+                .into_iter()
+                .map(|(message, span)| {
+                    // Delete the expired comment (including trailing newline if present)
+                    let delete_end = source
+                        .as_bytes()
+                        .get(usize::try_from(span.end).unwrap_or(0))
+                        .copied()
+                        .and_then(|b| (b == b'\n').then(|| span.end.saturating_add(1)))
+                        .unwrap_or(span.end);
+                    Diagnostic {
+                        rule_name: "expiring-todo-comments".to_owned(),
+                        message,
+                        span,
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: Some(Fix {
+                            message: "Remove expired comment".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(span.start, delete_end),
+                                replacement: String::new(),
+                            }],
+                        }),
+                        labels: vec![],
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
 
-        for (message, span) in findings {
-            ctx.report(Diagnostic {
-                rule_name: "expiring-todo-comments".to_owned(),
-                message,
-                span,
-                severity: Severity::Warning,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
+        for diag in diagnostics {
+            ctx.report(diag);
         }
     }
 }

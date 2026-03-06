@@ -6,7 +6,7 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -22,7 +22,7 @@ impl NativeRule for DefaultCase {
             description: "Require default case in switch statements".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -51,13 +51,23 @@ impl NativeRule for DefaultCase {
                 return;
             }
 
+            // Insert `default: break;` before the closing `}`
+            let insert_pos = switch.span.end.saturating_sub(1);
+            let fix = Some(Fix {
+                message: "Add `default: break;`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(insert_pos, insert_pos),
+                    replacement: " default: break; ".to_owned(),
+                }],
+            });
+
             ctx.report(Diagnostic {
                 rule_name: "default-case".to_owned(),
                 message: "Expected a default case".to_owned(),
                 span: Span::new(switch.span.start, switch.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

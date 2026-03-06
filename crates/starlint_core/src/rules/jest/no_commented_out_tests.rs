@@ -2,7 +2,7 @@
 //!
 //! Warn when test code is commented out (e.g. `// it(`, `// test(`, `// describe(`).
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -39,7 +39,7 @@ impl NativeRule for NoCommentedOutTests {
             description: "Disallow commented-out tests".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -48,18 +48,40 @@ impl NativeRule for NoCommentedOutTests {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let violations = find_commented_tests(ctx.source_text());
+        let diagnostics = {
+            let source = ctx.source_text();
+            let violations = find_commented_tests(source);
+            violations
+                .into_iter()
+                .map(|span| {
+                    // Delete the commented-out line (including trailing newline if present)
+                    let delete_end = source
+                        .as_bytes()
+                        .get(usize::try_from(span.end).unwrap_or(0))
+                        .copied()
+                        .and_then(|b| (b == b'\n').then(|| span.end.saturating_add(1)))
+                        .unwrap_or(span.end);
+                    Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Unexpected commented-out test — remove or uncomment".to_owned(),
+                        span,
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: Some(Fix {
+                            message: "Remove commented-out test".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(span.start, delete_end),
+                                replacement: String::new(),
+                            }],
+                        }),
+                        labels: vec![],
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
 
-        for span in violations {
-            ctx.report(Diagnostic {
-                rule_name: RULE_NAME.to_owned(),
-                message: "Unexpected commented-out test — remove or uncomment".to_owned(),
-                span,
-                severity: Severity::Warning,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
+        for diag in diagnostics {
+            ctx.report(diag);
         }
     }
 }

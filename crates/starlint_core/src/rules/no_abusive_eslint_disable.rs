@@ -4,7 +4,7 @@
 //! rule(s) to disable. Using a blanket disable suppresses all warnings and
 //! hides legitimate issues — always list the specific rules being suppressed.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -28,7 +28,7 @@ impl NativeRule for NoAbusiveEslintDisable {
             description: "Disallow blanket `eslint-disable` comments without rule names".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
+            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -37,25 +37,46 @@ impl NativeRule for NoAbusiveEslintDisable {
     }
 
     fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
-        let source = ctx.source_text();
+        let diagnostics = {
+            let source = ctx.source_text();
 
-        // Early exit: skip files without any eslint-disable comment.
-        if !source.contains("eslint-disable") {
-            return;
-        }
+            // Early exit: skip files without any eslint-disable comment.
+            if !source.contains("eslint-disable") {
+                return;
+            }
 
-        let findings = find_abusive_disables(source);
+            let findings = find_abusive_disables(source);
+            findings
+                .into_iter()
+                .map(|span| {
+                    // Delete the blanket disable comment (including trailing newline)
+                    let delete_end = source
+                        .as_bytes()
+                        .get(usize::try_from(span.end).unwrap_or(0))
+                        .copied()
+                        .and_then(|b| (b == b'\n').then(|| span.end.saturating_add(1)))
+                        .unwrap_or(span.end);
+                    Diagnostic {
+                        rule_name: "no-abusive-eslint-disable".to_owned(),
+                        message: "Specify the rules to disable — blanket `eslint-disable` hides legitimate issues".to_owned(),
+                        span,
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: Some(Fix {
+                            message: "Remove blanket `eslint-disable` comment".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(span.start, delete_end),
+                                replacement: String::new(),
+                            }],
+                        }),
+                        labels: vec![],
+                    }
+                })
+                .collect::<Vec<_>>()
+        };
 
-        for span in findings {
-            ctx.report(Diagnostic {
-                rule_name: "no-abusive-eslint-disable".to_owned(),
-                message: "Specify the rules to disable — blanket `eslint-disable` hides legitimate issues".to_owned(),
-                span,
-                severity: Severity::Warning,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
+        for diag in diagnostics {
+            ctx.report(diag);
         }
     }
 }
