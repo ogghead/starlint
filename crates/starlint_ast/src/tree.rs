@@ -289,7 +289,9 @@ fn node_children(node: &AstNode) -> Vec<NodeId> {
         AstNode::UpdateExpression(n) => vec![n.argument],
         AstNode::ConditionalExpression(n) => vec![n.test, n.consequent, n.alternate],
         AstNode::SequenceExpression(n) => n.expressions.to_vec(),
-        AstNode::ContinueStatement(_)
+        AstNode::BreakStatement(_)
+        | AstNode::ContinueStatement(_)
+        | AstNode::BooleanLiteral(_)
         | AstNode::EmptyStatement(_)
         | AstNode::IdentifierReference(_)
         | AstNode::BindingIdentifier(_)

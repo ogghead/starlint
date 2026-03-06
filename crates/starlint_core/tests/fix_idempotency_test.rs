@@ -9,6 +9,8 @@ use std::path::Path;
 use starlint_core::diagnostic::OutputFormat;
 use starlint_core::engine::LintSession;
 use starlint_core::fix::apply_fixes;
+use starlint_core::lint_rule::LintRule;
+use starlint_core::lint_rules;
 use starlint_core::rule::NativeRule;
 use starlint_core::rules;
 
@@ -99,14 +101,90 @@ fn assert_fix_idempotent(rules: Vec<Box<dyn NativeRule>>, source: &str, label: &
     );
 }
 
+/// Same as [`assert_fix_idempotent`] but for rules that implement [`LintRule`].
+fn assert_fix_idempotent_lint(rules: Vec<Box<dyn LintRule>>, source: &str, label: &str) {
+    let session = LintSession::new_dual(vec![], rules, OutputFormat::Pretty);
+    let file = Path::new("test.js");
+
+    let result = session.lint_single_file(file, source);
+    let fixable_count = result
+        .diagnostics
+        .iter()
+        .filter(|d| d.fix.is_some())
+        .count();
+    assert!(
+        fixable_count > 0,
+        "{label}: source should trigger at least one fixable diagnostic, got 0"
+    );
+
+    let mut current = source.to_owned();
+    let mut diagnostics = result.diagnostics;
+
+    for pass in 0..MAX_FIX_PASSES {
+        let fixed = apply_fixes(&current, &diagnostics);
+        if fixed == current {
+            break;
+        }
+        current = fixed;
+
+        let relint = session.lint_single_file(file, &current);
+        let fixable: Vec<_> = relint
+            .diagnostics
+            .iter()
+            .filter(|d| d.fix.is_some())
+            .collect();
+
+        if fixable.is_empty() {
+            break;
+        }
+
+        assert!(
+            pass < MAX_FIX_PASSES - 1,
+            "{label}: fixes did not converge after {MAX_FIX_PASSES} passes, \
+             still have {} fixable diagnostics from: {:?}",
+            fixable.len(),
+            fixable.iter().map(|d| &d.rule_name).collect::<Vec<_>>()
+        );
+
+        diagnostics = relint.diagnostics;
+    }
+
+    assert_ne!(
+        current, source,
+        "{label}: fixes should have modified the source"
+    );
+
+    let final_result = session.lint_single_file(file, &current);
+    let final_fixable: Vec<_> = final_result
+        .diagnostics
+        .iter()
+        .filter(|d| d.fix.is_some())
+        .collect();
+    assert!(
+        final_fixable.is_empty(),
+        "{label}: after convergence, should have zero fixable diagnostics, found {} from: {:?}",
+        final_fixable.len(),
+        final_fixable
+            .iter()
+            .map(|d| &d.rule_name)
+            .collect::<Vec<_>>()
+    );
+
+    let noop = apply_fixes(&current, &final_result.diagnostics);
+    assert_eq!(
+        noop, current,
+        "{label}: applying fixes to converged source should be a no-op"
+    );
+}
+
 // ---------------------------------------------------------------------------
 // Per-rule idempotency tests (SafeFix rules)
 // ---------------------------------------------------------------------------
 
 #[test]
 fn fix_idempotent_no_debugger() {
-    assert_fix_idempotent(
-        vec![Box::new(rules::no_debugger::NoDebugger)],
+    assert_fix_idempotent_lint(
+        vec![Box::new(lint_rules::no_debugger::NoDebugger)],
         "debugger;\nconst x = 1;\ndebugger;",
         "no_debugger",
     );
@@ -132,7 +210,7 @@ fn fix_idempotent_no_console_spaces() {
 
 #[test]
 fn fix_idempotent_no_extra_semi() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_extra_semi::NoExtraSemi)],
         "const x = 1;;\nconst y = 2;;",
         "no_extra_semi",
@@ -199,8 +277,8 @@ fn fix_idempotent_prefer_string_trim_start_end() {
 
 #[test]
 fn fix_idempotent_no_empty() {
-    assert_fix_idempotent(
-        vec![Box::new(rules::no_empty::NoEmpty)],
+    assert_fix_idempotent_lint(
+        vec![Box::new(lint_rules::no_empty::NoEmpty)],
         "try { doSomething(); } catch (e) {}",
         "no_empty",
     );
@@ -259,8 +337,8 @@ fn fix_idempotent_new_for_builtins() {
 
 #[test]
 fn fix_idempotent_eqeqeq() {
-    assert_fix_idempotent(
-        vec![Box::new(rules::eqeqeq::Eqeqeq)],
+    assert_fix_idempotent_lint(
+        vec![Box::new(lint_rules::eqeqeq::Eqeqeq)],
         "if (a == b && c != d) {}",
         "eqeqeq",
     );
@@ -268,8 +346,8 @@ fn fix_idempotent_eqeqeq() {
 
 #[test]
 fn fix_idempotent_no_var() {
-    assert_fix_idempotent(
-        vec![Box::new(rules::no_var::NoVar)],
+    assert_fix_idempotent_lint(
+        vec![Box::new(lint_rules::no_var::NoVar)],
         "var x = 1;\nvar y = 2;",
         "no_var",
     );
@@ -540,7 +618,7 @@ fn fix_idempotent_no_eq_null() {
 
 #[test]
 fn fix_idempotent_no_null() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_null::NoNull)],
         "var z = null;",
         "no_null",
@@ -731,22 +809,88 @@ fn fix_idempotent_no_new_buffer() {
 
 #[test]
 fn fix_idempotent_combined_multi_rule() {
-    assert_fix_idempotent(
-        vec![
-            Box::new(rules::no_debugger::NoDebugger),
-            Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
-            Box::new(rules::no_extra_semi::NoExtraSemi),
-            Box::new(rules::eqeqeq::Eqeqeq),
-            Box::new(rules::no_var::NoVar),
-            Box::new(rules::no_zero_fractions::NoZeroFractions),
-        ],
-        "\
+    let native_rules: Vec<Box<dyn NativeRule>> = vec![
+        Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
+        Box::new(rules::no_zero_fractions::NoZeroFractions),
+    ];
+    let lint_rules: Vec<Box<dyn LintRule>> = vec![
+        Box::new(lint_rules::no_debugger::NoDebugger),
+        Box::new(rules::no_extra_semi::NoExtraSemi),
+        Box::new(lint_rules::eqeqeq::Eqeqeq),
+        Box::new(lint_rules::no_var::NoVar),
+    ];
+    let session = LintSession::new_dual(native_rules, lint_rules, OutputFormat::Pretty);
+    let file = Path::new("test.js");
+    let source = "\
 debugger;
 const a = { };
 var y = 1.0;;
 if (a == b) {}
-",
-        "combined_multi_rule",
+";
+    let label = "combined_multi_rule";
+
+    let result = session.lint_single_file(file, source);
+    let fixable_count = result
+        .diagnostics
+        .iter()
+        .filter(|d| d.fix.is_some())
+        .count();
+    assert!(
+        fixable_count > 0,
+        "{label}: source should trigger at least one fixable diagnostic, got 0"
+    );
+
+    let mut current = source.to_owned();
+    let mut diagnostics = result.diagnostics;
+
+    for pass in 0..MAX_FIX_PASSES {
+        let fixed = apply_fixes(&current, &diagnostics);
+        if fixed == current {
+            break;
+        }
+        current = fixed;
+
+        let relint = session.lint_single_file(file, &current);
+        let fixable: Vec<_> = relint
+            .diagnostics
+            .iter()
+            .filter(|d| d.fix.is_some())
+            .collect();
+
+        if fixable.is_empty() {
+            break;
+        }
+
+        assert!(
+            pass < MAX_FIX_PASSES - 1,
+            "{label}: fixes did not converge after {MAX_FIX_PASSES} passes, \
+             still have {} fixable diagnostics from: {:?}",
+            fixable.len(),
+            fixable.iter().map(|d| &d.rule_name).collect::<Vec<_>>()
+        );
+
+        diagnostics = relint.diagnostics;
+    }
+
+    assert_ne!(
+        current, source,
+        "{label}: fixes should have modified the source"
+    );
+
+    let final_result = session.lint_single_file(file, &current);
+    let final_fixable: Vec<_> = final_result
+        .diagnostics
+        .iter()
+        .filter(|d| d.fix.is_some())
+        .collect();
+    assert!(
+        final_fixable.is_empty(),
+        "{label}: after convergence, should have zero fixable diagnostics, found {} from: {:?}",
+        final_fixable.len(),
+        final_fixable
+            .iter()
+            .map(|d| &d.rule_name)
+            .collect::<Vec<_>>()
     );
 }
 
@@ -848,9 +992,15 @@ fn fix_idempotent_all_rules() {
     // Includes `console.log(' hello')` which triggers both no-console and
     // no-console-spaces with overlapping spans — the multi-pass convergence
     // loop handles this by picking up the skipped fix on the next pass.
-    assert_fix_idempotent(
+    //
+    // Uses `new_dual` to include both native rules and migrated lint rules.
+    let session = LintSession::new_dual(
         rules::all_rules(),
-        "\
+        starlint_core::lint_rules::all_lint_rules(),
+        OutputFormat::Pretty,
+    );
+    let file = Path::new("test.js");
+    let source = "\
 debugger;
 const a = { };
 console.log(' hello');
@@ -877,7 +1027,70 @@ const big = 10000;
 arr.map(x => Number(x));
 [].forEach.call(obj, fn);
 var greeting = 'hi ' + user;
-",
-        "all_rules",
+";
+    let label = "all_rules";
+
+    let result = session.lint_single_file(file, source);
+    let fixable_count = result
+        .diagnostics
+        .iter()
+        .filter(|d| d.fix.is_some())
+        .count();
+    assert!(
+        fixable_count > 0,
+        "{label}: source should trigger at least one fixable diagnostic, got 0"
+    );
+
+    let mut current = source.to_owned();
+    let mut diagnostics = result.diagnostics;
+
+    for pass in 0..MAX_FIX_PASSES {
+        let fixed = apply_fixes(&current, &diagnostics);
+        if fixed == current {
+            break;
+        }
+        current = fixed;
+
+        let relint = session.lint_single_file(file, &current);
+        let fixable: Vec<_> = relint
+            .diagnostics
+            .iter()
+            .filter(|d| d.fix.is_some())
+            .collect();
+
+        if fixable.is_empty() {
+            break;
+        }
+
+        assert!(
+            pass < MAX_FIX_PASSES - 1,
+            "{label}: fixes did not converge after {MAX_FIX_PASSES} passes, \
+             still have {} fixable diagnostics from: {:?}",
+            fixable.len(),
+            fixable.iter().map(|d| &d.rule_name).collect::<Vec<_>>()
+        );
+
+        diagnostics = relint.diagnostics;
+    }
+
+    assert_ne!(
+        current, source,
+        "{label}: fixes should have modified the source"
+    );
+
+    let final_result = session.lint_single_file(file, &current);
+    let final_fixable: Vec<_> = final_result
+        .diagnostics
+        .iter()
+        .filter(|d| d.fix.is_some())
+        .collect();
+    assert!(
+        final_fixable.is_empty(),
+        "{label}: after convergence, should have zero fixable diagnostics, found {} from: {:?}",
+        final_fixable.len(),
+        final_fixable
+            .iter()
+            .map(|d| &d.rule_name)
+            .collect::<Vec<_>>()
     );
 }

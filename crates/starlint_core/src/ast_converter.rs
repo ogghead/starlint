@@ -17,12 +17,13 @@ use oxc_span::GetSpan;
 use starlint_ast::node::{
     self as n, ArrayExpressionNode, ArrayPatternNode, ArrowFunctionExpressionNode,
     AssignmentExpressionNode, AstNode, AwaitExpressionNode, BinaryExpressionNode,
-    BindingIdentifierNode, BlockStatementNode, CallExpressionNode, CatchClauseNode,
-    ChainExpressionNode, ClassNode, ComputedMemberExpressionNode, ConditionalExpressionNode,
-    ContinueStatementNode, DebuggerStatementNode, DoWhileStatementNode, EmptyStatementNode,
-    ExportAllDeclarationNode, ExportDefaultDeclarationNode, ExportNamedDeclarationNode,
-    ExportSpecifierNode, ExpressionStatementNode, ForInStatementNode, ForOfStatementNode,
-    ForStatementNode, FunctionBodyNode, FunctionNode, IdentifierReferenceNode, IfStatementNode,
+    BindingIdentifierNode, BlockStatementNode, BooleanLiteralNode, BreakStatementNode,
+    CallExpressionNode, CatchClauseNode, ChainExpressionNode, ClassNode,
+    ComputedMemberExpressionNode, ConditionalExpressionNode, ContinueStatementNode,
+    DebuggerStatementNode, DoWhileStatementNode, EmptyStatementNode, ExportAllDeclarationNode,
+    ExportDefaultDeclarationNode, ExportNamedDeclarationNode, ExportSpecifierNode,
+    ExpressionStatementNode, ForInStatementNode, ForOfStatementNode, ForStatementNode,
+    FunctionBodyNode, FunctionNode, IdentifierReferenceNode, IfStatementNode,
     ImportDeclarationNode, ImportSpecifierNode, JSXAttributeNode, JSXElementNode,
     JSXExpressionContainerNode, JSXFragmentNode, JSXOpeningElementNode, JSXSpreadAttributeNode,
     JSXTextNode, LabeledStatementNode, LogicalExpressionNode, MethodDefinitionNode,
@@ -126,7 +127,13 @@ impl AstConverter {
     fn convert_statement(&mut self, stmt: &Statement<'_>) -> NodeId {
         match stmt {
             Statement::BlockStatement(it) => self.convert_block_statement(it),
-            Statement::BreakStatement(it) => self.push_unknown(it.span),
+            Statement::BreakStatement(it) => self.tree.push(
+                AstNode::BreakStatement(BreakStatementNode {
+                    span: Self::span(it.span),
+                    label: it.label.as_ref().map(|l| l.name.to_string()),
+                }),
+                self.current_parent(),
+            ),
             Statement::ContinueStatement(it) => self.convert_continue_statement(it),
             Statement::DebuggerStatement(it) => self.convert_debugger_statement(it),
             Statement::DoWhileStatement(it) => self.convert_do_while_statement(it),
@@ -719,7 +726,13 @@ impl AstConverter {
     #[allow(clippy::too_many_lines)]
     fn convert_expression(&mut self, expr: &Expression<'_>) -> NodeId {
         match expr {
-            Expression::BooleanLiteral(it) => self.push_unknown(it.span),
+            Expression::BooleanLiteral(it) => self.tree.push(
+                AstNode::BooleanLiteral(BooleanLiteralNode {
+                    span: Self::span(it.span),
+                    value: it.value,
+                }),
+                self.current_parent(),
+            ),
             Expression::NullLiteral(it) => self.tree.push(
                 AstNode::NullLiteral(NullLiteralNode {
                     span: Self::span(it.span),

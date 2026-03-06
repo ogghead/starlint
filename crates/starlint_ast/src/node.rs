@@ -54,6 +54,8 @@ pub enum AstNode {
     ReturnStatement(ReturnStatementNode),
     /// `label: body`
     LabeledStatement(LabeledStatementNode),
+    /// `break label?`
+    BreakStatement(BreakStatementNode),
     /// `continue label?`
     ContinueStatement(ContinueStatementNode),
     /// `;`
@@ -104,6 +106,8 @@ pub enum AstNode {
     StringLiteral(StringLiteralNode),
     /// `42` or `3.14`
     NumericLiteral(NumericLiteralNode),
+    /// `true` or `false`
+    BooleanLiteral(BooleanLiteralNode),
     /// `null`
     NullLiteral(NullLiteralNode),
     /// `/pattern/flags`
@@ -231,6 +235,7 @@ impl AstNode {
             Self::ThrowStatement(n) => n.span,
             Self::ReturnStatement(n) => n.span,
             Self::LabeledStatement(n) => n.span,
+            Self::BreakStatement(n) => n.span,
             Self::ContinueStatement(n) => n.span,
             Self::EmptyStatement(n) => n.span,
             Self::WithStatement(n) => n.span,
@@ -254,6 +259,7 @@ impl AstNode {
             Self::BindingIdentifier(n) => n.span,
             Self::StringLiteral(n) => n.span,
             Self::NumericLiteral(n) => n.span,
+            Self::BooleanLiteral(n) => n.span,
             Self::NullLiteral(n) => n.span,
             Self::RegExpLiteral(n) => n.span,
             Self::TemplateLiteral(n) => n.span,
@@ -302,6 +308,880 @@ impl AstNode {
             Self::TSVoidKeyword(n) => n.span,
             Self::Unknown(n) => n.span,
         }
+    }
+
+    // -- Type-narrowing helpers -----------------------------------------------
+
+    /// Narrow to `ProgramNode`.
+    #[must_use]
+    pub const fn as_program(&self) -> Option<&ProgramNode> {
+        if let Self::Program(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `BlockStatementNode`.
+    #[must_use]
+    pub const fn as_block_statement(&self) -> Option<&BlockStatementNode> {
+        if let Self::BlockStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `IfStatementNode`.
+    #[must_use]
+    pub const fn as_if_statement(&self) -> Option<&IfStatementNode> {
+        if let Self::IfStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `SwitchStatementNode`.
+    #[must_use]
+    pub const fn as_switch_statement(&self) -> Option<&SwitchStatementNode> {
+        if let Self::SwitchStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `SwitchCaseNode`.
+    #[must_use]
+    pub const fn as_switch_case(&self) -> Option<&SwitchCaseNode> {
+        if let Self::SwitchCase(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ForStatementNode`.
+    #[must_use]
+    pub const fn as_for_statement(&self) -> Option<&ForStatementNode> {
+        if let Self::ForStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ForInStatementNode`.
+    #[must_use]
+    pub const fn as_for_in_statement(&self) -> Option<&ForInStatementNode> {
+        if let Self::ForInStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ForOfStatementNode`.
+    #[must_use]
+    pub const fn as_for_of_statement(&self) -> Option<&ForOfStatementNode> {
+        if let Self::ForOfStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `WhileStatementNode`.
+    #[must_use]
+    pub const fn as_while_statement(&self) -> Option<&WhileStatementNode> {
+        if let Self::WhileStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `DoWhileStatementNode`.
+    #[must_use]
+    pub const fn as_do_while_statement(&self) -> Option<&DoWhileStatementNode> {
+        if let Self::DoWhileStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TryStatementNode`.
+    #[must_use]
+    pub const fn as_try_statement(&self) -> Option<&TryStatementNode> {
+        if let Self::TryStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `CatchClauseNode`.
+    #[must_use]
+    pub const fn as_catch_clause(&self) -> Option<&CatchClauseNode> {
+        if let Self::CatchClause(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ThrowStatementNode`.
+    #[must_use]
+    pub const fn as_throw_statement(&self) -> Option<&ThrowStatementNode> {
+        if let Self::ThrowStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ReturnStatementNode`.
+    #[must_use]
+    pub const fn as_return_statement(&self) -> Option<&ReturnStatementNode> {
+        if let Self::ReturnStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `LabeledStatementNode`.
+    #[must_use]
+    pub const fn as_labeled_statement(&self) -> Option<&LabeledStatementNode> {
+        if let Self::LabeledStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `BreakStatementNode`.
+    #[must_use]
+    pub const fn as_break_statement(&self) -> Option<&BreakStatementNode> {
+        if let Self::BreakStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ContinueStatementNode`.
+    #[must_use]
+    pub const fn as_continue_statement(&self) -> Option<&ContinueStatementNode> {
+        if let Self::ContinueStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `EmptyStatementNode`.
+    #[must_use]
+    pub const fn as_empty_statement(&self) -> Option<&EmptyStatementNode> {
+        if let Self::EmptyStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `WithStatementNode`.
+    #[must_use]
+    pub const fn as_with_statement(&self) -> Option<&WithStatementNode> {
+        if let Self::WithStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ExpressionStatementNode`.
+    #[must_use]
+    pub const fn as_expression_statement(&self) -> Option<&ExpressionStatementNode> {
+        if let Self::ExpressionStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `VariableDeclarationNode`.
+    #[must_use]
+    pub const fn as_variable_declaration(&self) -> Option<&VariableDeclarationNode> {
+        if let Self::VariableDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `VariableDeclaratorNode`.
+    #[must_use]
+    pub const fn as_variable_declarator(&self) -> Option<&VariableDeclaratorNode> {
+        if let Self::VariableDeclarator(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `FunctionNode`.
+    #[must_use]
+    pub const fn as_function(&self) -> Option<&FunctionNode> {
+        if let Self::Function(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `FunctionBodyNode`.
+    #[must_use]
+    pub const fn as_function_body(&self) -> Option<&FunctionBodyNode> {
+        if let Self::FunctionBody(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ClassNode`.
+    #[must_use]
+    pub const fn as_class(&self) -> Option<&ClassNode> {
+        if let Self::Class(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `StaticBlockNode`.
+    #[must_use]
+    pub const fn as_static_block(&self) -> Option<&StaticBlockNode> {
+        if let Self::StaticBlock(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `CallExpressionNode`.
+    #[must_use]
+    pub const fn as_call_expression(&self) -> Option<&CallExpressionNode> {
+        if let Self::CallExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `NewExpressionNode`.
+    #[must_use]
+    pub const fn as_new_expression(&self) -> Option<&NewExpressionNode> {
+        if let Self::NewExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `BinaryExpressionNode`.
+    #[must_use]
+    pub const fn as_binary_expression(&self) -> Option<&BinaryExpressionNode> {
+        if let Self::BinaryExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `LogicalExpressionNode`.
+    #[must_use]
+    pub const fn as_logical_expression(&self) -> Option<&LogicalExpressionNode> {
+        if let Self::LogicalExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `AssignmentExpressionNode`.
+    #[must_use]
+    pub const fn as_assignment_expression(&self) -> Option<&AssignmentExpressionNode> {
+        if let Self::AssignmentExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `UnaryExpressionNode`.
+    #[must_use]
+    pub const fn as_unary_expression(&self) -> Option<&UnaryExpressionNode> {
+        if let Self::UnaryExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `UpdateExpressionNode`.
+    #[must_use]
+    pub const fn as_update_expression(&self) -> Option<&UpdateExpressionNode> {
+        if let Self::UpdateExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ConditionalExpressionNode`.
+    #[must_use]
+    pub const fn as_conditional_expression(&self) -> Option<&ConditionalExpressionNode> {
+        if let Self::ConditionalExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `SequenceExpressionNode`.
+    #[must_use]
+    pub const fn as_sequence_expression(&self) -> Option<&SequenceExpressionNode> {
+        if let Self::SequenceExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `IdentifierReferenceNode`.
+    #[must_use]
+    pub const fn as_identifier_reference(&self) -> Option<&IdentifierReferenceNode> {
+        if let Self::IdentifierReference(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `BindingIdentifierNode`.
+    #[must_use]
+    pub const fn as_binding_identifier(&self) -> Option<&BindingIdentifierNode> {
+        if let Self::BindingIdentifier(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `StringLiteralNode`.
+    #[must_use]
+    pub const fn as_string_literal(&self) -> Option<&StringLiteralNode> {
+        if let Self::StringLiteral(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `NumericLiteralNode`.
+    #[must_use]
+    pub const fn as_numeric_literal(&self) -> Option<&NumericLiteralNode> {
+        if let Self::NumericLiteral(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `BooleanLiteralNode`.
+    #[must_use]
+    pub const fn as_boolean_literal(&self) -> Option<&BooleanLiteralNode> {
+        if let Self::BooleanLiteral(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `NullLiteralNode`.
+    #[must_use]
+    pub const fn as_null_literal(&self) -> Option<&NullLiteralNode> {
+        if let Self::NullLiteral(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `RegExpLiteralNode`.
+    #[must_use]
+    pub const fn as_reg_exp_literal(&self) -> Option<&RegExpLiteralNode> {
+        if let Self::RegExpLiteral(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TemplateLiteralNode`.
+    #[must_use]
+    pub const fn as_template_literal(&self) -> Option<&TemplateLiteralNode> {
+        if let Self::TemplateLiteral(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TaggedTemplateExpressionNode`.
+    #[must_use]
+    pub const fn as_tagged_template_expression(&self) -> Option<&TaggedTemplateExpressionNode> {
+        if let Self::TaggedTemplateExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ArrayExpressionNode`.
+    #[must_use]
+    pub const fn as_array_expression(&self) -> Option<&ArrayExpressionNode> {
+        if let Self::ArrayExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ObjectExpressionNode`.
+    #[must_use]
+    pub const fn as_object_expression(&self) -> Option<&ObjectExpressionNode> {
+        if let Self::ObjectExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ObjectPropertyNode`.
+    #[must_use]
+    pub const fn as_object_property(&self) -> Option<&ObjectPropertyNode> {
+        if let Self::ObjectProperty(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `SpreadElementNode`.
+    #[must_use]
+    pub const fn as_spread_element(&self) -> Option<&SpreadElementNode> {
+        if let Self::SpreadElement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ArrowFunctionExpressionNode`.
+    #[must_use]
+    pub const fn as_arrow_function_expression(&self) -> Option<&ArrowFunctionExpressionNode> {
+        if let Self::ArrowFunctionExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `AwaitExpressionNode`.
+    #[must_use]
+    pub const fn as_await_expression(&self) -> Option<&AwaitExpressionNode> {
+        if let Self::AwaitExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `StaticMemberExpressionNode`.
+    #[must_use]
+    pub const fn as_static_member_expression(&self) -> Option<&StaticMemberExpressionNode> {
+        if let Self::StaticMemberExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ComputedMemberExpressionNode`.
+    #[must_use]
+    pub const fn as_computed_member_expression(&self) -> Option<&ComputedMemberExpressionNode> {
+        if let Self::ComputedMemberExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ChainExpressionNode`.
+    #[must_use]
+    pub const fn as_chain_expression(&self) -> Option<&ChainExpressionNode> {
+        if let Self::ChainExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ThisExpressionNode`.
+    #[must_use]
+    pub const fn as_this_expression(&self) -> Option<&ThisExpressionNode> {
+        if let Self::ThisExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `DebuggerStatementNode`.
+    #[must_use]
+    pub const fn as_debugger_statement(&self) -> Option<&DebuggerStatementNode> {
+        if let Self::DebuggerStatement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ArrayPatternNode`.
+    #[must_use]
+    pub const fn as_array_pattern(&self) -> Option<&ArrayPatternNode> {
+        if let Self::ArrayPattern(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ObjectPatternNode`.
+    #[must_use]
+    pub const fn as_object_pattern(&self) -> Option<&ObjectPatternNode> {
+        if let Self::ObjectPattern(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ImportDeclarationNode`.
+    #[must_use]
+    pub const fn as_import_declaration(&self) -> Option<&ImportDeclarationNode> {
+        if let Self::ImportDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ImportSpecifierNode`.
+    #[must_use]
+    pub const fn as_import_specifier(&self) -> Option<&ImportSpecifierNode> {
+        if let Self::ImportSpecifier(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ExportNamedDeclarationNode`.
+    #[must_use]
+    pub const fn as_export_named_declaration(&self) -> Option<&ExportNamedDeclarationNode> {
+        if let Self::ExportNamedDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ExportDefaultDeclarationNode`.
+    #[must_use]
+    pub const fn as_export_default_declaration(&self) -> Option<&ExportDefaultDeclarationNode> {
+        if let Self::ExportDefaultDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ExportAllDeclarationNode`.
+    #[must_use]
+    pub const fn as_export_all_declaration(&self) -> Option<&ExportAllDeclarationNode> {
+        if let Self::ExportAllDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `ExportSpecifierNode`.
+    #[must_use]
+    pub const fn as_export_specifier(&self) -> Option<&ExportSpecifierNode> {
+        if let Self::ExportSpecifier(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `MethodDefinitionNode`.
+    #[must_use]
+    pub const fn as_method_definition(&self) -> Option<&MethodDefinitionNode> {
+        if let Self::MethodDefinition(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `PropertyDefinitionNode`.
+    #[must_use]
+    pub const fn as_property_definition(&self) -> Option<&PropertyDefinitionNode> {
+        if let Self::PropertyDefinition(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `JSXElementNode`.
+    #[must_use]
+    pub const fn as_jsx_element(&self) -> Option<&JSXElementNode> {
+        if let Self::JSXElement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `JSXOpeningElementNode`.
+    #[must_use]
+    pub const fn as_jsx_opening_element(&self) -> Option<&JSXOpeningElementNode> {
+        if let Self::JSXOpeningElement(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `JSXFragmentNode`.
+    #[must_use]
+    pub const fn as_jsx_fragment(&self) -> Option<&JSXFragmentNode> {
+        if let Self::JSXFragment(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `JSXAttributeNode`.
+    #[must_use]
+    pub const fn as_jsx_attribute(&self) -> Option<&JSXAttributeNode> {
+        if let Self::JSXAttribute(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `JSXSpreadAttributeNode`.
+    #[must_use]
+    pub const fn as_jsx_spread_attribute(&self) -> Option<&JSXSpreadAttributeNode> {
+        if let Self::JSXSpreadAttribute(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `JSXExpressionContainerNode`.
+    #[must_use]
+    pub const fn as_jsx_expression_container(&self) -> Option<&JSXExpressionContainerNode> {
+        if let Self::JSXExpressionContainer(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `JSXNamespacedNameNode`.
+    #[must_use]
+    pub const fn as_jsx_namespaced_name(&self) -> Option<&JSXNamespacedNameNode> {
+        if let Self::JSXNamespacedName(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `JSXTextNode`.
+    #[must_use]
+    pub const fn as_jsx_text(&self) -> Option<&JSXTextNode> {
+        if let Self::JSXText(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSTypeAliasDeclarationNode`.
+    #[must_use]
+    pub const fn as_ts_type_alias_declaration(&self) -> Option<&TSTypeAliasDeclarationNode> {
+        if let Self::TSTypeAliasDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSInterfaceDeclarationNode`.
+    #[must_use]
+    pub const fn as_ts_interface_declaration(&self) -> Option<&TSInterfaceDeclarationNode> {
+        if let Self::TSInterfaceDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSEnumDeclarationNode`.
+    #[must_use]
+    pub const fn as_ts_enum_declaration(&self) -> Option<&TSEnumDeclarationNode> {
+        if let Self::TSEnumDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSEnumMemberNode`.
+    #[must_use]
+    pub const fn as_ts_enum_member(&self) -> Option<&TSEnumMemberNode> {
+        if let Self::TSEnumMember(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSModuleDeclarationNode`.
+    #[must_use]
+    pub const fn as_ts_module_declaration(&self) -> Option<&TSModuleDeclarationNode> {
+        if let Self::TSModuleDeclaration(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSAsExpressionNode`.
+    #[must_use]
+    pub const fn as_ts_as_expression(&self) -> Option<&TSAsExpressionNode> {
+        if let Self::TSAsExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSTypeAssertionNode`.
+    #[must_use]
+    pub const fn as_ts_type_assertion(&self) -> Option<&TSTypeAssertionNode> {
+        if let Self::TSTypeAssertion(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSNonNullExpressionNode`.
+    #[must_use]
+    pub const fn as_ts_non_null_expression(&self) -> Option<&TSNonNullExpressionNode> {
+        if let Self::TSNonNullExpression(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSTypeLiteralNode`.
+    #[must_use]
+    pub const fn as_ts_type_literal(&self) -> Option<&TSTypeLiteralNode> {
+        if let Self::TSTypeLiteral(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSTypeReferenceNode`.
+    #[must_use]
+    pub const fn as_ts_type_reference(&self) -> Option<&TSTypeReferenceNode> {
+        if let Self::TSTypeReference(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSTypeParameterNode`.
+    #[must_use]
+    pub const fn as_ts_type_parameter(&self) -> Option<&TSTypeParameterNode> {
+        if let Self::TSTypeParameter(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSAnyKeywordNode`.
+    #[must_use]
+    pub const fn as_ts_any_keyword(&self) -> Option<&TSAnyKeywordNode> {
+        if let Self::TSAnyKeyword(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `TSVoidKeywordNode`.
+    #[must_use]
+    pub const fn as_ts_void_keyword(&self) -> Option<&TSVoidKeywordNode> {
+        if let Self::TSVoidKeyword(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+
+    // -- Category query methods -----------------------------------------------
+
+    /// Is this node an expression?
+    #[must_use]
+    pub const fn is_expression(&self) -> bool {
+        matches!(
+            self,
+            Self::CallExpression(_)
+                | Self::NewExpression(_)
+                | Self::BinaryExpression(_)
+                | Self::LogicalExpression(_)
+                | Self::AssignmentExpression(_)
+                | Self::UnaryExpression(_)
+                | Self::UpdateExpression(_)
+                | Self::ConditionalExpression(_)
+                | Self::SequenceExpression(_)
+                | Self::IdentifierReference(_)
+                | Self::StringLiteral(_)
+                | Self::NumericLiteral(_)
+                | Self::BooleanLiteral(_)
+                | Self::NullLiteral(_)
+                | Self::RegExpLiteral(_)
+                | Self::TemplateLiteral(_)
+                | Self::TaggedTemplateExpression(_)
+                | Self::ArrayExpression(_)
+                | Self::ObjectExpression(_)
+                | Self::ArrowFunctionExpression(_)
+                | Self::AwaitExpression(_)
+                | Self::StaticMemberExpression(_)
+                | Self::ComputedMemberExpression(_)
+                | Self::ChainExpression(_)
+                | Self::ThisExpression(_)
+                | Self::TSAsExpression(_)
+                | Self::TSTypeAssertion(_)
+                | Self::TSNonNullExpression(_)
+        )
+    }
+
+    /// Is this node a statement?
+    #[must_use]
+    pub const fn is_statement(&self) -> bool {
+        matches!(
+            self,
+            Self::BlockStatement(_)
+                | Self::IfStatement(_)
+                | Self::SwitchStatement(_)
+                | Self::ForStatement(_)
+                | Self::ForInStatement(_)
+                | Self::ForOfStatement(_)
+                | Self::WhileStatement(_)
+                | Self::DoWhileStatement(_)
+                | Self::TryStatement(_)
+                | Self::ThrowStatement(_)
+                | Self::ReturnStatement(_)
+                | Self::LabeledStatement(_)
+                | Self::BreakStatement(_)
+                | Self::ContinueStatement(_)
+                | Self::EmptyStatement(_)
+                | Self::WithStatement(_)
+                | Self::ExpressionStatement(_)
+                | Self::DebuggerStatement(_)
+        )
+    }
+
+    /// Is this node a literal?
+    #[must_use]
+    pub const fn is_literal(&self) -> bool {
+        matches!(
+            self,
+            Self::StringLiteral(_)
+                | Self::NumericLiteral(_)
+                | Self::BooleanLiteral(_)
+                | Self::NullLiteral(_)
+                | Self::RegExpLiteral(_)
+                | Self::TemplateLiteral(_)
+        )
+    }
+
+    /// Is this node a declaration?
+    #[must_use]
+    pub const fn is_declaration(&self) -> bool {
+        matches!(
+            self,
+            Self::VariableDeclaration(_)
+                | Self::Function(_)
+                | Self::Class(_)
+                | Self::ImportDeclaration(_)
+                | Self::ExportNamedDeclaration(_)
+                | Self::ExportDefaultDeclaration(_)
+                | Self::ExportAllDeclaration(_)
+                | Self::TSTypeAliasDeclaration(_)
+                | Self::TSInterfaceDeclaration(_)
+                | Self::TSEnumDeclaration(_)
+                | Self::TSModuleDeclaration(_)
+        )
     }
 }
 
@@ -484,6 +1364,15 @@ pub struct LabeledStatementNode {
     pub label: String,
     /// Labeled body.
     pub body: NodeId,
+}
+
+/// Break statement.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BreakStatementNode {
+    /// Span.
+    pub span: Span,
+    /// Optional label name.
+    pub label: Option<String>,
 }
 
 /// Continue statement.
@@ -751,6 +1640,15 @@ pub struct NumericLiteralNode {
     pub value: f64,
     /// Raw source text (e.g. `0xFF`, `1_000`).
     pub raw: String,
+}
+
+/// Boolean literal (`true` / `false`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BooleanLiteralNode {
+    /// Span.
+    pub span: Span,
+    /// The boolean value.
+    pub value: bool,
 }
 
 /// Null literal.

@@ -211,6 +211,40 @@ impl<'a> LintContext<'a> {
     }
 }
 
+/// Parse source and run the given [`LintRule`]s, returning diagnostics.
+///
+/// Convenience helper for tests so each rule doesn't have to duplicate the
+/// parse → convert → dispatch boilerplate.
+#[cfg(test)]
+pub fn lint_source(source: &str, file_path: &str, rules: &[Box<dyn LintRule>]) -> Vec<Diagnostic> {
+    use oxc_allocator::Allocator;
+    use oxc_parser::Parser;
+    use oxc_span::SourceType;
+
+    use crate::ast_converter;
+    use crate::traversal::{LintDispatchTable, traverse_ast_tree};
+
+    let path = Path::new(file_path);
+    let allocator = Allocator::default();
+    let source_type = SourceType::from_path(path).unwrap_or_default();
+    let parsed = Parser::new(&allocator, source, source_type).parse();
+    let tree = ast_converter::convert(&parsed.program);
+    let traversal_indices: Vec<usize> = rules
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| r.needs_traversal())
+        .map(|(i, _)| i)
+        .collect();
+    let run_once_indices: Vec<usize> = rules
+        .iter()
+        .enumerate()
+        .filter(|(_, r)| !r.needs_traversal())
+        .map(|(i, _)| i)
+        .collect();
+    let table = LintDispatchTable::build_from_indices(rules, &traversal_indices);
+    traverse_ast_tree(&tree, rules, &table, &run_once_indices, source, path, None)
+}
+
 #[cfg(test)]
 mod tests {
     use starlint_ast::tree::AstTree;

@@ -438,7 +438,6 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(default_param_last::DefaultParamLast),
         Box::new(double_comparisons::DoubleComparisons),
         Box::new(empty_brace_spaces::EmptyBraceSpaces),
-        Box::new(eqeqeq::Eqeqeq),
         Box::new(explicit_length_check::ExplicitLengthCheck),
         Box::new(erasing_op::ErasingOp),
         Box::new(error_message::ErrorMessage),
@@ -498,9 +497,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_constant_binary_expression::NoConstantBinaryExpression),
         Box::new(no_constant_condition::NoConstantCondition),
         Box::new(no_constructor_return::NoConstructorReturn),
-        Box::new(no_continue::NoContinue),
         Box::new(no_control_regex::NoControlRegex),
-        Box::new(no_debugger::NoDebugger),
         Box::new(no_delete_var::NoDeleteVar),
         Box::new(no_div_regex::NoDivRegex),
         Box::new(no_document_cookie::NoDocumentCookie),
@@ -510,7 +507,6 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_duplicate_case::NoDuplicateCase),
         Box::new(no_duplicate_imports::NoDuplicateImports),
         Box::new(no_else_return::NoElseReturn),
-        Box::new(no_empty::NoEmpty),
         Box::new(no_empty_character_class::NoEmptyCharacterClass),
         Box::new(no_empty_file::NoEmptyFile),
         Box::new(no_empty_function::NoEmptyFunction),
@@ -523,7 +519,6 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_extra_bind::NoExtraBind),
         Box::new(no_extra_boolean_cast::NoExtraBooleanCast),
         Box::new(no_extra_label::NoExtraLabel),
-        Box::new(no_extra_semi::NoExtraSemi),
         Box::new(no_fallthrough::NoFallthrough),
         Box::new(no_func_assign::NoFuncAssign),
         Box::new(no_global_assign::NoGlobalAssign),
@@ -564,7 +559,6 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_new_native_nonconstructor::NoNewNativeNonconstructor),
         Box::new(no_new_wrappers::NoNewWrappers),
         Box::new(no_nonoctal_decimal_escape::NoNonoctalDecimalEscape),
-        Box::new(no_null::NoNull),
         Box::new(no_obj_calls::NoObjCalls),
         Box::new(no_object_as_default_parameter::NoObjectAsDefaultParameter),
         Box::new(no_object_constructor::NoObjectConstructor),
@@ -592,7 +586,6 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_sparse_arrays::NoSparseArrays),
         Box::new(no_static_only_class::NoStaticOnlyClass),
         Box::new(no_template_curly_in_string::NoTemplateCurlyInString),
-        Box::new(no_ternary::NoTernary),
         Box::new(no_thenable::NoThenable),
         Box::new(no_this_assignment::NoThisAssignment),
         Box::new(no_this_before_super::NoThisBeforeSuper),
@@ -637,10 +630,8 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_useless_spread::NoUselessSpread),
         Box::new(no_useless_switch_case::NoUselessSwitchCase),
         Box::new(no_useless_undefined::NoUselessUndefined),
-        Box::new(no_var::NoVar),
         Box::new(no_void::NoVoid),
         Box::new(no_warning_comments::NoWarningComments),
-        Box::new(no_with::NoWith),
         Box::new(no_zero_fractions::NoZeroFractions),
         Box::new(number_arg_out_of_range::NumberArgOutOfRange),
         Box::new(number_literal_case::NumberLiteralCase),
@@ -798,7 +789,8 @@ const BUILTIN_PLUGIN_PREFIXES: &[(&str, &[&str])] = &[
     ("typescript", &["typescript/"]),
 ];
 
-/// Return all built-in native rules, excluding categories handled by active builtin plugins.
+/// Return all built-in native rules, excluding categories handled by active
+/// builtin plugins and rules already migrated to [`LintRule`](crate::lint_rule::LintRule).
 ///
 /// `active_builtins` is the set of builtin plugin names that are enabled.
 /// Rules whose names match an active plugin's prefixes are omitted.
@@ -806,8 +798,13 @@ const BUILTIN_PLUGIN_PREFIXES: &[(&str, &[&str])] = &[
 pub fn all_rules_excluding<S: ::std::hash::BuildHasher>(
     active_builtins: &HashSet<String, S>,
 ) -> Vec<Box<dyn NativeRule>> {
+    let migrated = crate::lint_rules::MIGRATED_RULE_NAMES;
+
     if active_builtins.is_empty() {
-        return all_rules();
+        return all_rules()
+            .into_iter()
+            .filter(|r| !migrated.contains(&r.meta().name.as_str()))
+            .collect();
     }
 
     // Collect all prefixes to exclude.
@@ -821,17 +818,20 @@ pub fn all_rules_excluding<S: ::std::hash::BuildHasher>(
         .into_iter()
         .filter(|rule| {
             let name = rule.meta().name;
-            !excluded_prefixes
-                .iter()
-                .any(|prefix| name.starts_with(prefix))
+            !migrated.contains(&name.as_str())
+                && !excluded_prefixes
+                    .iter()
+                    .any(|prefix| name.starts_with(prefix))
         })
         .collect()
 }
 
-/// Return metadata for all built-in native rules.
+/// Return metadata for all built-in rules (native + unified lint rules).
 #[must_use]
 pub fn all_rule_metas() -> Vec<RuleMeta> {
-    all_rules().iter().map(|r| r.meta()).collect()
+    let mut metas: Vec<RuleMeta> = all_rules().iter().map(|r| r.meta()).collect();
+    metas.extend(crate::lint_rules::all_lint_rules().iter().map(|r| r.meta()));
+    metas
 }
 
 /// Parse a severity string from config into a [`Severity`].
@@ -853,6 +853,8 @@ pub fn parse_severity(s: &str) -> Result<Option<Severity>, String> {
 pub struct ConfiguredRules {
     /// Enabled native rules.
     pub rules: Vec<Box<dyn NativeRule>>,
+    /// Enabled unified lint rules (migrated from `NativeRule`).
+    pub lint_rules: Vec<Box<dyn crate::lint_rule::LintRule>>,
     /// Severity overrides from config (rule name → configured severity).
     pub severity_overrides: HashMap<String, Severity>,
     /// Rules loaded but disabled by default (only active via file-pattern overrides).
@@ -889,6 +891,7 @@ pub fn rules_for_config<S: ::std::hash::BuildHasher, S2: ::std::hash::BuildHashe
     if rule_configs.is_empty() {
         return ConfiguredRules {
             rules: all_rules_excluding(active_builtins),
+            lint_rules: crate::lint_rules::all_lint_rules(),
             severity_overrides: HashMap::new(),
             disabled_rules: HashSet::new(),
         };
@@ -983,6 +986,7 @@ pub fn rules_for_config<S: ::std::hash::BuildHasher, S2: ::std::hash::BuildHashe
 
     ConfiguredRules {
         rules: enabled,
+        lint_rules: crate::lint_rules::all_lint_rules(),
         severity_overrides,
         disabled_rules,
     }
@@ -999,8 +1003,8 @@ mod tests {
 
         let names: Vec<String> = rules.iter().map(|r| r.meta().name).collect();
         assert!(
-            names.contains(&"no-debugger".to_owned()),
-            "should contain no-debugger"
+            names.contains(&"for-direction".to_owned()),
+            "should contain for-direction"
         );
         assert!(
             names.contains(&"no-console".to_owned()),
@@ -1052,7 +1056,7 @@ mod tests {
     fn test_rules_for_config_filters() {
         let mut configs = HashMap::new();
         configs.insert(
-            "no-debugger".to_owned(),
+            "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("error".to_owned()),
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
@@ -1063,8 +1067,8 @@ mod tests {
         );
         assert_eq!(
             configured.rules.first().map(|r| r.meta().name),
-            Some("no-debugger".to_owned()),
-            "should be no-debugger rule"
+            Some("for-direction".to_owned()),
+            "should be for-direction rule"
         );
     }
 
@@ -1072,7 +1076,7 @@ mod tests {
     fn test_rules_for_config_off() {
         let mut configs = HashMap::new();
         configs.insert(
-            "no-debugger".to_owned(),
+            "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("off".to_owned()),
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
@@ -1086,24 +1090,24 @@ mod tests {
     fn test_severity_override_applied() {
         let mut configs = HashMap::new();
         configs.insert(
-            "no-debugger".to_owned(),
+            "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("warn".to_owned()),
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert_eq!(configured.rules.len(), 1, "should enable the rule");
         assert_eq!(
-            configured.severity_overrides.get("no-debugger"),
+            configured.severity_overrides.get("for-direction"),
             Some(&Severity::Warning),
-            "no-debugger should be overridden to Warning"
+            "for-direction should be overridden to Warning"
         );
     }
 
     #[test]
     fn test_no_override_when_severity_matches_default() {
         let mut configs = HashMap::new();
-        // no-debugger default is Error, so setting "error" should not create an override
+        // for-direction default is Error, so setting "error" should not create an override
         configs.insert(
-            "no-debugger".to_owned(),
+            "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("error".to_owned()),
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
@@ -1125,10 +1129,10 @@ mod tests {
 
     #[test]
     fn test_override_only_rule_loaded_as_disabled() {
-        // Base config enables only no-debugger; override references no-console
+        // Base config enables only for-direction; override references no-console
         let mut configs = HashMap::new();
         configs.insert(
-            "no-debugger".to_owned(),
+            "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("error".to_owned()),
         );
         let overrides = vec![starlint_config::Override {
@@ -1143,7 +1147,7 @@ mod tests {
 
         let names: Vec<String> = configured.rules.iter().map(|r| r.meta().name).collect();
         assert!(
-            names.contains(&"no-debugger".to_owned()),
+            names.contains(&"for-direction".to_owned()),
             "base rule should be loaded"
         );
         assert!(
@@ -1155,23 +1159,23 @@ mod tests {
             "override-only rule should be in disabled_rules"
         );
         assert!(
-            !configured.disabled_rules.contains("no-debugger"),
+            !configured.disabled_rules.contains("for-direction"),
             "base rule should not be disabled"
         );
     }
 
     #[test]
     fn test_off_rule_loaded_when_in_override() {
-        // Base: no-debugger = "off", override references no-debugger
+        // Base: for-direction = "off", override references for-direction
         let mut configs = HashMap::new();
         configs.insert(
-            "no-debugger".to_owned(),
+            "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("off".to_owned()),
         );
         let overrides = vec![starlint_config::Override {
             files: vec!["**/*.test.ts".to_owned()],
             rules: std::iter::once((
-                "no-debugger".to_owned(),
+                "for-direction".to_owned(),
                 starlint_config::RuleConfig::Severity("error".to_owned()),
             ))
             .collect(),
@@ -1184,17 +1188,17 @@ mod tests {
             "off rule referenced in override should be loaded"
         );
         assert!(
-            configured.disabled_rules.contains("no-debugger"),
+            configured.disabled_rules.contains("for-direction"),
             "off rule should be in disabled_rules"
         );
     }
 
     #[test]
     fn test_off_rule_skipped_when_not_in_override() {
-        // Base: no-debugger = "off", no overrides reference it
+        // Base: for-direction = "off", no overrides reference it
         let mut configs = HashMap::new();
         configs.insert(
-            "no-debugger".to_owned(),
+            "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("off".to_owned()),
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
@@ -1220,7 +1224,7 @@ mod tests {
         );
         // Should NOT enable unprefixed rules
         assert!(
-            !names.iter().any(|n| n == "no-debugger"),
+            !names.iter().any(|n| n == "for-direction"),
             "glob config should not enable unrelated rules"
         );
     }
@@ -1288,7 +1292,7 @@ mod tests {
         );
         // Core rules should still be present.
         assert!(
-            filtered.iter().any(|r| r.meta().name == "no-debugger"),
+            filtered.iter().any(|r| r.meta().name == "for-direction"),
             "core rules should remain"
         );
     }
