@@ -5,9 +5,10 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags `debugger` statements and offers a safe fix to remove them.
@@ -38,13 +39,9 @@ impl NativeRule for NoDebugger {
                 span,
                 severity: Severity::Error,
                 help: Some("Remove the `debugger` statement before deploying".to_owned()),
-                fix: Some(Fix {
-                    message: "Remove `debugger` statement".to_owned(),
-                    edits: vec![Edit {
-                        span,
-                        replacement: String::new(),
-                    }],
-                }),
+                fix: FixBuilder::new("Remove `debugger` statement")
+                    .delete(span)
+                    .build(),
                 labels: vec![],
             });
         }

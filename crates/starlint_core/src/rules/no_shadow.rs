@@ -11,6 +11,8 @@ use oxc_span::Ident;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags variable declarations that shadow a variable from an outer scope.
@@ -66,13 +68,23 @@ impl NativeRule for NoShadow {
 
                 while let Some(scope_id) = current_scope {
                     if scoping.get_binding(scope_id, ident).is_some() {
+                        let decl_span = Span::new(binding.span.start, binding.span.end);
+                        let new_name = format!("{name}_inner");
+                        let fix = {
+                            let edits = fix_utils::rename_symbol_edits(
+                                semantic, symbol_id, &new_name, decl_span,
+                            );
+                            FixBuilder::new(format!("Rename to `{new_name}`"))
+                                .edits(edits)
+                                .build()
+                        };
                         ctx.report(Diagnostic {
                             rule_name: "no-shadow".to_owned(),
                             message: format!("'{name}' is already declared in the upper scope"),
-                            span: Span::new(binding.span.start, binding.span.end),
+                            span: decl_span,
                             severity: Severity::Warning,
-                            help: None,
-                            fix: None,
+                            help: Some(format!("Consider renaming to `{new_name}`")),
+                            fix,
                             labels: vec![],
                         });
                         break;

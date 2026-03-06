@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags duplicate import declarations for the same module source.
@@ -57,10 +59,22 @@ impl NativeRule for NoDuplicates {
             sources
         };
 
-        // Report duplicates (skip the first occurrence, flag subsequent ones)
+        // Report duplicates (skip the first occurrence, flag subsequent ones).
+        // Each duplicate gets a fix to merge it into the first import.
         for (module_source, positions) in &import_sources {
             if positions.len() > 1 {
+                let first = positions.first().copied();
                 for &(start, end) in positions.iter().skip(1) {
+                    let fix = first.and_then(|(first_start, first_end)| {
+                        let edits = fix_utils::merge_import_edits(
+                            ctx.source_text(),
+                            Span::new(first_start, first_end),
+                            Span::new(start, end),
+                        );
+                        FixBuilder::new("Merge into first import")
+                            .edits(edits)
+                            .build()
+                    });
                     ctx.report(Diagnostic {
                         rule_name: "import/no-duplicates".to_owned(),
                         message: format!(
@@ -69,7 +83,7 @@ impl NativeRule for NoDuplicates {
                         span: Span::new(start, end),
                         severity: Severity::Warning,
                         help: Some("Merge duplicate imports into one statement".to_owned()),
-                        fix: None,
+                        fix,
                         labels: vec![],
                     });
                 }
@@ -114,6 +128,7 @@ mod tests {
     use oxc_allocator::Allocator;
 
     use super::*;
+    use crate::fix::apply_fixes;
     use crate::parser::parse_file;
     use crate::traversal::traverse_and_lint;
 
@@ -153,5 +168,37 @@ mod tests {
         let source = "import { foo, bar } from 'mod';";
         let diags = lint(source);
         assert!(diags.is_empty(), "single import should not be flagged");
+    }
+
+    #[test]
+    fn test_fix_merges_duplicate_imports() {
+        let source = "import { foo } from 'mod';\nimport { bar } from 'mod';\n";
+        let diags = lint(source);
+        assert_eq!(diags.len(), 1, "should flag duplicate");
+        assert!(
+            diags.first().is_some_and(|d| d.fix.is_some()),
+            "should provide a fix"
+        );
+        let fixed = apply_fixes(source, &diags);
+        assert!(
+            fixed.contains("foo") && fixed.contains("bar"),
+            "merged import should contain both specifiers"
+        );
+        assert_eq!(
+            fixed.matches("import").count(),
+            1,
+            "should have exactly one import statement after merge"
+        );
+    }
+
+    #[test]
+    fn test_fix_not_provided_for_default_imports() {
+        let source = "import foo from 'mod';\nimport bar from 'mod';\n";
+        let diags = lint(source);
+        assert_eq!(diags.len(), 1, "should flag duplicate");
+        assert!(
+            diags.first().is_some_and(|d| d.fix.is_none()),
+            "default imports should not have a merge fix"
+        );
     }
 }

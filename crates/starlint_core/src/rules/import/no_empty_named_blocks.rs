@@ -6,9 +6,11 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags import declarations with empty named import blocks.
@@ -43,33 +45,17 @@ impl NativeRule for NoEmptyNamedBlocks {
         // Empty named block: the specifiers list exists but is empty
         // This catches `import {} from 'mod'`
         if specifiers.is_empty() {
-            // Remove the entire empty import statement
-            let stmt_start = import.span.start;
-            let mut stmt_end = import.span.end;
-
-            // Also remove trailing newline if present
-            let end_usize = usize::try_from(stmt_end).unwrap_or(0);
-            if ctx
-                .source_text()
-                .get(end_usize..end_usize.saturating_add(1))
-                == Some("\n")
-            {
-                stmt_end = stmt_end.saturating_add(1);
-            }
-
+            let import_span = Span::new(import.span.start, import.span.end);
+            let fix = FixBuilder::new("Remove the empty import statement")
+                .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "import/no-empty-named-blocks".to_owned(),
                 message: "Unexpected empty named import block".to_owned(),
-                span: Span::new(import.span.start, import.span.end),
+                span: import_span,
                 severity: Severity::Warning,
                 help: Some("Remove the empty import statement".to_owned()),
-                fix: Some(Fix {
-                    message: "Remove the empty import statement".to_owned(),
-                    edits: vec![Edit {
-                        span: Span::new(stmt_start, stmt_end),
-                        replacement: String::new(),
-                    }],
-                }),
+                fix,
                 labels: vec![],
             });
         }

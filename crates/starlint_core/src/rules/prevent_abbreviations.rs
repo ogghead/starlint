@@ -7,9 +7,11 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Known abbreviation-to-expansion mappings.
@@ -81,6 +83,10 @@ impl NativeRule for PreventAbbreviations {
         }
     }
 
+    fn needs_semantic(&self) -> bool {
+        true
+    }
+
     fn run_on_kinds(&self) -> Option<&'static [AstType]> {
         Some(&[AstType::BindingIdentifier])
     }
@@ -93,19 +99,30 @@ impl NativeRule for PreventAbbreviations {
         let name = ident.name.as_str();
 
         if let Some(expansion) = find_expansion(name) {
+            let decl_span = Span::new(ident.span.start, ident.span.end);
+
+            // With semantic, rename declaration + all references.
+            // Without semantic, fall back to renaming only the declaration.
+            let fix = match ctx.semantic().and_then(|sem| {
+                let symbol_id = ident.symbol_id.get()?;
+                let edits = fix_utils::rename_symbol_edits(sem, symbol_id, expansion, decl_span);
+                FixBuilder::new(format!("Rename to `{expansion}`"))
+                    .edits(edits)
+                    .build()
+            }) {
+                Some(f) => Some(f),
+                None => FixBuilder::new(format!("Rename to `{expansion}`"))
+                    .replace(decl_span, expansion)
+                    .build(),
+            };
+
             ctx.report(Diagnostic {
                 rule_name: "prevent-abbreviations".to_owned(),
                 message: format!("The abbreviation `{name}` should be written as `{expansion}`"),
-                span: Span::new(ident.span.start, ident.span.end),
+                span: decl_span,
                 severity: Severity::Warning,
                 help: None,
-                fix: Some(Fix {
-                    message: format!("Rename to `{expansion}`"),
-                    edits: vec![Edit {
-                        span: Span::new(ident.span.start, ident.span.end),
-                        replacement: (*expansion).to_owned(),
-                    }],
-                }),
+                fix,
                 labels: vec![],
             });
         }
@@ -119,15 +136,24 @@ mod tests {
     use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::fix::apply_fixes;
+    use crate::parser::{build_semantic, parse_file};
+    use crate::traversal::traverse_and_lint_with_semantic;
 
-    /// Helper to lint source code.
+    /// Helper to lint source code with semantic analysis.
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let allocator = Allocator::default();
         if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
+            let program = allocator.alloc(parsed.program);
+            let semantic = build_semantic(program);
             let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreventAbbreviations)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
+            traverse_and_lint_with_semantic(
+                program,
+                &rules,
+                source,
+                Path::new("test.js"),
+                Some(&semantic),
+            )
         } else {
             vec![]
         }
@@ -242,6 +268,29 @@ mod tests {
                 .first()
                 .is_some_and(|d| d.message.contains("temporary")),
             "should suggest 'temporary'"
+        );
+    }
+
+    #[test]
+    fn test_fix_renames_declaration_and_references() {
+        let source = "const btn = 1; console.log(btn);";
+        let diags = lint(source);
+        assert_eq!(diags.len(), 1, "should flag 'btn'");
+        let fixed = apply_fixes(source, &diags);
+        assert_eq!(
+            fixed, "const button = 1; console.log(button);",
+            "fix should rename both declaration and reference"
+        );
+    }
+
+    #[test]
+    fn test_fix_renames_multiple_references() {
+        let source = "let msg = 'hi'; console.log(msg); alert(msg);";
+        let diags = lint(source);
+        let fixed = apply_fixes(source, &diags);
+        assert_eq!(
+            fixed, "let message = 'hi'; console.log(message); alert(message);",
+            "fix should rename all references"
         );
     }
 }

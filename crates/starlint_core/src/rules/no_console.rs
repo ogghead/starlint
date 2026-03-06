@@ -7,9 +7,11 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags `console.*` call statements and offers to remove them.
@@ -54,19 +56,19 @@ impl NativeRule for NoConsole {
         }
 
         let span = Span::new(stmt.span.start, stmt.span.end);
+        let fix = FixBuilder::new(format!(
+            "Remove `console.{}()` statement",
+            member.property.name
+        ))
+        .edit(fix_utils::delete_statement(ctx.source_text(), span))
+        .build();
         ctx.report(Diagnostic {
             rule_name: "no-console".to_owned(),
             message: format!("Unexpected `console.{}` call", member.property.name),
             span,
             severity: Severity::Warning,
             help: Some("Remove the `console` call or replace with a logger".to_owned()),
-            fix: Some(Fix {
-                message: format!("Remove `console.{}()` statement", member.property.name),
-                edits: vec![Edit {
-                    span,
-                    replacement: String::new(),
-                }],
-            }),
+            fix,
             labels: vec![],
         });
     }

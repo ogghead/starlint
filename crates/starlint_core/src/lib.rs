@@ -9,6 +9,8 @@ pub mod engine;
 pub mod error;
 pub mod file_discovery;
 pub mod fix;
+pub mod fix_builder;
+pub mod fix_utils;
 pub mod overrides;
 pub mod parser;
 pub mod plugin;

@@ -8,9 +8,11 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::VariableDeclarationKind;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags variables that are declared but never read.
@@ -53,6 +55,11 @@ impl NativeRule for NoUnusedVars {
 
         let scoping = semantic.scoping();
 
+        // Collect unused binding info (name, span) and count totals to decide
+        // whether the entire declaration can be deleted.
+        let mut total_bindings: usize = 0;
+        let mut unused_infos: Vec<(String, Span)> = Vec::new();
+
         for declarator in &decl.declarations {
             let binding_ids = declarator.id.get_binding_identifiers();
 
@@ -61,6 +68,8 @@ impl NativeRule for NoUnusedVars {
                 if binding.name.starts_with('_') {
                     continue;
                 }
+
+                total_bindings = total_bindings.saturating_add(1);
 
                 let Some(symbol_id) = binding.symbol_id.get() else {
                     continue;
@@ -72,17 +81,34 @@ impl NativeRule for NoUnusedVars {
                     .any(oxc_semantic::Reference::is_read);
 
                 if !has_read {
-                    ctx.report(Diagnostic {
-                        rule_name: "no-unused-vars".to_owned(),
-                        message: format!("'{}' is declared but never used", binding.name),
-                        span: Span::new(binding.span.start, binding.span.end),
-                        severity: Severity::Warning,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
+                    unused_infos.push((
+                        binding.name.to_string(),
+                        Span::new(binding.span.start, binding.span.end),
+                    ));
                 }
             }
+        }
+
+        // Only offer a fix to delete the declaration if ALL bindings are unused.
+        let fix: Option<Fix> = if !unused_infos.is_empty() && unused_infos.len() == total_bindings {
+            let decl_span = Span::new(decl.span.start, decl.span.end);
+            FixBuilder::new("Remove unused declaration")
+                .edit(fix_utils::delete_statement(ctx.source_text(), decl_span))
+                .build()
+        } else {
+            None
+        };
+
+        for (name, span) in &unused_infos {
+            ctx.report(Diagnostic {
+                rule_name: "no-unused-vars".to_owned(),
+                message: format!("'{name}' is declared but never used"),
+                span: *span,
+                severity: Severity::Warning,
+                help: None,
+                fix: fix.clone(),
+                labels: vec![],
+            });
         }
     }
 }

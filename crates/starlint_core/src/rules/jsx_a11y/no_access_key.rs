@@ -6,9 +6,11 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -57,13 +59,9 @@ impl NativeRule for NoAccessKey {
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: Some(Fix {
-                    message: "Remove `accessKey` attribute".to_owned(),
-                    edits: vec![Edit {
-                        span: attr_span,
-                        replacement: String::new(),
-                    }],
-                }),
+                fix: FixBuilder::new("Remove `accessKey` attribute")
+                    .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                    .build(),
                 labels: vec![],
             });
         }
