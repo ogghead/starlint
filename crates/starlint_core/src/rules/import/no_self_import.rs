@@ -12,6 +12,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags imports that appear to reference the current file.
@@ -69,13 +71,17 @@ impl NativeRule for NoSelfImport {
             && source_value.matches('/').count() == 1
             && import_stem == file_stem
         {
+            let import_span = Span::new(import.span.start, import.span.end);
+            let fix = FixBuilder::new("Remove self-import")
+                .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "import/no-self-import".to_owned(),
                 message: "Module should not import itself".to_owned(),
-                span: Span::new(import.span.start, import.span.end),
+                span: import_span,
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

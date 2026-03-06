@@ -11,6 +11,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Rule name constant.
@@ -53,13 +55,17 @@ impl NativeRule for JsxNoDuplicateProps {
                     }
                 };
                 if !seen.insert(name) {
+                    let attr_span = Span::new(attr.span.start, attr.span.end);
+                    let fix = FixBuilder::new(format!("Remove duplicate `{name}` prop"))
+                        .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                        .build();
                     ctx.report(Diagnostic {
                         rule_name: RULE_NAME.to_owned(),
                         message: format!("Duplicate prop `{name}` found on JSX element"),
-                        span: Span::new(attr.span.start, attr.span.end),
+                        span: attr_span,
                         severity: Severity::Error,
                         help: None,
-                        fix: None,
+                        fix,
                         labels: vec![],
                     });
                 }

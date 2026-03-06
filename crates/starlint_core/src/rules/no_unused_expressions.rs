@@ -10,6 +10,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags expression statements with no side effects.
@@ -42,14 +44,18 @@ impl NativeRule for NoUnusedExpressions {
         }
 
         if is_unused_expression(&stmt.expression) {
+            let span = Span::new(stmt.span.start, stmt.span.end);
+            let fix = FixBuilder::new("Remove unused expression")
+                .edit(fix_utils::delete_statement(ctx.source_text(), span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "no-unused-expressions".to_owned(),
                 message: "Expected an assignment or function call and instead saw an expression"
                     .to_owned(),
-                span: Span::new(stmt.span.start, stmt.span.end),
+                span,
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

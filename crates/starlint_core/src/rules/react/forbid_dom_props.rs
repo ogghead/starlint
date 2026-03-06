@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags use of forbidden DOM props. By default, flags the `id` prop on
@@ -74,13 +76,17 @@ impl NativeRule for ForbidDomProps {
                     .first()
                     .is_some_and(|&b| b.is_ascii_lowercase())
             {
+                let attr_span = Span::new(attr.span.start, attr.span.end);
+                let fix = FixBuilder::new(format!("Remove `{attr_name}` prop"))
+                    .edit(fix_utils::remove_jsx_attr(source, attr_span))
+                    .build();
                 ctx.report(Diagnostic {
                     rule_name: "react/forbid-dom-props".to_owned(),
                     message: format!("Prop `{attr_name}` is forbidden on DOM elements"),
-                    span: Span::new(attr.span.start, attr.span.end),
+                    span: attr_span,
                     severity: Severity::Warning,
                     help: None,
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }

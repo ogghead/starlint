@@ -373,9 +373,7 @@ mod tests {
         assert_eq!(edits.len(), 2, "should produce two edits");
         // First edit: insert ", bar" before the closing brace of first import
         assert!(
-            edits
-                .first()
-                .is_some_and(|e| e.replacement.contains("bar")),
+            edits.first().is_some_and(|e| e.replacement.contains("bar")),
             "should insert second specifiers"
         );
         // Second edit: delete the second import statement

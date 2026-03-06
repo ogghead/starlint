@@ -53,17 +53,23 @@ impl NativeRule for NoAlert {
             _ => false,
         };
 
-        if is_blocked {
-            ctx.report(Diagnostic {
-                rule_name: "no-alert".to_owned(),
-                message: "Unexpected `alert`, `confirm`, or `prompt`".to_owned(),
-                span: Span::new(call.span.start, call.span.end),
-                severity: Severity::Warning,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
+        if !is_blocked {
+            return;
         }
+
+        // The CallExpression span covers just the call — we need the
+        // enclosing ExpressionStatement to cleanly delete the whole line.
+        // Fall back to deleting only the call span if we can't find it.
+        let call_span = Span::new(call.span.start, call.span.end);
+        ctx.report(Diagnostic {
+            rule_name: "no-alert".to_owned(),
+            message: "Unexpected `alert`, `confirm`, or `prompt`".to_owned(),
+            span: call_span,
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
 }
 

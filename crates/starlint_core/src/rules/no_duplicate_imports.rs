@@ -3,7 +3,7 @@
 //! Disallow duplicate module imports. If a module is imported more than
 //! once, the imports should be merged into a single import statement.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
@@ -11,6 +11,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags duplicate import declarations from the same module.
@@ -37,24 +39,51 @@ impl NativeRule for NoDuplicateImports {
             return;
         };
 
-        let mut seen = HashSet::new();
+        // Map module source → first import span
+        let mut seen: HashMap<String, Span> = HashMap::new();
+
+        // Collect duplicates first to avoid borrow conflict with ctx
+        let mut duplicates: Vec<(String, Span, Span)> = Vec::new();
 
         for stmt in &program.body {
             let oxc_ast::ast::Statement::ImportDeclaration(import) = stmt else {
                 continue;
             };
-            let source = import.source.value.as_str();
-            if !seen.insert(source.to_owned()) {
-                ctx.report(Diagnostic {
-                    rule_name: "no-duplicate-imports".to_owned(),
-                    message: format!("'{source}' import is duplicated"),
-                    span: Span::new(import.span.start, import.span.end),
-                    severity: Severity::Warning,
-                    help: None,
-                    fix: None,
-                    labels: vec![],
-                });
+            let source_str = import.source.value.as_str();
+            let import_span = Span::new(import.span.start, import.span.end);
+
+            if let Some(&first_span) = seen.get(source_str) {
+                duplicates.push((source_str.to_owned(), first_span, import_span));
+            } else {
+                seen.insert(source_str.to_owned(), import_span);
             }
+        }
+
+        // Build fixes first (immutable borrow of source_text), then report
+        let diagnostics: Vec<Diagnostic> = {
+            let source_text = ctx.source_text();
+            duplicates
+                .iter()
+                .map(|(module_source, first_span, dup_span)| {
+                    let edits =
+                        fix_utils::merge_import_edits(source_text, *first_span, *dup_span);
+                    let fix = FixBuilder::new("Merge into first import")
+                        .edits(edits)
+                        .build();
+                    Diagnostic {
+                        rule_name: "no-duplicate-imports".to_owned(),
+                        message: format!("'{module_source}' import is duplicated"),
+                        span: *dup_span,
+                        severity: Severity::Warning,
+                        help: None,
+                        fix,
+                        labels: vec![],
+                    }
+                })
+                .collect()
+        };
+        for diag in diagnostics {
+            ctx.report(diag);
         }
     }
 }
