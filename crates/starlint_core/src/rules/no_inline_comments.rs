@@ -3,7 +3,7 @@
 //! Disallow inline comments after code. Comments should appear on
 //! their own line for better readability and consistency.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -57,13 +57,32 @@ impl NativeRule for NoInlineComments {
         };
 
         for (start, end) in violations {
+            // Fix: remove the inline comment (and any leading whitespace before it)
+            let fix = {
+                let source = ctx.source_text();
+                // Find the start of whitespace before the comment
+                #[allow(clippy::as_conversions)]
+                let trim_start = source
+                    .get(..start as usize)
+                    .map_or(start, |before| {
+                        let trimmed_len = before.trim_end().len();
+                        u32::try_from(trimmed_len).unwrap_or(start)
+                    });
+                Some(Fix {
+                    message: "Remove inline comment".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(trim_start, end),
+                        replacement: String::new(),
+                    }],
+                })
+            };
             ctx.report(Diagnostic {
                 rule_name: "no-inline-comments".to_owned(),
                 message: "Unexpected comment inline with code".to_owned(),
                 span: Span::new(start, end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

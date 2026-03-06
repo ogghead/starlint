@@ -7,8 +7,9 @@
 use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
+use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -53,6 +54,27 @@ impl NativeRule for PreferSpyOn {
             return;
         }
 
+        // Build fix for StaticMemberExpression targets: `obj.method = jest.fn()` → `jest.spyOn(obj, 'method')`
+        let fix =
+            if let oxc_ast::ast::AssignmentTarget::StaticMemberExpression(member) = &assign.left {
+                let source = ctx.source_text();
+                #[allow(clippy::as_conversions)]
+                let obj_text = source
+                    .get(member.object.span().start as usize..member.object.span().end as usize)
+                    .unwrap_or("");
+                let prop_name = member.property.name.as_str();
+                let replacement = format!("jest.spyOn({obj_text}, '{prop_name}')");
+                Some(Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(assign.span.start, assign.span.end),
+                        replacement,
+                    }],
+                })
+            } else {
+                None
+            };
+
         ctx.report(Diagnostic {
             rule_name: "jest/prefer-spy-on".to_owned(),
             message:
@@ -61,7 +83,7 @@ impl NativeRule for PreferSpyOn {
             span: Span::new(assign.span.start, assign.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

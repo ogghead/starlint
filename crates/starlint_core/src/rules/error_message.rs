@@ -7,7 +7,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -60,13 +60,37 @@ impl NativeRule for ErrorMessage {
             return;
         }
 
+        // Fix: insert a placeholder message string inside the parens
+        // `new Error()` → `new Error('')`
+        let fix = {
+            let source = ctx.source_text();
+            #[allow(clippy::as_conversions)]
+            source
+                .get(new_expr.span.start as usize..new_expr.span.end as usize)
+                .and_then(|text| {
+                    text.rfind(')').map(|paren_pos| {
+                        let insert_pos = new_expr
+                            .span
+                            .start
+                            .saturating_add(u32::try_from(paren_pos).unwrap_or(0));
+                        Fix {
+                            message: "Add empty message `''`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(insert_pos, insert_pos),
+                                replacement: "''".to_owned(),
+                            }],
+                        }
+                    })
+                })
+        };
+
         ctx.report(Diagnostic {
             rule_name: "error-message".to_owned(),
             message: format!("`new {name}()` should have a message argument"),
             span: Span::new(new_expr.span.start, new_expr.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

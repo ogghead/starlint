@@ -9,7 +9,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -52,13 +54,30 @@ impl NativeRule for NoProcessExit {
         );
 
         if is_process {
+            // Fix: process.exit(code) → process.exitCode = code
+            let fix = call.arguments.first().map(|arg| {
+                let source = ctx.source_text();
+                let arg_span = arg.span();
+                #[allow(clippy::as_conversions)]
+                let code = source
+                    .get(arg_span.start as usize..arg_span.end as usize)
+                    .unwrap_or("1");
+                let replacement = format!("process.exitCode = {code}");
+                Fix {
+                    message: format!("Replace with `{replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(call.span.start, call.span.end),
+                        replacement,
+                    }],
+                }
+            });
             ctx.report(Diagnostic {
                 rule_name: "node/no-process-exit".to_owned(),
                 message: "Do not use `process.exit()` — set `process.exitCode` and allow the process to exit naturally".to_owned(),
                 span: Span::new(call.span.start, call.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

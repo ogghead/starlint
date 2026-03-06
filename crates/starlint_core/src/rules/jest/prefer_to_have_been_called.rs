@@ -7,7 +7,9 @@ use oxc_ast::AstKind;
 use oxc_ast::ast::Expression;
 use oxc_ast::ast_kind::AstType;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use oxc_span::GetSpan;
+
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -82,6 +84,29 @@ impl NativeRule for PreferToHaveBeenCalled {
             return;
         }
 
+        // Build fix: extract mock object from `mockFn.called` and boolean value
+        let fix = {
+            let mock_obj_span = arg_member.object.span();
+            let source = ctx.source_text();
+            #[allow(clippy::as_conversions)]
+            let mock_name = source
+                .get(mock_obj_span.start as usize..mock_obj_span.end as usize)
+                .unwrap_or("");
+            let is_true = matches!(arg_expr, Expression::BooleanLiteral(b) if b.value);
+            let replacement = if is_true {
+                format!("expect({mock_name}).toHaveBeenCalled()")
+            } else {
+                format!("expect({mock_name}).not.toHaveBeenCalled()")
+            };
+            Some(Fix {
+                message: format!("Replace with `{replacement}`"),
+                edits: vec![Edit {
+                    span: Span::new(call.span.start, call.span.end),
+                    replacement,
+                }],
+            })
+        };
+
         ctx.report(Diagnostic {
             rule_name: "jest/prefer-to-have-been-called".to_owned(),
             message: "Use `toHaveBeenCalled()` instead of asserting on `.called` with `toBe()`"
@@ -89,7 +114,7 @@ impl NativeRule for PreferToHaveBeenCalled {
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: None,
+            fix,
             labels: vec![],
         });
     }

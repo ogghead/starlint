@@ -10,7 +10,7 @@ use oxc_ast::AstKind;
 use oxc_ast::ast_kind::AstType;
 use oxc_span::GetSpan;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
@@ -60,13 +60,21 @@ impl NativeRule for NoDuplicateCase {
             let key = source_slice.to_owned();
 
             if !seen.insert(key.clone()) {
+                // Fix: delete the entire duplicate case clause
+                let fix = Some(Fix {
+                    message: "Remove duplicate case clause".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(case.span.start, case.span.end),
+                        replacement: String::new(),
+                    }],
+                });
                 ctx.report(Diagnostic {
                     rule_name: "no-duplicate-case".to_owned(),
                     message: format!("Duplicate case label `{key}`"),
                     span: Span::new(test_span.start, test_span.end),
                     severity: Severity::Error,
                     help: None,
-                    fix: None,
+                    fix,
                     labels: vec![],
                 });
             }
