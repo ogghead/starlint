@@ -11,6 +11,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags self-imports as the simplest detectable import cycle.
@@ -71,13 +73,17 @@ impl NativeRule for NoCycle {
                 || source_value == format!("./{file_stem}.jsx"));
 
         if is_self_import {
+            let import_span = Span::new(import.span.start, import.span.end);
+            let fix = FixBuilder::new("Remove self-import")
+                .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "import/no-cycle".to_owned(),
                 message: "Module imports itself, creating a circular dependency".to_owned(),
-                span: Span::new(import.span.start, import.span.end),
+                span: import_span,
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags import declarations that use absolute filesystem paths.
@@ -42,13 +44,17 @@ impl NativeRule for NoAbsolutePath {
             || source_value.as_bytes().get(1).is_some_and(|b| *b == b':');
 
         if is_absolute {
+            let import_span = Span::new(import.span.start, import.span.end);
+            let fix = FixBuilder::new("Remove absolute path import")
+                .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "import/no-absolute-path".to_owned(),
                 message: format!("Do not use absolute path '{source_value}' in import"),
                 span: Span::new(import.source.span.start, import.source.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

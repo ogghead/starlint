@@ -9,6 +9,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags import declarations from restricted modules.
@@ -70,13 +72,17 @@ impl NativeRule for NoRestrictedImports {
 
         let source = import.source.value.as_str();
         if self.restricted.iter().any(|r| r == source) {
+            let import_span = Span::new(import.span.start, import.span.end);
+            let fix = FixBuilder::new("Remove restricted import")
+                .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "no-restricted-imports".to_owned(),
                 message: format!("'{source}' import is restricted from being used"),
-                span: Span::new(import.span.start, import.span.end),
+                span: import_span,
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }

@@ -11,6 +11,8 @@ use oxc_ast::ast_kind::AstType;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use crate::fix_builder::FixBuilder;
+use crate::fix_utils;
 use crate::rule::{NativeLintContext, NativeRule};
 
 /// Flags side-effect-only imports that have no specifiers.
@@ -51,13 +53,17 @@ impl NativeRule for RequireModuleSpecifiers {
 
         if is_side_effect {
             let source = import.source.value.as_str();
+            let import_span = Span::new(import.span.start, import.span.end);
+            let fix = FixBuilder::new("Remove side-effect import")
+                .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
+                .build();
             ctx.report(Diagnostic {
                 rule_name: "require-module-specifiers".to_owned(),
                 message: format!("Import from '{source}' has no specifiers — side-effect imports should be used sparingly"),
-                span: Span::new(import.span.start, import.span.end),
+                span: import_span,
                 severity: Severity::Warning,
                 help: None,
-                fix: None,
+                fix,
                 labels: vec![],
             });
         }
