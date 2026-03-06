@@ -23,7 +23,6 @@ impl NativeRule for SymbolDescription {
             description: "Require a description when creating a Symbol".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for SymbolDescription {
                                 .start
                                 .saturating_add(u32::try_from(paren_pos).unwrap_or(0));
                             Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: "Add empty description `''`".to_owned(),
                                 edits: vec![Edit {
                                     span: Span::new(insert_pos, insert_pos),

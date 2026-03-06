@@ -23,7 +23,6 @@ impl NativeRule for PreferArrayFlatMap {
             description: "Prefer .flatMap() over .map().flat()".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -88,6 +87,7 @@ impl NativeRule for PreferArrayFlatMap {
                 severity: Severity::Warning,
                 help: Some("Use `.flatMap()` instead".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace `.map().flat()` with `.flatMap()`".to_owned(),
                     edits: vec![
                         Edit {

@@ -31,7 +31,6 @@ impl NativeRule for DotNotation {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for DotNotation {
             let prop_owned = property_name.to_owned();
 
             let fix = (!obj_text.is_empty()).then(|| Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Use `{obj_text}.{prop_owned}`"),
                 edits: vec![Edit {
                     span: Span::new(computed.span.start, computed.span.end),

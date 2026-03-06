@@ -26,7 +26,6 @@ impl NativeRule for NoCompareNegZero {
             description: "Disallow comparing against `-0`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for NoCompareNegZero {
                     .map(|val_text| {
                         let replacement = format!("Object.is({val_text}, -0)");
                         Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),

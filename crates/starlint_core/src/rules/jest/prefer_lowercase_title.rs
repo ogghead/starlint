@@ -24,7 +24,6 @@ impl NativeRule for PreferLowercaseTitle {
             description: "Suggest lowercase titles for `it`/`test` calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -73,6 +72,7 @@ impl NativeRule for PreferLowercaseTitle {
                 severity: Severity::Warning,
                 help: Some("Lowercase the first letter of the test title".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Lowercase first letter".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(char_start, char_end),

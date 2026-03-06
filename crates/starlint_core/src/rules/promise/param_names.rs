@@ -24,7 +24,6 @@ impl NativeRule for ParamNames {
             description: "Enforce standard `resolve`/`reject` parameter names".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,6 +76,7 @@ impl NativeRule for ParamNames {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Rename to `resolve`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(id.span.start, id.span.end),
@@ -104,6 +104,7 @@ impl NativeRule for ParamNames {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Rename to `reject`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(id.span.start, id.span.end),

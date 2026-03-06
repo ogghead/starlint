@@ -24,7 +24,6 @@ impl NativeRule for NoPromiseExecutorReturn {
             description: "Disallow returning a value from a Promise executor".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -78,6 +77,7 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
         Statement::ReturnStatement(ret) => {
             if ret.argument.is_some() {
                 let fix = Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace with bare `return;`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(ret.span.start, ret.span.end),

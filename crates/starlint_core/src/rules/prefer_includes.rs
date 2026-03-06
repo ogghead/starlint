@@ -76,7 +76,6 @@ impl NativeRule for PreferIncludes {
             description: "Prefer `.includes()` over `.indexOf()` existence checks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -154,6 +153,7 @@ impl NativeRule for PreferIncludes {
             severity: Severity::Warning,
             help: Some(format!("Replace with `{replacement}`")),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(expr.span.start, expr.span.end),

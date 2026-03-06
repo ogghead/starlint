@@ -6,7 +6,7 @@
 //! members that the class does not actually implement at runtime.
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -28,7 +28,6 @@ impl NativeRule for NoUnsafeDeclarationMerging {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

@@ -31,7 +31,6 @@ impl NativeRule for OnlyThrowError {
             description: "Disallow throwing non-Error values".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for OnlyThrowError {
                             format!("new Error(String({text}))")
                         };
                         Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `throw {wrapped}`"),
                             edits: vec![Edit {
                                 span: Span::new(arg_span.start, arg_span.end),

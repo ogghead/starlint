@@ -172,7 +172,6 @@ impl NativeRule for CapitalizedComments {
             description: "Require comments to begin with a capital letter".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -193,6 +192,7 @@ impl NativeRule for CapitalizedComments {
                 let fix_start = u32::try_from(first_alpha_offset).ok()?;
                 let fix_end = u32::try_from(char_end).ok()?;
                 Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Capitalize `{ch}` to `{upper}`"),
                     edits: vec![Edit {
                         span: Span::new(fix_start, fix_end),

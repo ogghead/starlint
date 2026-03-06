@@ -19,7 +19,6 @@ impl NativeRule for NoInlineComments {
             description: "Disallow inline comments after code".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -67,6 +66,7 @@ impl NativeRule for NoInlineComments {
                     u32::try_from(trimmed_len).unwrap_or(start)
                 });
                 Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove inline comment".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(trim_start, end),

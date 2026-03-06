@@ -46,7 +46,6 @@ impl NativeRule for CatchErrorName {
             description: "Enforce a consistent parameter name in catch clauses".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -95,6 +94,7 @@ impl NativeRule for CatchErrorName {
             severity: Severity::Warning,
             help: Some(format!("Rename `{name}` to `{expected}`")),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Rename to `{expected}`"),
                 edits: vec![Edit {
                     span: Span::new(id.span.start, id.span.end),

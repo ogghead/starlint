@@ -24,7 +24,6 @@ impl NativeRule for BanTsComment {
             description: "Disallow `@ts-<directive>` comments without description".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -38,6 +37,7 @@ impl NativeRule for BanTsComment {
         for (directive, start, end) in findings {
             // For @ts-ignore, suggest replacing with @ts-expect-error
             let fix = (directive == "@ts-ignore").then(|| Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace `@ts-ignore` with `@ts-expect-error`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(start, end),

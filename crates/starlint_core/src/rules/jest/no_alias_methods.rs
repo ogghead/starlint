@@ -39,7 +39,6 @@ impl NativeRule for NoAliasMethods {
             description: "Replace deprecated Jest matcher aliases with canonical forms".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -69,6 +68,7 @@ impl NativeRule for NoAliasMethods {
                     severity: Severity::Warning,
                     help: Some(format!("Replace `{alias}` with `{canonical}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Replace with `{canonical}`"),
                         edits: vec![Edit {
                             span: prop_span,

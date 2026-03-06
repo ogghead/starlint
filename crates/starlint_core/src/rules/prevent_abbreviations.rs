@@ -79,7 +79,6 @@ impl NativeRule for PreventAbbreviations {
             description: "Prefer full words over common abbreviations in identifiers".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -106,12 +105,12 @@ impl NativeRule for PreventAbbreviations {
             let fix = match ctx.semantic().and_then(|sem| {
                 let symbol_id = ident.symbol_id.get()?;
                 let edits = fix_utils::rename_symbol_edits(sem, symbol_id, expansion, decl_span);
-                FixBuilder::new(format!("Rename to `{expansion}`"))
+                FixBuilder::new(format!("Rename to `{expansion}`"), FixKind::SuggestionFix)
                     .edits(edits)
                     .build()
             }) {
                 Some(f) => Some(f),
-                None => FixBuilder::new(format!("Rename to `{expansion}`"))
+                None => FixBuilder::new(format!("Rename to `{expansion}`"), FixKind::SuggestionFix)
                     .replace(decl_span, expansion)
                     .build(),
             };

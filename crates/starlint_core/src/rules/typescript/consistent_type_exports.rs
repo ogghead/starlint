@@ -29,7 +29,6 @@ impl NativeRule for ConsistentTypeExports {
             description: "Require `export type` for type-only exports".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for ConsistentTypeExports {
                 severity: Severity::Warning,
                 help: Some("Add `type` keyword to export".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Add `type` keyword to export".to_owned(),
                     edits: vec![Edit {
                         span,

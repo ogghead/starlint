@@ -26,7 +26,6 @@ impl NativeRule for IframeMissingSandbox {
             description: "Require sandbox attribute on iframe elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -70,7 +69,7 @@ impl NativeRule for IframeMissingSandbox {
                     // Regular: insert before `>`
                     opening.span.end.saturating_sub(1)
                 };
-            let fix = FixBuilder::new("Add `sandbox` attribute")
+            let fix = FixBuilder::new("Add `sandbox` attribute", FixKind::SuggestionFix)
                 .edit(fix_utils::insert_before(insert_pos, " sandbox=\"\""))
                 .build();
             ctx.report(Diagnostic {

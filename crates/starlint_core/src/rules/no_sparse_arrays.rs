@@ -26,7 +26,6 @@ impl NativeRule for NoSparseArrays {
             description: "Disallow sparse arrays".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -68,6 +67,7 @@ impl NativeRule for NoSparseArrays {
                 severity: Severity::Error,
                 help: Some("Replace empty slots with explicit `undefined`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace elisions with `undefined`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(arr.span.start, arr.span.end),

@@ -24,7 +24,6 @@ impl NativeRule for ConstComparisons {
             description: "Detect always-true or always-false constant comparisons".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -79,6 +78,7 @@ impl NativeRule for ConstComparisons {
                 "true".to_owned()
             };
             let fix = Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(logical.span.start, logical.span.end),

@@ -21,7 +21,6 @@ impl NativeRule for NoNull {
             description: "Disallow the use of `null`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,6 +40,7 @@ impl NativeRule for NoNull {
             severity: Severity::Warning,
             help: Some("Replace `null` with `undefined`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace `null` with `undefined`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(lit.span.start, lit.span.end),

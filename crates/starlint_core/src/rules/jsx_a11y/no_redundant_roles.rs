@@ -59,7 +59,6 @@ impl NativeRule for NoRedundantRoles {
             description: "Forbid redundant roles (e.g., `<button role=\"button\">`)".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -96,9 +95,12 @@ impl NativeRule for NoRedundantRoles {
                     let role_val = lit.value.as_str().trim();
                     if role_val == implicit_role {
                         let attr_span = Span::new(attr.span.start, attr.span.end);
-                        let fix = FixBuilder::new("Remove redundant `role` attribute")
-                            .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
-                            .build();
+                        let fix = FixBuilder::new(
+                            "Remove redundant `role` attribute",
+                            FixKind::SuggestionFix,
+                        )
+                        .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                        .build();
                         ctx.report(Diagnostic {
                             rule_name: RULE_NAME.to_owned(),
                             message: format!(

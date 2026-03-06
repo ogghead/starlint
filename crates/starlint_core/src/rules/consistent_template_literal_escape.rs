@@ -83,7 +83,6 @@ impl NativeRule for ConsistentTemplateLiteralEscape {
                     .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -117,6 +116,7 @@ impl NativeRule for ConsistentTemplateLiteralEscape {
 
         if found {
             let fix = (!edits.is_empty()).then(|| Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove unnecessary escape sequences".to_owned(),
                 edits,
                 is_snippet: false,

@@ -23,7 +23,6 @@ impl NativeRule for NoWebpackLoaderSyntax {
             description: "Forbid webpack loader syntax in imports".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -49,6 +48,7 @@ impl NativeRule for NoWebpackLoaderSyntax {
                 let inner_start = str_span.start.saturating_add(1);
                 let inner_end = str_span.end.saturating_sub(1);
                 Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Remove loader syntax, keep `{clean_path}`"),
                     edits: vec![Edit {
                         span: Span::new(inner_start, inner_end),

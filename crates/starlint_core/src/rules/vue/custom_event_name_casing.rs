@@ -52,7 +52,6 @@ impl NativeRule for CustomEventNameCasing {
             description: "Enforce camelCase for custom event names in `$emit()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -96,6 +95,7 @@ impl NativeRule for CustomEventNameCasing {
                 let inner_start = arg_span.start.saturating_add(1);
                 let inner_end = arg_span.end.saturating_sub(1);
                 Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Rename to `{camel}`"),
                     edits: vec![Edit {
                         span: Span::new(inner_start, inner_end),

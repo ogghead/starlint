@@ -31,7 +31,6 @@ impl NativeRule for NoUselessEscape {
             description: "Disallow unnecessary escape characters".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -72,6 +71,7 @@ impl NativeRule for NoUselessEscape {
                 severity: Severity::Warning,
                 help: Some("Remove the unnecessary escape".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove unnecessary escape".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(span_start, span_end),

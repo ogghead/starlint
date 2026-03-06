@@ -23,7 +23,6 @@ impl NativeRule for NoUselessReturn {
             description: "Disallow redundant return statements".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -52,6 +51,7 @@ impl NativeRule for NoUselessReturn {
                     severity: Severity::Warning,
                     help: Some("Remove the unnecessary `return`".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Remove unnecessary `return`".to_owned(),
                         edits: vec![Edit {
                             span: ret_span,

@@ -25,7 +25,6 @@ impl NativeRule for NoEqNull {
             description: "Disallow `null` comparisons without type-checking operators".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for NoEqNull {
             let fix = between.find(op_str).map(|offset| {
                 let op_pos = u32::try_from(left_end.saturating_add(offset)).unwrap_or(0);
                 Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace `{op_str}` with `{replacement_op}`"),
                     edits: vec![Edit {
                         span: Span::new(op_pos, op_pos.saturating_add(2)),

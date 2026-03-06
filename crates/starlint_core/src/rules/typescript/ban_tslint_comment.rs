@@ -20,7 +20,6 @@ impl NativeRule for BanTslintComment {
             description: "Disallow `// tslint:` comments".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for BanTslintComment {
                 severity: Severity::Warning,
                 help: Some("Remove the tslint comment".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Delete the tslint comment line".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(delete_start, delete_end),

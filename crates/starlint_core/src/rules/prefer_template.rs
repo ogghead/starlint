@@ -27,7 +27,6 @@ impl NativeRule for PreferTemplate {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,6 +67,7 @@ impl NativeRule for PreferTemplate {
             severity: Severity::Warning,
             help: Some("Use a template literal instead".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Convert to template literal".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(expr.span.start, expr.span.end),

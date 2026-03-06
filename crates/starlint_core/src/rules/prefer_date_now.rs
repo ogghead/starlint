@@ -33,7 +33,6 @@ impl NativeRule for PreferDateNow {
             description: "Prefer `Date.now()` over `new Date().getTime()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for PreferDateNow {
                     severity: Severity::Warning,
                     help: Some("Replace with `Date.now()`".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Replace with `Date.now()`".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),
@@ -91,6 +91,7 @@ impl NativeRule for PreferDateNow {
                     severity: Severity::Warning,
                     help: Some("Replace with `Date.now()`".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Replace with `Date.now()`".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(unary.span.start, unary.span.end),

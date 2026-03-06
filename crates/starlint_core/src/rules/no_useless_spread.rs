@@ -25,7 +25,6 @@ impl NativeRule for NoUselessSpread {
             description: "Disallow unnecessary spread".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -63,6 +62,7 @@ impl NativeRule for NoUselessSpread {
                         severity: Severity::Warning,
                         help: Some("Use the inner array directly".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Remove unnecessary spread".to_owned(),
                             edits: vec![Edit {
                                 span: outer_span,

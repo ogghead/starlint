@@ -22,7 +22,6 @@ impl NativeRule for HierarchySeparator {
             description: "Deprecated hierarchy separator in title property".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -70,6 +69,7 @@ impl NativeRule for HierarchySeparator {
                         severity: Severity::Warning,
                         help: Some("Replace `|` with `/`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Replace `|` with `/`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(start, end),

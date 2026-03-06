@@ -26,7 +26,6 @@ impl NativeRule for PreferObjectHasOwn {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -73,6 +72,7 @@ impl NativeRule for PreferObjectHasOwn {
                     let l_end = usize::try_from(last.span().end).unwrap_or(0);
                     let args_text = source.get(f_start..l_end).unwrap_or("");
                     Fix {
+                        kind: FixKind::SafeFix,
                         message: "Replace with `Object.hasOwn()`".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

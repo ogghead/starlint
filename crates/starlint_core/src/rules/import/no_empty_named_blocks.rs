@@ -24,7 +24,6 @@ impl NativeRule for NoEmptyNamedBlocks {
             description: "Forbid empty named import blocks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -46,7 +45,7 @@ impl NativeRule for NoEmptyNamedBlocks {
         // This catches `import {} from 'mod'`
         if specifiers.is_empty() {
             let import_span = Span::new(import.span.start, import.span.end);
-            let fix = FixBuilder::new("Remove the empty import statement")
+            let fix = FixBuilder::new("Remove the empty import statement", FixKind::SafeFix)
                 .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
                 .build();
             ctx.report(Diagnostic {

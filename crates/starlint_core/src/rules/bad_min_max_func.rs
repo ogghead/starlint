@@ -26,7 +26,6 @@ impl NativeRule for BadMinMaxFunc {
             description: "Detect nested Math.min/Math.max with inverted bounds".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -136,6 +135,7 @@ impl NativeRule for BadMinMaxFunc {
                                                     );
                                                 }
                                                 Fix {
+                                                    kind: FixKind::SuggestionFix,
                                                     message: format!("Replace with `{result}`"),
                                                     edits: vec![Edit {
                                                         span: Span::new(

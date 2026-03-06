@@ -32,7 +32,6 @@ impl NativeRule for EmptyTags {
             description: "Enforce certain JSDoc tags have no content".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -96,6 +95,7 @@ impl NativeRule for EmptyTags {
                                                 "Remove content after `@{tag_name}`"
                                             )),
                                             fix: Some(Fix {
+                                                kind: FixKind::SafeFix,
                                                 message: format!(
                                                     "Remove content after `@{tag_name}`"
                                                 ),

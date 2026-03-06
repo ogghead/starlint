@@ -25,7 +25,6 @@ impl NativeRule for PreferDomNodeRemove {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for PreferDomNodeRemove {
                 .unwrap_or("")
                 .to_owned();
             (!child_text.is_empty()).then(|| Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace with `child.remove()`".to_owned(),
                 edits: vec![Edit {
                     span: call_span,

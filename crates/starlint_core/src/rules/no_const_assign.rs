@@ -25,7 +25,6 @@ impl NativeRule for NoConstAssign {
             description: "Disallow reassignment of const variables".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -73,7 +72,7 @@ impl NativeRule for NoConstAssign {
                 if has_write {
                     // Suggest changing `const` to `let` so reassignment is valid.
                     let kw_span = Span::new(decl.span.start, decl.span.start.saturating_add(5));
-                    let fix = FixBuilder::new("Change `const` to `let`")
+                    let fix = FixBuilder::new("Change `const` to `let`", FixKind::SuggestionFix)
                         .replace(kw_span, "let")
                         .build();
 

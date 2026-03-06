@@ -9,7 +9,7 @@ use oxc_ast::ast::PropertyKey;
 use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -24,7 +24,6 @@ impl NativeRule for NoWillUpdateSetState {
             description: "Disallow `setState` in `componentWillUpdate`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

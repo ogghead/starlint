@@ -27,7 +27,6 @@ impl NativeRule for NoDynamicDelete {
             description: "Disallow `delete` with computed key expressions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for NoDynamicDelete {
                     (Some(obj), Some(key)) => {
                         let replacement = format!("Reflect.deleteProperty({obj}, {key})");
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),

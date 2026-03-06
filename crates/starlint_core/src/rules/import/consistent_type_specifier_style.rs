@@ -25,7 +25,6 @@ impl NativeRule for ConsistentTypeSpecifierStyle {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -97,6 +96,7 @@ impl NativeRule for ConsistentTypeSpecifierStyle {
                     "Use `import type { ... }` instead of inline `type` specifiers".to_owned(),
                 ),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Convert to top-level `import type`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(import.span.start, import.span.end),

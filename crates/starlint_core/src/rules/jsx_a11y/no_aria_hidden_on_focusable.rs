@@ -41,7 +41,6 @@ impl NativeRule for NoAriaHiddenOnFocusable {
             description: "Forbid `aria-hidden=\"true\"` on focusable elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -98,6 +97,7 @@ impl NativeRule for NoAriaHiddenOnFocusable {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove `aria-hidden` attribute".to_owned(),
                     edits: vec![Edit {
                         span: attr_span,

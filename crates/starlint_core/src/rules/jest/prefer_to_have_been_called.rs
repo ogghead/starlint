@@ -26,7 +26,6 @@ impl NativeRule for PreferToHaveBeenCalled {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -99,6 +98,7 @@ impl NativeRule for PreferToHaveBeenCalled {
                 format!("expect({mock_name}).not.toHaveBeenCalled()")
             };
             Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(call.span.start, call.span.end),

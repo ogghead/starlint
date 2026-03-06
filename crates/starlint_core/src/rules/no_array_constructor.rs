@@ -25,7 +25,6 @@ impl NativeRule for NoArrayConstructor {
             description: "Disallow `Array` constructor".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,6 +47,7 @@ impl NativeRule for NoArrayConstructor {
                         severity: Severity::Warning,
                         help: Some("Replace with array literal".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Replace with array literal".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(new_expr.span.start, new_expr.span.end),
@@ -72,6 +72,7 @@ impl NativeRule for NoArrayConstructor {
                         severity: Severity::Warning,
                         help: Some("Replace with array literal".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Replace with array literal".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),

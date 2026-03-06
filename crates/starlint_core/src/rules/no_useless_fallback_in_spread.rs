@@ -25,7 +25,6 @@ impl NativeRule for NoUselessFallbackInSpread {
             description: "Disallow useless fallback in spread".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -79,6 +78,7 @@ impl NativeRule for NoUselessFallbackInSpread {
                 severity: Severity::Warning,
                 help: Some("Remove the fallback `|| {}`/`?? {}`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove the empty object fallback".to_owned(),
                     edits: vec![Edit {
                         span: arg_span,

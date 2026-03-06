@@ -23,7 +23,6 @@ impl NativeRule for NoRegexSpaces {
             description: "Disallow multiple spaces in regular expressions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -54,6 +53,7 @@ impl NativeRule for NoRegexSpaces {
                 severity: Severity::Error,
                 help: Some("Use a space quantifier like ` {N}` instead".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace multiple spaces with quantifier".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(regex.span.start, regex.span.end),

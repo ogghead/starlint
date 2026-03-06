@@ -22,7 +22,6 @@ impl NativeRule for NoAsyncClientComponent {
             description: "Forbid async client components".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,6 +76,7 @@ impl NativeRule for NoAsyncClientComponent {
 
         for (start, end, async_removal) in findings {
             let fix = async_removal.map(|(a_start, a_end)| Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Remove `async` keyword".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(a_start, a_end),

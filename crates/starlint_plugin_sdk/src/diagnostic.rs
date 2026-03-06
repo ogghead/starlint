@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::rule::FixKind;
+
 /// A byte-offset span in source text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Span {
@@ -56,6 +58,8 @@ pub struct Diagnostic {
 /// An auto-fix consisting of one or more text edits.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Fix {
+    /// Safety classification of this fix.
+    pub kind: FixKind,
     /// Human-readable description of the fix.
     pub message: String,
     /// Ordered list of text edits to apply.

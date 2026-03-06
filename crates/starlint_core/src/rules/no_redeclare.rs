@@ -24,7 +24,6 @@ impl NativeRule for NoRedeclare {
             description: "Disallow variable redeclaration".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -63,9 +62,12 @@ impl NativeRule for NoRedeclare {
                     for respan in redeclarations {
                         let new_name = format!("{}_2", binding.name);
                         let respan_sdk = Span::new(respan.span.start, respan.span.end);
-                        let fix = FixBuilder::new(format!("Rename to `{new_name}`"))
-                            .replace(respan_sdk, &new_name)
-                            .build();
+                        let fix = FixBuilder::new(
+                            format!("Rename to `{new_name}`"),
+                            FixKind::SuggestionFix,
+                        )
+                        .replace(respan_sdk, &new_name)
+                        .build();
 
                         ctx.report(Diagnostic {
                             rule_name: "no-redeclare".to_owned(),

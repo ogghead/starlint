@@ -33,7 +33,6 @@ impl NativeRule for JsxNoScriptUrl {
             description: "Disallow `javascript:` URLs in JSX attributes".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -64,7 +63,7 @@ impl NativeRule for JsxNoScriptUrl {
 
         if has_script_url {
             let attr_span = Span::new(attr.span.start, attr.span.end);
-            let fix = FixBuilder::new("Remove `javascript:` URL attribute")
+            let fix = FixBuilder::new("Remove `javascript:` URL attribute", FixKind::SuggestionFix)
                 .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                 .build();
             ctx.report(Diagnostic {

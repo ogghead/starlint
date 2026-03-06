@@ -28,7 +28,6 @@ impl NativeRule for ReactInJsxScope {
             description: "Require `React` in scope when using JSX".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,6 +51,7 @@ impl NativeRule for ReactInJsxScope {
         if !has_react_import {
             // Fix: insert `import React from 'react';\n` at file start
             let fix = Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Add `import React from 'react'`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(0, 0),

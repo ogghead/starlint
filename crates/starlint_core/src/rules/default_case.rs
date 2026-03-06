@@ -22,7 +22,6 @@ impl NativeRule for DefaultCase {
             description: "Require default case in switch statements".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -54,6 +53,7 @@ impl NativeRule for DefaultCase {
             // Insert `default: break;` before the closing `}`
             let insert_pos = switch.span.end.saturating_sub(1);
             let fix = Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Add `default: break;`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(insert_pos, insert_pos),

@@ -25,7 +25,6 @@ impl NativeRule for NoTypeofUndefined {
             description: "Prefer direct `undefined` comparison over `typeof` check".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,6 +76,7 @@ impl NativeRule for NoTypeofUndefined {
             severity: Severity::Warning,
             help: Some("Direct `undefined` comparison is clearer in modern code".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(expr.span.start, expr.span.end),

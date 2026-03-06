@@ -31,7 +31,6 @@ impl NativeRule for PreferIncludes {
             description: "Prefer `.includes()` over `.indexOf()` comparison".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -91,6 +90,7 @@ fn build_includes_fix(match_text: &str, start: u32, end: u32) -> Option<Fix> {
     };
 
     Some(Fix {
+        kind: FixKind::SuggestionFix,
         message: format!("Replace with `{replacement}`"),
         edits: vec![Edit {
             span: Span::new(start, end),

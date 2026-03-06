@@ -27,7 +27,6 @@ impl NativeRule for NoUnsafeFunctionType {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,6 +54,7 @@ impl NativeRule for NoUnsafeFunctionType {
             severity: Severity::Warning,
             help: Some("Replace with `(...args: any[]) => any`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace with `(...args: any[]) => any`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(type_ref.span.start, type_ref.span.end),

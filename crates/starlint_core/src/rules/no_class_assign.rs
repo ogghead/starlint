@@ -24,7 +24,6 @@ impl NativeRule for NoClassAssign {
             description: "Disallow reassignment of class declarations".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,8 +76,11 @@ impl NativeRule for NoClassAssign {
             let fix = {
                 let name = &id.name;
                 let prefix_span = Span::new(class.span.start, id.span.end);
-                let mut builder = FixBuilder::new(format!("Convert to `let {name} = class`"))
-                    .replace(prefix_span, format!("let {name} = class"));
+                let mut builder = FixBuilder::new(
+                    format!("Convert to `let {name} = class`"),
+                    FixKind::SuggestionFix,
+                )
+                .replace(prefix_span, format!("let {name} = class"));
                 // Add trailing semicolon if not already present.
                 let source = ctx.source_text();
                 let class_end = usize::try_from(class.span.end).unwrap_or(0);

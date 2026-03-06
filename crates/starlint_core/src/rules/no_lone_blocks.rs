@@ -24,7 +24,6 @@ impl NativeRule for NoLoneBlocks {
             description: "Disallow unnecessary nested blocks".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -74,6 +73,7 @@ impl NativeRule for NoLoneBlocks {
                                 .unwrap_or(text)
                                 .trim();
                             Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: "Remove unnecessary block".to_owned(),
                                 edits: vec![Edit {
                                     span,

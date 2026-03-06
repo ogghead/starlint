@@ -27,7 +27,6 @@ impl NativeRule for PreferToBeFalsy {
             description: "Prefer `toBeFalsy()` over `toBe(false)`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -69,6 +68,7 @@ impl NativeRule for PreferToBeFalsy {
                 severity: Severity::Warning,
                 help: Some("Replace `toBe(false)` with `toBeFalsy()`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace with `toBeFalsy()`".to_owned(),
                     edits: vec![Edit {
                         span: fix_span,

@@ -24,7 +24,6 @@ impl NativeRule for NoUnnecessaryArrayFlatDepth {
             description: "Disallow passing the default depth `1` to `.flat()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -70,6 +69,7 @@ impl NativeRule for NoUnnecessaryArrayFlatDepth {
                 severity: Severity::Warning,
                 help: Some("Remove the depth argument".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove depth argument".to_owned(),
                     edits: vec![Edit {
                         span: arg_span,

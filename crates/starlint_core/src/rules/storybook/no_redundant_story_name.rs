@@ -22,7 +22,6 @@ impl NativeRule for NoRedundantStoryName {
             description: "A story should not have a redundant name property".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -114,6 +113,7 @@ impl NativeRule for NoRedundantStoryName {
                         severity: Severity::Warning,
                         help: Some("Remove the redundant `name` property".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Remove the redundant `name` property".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(actual_start, fix_end),

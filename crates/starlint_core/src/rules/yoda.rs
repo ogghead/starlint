@@ -25,7 +25,6 @@ impl NativeRule for Yoda {
             description: "Disallow Yoda conditions".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -60,6 +59,7 @@ impl NativeRule for Yoda {
                 severity: Severity::Warning,
                 help: Some("Swap the operands".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Swap operands".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(expr.span.start, expr.span.end),

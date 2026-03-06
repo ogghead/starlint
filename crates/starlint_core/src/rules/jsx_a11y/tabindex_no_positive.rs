@@ -24,7 +24,6 @@ impl NativeRule for TabindexNoPositive {
             description: "Forbid positive `tabIndex` values".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for TabindexNoPositive {
                                 severity: Severity::Warning,
                                 help: None,
                                 fix: Some(Fix {
+                                    kind: FixKind::SuggestionFix,
                                     message: "Replace with `tabIndex=\"0\"`".to_owned(),
                                     edits: vec![Edit {
                                         span: Span::new(lit.span.start, lit.span.end),

@@ -5,7 +5,7 @@
 use std::collections::HashMap;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -26,7 +26,6 @@ impl NativeRule for NoDuplicateHooks {
             description: "Disallow duplicate lifecycle hooks in the same describe block".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

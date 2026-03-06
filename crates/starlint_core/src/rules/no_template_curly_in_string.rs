@@ -24,7 +24,6 @@ impl NativeRule for NoTemplateCurlyInString {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,6 +51,7 @@ impl NativeRule for NoTemplateCurlyInString {
                     let escaped = inner.replace('`', "\\`");
                     let replacement = format!("`{escaped}`");
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Convert to template literal".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(lit.span.start, lit.span.end),

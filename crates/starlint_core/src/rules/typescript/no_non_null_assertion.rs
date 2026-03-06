@@ -26,7 +26,6 @@ impl NativeRule for NoNonNullAssertion {
             description: "Disallow non-null assertions using the `!` postfix operator".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,6 +53,7 @@ impl NativeRule for NoNonNullAssertion {
             severity: Severity::Warning,
             help: Some("Remove the `!` non-null assertion".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Remove non-null assertion".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(expr.span.start, expr.span.end),

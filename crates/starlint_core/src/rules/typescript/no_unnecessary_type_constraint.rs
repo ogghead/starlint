@@ -25,7 +25,6 @@ impl NativeRule for NoUnnecessaryTypeConstraint {
             description: "Disallow unnecessary constraints on generic type parameters".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for NoUnnecessaryTypeConstraint {
             severity: Severity::Warning,
             help: Some(format!("Remove the `extends {constraint_name}` constraint")),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Remove `extends {constraint_name}`"),
                 edits: vec![Edit {
                     span: Span::new(delete_start, delete_end),

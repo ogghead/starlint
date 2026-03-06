@@ -27,7 +27,6 @@ impl NativeRule for PreferResponseStaticJson {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -82,6 +81,7 @@ impl NativeRule for PreferResponseStaticJson {
                         format!("Response.json({arg_text})")
                     };
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(new_expr.span.start, new_expr.span.end),

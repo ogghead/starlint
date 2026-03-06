@@ -35,7 +35,6 @@ impl NativeRule for ConsistentEmptyArraySpread {
             description: "Disallow spreading an empty array literal".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for ConsistentEmptyArraySpread {
             let replacement = format!("[{}]", non_empty.join(", "));
 
             let fix = Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove empty array spread".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(arr.span.start, arr.span.end),

@@ -22,7 +22,6 @@ impl NativeRule for NoConstEnum {
             description: "Disallow TypeScript `const enum` declarations".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -38,6 +37,7 @@ impl NativeRule for NoConstEnum {
         if decl.r#const {
             // Fix: remove "const " prefix — the enum keyword starts 6 bytes after the const keyword
             let fix = Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove `const` keyword".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(decl.span.start, decl.span.start.saturating_add(6)),

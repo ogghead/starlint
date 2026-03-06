@@ -52,7 +52,6 @@ impl NativeRule for BetterRegex {
             description: "Suggest simpler alternatives for regex character classes".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -79,6 +78,7 @@ impl NativeRule for BetterRegex {
                             source.get(regex_span.start as usize..regex_span.end as usize)?;
                         let new_regex = regex_text.replacen(class, shorthand, 1);
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace `{class}` with `{shorthand}`"),
                             edits: vec![Edit {
                                 span: Span::new(regex_span.start, regex_span.end),

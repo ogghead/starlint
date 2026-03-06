@@ -230,12 +230,6 @@ fn apply_fixes_to_files(
 ) {
     let mut files_fixed = 0usize;
 
-    // Look up fix_kind per rule from rule metadata.
-    let rule_fix_kinds: std::collections::HashMap<String, FixKind> = all_rule_metas()
-        .into_iter()
-        .map(|m| (m.name, m.fix_kind))
-        .collect();
-
     for result in results {
         let mut source = result.source_text.clone();
         let mut changed = false;
@@ -247,7 +241,7 @@ fn apply_fixes_to_files(
                 session.lint_single_file(&result.path, &source).diagnostics
             };
 
-            let filtered = filter_fixable_diags(&diagnostics, include_dangerous, &rule_fix_kinds);
+            let filtered = filter_fixable_diags(&diagnostics, include_dangerous);
             if filtered.is_empty() {
                 break;
             }
@@ -284,29 +278,23 @@ fn apply_fixes_to_files(
 }
 
 /// Filter diagnostics to only those with applicable fixes.
+///
+/// Reads `fix.kind` directly from each diagnostic's fix — no metadata lookup needed.
 fn filter_fixable_diags(
     diagnostics: &[starlint_core::starlint_plugin_sdk::diagnostic::Diagnostic],
     include_dangerous: bool,
-    rule_fix_kinds: &std::collections::HashMap<String, FixKind>,
 ) -> Vec<starlint_core::starlint_plugin_sdk::diagnostic::Diagnostic> {
-    if include_dangerous {
-        diagnostics
-            .iter()
-            .filter(|d| d.fix.is_some())
-            .cloned()
-            .collect()
-    } else {
-        diagnostics
-            .iter()
-            .filter(|d| {
-                d.fix.is_some()
-                    && rule_fix_kinds
-                        .get(&d.rule_name)
-                        .is_some_and(|k| *k == FixKind::SafeFix)
+    diagnostics
+        .iter()
+        .filter(|d| {
+            d.fix.as_ref().is_some_and(|f| match f.kind {
+                FixKind::SafeFix => true,
+                FixKind::SuggestionFix | FixKind::DangerousFix => include_dangerous,
+                FixKind::None => false,
             })
-            .cloned()
-            .collect()
-    }
+        })
+        .cloned()
+        .collect()
 }
 
 /// Format diagnostics for output to stdout and count errors/warnings.

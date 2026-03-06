@@ -42,7 +42,6 @@ impl NativeRule for JsxNoUselessFragment {
             description: "Disallow unnecessary fragments".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -78,6 +77,7 @@ impl NativeRule for JsxNoUselessFragment {
                         let end = usize::try_from(child_span.end).unwrap_or(0);
                         let child_text = source.get(start..end).unwrap_or("");
                         Fix {
+                            kind: FixKind::SafeFix,
                             message: "Remove the enclosing fragment".to_owned(),
                             edits: vec![Edit {
                                 span: fragment_span,

@@ -26,7 +26,6 @@ impl NativeRule for IframeHasTitle {
             description: "Enforce `<iframe>` elements have a `title` attribute".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,7 +67,7 @@ impl NativeRule for IframeHasTitle {
                 } else {
                     opening.span.end.saturating_sub(1)
                 };
-            let fix = FixBuilder::new("Add `title` attribute")
+            let fix = FixBuilder::new("Add `title` attribute", FixKind::SuggestionFix)
                 .edit(fix_utils::insert_before(insert_pos, " title=\"\""))
                 .build();
             ctx.report(Diagnostic {

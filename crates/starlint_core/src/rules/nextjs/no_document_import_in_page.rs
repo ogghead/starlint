@@ -25,7 +25,6 @@ impl NativeRule for NoDocumentImportInPage {
             description: "Forbid importing `next/document` outside of `_document`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -58,6 +57,7 @@ impl NativeRule for NoDocumentImportInPage {
                 severity: Severity::Error,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove `next/document` import".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(import.span.start, import.span.end),

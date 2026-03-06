@@ -26,7 +26,6 @@ impl NativeRule for PreferReflectApply {
             description: "Prefer `Reflect.apply()` over `Function.prototype.apply()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,6 +76,7 @@ impl NativeRule for PreferReflectApply {
                 let ctx_text = source.get(ctx_start..ctx_end).unwrap_or("");
                 let args_text = source.get(args_start..args_end).unwrap_or("");
                 Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace with `Reflect.apply()`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

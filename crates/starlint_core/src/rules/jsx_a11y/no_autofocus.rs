@@ -24,7 +24,6 @@ impl NativeRule for NoAutofocus {
             description: "Forbid `autoFocus` attribute".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,6 +59,7 @@ impl NativeRule for NoAutofocus {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove `autoFocus` attribute".to_owned(),
                     edits: vec![Edit {
                         span: attr_span,

@@ -25,7 +25,6 @@ impl NativeRule for NoExtraBind {
             description: "Disallow unnecessary `.bind()` calls".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for NoExtraBind {
                 severity: Severity::Warning,
                 help: Some("Remove `.bind()`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove `.bind()`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

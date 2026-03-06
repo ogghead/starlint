@@ -24,7 +24,6 @@ impl NativeRule for NoStringRefs {
             description: "Disallow using string refs (deprecated)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -49,7 +48,7 @@ impl NativeRule for NoStringRefs {
         // Only flag when the value is a string literal
         if let Some(JSXAttributeValue::StringLiteral(_)) = &attr.value {
             let attr_span = Span::new(attr.span.start, attr.span.end);
-            let fix = FixBuilder::new("Remove string ref")
+            let fix = FixBuilder::new("Remove string ref", FixKind::SuggestionFix)
                 .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                 .build();
             ctx.report(Diagnostic {

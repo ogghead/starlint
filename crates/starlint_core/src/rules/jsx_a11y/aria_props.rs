@@ -78,7 +78,6 @@ impl NativeRule for AriaProps {
             description: "Enforce valid `aria-*` attribute names".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -100,9 +99,12 @@ impl NativeRule for AriaProps {
 
                 if name_str.starts_with("aria-") && !VALID_ARIA_PROPS.contains(&name_str) {
                     let attr_span = Span::new(attr.span.start, attr.span.end);
-                    let fix = FixBuilder::new(format!("Remove invalid `{name_str}` attribute"))
-                        .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
-                        .build();
+                    let fix = FixBuilder::new(
+                        format!("Remove invalid `{name_str}` attribute"),
+                        FixKind::SuggestionFix,
+                    )
+                    .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                    .build();
                     ctx.report(Diagnostic {
                         rule_name: RULE_NAME.to_owned(),
                         message: format!("`{name_str}` is not a valid WAI-ARIA attribute"),

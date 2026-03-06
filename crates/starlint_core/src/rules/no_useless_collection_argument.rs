@@ -28,7 +28,6 @@ impl NativeRule for NoUselessCollectionArgument {
             description: "Disallow passing an empty array to collection constructors".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for NoUselessCollectionArgument {
                 severity: Severity::Warning,
                 help: Some(format!("Use `new {name}()` instead")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove empty array argument".to_owned(),
                     edits: vec![Edit {
                         span: arg_span,

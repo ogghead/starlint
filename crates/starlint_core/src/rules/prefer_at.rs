@@ -23,7 +23,6 @@ impl NativeRule for PreferAt {
             description: "Prefer `.at()` for index access from the end".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -84,6 +83,7 @@ impl NativeRule for PreferAt {
                     severity: Severity::Warning,
                     help: Some(format!("Replace with `{replacement}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(computed.span.start, computed.span.end),

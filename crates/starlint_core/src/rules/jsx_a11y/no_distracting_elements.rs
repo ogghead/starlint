@@ -29,7 +29,6 @@ impl NativeRule for NoDistractingElements {
             description: "Forbid `<marquee>` and `<blink>` elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -95,6 +94,7 @@ fn build_replace_fix(
     }
 
     Some(Fix {
+        kind: FixKind::SuggestionFix,
         message: format!("Replace `<{element_name}>` with `<span>`"),
         edits,
         is_snippet: false,

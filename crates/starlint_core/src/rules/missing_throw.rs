@@ -35,7 +35,6 @@ impl NativeRule for MissingThrow {
             description: "Detect `new Error()` without `throw`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -67,6 +66,7 @@ impl NativeRule for MissingThrow {
                 severity: Severity::Warning,
                 help: Some("Add `throw` before the expression".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Add `throw`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(new_expr.span.start, new_expr.span.start),

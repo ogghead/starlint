@@ -24,7 +24,6 @@ impl NativeRule for Scope {
             description: "Enforce `scope` attribute is only used on `<th>` elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,6 +67,7 @@ impl NativeRule for Scope {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove `scope` attribute".to_owned(),
                     edits: vec![Edit {
                         span: attr_span,

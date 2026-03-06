@@ -25,7 +25,6 @@ impl NativeRule for Eqeqeq {
             description: "Require `===` and `!==`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,6 +56,7 @@ impl NativeRule for Eqeqeq {
                 severity: Severity::Error,
                 help: Some(format!("Use `{replacement}` instead of `{label}`")),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace `{label}` with `{replacement}`"),
                     edits: vec![Edit {
                         span: op_span,

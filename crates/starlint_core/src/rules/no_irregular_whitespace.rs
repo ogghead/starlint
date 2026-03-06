@@ -42,7 +42,6 @@ impl NativeRule for NoIrregularWhitespace {
             description: "Disallow irregular whitespace".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -81,6 +80,7 @@ impl NativeRule for NoIrregularWhitespace {
                 severity: Severity::Error,
                 help: Some("Replace with a regular space".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace with a regular space".to_owned(),
                     edits: vec![Edit {
                         span: char_span,

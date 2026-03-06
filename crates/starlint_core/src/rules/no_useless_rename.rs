@@ -24,7 +24,6 @@ impl NativeRule for NoUselessRename {
             description: "Disallow renaming imports and exports to the same name".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -52,6 +51,7 @@ impl NativeRule for NoUselessRename {
                         severity: Severity::Warning,
                         help: Some(format!("Use `{local_str}` directly without `as`")),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: format!("Remove redundant `as {local_str}`"),
                             edits: vec![Edit {
                                 span: Span::new(spec.span.start, spec.span.end),
@@ -87,6 +87,7 @@ impl NativeRule for NoUselessRename {
                         severity: Severity::Warning,
                         help: Some(format!("Use `{name}` directly without `as`")),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: format!("Remove redundant `as {name}`"),
                             edits: vec![Edit {
                                 span: Span::new(spec.span.start, spec.span.end),

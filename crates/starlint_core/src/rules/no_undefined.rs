@@ -22,7 +22,6 @@ impl NativeRule for NoUndefined {
             description: "Disallow the use of `undefined` as an identifier".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -37,6 +36,7 @@ impl NativeRule for NoUndefined {
 
         if id.name.as_str() == "undefined" {
             let fix = Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace with `void 0`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(id.span.start, id.span.end),

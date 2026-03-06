@@ -80,7 +80,6 @@ impl NativeRule for PreferArrayIndexOf {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -125,6 +124,7 @@ impl NativeRule for PreferArrayIndexOf {
                             .map_or(call.span.end, |a| a.span().end),
                     );
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `.indexOf({val_text})`"),
                         edits: vec![
                             Edit {

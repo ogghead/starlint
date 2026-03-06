@@ -63,7 +63,6 @@ impl NativeRule for PreferOptionalCatchBinding {
             description: "Prefer omitting unused catch binding".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -108,6 +107,7 @@ impl NativeRule for PreferOptionalCatchBinding {
             severity: Severity::Warning,
             help: Some("Remove the unused catch binding".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove unused catch binding".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(clause.span.start, clause.body.span.start),

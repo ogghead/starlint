@@ -26,7 +26,6 @@ impl NativeRule for PreferTodo {
             description: "Suggest using `test.todo()` for empty test cases".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -76,6 +75,7 @@ impl NativeRule for PreferTodo {
                 let title = source[sp.start as usize..sp.end as usize].to_owned();
                 let replacement = format!("{callee_name}.todo({title})");
                 Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

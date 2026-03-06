@@ -33,7 +33,6 @@ impl NativeRule for NoFocusedTests {
             description: "Disallow focused tests (`.only`, `fdescribe`, `fit`)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for NoFocusedTests {
                     severity: Severity::Error,
                     help: Some(format!("Replace `{}` with `{replacement}`", id.name)),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: id_span,
@@ -99,6 +99,7 @@ impl NativeRule for NoFocusedTests {
                             severity: Severity::Error,
                             help: Some(format!("Remove `.only` from `{base_name}.only`")),
                             fix: Some(Fix {
+                                kind: FixKind::SafeFix,
                                 message: format!("Replace `{base_name}.only` with `{base_name}`"),
                                 edits: vec![Edit {
                                     span: callee_span,

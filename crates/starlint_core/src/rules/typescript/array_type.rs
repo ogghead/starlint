@@ -30,7 +30,6 @@ impl NativeRule for ArrayType {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -91,6 +90,7 @@ impl NativeRule for ArrayType {
             severity: Severity::Warning,
             help: Some(suggestion.to_owned()),
             fix: fix.map(|replacement| Fix {
+                kind: FixKind::SafeFix,
                 message: suggestion.to_owned(),
                 edits: vec![Edit { span, replacement }],
                 is_snippet: false,

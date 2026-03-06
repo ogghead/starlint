@@ -25,7 +25,6 @@ impl NativeRule for NoNewArray {
             description: "Disallow `new Array()` — use `[]` or `Array.from()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,6 +56,7 @@ impl NativeRule for NoNewArray {
                 severity: Severity::Warning,
                 help: Some("Remove `new` keyword".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove `new` keyword".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(new_expr.span.start, new_expr.span.end),

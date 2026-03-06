@@ -24,7 +24,6 @@ impl NativeRule for PreferStrictEqual {
             description: "Suggest using `toStrictEqual()` over `toEqual()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -57,6 +56,7 @@ impl NativeRule for PreferStrictEqual {
             severity: Severity::Warning,
             help: Some("Replace `toEqual` with `toStrictEqual`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Replace with `toStrictEqual`".to_owned(),
                 edits: vec![Edit {
                     span: prop_span,

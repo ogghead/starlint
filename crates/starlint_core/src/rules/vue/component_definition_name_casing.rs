@@ -55,7 +55,6 @@ impl NativeRule for ComponentDefinitionNameCasing {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -109,6 +108,7 @@ impl NativeRule for ComponentDefinitionNameCasing {
                     let name_end =
                         name_start.saturating_add(u32::try_from(name_value.len()).unwrap_or(0));
                     Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Rename to `{pascal}`"),
                         edits: vec![Edit {
                             span: Span::new(name_start, name_end),

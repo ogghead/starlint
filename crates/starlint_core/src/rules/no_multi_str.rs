@@ -22,7 +22,6 @@ impl NativeRule for NoMultiStr {
             description: "Disallow multiline strings".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -63,6 +62,7 @@ impl NativeRule for NoMultiStr {
                     converted.replace_range(last.., "`");
                 }
                 Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Convert to template literal".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(span_start, span_end),

@@ -30,7 +30,6 @@ impl NativeRule for NoConsole {
             description: "Disallow `console.*` calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -56,10 +55,10 @@ impl NativeRule for NoConsole {
         }
 
         let span = Span::new(stmt.span.start, stmt.span.end);
-        let fix = FixBuilder::new(format!(
-            "Remove `console.{}()` statement",
-            member.property.name
-        ))
+        let fix = FixBuilder::new(
+            format!("Remove `console.{}()` statement", member.property.name),
+            FixKind::SuggestionFix,
+        )
         .edit(fix_utils::delete_statement(ctx.source_text(), span))
         .build();
         ctx.report(Diagnostic {

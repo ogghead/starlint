@@ -27,7 +27,6 @@ impl NativeRule for PreferTernary {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -90,6 +89,7 @@ impl NativeRule for PreferTernary {
             severity: Severity::Warning,
             help: Some("Use a ternary expression".to_owned()),
             fix: fix.map(|replacement| Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Convert to ternary expression".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(if_stmt.span.start, if_stmt.span.end),

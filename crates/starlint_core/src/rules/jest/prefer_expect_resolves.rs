@@ -27,7 +27,6 @@ impl NativeRule for PreferExpectResolves {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -76,6 +75,7 @@ impl NativeRule for PreferExpectResolves {
             // e.g. `.toBe(1)` — keep that suffix by only replacing the expect call itself
             let replacement = format!("await expect({inner_text}).resolves");
             Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(call.span.start, call.span.end),

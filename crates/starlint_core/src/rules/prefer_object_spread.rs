@@ -26,7 +26,6 @@ impl NativeRule for PreferObjectSpread {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -82,6 +81,7 @@ impl NativeRule for PreferObjectSpread {
                     severity: Severity::Warning,
                     help: Some("Replace with object spread".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Replace with object spread".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

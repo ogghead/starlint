@@ -27,7 +27,6 @@ impl NativeRule for RelativeUrlStyle {
             description: "Enforce `./` prefix for relative URL paths".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -78,6 +77,7 @@ impl NativeRule for RelativeUrlStyle {
             let inner_end = path_lit.span.end.saturating_sub(1);
             let path_owned = path.to_owned();
             let fix = Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Add `./` prefix".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(inner_start, inner_end),

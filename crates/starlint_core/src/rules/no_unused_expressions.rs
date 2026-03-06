@@ -25,7 +25,6 @@ impl NativeRule for NoUnusedExpressions {
             description: "Disallow unused expressions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,7 +44,7 @@ impl NativeRule for NoUnusedExpressions {
 
         if is_unused_expression(&stmt.expression) {
             let span = Span::new(stmt.span.start, stmt.span.end);
-            let fix = FixBuilder::new("Remove unused expression")
+            let fix = FixBuilder::new("Remove unused expression", FixKind::SuggestionFix)
                 .edit(fix_utils::delete_statement(ctx.source_text(), span))
                 .build();
             ctx.report(Diagnostic {

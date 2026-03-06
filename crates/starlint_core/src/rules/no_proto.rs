@@ -24,7 +24,6 @@ impl NativeRule for NoProto {
             description: "Disallow the use of the `__proto__` property".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,6 +43,7 @@ impl NativeRule for NoProto {
                         .map(|obj_text| {
                             let replacement = format!("Object.getPrototypeOf({obj_text})");
                             Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: format!("Replace with `{replacement}`"),
                                 edits: vec![Edit {
                                     span: Span::new(member.span.start, member.span.end),

@@ -24,7 +24,6 @@ impl NativeRule for NoNonoctalDecimalEscape {
             description: "Disallow `\\8` and `\\9` escape sequences in string literals".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,6 +49,7 @@ impl NativeRule for NoNonoctalDecimalEscape {
             // Fix: remove backslash before 8 or 9
             let fixed = remove_nonoctal_escapes(raw);
             let fix = Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Remove the backslash before `8` or `9`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(lit.span.start, lit.span.end),

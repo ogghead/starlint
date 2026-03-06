@@ -6,7 +6,7 @@
 //! placed at the top of the source file, before any other statements.
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -24,7 +24,6 @@ impl NativeRule for HoistedApisOnTop {
             description: "Enforce `vi.hoisted()` calls at the top of the file".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

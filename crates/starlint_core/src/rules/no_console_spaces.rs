@@ -36,7 +36,6 @@ impl NativeRule for NoConsoleSpaces {
             description: "Disallow leading/trailing spaces in console string arguments".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -107,6 +106,7 @@ impl NativeRule for NoConsoleSpaces {
             severity: Severity::Warning,
             help: Some("Remove the leading/trailing space from the string".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove space".to_owned(),
                 edits,
                 is_snippet: false,

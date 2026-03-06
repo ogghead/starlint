@@ -26,7 +26,6 @@ impl NativeRule for NoUnnecessaryAwait {
             description: "Disallow awaiting non-promise values".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -60,6 +59,7 @@ impl NativeRule for NoUnnecessaryAwait {
                 severity: Severity::Warning,
                 help: Some("Remove the `await` keyword".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove `await`".to_owned(),
                     edits: vec![Edit {
                         span: await_span,

@@ -25,7 +25,6 @@ impl NativeRule for NoArraySort {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,6 +47,7 @@ impl NativeRule for NoArraySort {
 
         // Fix: replace `.sort` with `.toSorted` in the property name
         let fix = Some(Fix {
+            kind: FixKind::SuggestionFix,
             message: "Replace `.sort()` with `.toSorted()`".to_owned(),
             edits: vec![Edit {
                 span: Span::new(member.property.span.start, member.property.span.end),

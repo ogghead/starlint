@@ -26,7 +26,6 @@ impl NativeRule for NoImportNodeTest {
             description: "Disallow importing from `node:test` in Vitest projects".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -60,6 +59,7 @@ impl NativeRule for NoImportNodeTest {
                 severity: Severity::Error,
                 help: Some("Replace `node:test` with `vitest`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace with `vitest`".to_owned(),
                     edits: vec![Edit {
                         span: source_span,

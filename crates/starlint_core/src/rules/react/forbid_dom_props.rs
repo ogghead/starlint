@@ -29,7 +29,6 @@ impl NativeRule for ForbidDomProps {
             description: "Warn when certain DOM props are used".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,9 +76,10 @@ impl NativeRule for ForbidDomProps {
                     .is_some_and(|&b| b.is_ascii_lowercase())
             {
                 let attr_span = Span::new(attr.span.start, attr.span.end);
-                let fix = FixBuilder::new(format!("Remove `{attr_name}` prop"))
-                    .edit(fix_utils::remove_jsx_attr(source, attr_span))
-                    .build();
+                let fix =
+                    FixBuilder::new(format!("Remove `{attr_name}` prop"), FixKind::SuggestionFix)
+                        .edit(fix_utils::remove_jsx_attr(source, attr_span))
+                        .build();
                 ctx.report(Diagnostic {
                     rule_name: "react/forbid-dom-props".to_owned(),
                     message: format!("Prop `{attr_name}` is forbidden on DOM elements"),

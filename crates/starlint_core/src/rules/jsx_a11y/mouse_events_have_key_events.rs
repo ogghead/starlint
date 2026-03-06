@@ -7,7 +7,7 @@ use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
 use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -38,7 +38,6 @@ impl NativeRule for MouseEventsHaveKeyEvents {
             description: "Enforce `onMouseOver`/`onMouseOut` have `onFocus`/`onBlur`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

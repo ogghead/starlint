@@ -27,7 +27,6 @@ impl NativeRule for NoNegationInEqualityCheck {
             description: "Disallow negation in the left-hand side of equality checks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -75,6 +74,7 @@ impl NativeRule for NoNegationInEqualityCheck {
                         .unwrap_or("");
                     let replacement = format!("{inner_text} {negated_op} {right_text}");
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(expr.span.start, expr.span.end),

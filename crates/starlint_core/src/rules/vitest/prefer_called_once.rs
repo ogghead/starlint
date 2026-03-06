@@ -30,7 +30,6 @@ impl NativeRule for PreferCalledOnce {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -82,6 +81,7 @@ impl NativeRule for PreferCalledOnce {
                 .to_owned();
             let replacement = format!("{obj_text}.toHaveBeenCalledOnce()");
             let fix = Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Replace with `toHaveBeenCalledOnce()`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(call.span.start, call.span.end),

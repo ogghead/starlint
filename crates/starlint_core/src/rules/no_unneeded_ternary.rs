@@ -25,7 +25,6 @@ impl NativeRule for NoUnneededTernary {
             description: "Disallow ternary operators when simpler alternatives exist".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -85,6 +84,7 @@ impl NativeRule for NoUnneededTernary {
             severity: Severity::Warning,
             help: Some(format!("Replace with `{replacement}`")),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(expr.span.start, expr.span.end),

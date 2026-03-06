@@ -31,7 +31,6 @@ impl NativeRule for NoSinglePromiseInPromiseMethods {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -80,6 +79,7 @@ impl NativeRule for NoSinglePromiseInPromiseMethods {
                     .unwrap_or("")
                     .to_owned();
                 (!elem_text.is_empty()).then(|| Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Unwrap single-element array".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

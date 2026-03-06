@@ -26,7 +26,6 @@ impl NativeRule for NoNewRequire {
             description: "Disallow `new require(...)`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,6 +54,7 @@ impl NativeRule for NoNewRequire {
                 require_text.map(|text| {
                     let replacement = format!("new ({text})()");
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(new_expr.span.start, new_expr.span.end),

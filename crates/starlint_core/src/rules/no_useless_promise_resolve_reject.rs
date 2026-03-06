@@ -26,7 +26,6 @@ impl NativeRule for NoUselessPromiseResolveReject {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -141,6 +140,7 @@ fn report_promise_fix(
         severity: Severity::Warning,
         help: Some(format!("Use `{replacement}` instead")),
         fix: Some(Fix {
+            kind: FixKind::SafeFix,
             message: fix_message,
             edits: vec![Edit { span, replacement }],
             is_snippet: false,

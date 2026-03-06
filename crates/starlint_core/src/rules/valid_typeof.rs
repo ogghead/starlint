@@ -39,7 +39,6 @@ impl NativeRule for ValidTypeof {
             description: "Enforce comparing `typeof` expressions against valid strings".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -88,6 +87,7 @@ fn check_typeof_value(
             let lit_span = lit.span();
             let replacement = format!("\"{suggested}\"");
             Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `\"{suggested}\"`"),
                 edits: vec![Edit {
                     span: Span::new(lit_span.start, lit_span.end),

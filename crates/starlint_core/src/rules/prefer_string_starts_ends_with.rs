@@ -27,7 +27,6 @@ impl NativeRule for PreferStringStartsEndsWith {
             description: "Prefer `startsWith()` and `endsWith()` over alternatives".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -89,6 +88,7 @@ fn check_index_of_comparison(
         let a_end = usize::try_from(a.end).unwrap_or(0);
         let arg_text = source.get(a_start..a_end)?;
         Some(Fix {
+            kind: FixKind::SuggestionFix,
             message: "Replace with `.startsWith()`".to_owned(),
             edits: vec![Edit {
                 span: Span::new(expr.span.start, expr.span.end),
@@ -154,6 +154,7 @@ fn check_regex_test(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLin
         let a_end = usize::try_from(arg.span().end).unwrap_or(0);
         let arg_text = source.get(a_start..a_end).unwrap_or("");
         Fix {
+            kind: FixKind::SuggestionFix,
             message: format!("Replace with `.{kind}('{literal_part}')`"),
             edits: vec![Edit {
                 span: Span::new(call.span.start, call.span.end),

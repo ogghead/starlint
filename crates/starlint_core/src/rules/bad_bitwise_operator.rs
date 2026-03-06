@@ -26,7 +26,6 @@ impl NativeRule for BadBitwiseOperator {
             description: "Catch `|` vs `||` and `&` vs `&&` operator typos".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for BadBitwiseOperator {
         let fix = between.find(actual).map(|offset| {
             let op_pos = u32::try_from(left_end.saturating_add(offset)).unwrap_or(0);
             Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Replace `{actual}` with `{intended}`"),
                 edits: vec![Edit {
                     span: Span::new(op_pos, op_pos.saturating_add(1)),

@@ -27,7 +27,6 @@ impl NativeRule for NoNewWrappers {
             description: "Disallow primitive wrapper constructors".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -64,6 +63,7 @@ impl NativeRule for NoNewWrappers {
                     severity: Severity::Warning,
                     help: Some(format!("Remove `new` to call `{name}()` as a function")),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Remove `new` keyword".to_owned(),
                         edits: vec![Edit {
                             span: expr_span,

@@ -21,7 +21,6 @@ impl NativeRule for EmptyBraceSpaces {
             description: "Disallow spaces inside empty object braces".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -64,6 +63,7 @@ impl NativeRule for EmptyBraceSpaces {
             severity: Severity::Warning,
             help: Some("Replace with `{}`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove spaces inside braces".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(obj.span.start, obj.span.end),

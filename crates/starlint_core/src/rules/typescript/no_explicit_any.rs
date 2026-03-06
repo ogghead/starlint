@@ -23,7 +23,6 @@ impl NativeRule for NoExplicitAny {
             description: "Disallow the `any` type annotation".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,6 +43,7 @@ impl NativeRule for NoExplicitAny {
             severity: Severity::Warning,
             help: Some("Replace `any` with `unknown`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace with `unknown`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(keyword.span.start, keyword.span.end),

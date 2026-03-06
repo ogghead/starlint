@@ -25,7 +25,6 @@ impl NativeRule for NoUselessComputedKey {
             description: "Disallow unnecessary computed property keys".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for NoUselessComputedKey {
 
         let fix = if let (Some(open_pos), Some(close_pos)) = (open, close) {
             Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove computed brackets".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(open_pos, close_pos),

@@ -24,7 +24,6 @@ impl NativeRule for ButtonHasType {
             description: "Require explicit type attribute on button elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -70,6 +69,7 @@ impl NativeRule for ButtonHasType {
                 let insert_pos =
                     u32::try_from(tag_start.saturating_add(1).saturating_add(name_end)).ok()?;
                 Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Add `type=\"button\"`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(insert_pos, insert_pos),

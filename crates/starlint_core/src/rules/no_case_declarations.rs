@@ -28,7 +28,6 @@ impl NativeRule for NoCaseDeclarations {
             description: "Disallow lexical declarations in case/default clauses".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,6 +51,7 @@ impl NativeRule for NoCaseDeclarations {
                             let body_start = first.span().start;
                             let body_end = last.span().end;
                             Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: "Wrap case body in a block `{ }`".to_owned(),
                                 edits: vec![
                                     Edit {

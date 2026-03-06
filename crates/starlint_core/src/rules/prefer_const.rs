@@ -24,7 +24,6 @@ impl NativeRule for PreferConst {
             description: "Require `const` for variables that are never reassigned".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -88,6 +87,7 @@ impl NativeRule for PreferConst {
                 severity: Severity::Warning,
                 help: Some("Replace `let` with `const`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace `let` with `const`".to_owned(),
                     edits: vec![Edit {
                         span: let_span,

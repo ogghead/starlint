@@ -23,7 +23,6 @@ impl NativeRule for NoVar {
             description: "Require `let` or `const` instead of `var`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,6 +45,7 @@ impl NativeRule for NoVar {
                         "Replace `var` with `let` (or `const` if never reassigned)".to_owned(),
                     ),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Replace `var` with `let`".to_owned(),
                         edits: vec![Edit {
                             span: var_span,

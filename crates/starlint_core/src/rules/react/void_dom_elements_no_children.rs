@@ -33,7 +33,6 @@ impl NativeRule for VoidDomElementsNoChildren {
             description: "Void DOM elements must not have children".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -84,6 +83,7 @@ impl NativeRule for VoidDomElementsNoChildren {
                 bad_attr_span.map(|attr_span| {
                     let edit = fix_utils::remove_jsx_attr(ctx.source_text(), attr_span);
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Remove the prop".to_owned(),
                         edits: vec![edit],
                         is_snippet: false,

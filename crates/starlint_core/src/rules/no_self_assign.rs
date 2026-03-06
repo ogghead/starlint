@@ -24,7 +24,6 @@ impl NativeRule for NoSelfAssign {
             description: "Disallow self-assignment".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -50,6 +49,7 @@ impl NativeRule for NoSelfAssign {
                 let stmt_span = Span::new(assign.span.start, assign.span.end);
                 let edit = fix_utils::delete_statement(ctx.source_text(), stmt_span);
                 let fix = Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove this self-assignment".to_owned(),
                     edits: vec![edit],
                     is_snippet: false,

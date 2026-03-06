@@ -85,7 +85,6 @@ impl NativeRule for AnchorIsValid {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -112,7 +111,7 @@ impl NativeRule for AnchorIsValid {
                 ctx.source_text(),
                 Span::new(opening.span.start, opening.span.end),
             );
-            let fix = FixBuilder::new("Add `href` attribute")
+            let fix = FixBuilder::new("Add `href` attribute", FixKind::SuggestionFix)
                 .insert_at(insert_pos, " href=\"${1:/path}\"")
                 .build_snippet();
 
@@ -132,7 +131,7 @@ impl NativeRule for AnchorIsValid {
         if let Some(href) = get_attr_string_value(opening, "href") {
             if href == "#" || href.starts_with("javascript:") {
                 let fix = get_attr_value_span(opening, "href").and_then(|val_span| {
-                    FixBuilder::new("Replace with a valid URL")
+                    FixBuilder::new("Replace with a valid URL", FixKind::SuggestionFix)
                         .replace(Span::new(val_span.start, val_span.end), "\"${1:/path}\"")
                         .build_snippet()
                 });

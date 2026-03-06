@@ -25,7 +25,6 @@ impl NativeRule for NoUselessUndefined {
             description: "Disallow useless undefined".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -48,6 +47,7 @@ impl NativeRule for NoUselessUndefined {
                             severity: Severity::Warning,
                             help: Some("Remove `= undefined`".to_owned()),
                             fix: Some(Fix {
+                                kind: FixKind::SafeFix,
                                 message: "Remove `= undefined`".to_owned(),
                                 edits: vec![Edit {
                                     span: remove_span,
@@ -75,6 +75,7 @@ impl NativeRule for NoUselessUndefined {
                             severity: Severity::Warning,
                             help: Some("Remove `undefined` from return".to_owned()),
                             fix: Some(Fix {
+                                kind: FixKind::SafeFix,
                                 message: "Remove `undefined` from return".to_owned(),
                                 edits: vec![Edit {
                                     span: remove_span,

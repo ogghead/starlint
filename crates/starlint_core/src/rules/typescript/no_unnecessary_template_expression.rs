@@ -28,7 +28,6 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
             description: "Disallow unnecessary template expressions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -63,6 +62,7 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
                 severity: Severity::Warning,
                 help: Some("Remove the template literal wrapper".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace with the expression directly".to_owned(),
                     edits: vec![Edit {
                         span: template_span,
@@ -102,6 +102,7 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
                     severity: Severity::Warning,
                     help: Some("Replace with a regular string literal".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Convert to a regular string literal".to_owned(),
                         edits: vec![Edit {
                             span: template_span,

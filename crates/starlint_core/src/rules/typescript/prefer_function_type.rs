@@ -31,7 +31,6 @@ impl NativeRule for PreferFunctionType {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -98,6 +97,7 @@ impl NativeRule for PreferFunctionType {
                 severity: Severity::Warning,
                 help: Some(format!("Convert to `type {name} = (...) => ...`")),
                 fix: fix.map(|replacement| Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Convert to function type alias".to_owned(),
                     edits: vec![Edit {
                         span: decl_span,

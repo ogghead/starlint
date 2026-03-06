@@ -23,7 +23,6 @@ impl NativeRule for PreferDomNodeTextContent {
             description: "Prefer `textContent` over `innerText`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -49,6 +48,7 @@ impl NativeRule for PreferDomNodeTextContent {
             severity: Severity::Warning,
             help: Some("Replace `innerText` with `textContent`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Replace `innerText` with `textContent`".to_owned(),
                 edits: vec![Edit {
                     span: prop_span,

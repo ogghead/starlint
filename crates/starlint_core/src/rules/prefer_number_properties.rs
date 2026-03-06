@@ -31,7 +31,6 @@ impl NativeRule for PreferNumberProperties {
             description: "Prefer `Number` static methods over global equivalents".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for PreferNumberProperties {
             severity: Severity::Warning,
             help: Some(format!("Replace `{name}` with `{replacement}`")),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Replace `{name}` with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(id.span.start, id.span.end),

@@ -71,7 +71,6 @@ impl NativeRule for ApproxConstant {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -104,6 +103,7 @@ impl NativeRule for ApproxConstant {
                     severity: Severity::Warning,
                     help: Some(format!("Replace with `{}`", constant.name)),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{}`", constant.name),
                         edits: vec![Edit {
                             span: Span::new(lit.span.start, lit.span.end),

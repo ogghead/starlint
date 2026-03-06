@@ -27,7 +27,6 @@ impl NativeRule for JsxNoCommentTextnodes {
             description: "Disallow comments from being inserted as text nodes".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,7 +58,7 @@ impl NativeRule for JsxNoCommentTextnodes {
                 .trim_start_matches("/*")
                 .trim_end_matches("*/")
                 .trim();
-            let fix = FixBuilder::new("Wrap in JSX expression comment")
+            let fix = FixBuilder::new("Wrap in JSX expression comment", FixKind::SuggestionFix)
                 .replace(
                     Span::new(text.span.start, text.span.end),
                     format!("{{/* {comment_text} */}}"),

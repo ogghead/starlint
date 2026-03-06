@@ -36,7 +36,6 @@ impl NativeRule for PreferReturnThisType {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -58,6 +57,7 @@ impl NativeRule for PreferReturnThisType {
                     severity: Severity::Warning,
                     help: None,
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Replace class name with `this`".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(name_start, name_end),

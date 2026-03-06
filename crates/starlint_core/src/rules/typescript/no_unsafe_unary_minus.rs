@@ -13,7 +13,7 @@ use oxc_ast::ast::{Expression, UnaryOperator};
 use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -28,7 +28,6 @@ impl NativeRule for NoUnsafeUnaryMinus {
             description: "Disallow unary minus on non-numeric types".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

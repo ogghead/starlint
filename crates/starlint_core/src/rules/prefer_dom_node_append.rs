@@ -24,7 +24,6 @@ impl NativeRule for PreferDomNodeAppend {
             description: "Prefer `Node.append()` over `Node.appendChild()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,6 +53,7 @@ impl NativeRule for PreferDomNodeAppend {
             severity: Severity::Warning,
             help: Some("Replace `appendChild` with `append`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace `appendChild` with `append`".to_owned(),
                 edits: vec![Edit {
                     span: prop_span,

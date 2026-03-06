@@ -68,6 +68,7 @@ mod tests {
     use super::*;
 
     use starlint_plugin_sdk::diagnostic::{Edit, Severity, Span};
+    use starlint_plugin_sdk::rule::FixKind;
 
     fn make_diag_with_fix(span: Span, replacement: &str) -> Diagnostic {
         Diagnostic {
@@ -77,6 +78,7 @@ mod tests {
             severity: Severity::Error,
             help: None,
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "fix it".to_owned(),
                 edits: vec![Edit {
                     span,
@@ -153,6 +155,7 @@ mod tests {
             severity: Severity::Warning,
             help: None,
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "snippet fix".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(0, 3),

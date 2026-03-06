@@ -27,7 +27,6 @@ impl NativeRule for PreferMockPromiseShorthand {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -150,6 +149,7 @@ fn build_mock_shorthand_fix(
 
     let replacement = format!("{obj_text}.{suggestion}({arg_text})");
     Some(Fix {
+        kind: FixKind::SuggestionFix,
         message: format!("Replace with `.{suggestion}()`"),
         edits: vec![Edit {
             span: Span::new(call.span.start, call.span.end),

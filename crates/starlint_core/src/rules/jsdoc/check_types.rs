@@ -3,7 +3,7 @@
 //! Enforce consistent type format in `JSDoc` (e.g. `object` not `Object`).
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -30,7 +30,6 @@ impl NativeRule for CheckTypes {
             description: "Enforce consistent type format in JSDoc".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

@@ -24,7 +24,6 @@ impl NativeRule for NoFuncAssign {
             description: "Disallow reassignment of function declarations".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,8 +76,11 @@ impl NativeRule for NoFuncAssign {
             let fix = if !func.r#async && !func.generator {
                 let name = &id.name;
                 let prefix_span = Span::new(func.span.start, id.span.end);
-                let mut builder = FixBuilder::new(format!("Convert to `let {name} = function`"))
-                    .replace(prefix_span, format!("let {name} = function"));
+                let mut builder = FixBuilder::new(
+                    format!("Convert to `let {name} = function`"),
+                    FixKind::SuggestionFix,
+                )
+                .replace(prefix_span, format!("let {name} = function"));
                 // Add trailing semicolon if not already present.
                 let source = ctx.source_text();
                 let func_end = usize::try_from(func.span.end).unwrap_or(0);

@@ -25,7 +25,6 @@ impl NativeRule for PreferPromiseRejectErrors {
             description: "Require using Error objects as Promise rejection reasons".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,6 +70,7 @@ impl NativeRule for PreferPromiseRejectErrors {
                         .map(|arg_text| {
                             let replacement = format!("new Error({arg_text})");
                             Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: format!("Replace with `{replacement}`"),
                                 edits: vec![Edit {
                                     span: Span::new(arg_span.start, arg_span.end),

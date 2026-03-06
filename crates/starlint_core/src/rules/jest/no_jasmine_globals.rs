@@ -28,7 +28,6 @@ impl NativeRule for NoJasmineGlobals {
             description: "Disallow Jasmine globals — use Jest equivalents".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -51,6 +50,7 @@ impl NativeRule for NoJasmineGlobals {
                     let call_text = &source[call.span.start as usize..call.span.end as usize];
                     let replacement = format!("jest.{call_text}");
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `jest.{}`", id.name),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),
@@ -82,6 +82,7 @@ impl NativeRule for NoJasmineGlobals {
                 if is_jasmine {
                     // Fix: `jasmine.createSpy(...)` → `jest.fn()`
                     let fix = (member.property.name.as_str() == "createSpy").then(|| Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Replace with `jest.fn()`".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

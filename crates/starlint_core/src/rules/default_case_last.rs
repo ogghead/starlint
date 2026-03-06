@@ -24,7 +24,6 @@ impl NativeRule for DefaultCaseLast {
             description: "Require `default` case to be last in `switch` statements".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for DefaultCaseLast {
                     let default_text =
                         source.get(case.span.start as usize..case.span.end as usize)?;
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Move `default` case to the end".to_owned(),
                         edits: vec![
                             // Delete the default case from current position

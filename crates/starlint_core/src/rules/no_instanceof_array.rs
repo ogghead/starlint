@@ -25,7 +25,6 @@ impl NativeRule for NoInstanceofArray {
             description: "Disallow `instanceof Array` — use `Array.isArray()`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -60,6 +59,7 @@ impl NativeRule for NoInstanceofArray {
                 severity: Severity::Warning,
                 help: Some("Replace with `Array.isArray()`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace with `Array.isArray()`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(expr.span.start, expr.span.end),

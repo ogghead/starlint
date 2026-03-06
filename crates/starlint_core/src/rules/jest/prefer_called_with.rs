@@ -26,7 +26,6 @@ impl NativeRule for PreferCalledWith {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -60,6 +59,7 @@ impl NativeRule for PreferCalledWith {
             severity: Severity::Warning,
             help: None,
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace with `toHaveBeenCalledWith`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(member.property.span.start, member.property.span.end),

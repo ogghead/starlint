@@ -23,7 +23,6 @@ impl NativeRule for RequireAwait {
             description: "Disallow async functions which have no await expression".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -69,6 +68,7 @@ fn check_for_await(
         let fn_name = name.unwrap_or("(anonymous)");
         // Remove `async ` (6 chars) from the start of the function
         let fix = Some(Fix {
+            kind: FixKind::SafeFix,
             message: "Remove `async` keyword".to_owned(),
             edits: vec![Edit {
                 span: Span::new(func_span.start, func_span.start.saturating_add(6)),

@@ -30,7 +30,6 @@ impl NativeRule for PreferMathTrunc {
             description: "Prefer `Math.trunc(x)` over bitwise truncation".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -56,6 +55,7 @@ impl NativeRule for PreferMathTrunc {
                             severity: Severity::Warning,
                             help: Some("Replace with `Math.trunc()`".to_owned()),
                             fix: Some(Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: "Replace with `Math.trunc()`".to_owned(),
                                 edits: vec![Edit {
                                     span: Span::new(outer.span.start, outer.span.end),
@@ -94,6 +94,7 @@ impl NativeRule for PreferMathTrunc {
                         severity: Severity::Warning,
                         help: Some("Replace with `Math.trunc()`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Replace with `Math.trunc()`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),

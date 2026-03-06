@@ -26,7 +26,6 @@ impl NativeRule for NoAccessKey {
             description: "Forbid `accessKey` attribute on elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,7 +58,7 @@ impl NativeRule for NoAccessKey {
                 span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: FixBuilder::new("Remove `accessKey` attribute")
+                fix: FixBuilder::new("Remove `accessKey` attribute", FixKind::SuggestionFix)
                     .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                     .build(),
                 labels: vec![],

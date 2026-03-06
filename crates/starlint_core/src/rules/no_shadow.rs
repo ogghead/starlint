@@ -27,7 +27,6 @@ impl NativeRule for NoShadow {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -74,9 +73,12 @@ impl NativeRule for NoShadow {
                             let edits = fix_utils::rename_symbol_edits(
                                 semantic, symbol_id, &new_name, decl_span,
                             );
-                            FixBuilder::new(format!("Rename to `{new_name}`"))
-                                .edits(edits)
-                                .build()
+                            FixBuilder::new(
+                                format!("Rename to `{new_name}`"),
+                                FixKind::SuggestionFix,
+                            )
+                            .edits(edits)
+                            .build()
                         };
                         ctx.report(Diagnostic {
                             rule_name: "no-shadow".to_owned(),

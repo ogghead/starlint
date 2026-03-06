@@ -26,7 +26,6 @@ impl NativeRule for JsxBooleanValue {
             description: "Enforce omitting `={true}` for boolean JSX attributes".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for JsxBooleanValue {
                     severity: Severity::Warning,
                     help: Some(format!("Remove `={{true}}` — just use `{prop_name}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Remove explicit `={true}`".to_owned(),
                         edits: vec![Edit {
                             span: attr_span,

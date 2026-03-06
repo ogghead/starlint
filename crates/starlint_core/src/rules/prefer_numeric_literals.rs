@@ -23,7 +23,6 @@ impl NativeRule for PreferNumericLiterals {
             description: "Disallow `parseInt()` for binary, octal, and hex literals".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -67,6 +66,7 @@ impl NativeRule for PreferNumericLiterals {
                 let fix = call.arguments.first().and_then(|arg| {
                     if let Argument::StringLiteral(s) = arg {
                         Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Use numeric literal".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),

@@ -23,7 +23,6 @@ impl NativeRule for PreferArrayFind {
             description: "Prefer .find() over .filter()[0]".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,6 +67,7 @@ impl NativeRule for PreferArrayFind {
                 severity: Severity::Warning,
                 help: Some("Replace `.filter()[0]` with `.find()`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace `.filter()[0]` with `.find()`".to_owned(),
                     edits: vec![
                         Edit {

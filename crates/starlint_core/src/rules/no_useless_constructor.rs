@@ -23,7 +23,6 @@ impl NativeRule for NoUselessConstructor {
             description: "Disallow unnecessary constructors".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -63,6 +62,7 @@ impl NativeRule for NoUselessConstructor {
                     severity: Severity::Error,
                     help: Some("Remove the empty constructor".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Remove empty constructor".to_owned(),
                         edits: vec![Edit {
                             span: method_span,
@@ -87,6 +87,7 @@ impl NativeRule for NoUselessConstructor {
                             severity: Severity::Error,
                             help: Some("Remove the useless constructor".to_owned()),
                             fix: Some(Fix {
+                                kind: FixKind::SafeFix,
                                 message: "Remove useless constructor".to_owned(),
                                 edits: vec![Edit {
                                     span: method_span,

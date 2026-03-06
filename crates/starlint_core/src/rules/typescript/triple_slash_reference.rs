@@ -21,7 +21,6 @@ impl NativeRule for TripleSlashReference {
             description: "Disallow `/// <reference ... />` directives".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -41,6 +40,7 @@ impl NativeRule for TripleSlashReference {
                 severity: Severity::Warning,
                 help: Some("Remove the triple-slash reference directive".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Delete the triple-slash reference line".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(line_start, line_end),

@@ -27,7 +27,6 @@ impl NativeRule for PreferImportInMock {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,6 +45,7 @@ impl NativeRule for PreferImportInMock {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace with `await vi.importActual(`".to_owned(),
                     edits: vec![Edit {
                         span,

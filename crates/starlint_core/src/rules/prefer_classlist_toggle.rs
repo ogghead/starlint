@@ -30,7 +30,6 @@ impl NativeRule for PreferClasslistToggle {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -84,6 +83,7 @@ impl NativeRule for PreferClasslistToggle {
                         let replacement =
                             format!("{el_text}.classList.toggle({arg_text}, {force})");
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),

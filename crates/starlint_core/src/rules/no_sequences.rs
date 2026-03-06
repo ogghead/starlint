@@ -24,7 +24,6 @@ impl NativeRule for NoSequences {
             description: "Disallow comma operator".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,6 +40,7 @@ impl NativeRule for NoSequences {
         let fix = seq.expressions.last().map(|last_expr| {
             let last_span = last_expr.span();
             Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace with the last expression".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(seq.span.start, seq.span.end),

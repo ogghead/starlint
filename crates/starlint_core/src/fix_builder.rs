@@ -4,17 +4,20 @@
 //! or from utility functions in [`fix_utils`](super::fix_utils).
 
 use starlint_plugin_sdk::diagnostic::{Edit, Fix, Span};
+use starlint_plugin_sdk::rule::FixKind;
 
 /// Builder for constructing a [`Fix`] with one or more edits.
 ///
 /// # Example
 ///
 /// ```ignore
-/// let fix = FixBuilder::new("Replace `let` with `const`")
+/// let fix = FixBuilder::new("Replace `let` with `const`", FixKind::SafeFix)
 ///     .replace(let_span, "const")
 ///     .build();
 /// ```
 pub struct FixBuilder {
+    /// Safety classification of the fix.
+    kind: FixKind,
     /// Human-readable description of the fix.
     message: String,
     /// Accumulated edits.
@@ -22,10 +25,11 @@ pub struct FixBuilder {
 }
 
 impl FixBuilder {
-    /// Create a new builder with the given fix description.
+    /// Create a new builder with the given fix description and safety classification.
     #[must_use]
-    pub fn new(message: impl Into<String>) -> Self {
+    pub fn new(message: impl Into<String>, kind: FixKind) -> Self {
         Self {
+            kind,
             message: message.into(),
             edits: Vec::new(),
         }
@@ -82,6 +86,7 @@ impl FixBuilder {
             return None;
         }
         Some(Fix {
+            kind: self.kind,
             message: self.message,
             edits: self.edits,
             is_snippet: false,
@@ -99,6 +104,7 @@ impl FixBuilder {
             return None;
         }
         Some(Fix {
+            kind: self.kind,
             message: self.message,
             edits: self.edits,
             is_snippet: true,
@@ -113,7 +119,7 @@ mod tests {
 
     #[test]
     fn test_single_replace() {
-        let result = FixBuilder::new("test")
+        let result = FixBuilder::new("test", FixKind::SafeFix)
             .replace(Span::new(0, 3), "const")
             .build();
         assert!(result.is_some(), "should produce a fix");
@@ -136,7 +142,7 @@ mod tests {
 
     #[test]
     fn test_multi_edit() {
-        let result = FixBuilder::new("multi")
+        let result = FixBuilder::new("multi", FixKind::SafeFix)
             .replace(Span::new(0, 3), "const")
             .delete(Span::new(10, 20))
             .insert_at(25, "// comment")
@@ -150,7 +156,7 @@ mod tests {
 
     #[test]
     fn test_no_edits_returns_none() {
-        let result = FixBuilder::new("empty").build();
+        let result = FixBuilder::new("empty", FixKind::SafeFix).build();
         assert!(result.is_none(), "no edits should return None");
     }
 
@@ -160,7 +166,9 @@ mod tests {
             span: Span::new(0, 1),
             replacement: "x".to_owned(),
         }];
-        let result = FixBuilder::new("from vec").edits(edits).build();
+        let result = FixBuilder::new("from vec", FixKind::SafeFix)
+            .edits(edits)
+            .build();
         assert!(result.is_some(), "should produce a fix from vec");
     }
 
@@ -170,7 +178,9 @@ mod tests {
             span: Span::new(5, 10),
             replacement: "hello".to_owned(),
         };
-        let result = FixBuilder::new("single").edit(edit).build();
+        let result = FixBuilder::new("single", FixKind::SafeFix)
+            .edit(edit)
+            .build();
         assert_eq!(
             result.as_ref().map(|f| f.edits.len()),
             Some(1),
@@ -180,7 +190,9 @@ mod tests {
 
     #[test]
     fn test_delete_creates_empty_replacement() {
-        let result = FixBuilder::new("del").delete(Span::new(0, 5)).build();
+        let result = FixBuilder::new("del", FixKind::SafeFix)
+            .delete(Span::new(0, 5))
+            .build();
         assert_eq!(
             result.and_then(|f| f.edits.first().map(|e| e.replacement.clone())),
             Some(String::new()),
@@ -190,7 +202,9 @@ mod tests {
 
     #[test]
     fn test_insert_at_creates_zero_width_span() {
-        let result = FixBuilder::new("ins").insert_at(10, "text").build();
+        let result = FixBuilder::new("ins", FixKind::SafeFix)
+            .insert_at(10, "text")
+            .build();
         assert!(result.is_some(), "should produce a fix");
         let edit_span_start = result
             .as_ref()

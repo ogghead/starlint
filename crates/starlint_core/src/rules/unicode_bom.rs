@@ -19,7 +19,6 @@ impl NativeRule for UnicodeBom {
             description: "Require or disallow Unicode BOM".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -39,6 +38,7 @@ impl NativeRule for UnicodeBom {
                 severity: Severity::Warning,
                 help: Some("Remove the BOM".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove the BOM".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(0, 3),

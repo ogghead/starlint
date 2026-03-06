@@ -27,7 +27,6 @@ impl NativeRule for PreferEqualityMatcher {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -122,6 +121,7 @@ impl NativeRule for PreferEqualityMatcher {
             let not_str = if negated { ".not" } else { "" };
             let replacement = format!("expect({left_text}){not_str}.{matcher}({right_text})");
             (!left_text.is_empty() && !right_text.is_empty()).then(|| Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(call.span.start, call.span.end),

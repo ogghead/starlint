@@ -39,7 +39,6 @@ impl NativeRule for NoInstanceofBuiltins {
             description: "Prefer builtin type-checking methods over instanceof".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -72,6 +71,7 @@ impl NativeRule for NoInstanceofBuiltins {
                     .map(|left_text| {
                         let replacement = format!("Array.isArray({left_text})");
                         Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(bin.span.start, bin.span.end),

@@ -70,7 +70,6 @@ impl NativeRule for NoNodejsModules {
             description: "Forbid Node.js built-in modules".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -95,7 +94,7 @@ impl NativeRule for NoNodejsModules {
 
         if NODE_BUILTINS.contains(&base_module) {
             let import_span = Span::new(import.span.start, import.span.end);
-            let fix = FixBuilder::new("Remove Node.js module import")
+            let fix = FixBuilder::new("Remove Node.js module import", FixKind::SuggestionFix)
                 .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
                 .build();
             ctx.report(Diagnostic {

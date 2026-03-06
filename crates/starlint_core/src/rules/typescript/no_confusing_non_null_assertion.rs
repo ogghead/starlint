@@ -30,7 +30,6 @@ impl NativeRule for NoConfusingNonNullAssertion {
                     .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for NoConfusingNonNullAssertion {
                 severity: Severity::Warning,
                 help: Some("Wrap the non-null assertion in parentheses to clarify intent".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Wrap in parentheses: `(x!)`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(non_null.span().start, non_null.span().end),

@@ -99,7 +99,6 @@ impl NativeRule for CheckTagNames {
             description: "Enforce valid JSDoc tag names".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -150,6 +149,7 @@ impl NativeRule for CheckTagNames {
                                     let tag_end = tag_start
                                         .saturating_add(u32::try_from(tag_name.len()).unwrap_or(0));
                                     Fix {
+                                        kind: FixKind::SuggestionFix,
                                         message: format!(
                                             "Replace `@{tag_name}` with `@{correct_tag}`"
                                         ),

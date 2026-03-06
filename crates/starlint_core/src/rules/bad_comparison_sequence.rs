@@ -26,7 +26,6 @@ impl NativeRule for BadComparisonSequence {
             description: "Catch chained comparison sequences like `a < b < c`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for BadComparisonSequence {
                                 "{a_text} {left_op} {b_text} && {b_text} {right_op} {c_text}"
                             );
                             Some(Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: format!("Replace with `{replacement}`"),
                                 edits: vec![Edit {
                                     span: Span::new(expr.span.start, expr.span.end),

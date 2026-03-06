@@ -54,7 +54,6 @@ impl NativeRule for PreferPascalCase {
             description: "Stories should use PascalCase names".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -108,6 +107,7 @@ impl NativeRule for PreferPascalCase {
                         severity: Severity::Warning,
                         help: Some(format!("Rename to `{pascal}`")),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: format!("Rename to `{pascal}`"),
                             edits: vec![Edit {
                                 span: Span::new(start, end),

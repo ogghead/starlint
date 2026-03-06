@@ -30,7 +30,6 @@ impl NativeRule for ForDirection {
                     .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for ForDirection {
                     .and_then(|update_text| {
                         let replacement = swap_update_direction(update_text)?;
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace `{update_text}` with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(update_span.start, update_span.end),

@@ -39,7 +39,6 @@ impl NativeRule for NoWrapperObjectTypes {
             description: "Disallow wrapper object types in type annotations".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -70,6 +69,7 @@ impl NativeRule for NoWrapperObjectTypes {
                     severity: Severity::Error,
                     help: Some(message),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Replace `{wrapper}` with `{primitive}`"),
                         edits: vec![Edit {
                             span: ident_span,

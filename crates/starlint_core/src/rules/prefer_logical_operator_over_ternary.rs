@@ -25,7 +25,6 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
             description: "Prefer `??` / `||` over ternary for truthiness/nullish checks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,6 +54,7 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
                 severity: Severity::Warning,
                 help: Some(format!("Replace with `{operator}`")),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace ternary with `{operator}`"),
                     edits: vec![Edit {
                         span: Span::new(cond.span.start, cond.span.end),
@@ -81,6 +81,7 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
                 severity: Severity::Warning,
                 help: Some("Replace with `??`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace ternary with `??`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(cond.span.start, cond.span.end),

@@ -26,7 +26,6 @@ impl NativeRule for NoElseReturn {
             description: "Disallow `else` blocks after `return` in `if` statements".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -80,6 +79,7 @@ impl NativeRule for NoElseReturn {
             severity: Severity::Warning,
             help: Some("Remove the `else` wrapper".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Remove the `else` wrapper".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(cons_end, if_stmt.span.end),

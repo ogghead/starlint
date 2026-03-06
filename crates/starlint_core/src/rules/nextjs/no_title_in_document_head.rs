@@ -36,7 +36,6 @@ impl NativeRule for NoTitleInDocumentHead {
             description: "Forbid `<title>` in `next/document` `<Head>`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -78,6 +77,7 @@ impl NativeRule for NoTitleInDocumentHead {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Remove `<title>` element".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(

@@ -40,7 +40,6 @@ impl NativeRule for AnchorHasContent {
             description: "Enforce anchors have content".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,7 +76,7 @@ impl NativeRule for AnchorHasContent {
                 ctx.source_text(),
                 Span::new(opening.span.start, opening.span.end),
             );
-            let fix = FixBuilder::new("Add `aria-label` attribute")
+            let fix = FixBuilder::new("Add `aria-label` attribute", FixKind::SuggestionFix)
                 .insert_at(insert_pos, " aria-label=\"${1:link text}\"")
                 .build_snippet();
 

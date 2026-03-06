@@ -36,7 +36,6 @@ impl NativeRule for UninvokedArrayCallback {
             description: "Detect problematic function references in array callbacks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -98,6 +97,7 @@ impl NativeRule for UninvokedArrayCallback {
                     severity: Severity::Warning,
                     help: None,
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Wrap `{func_name}` in an arrow function"),
                         edits: vec![Edit {
                             span: Span::new(arg_span.start, arg_span.end),

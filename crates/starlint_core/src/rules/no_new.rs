@@ -25,7 +25,6 @@ impl NativeRule for NoNew {
             description: "Disallow `new` for side effects".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,7 +40,7 @@ impl NativeRule for NoNew {
 
         if matches!(stmt.expression, oxc_ast::ast::Expression::NewExpression(_)) {
             let span = Span::new(stmt.span.start, stmt.span.end);
-            let fix = FixBuilder::new("Remove `new` statement")
+            let fix = FixBuilder::new("Remove `new` statement", FixKind::SuggestionFix)
                 .edit(fix_utils::delete_statement(ctx.source_text(), span))
                 .build();
             ctx.report(Diagnostic {

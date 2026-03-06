@@ -56,7 +56,6 @@ impl NativeRule for NoArrayPushPush {
             description: "Merge consecutive `.push()` calls on the same array".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -94,6 +93,7 @@ impl NativeRule for NoArrayPushPush {
                     let fix = extract_call_args_text(source, &stmt.expression).map(|args_text| {
                         let separator = if prev_has_args { ", " } else { "" };
                         Fix {
+                            kind: FixKind::SafeFix,
                             message: "Merge into previous `.push()` call".to_owned(),
                             edits: vec![
                                 // Insert args before the closing paren of the previous push

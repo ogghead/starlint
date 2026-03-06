@@ -27,7 +27,6 @@ impl NativeRule for NoForInArray {
             description: "Disallow iterating over arrays with `for...in`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,6 +51,7 @@ impl NativeRule for NoForInArray {
                     u32::try_from(left_end.saturating_add(pos).saturating_add(1)).ok()?;
                 let in_end = in_start.saturating_add(2);
                 Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace `in` with `of`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(in_start, in_end),

@@ -7,7 +7,7 @@
 //! Without full module resolution, this rule is a stub that documents intent.
 
 use starlint_plugin_sdk::diagnostic::Severity;
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::NativeRule;
 
@@ -23,7 +23,6 @@ impl NativeRule for NoNamedAsDefaultMember {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

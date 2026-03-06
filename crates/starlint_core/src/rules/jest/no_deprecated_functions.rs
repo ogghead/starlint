@@ -35,7 +35,6 @@ impl NativeRule for NoDeprecatedFunctions {
             description: "Disallow deprecated Jest functions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -78,6 +77,7 @@ impl NativeRule for NoDeprecatedFunctions {
                     severity: Severity::Error,
                     help: Some(format!("Replace with `{replacement}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: callee_span,

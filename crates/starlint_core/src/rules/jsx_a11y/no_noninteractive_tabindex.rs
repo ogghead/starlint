@@ -125,7 +125,6 @@ impl NativeRule for NoNoninteractiveTabindex {
             description: "Forbid `tabIndex` on non-interactive elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -165,7 +164,7 @@ impl NativeRule for NoNoninteractiveTabindex {
             // tabIndex="-1" is acceptable (removes from tab order)
             if parsed >= 0 {
                 let attr_span = Span::new(attr_oxc_span.start, attr_oxc_span.end);
-                let fix = FixBuilder::new("Remove `tabIndex` attribute")
+                let fix = FixBuilder::new("Remove `tabIndex` attribute", FixKind::SuggestionFix)
                     .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                     .build();
                 ctx.report(Diagnostic {
@@ -183,7 +182,7 @@ impl NativeRule for NoNoninteractiveTabindex {
         } else if let Some(attr_oxc_span) = get_attr_span(opening, "tabIndex") {
             // tabIndex without a value (boolean attribute) defaults to 0
             let attr_span = Span::new(attr_oxc_span.start, attr_oxc_span.end);
-            let fix = FixBuilder::new("Remove `tabIndex` attribute")
+            let fix = FixBuilder::new("Remove `tabIndex` attribute", FixKind::SuggestionFix)
                 .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                 .build();
             ctx.report(Diagnostic {

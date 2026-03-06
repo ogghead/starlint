@@ -24,7 +24,6 @@ impl NativeRule for PreferEventTarget {
             description: "Prefer `EventTarget` over `EventEmitter`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,6 +44,7 @@ impl NativeRule for PreferEventTarget {
                             severity: Severity::Warning,
                             help: Some("Replace `EventEmitter` with `EventTarget`".to_owned()),
                             fix: Some(Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: "Replace `EventEmitter` with `EventTarget`".to_owned(),
                                 edits: vec![Edit {
                                     span: id_span,
@@ -69,6 +69,7 @@ impl NativeRule for PreferEventTarget {
                             severity: Severity::Warning,
                             help: Some("Replace `EventEmitter` with `EventTarget`".to_owned()),
                             fix: Some(Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: "Replace `EventEmitter` with `EventTarget`".to_owned(),
                                 edits: vec![Edit {
                                     span: id_span,

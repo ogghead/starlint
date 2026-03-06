@@ -24,7 +24,6 @@ impl NativeRule for NoConstructorReturn {
             description: "Disallow returning a value from a constructor".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -68,6 +67,7 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
                     severity: Severity::Error,
                     help: Some("Remove the return value or use a bare `return;`".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Remove the return value".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(ret.span.start, ret.span.end),

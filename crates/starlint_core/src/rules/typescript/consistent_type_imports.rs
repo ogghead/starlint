@@ -24,7 +24,6 @@ impl NativeRule for ConsistentTypeImports {
             description: "Prefer `import type` over inline `type` qualifiers in imports".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for ConsistentTypeImports {
                 severity: Severity::Warning,
                 help: Some("Convert to `import type` syntax".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Convert to `import type` syntax".to_owned(),
                     edits: vec![Edit { span, replacement }],
                     is_snippet: false,

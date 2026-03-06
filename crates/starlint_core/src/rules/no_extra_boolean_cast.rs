@@ -24,7 +24,6 @@ impl NativeRule for NoExtraBooleanCast {
             description: "Disallow unnecessary boolean casts".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -67,6 +66,7 @@ impl NativeRule for NoExtraBooleanCast {
                 severity: Severity::Warning,
                 help: Some("Remove the unnecessary boolean cast".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove unnecessary boolean cast".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(test.span().start, test.span().end),

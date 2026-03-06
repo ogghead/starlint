@@ -26,7 +26,6 @@ impl NativeRule for PreferNamespaceKeyword {
                 .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -67,6 +66,7 @@ impl NativeRule for PreferNamespaceKeyword {
                 severity: Severity::Warning,
                 help: Some("Replace `module` with `namespace`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace `module` with `namespace`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(module_start, module_end),

@@ -29,7 +29,6 @@ impl NativeRule for ExplicitLengthCheck {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -81,6 +80,7 @@ fn check_condition(
             severity: Severity::Warning,
             help: Some("Use `> 0` for a non-empty check".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Replace with `> 0` comparison".to_owned(),
                 edits: vec![Edit {
                     span: condition_span,
@@ -116,6 +116,7 @@ fn check_condition(
                 severity: Severity::Warning,
                 help: Some("Use `=== 0` for an empty check".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace with `=== 0` comparison".to_owned(),
                     edits: vec![Edit {
                         span: unary_span,

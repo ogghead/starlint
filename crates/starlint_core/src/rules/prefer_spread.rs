@@ -25,7 +25,6 @@ impl NativeRule for PreferSpread {
             description: "Require spread operator instead of `.apply()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for PreferSpread {
                         &source[args_arg.span().start as usize..args_arg.span().end as usize];
                     let replacement = format!("{fn_text}(...{args_text})");
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

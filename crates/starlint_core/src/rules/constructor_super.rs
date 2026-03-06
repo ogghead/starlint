@@ -24,7 +24,6 @@ impl NativeRule for ConstructorSuper {
             description: "Require super() calls in constructors of derived classes".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for ConstructorSuper {
                 // Insert `super();` right after the opening `{` of the body
                 let insert_pos = body.span.start.saturating_add(1);
                 let fix = Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Add `super()` call".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(insert_pos, insert_pos),

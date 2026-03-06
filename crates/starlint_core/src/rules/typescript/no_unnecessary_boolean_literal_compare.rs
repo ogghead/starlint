@@ -30,7 +30,6 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
             description: "Disallow unnecessary comparisons against boolean literals".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -118,6 +117,7 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
                 severity: Severity::Warning,
                 help: Some("Simplify the boolean comparison".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Simplify the boolean comparison".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(expr.span.start, expr.span.end),

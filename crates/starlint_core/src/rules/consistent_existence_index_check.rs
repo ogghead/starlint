@@ -28,7 +28,6 @@ impl NativeRule for ConsistentExistenceIndexCheck {
             description: "Enforce consistent style for checking if an index exists".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -85,6 +84,7 @@ impl NativeRule for ConsistentExistenceIndexCheck {
                 severity: Severity::Warning,
                 help: Some(fix_desc.to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: fix_desc.to_owned(),
                     edits: vec![Edit {
                         span: Span::new(left_end, right_end),

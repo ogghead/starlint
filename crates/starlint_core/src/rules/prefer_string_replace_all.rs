@@ -25,7 +25,6 @@ impl NativeRule for PreferStringReplaceAll {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -75,6 +74,7 @@ impl NativeRule for PreferStringReplaceAll {
                 severity: Severity::Warning,
                 help: Some("Use `replaceAll` with a string pattern instead".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace `replace` with `replaceAll`".to_owned(),
                     edits: vec![Edit {
                         span: prop_span,

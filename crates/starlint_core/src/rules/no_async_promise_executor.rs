@@ -30,7 +30,6 @@ impl NativeRule for NoAsyncPromiseExecutor {
             description: "Disallow using an async function as a Promise executor".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -83,6 +82,7 @@ impl NativeRule for NoAsyncPromiseExecutor {
                                 .saturating_add(u32::try_from(pos).unwrap_or(0));
                             let async_end = async_start.saturating_add(6); // "async " = 6 chars
                             Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: "Remove `async` from the Promise executor".to_owned(),
                                 edits: vec![Edit {
                                     span: Span::new(async_start, async_end),

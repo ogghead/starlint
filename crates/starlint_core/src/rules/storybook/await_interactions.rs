@@ -22,7 +22,6 @@ impl NativeRule for AwaitInteractions {
             description: "Interactions in play functions should be awaited".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for AwaitInteractions {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Add `await`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(start, start),

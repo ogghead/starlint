@@ -4,7 +4,7 @@
 //! functions shouldn't rely on `this` binding — it's fragile and error-prone.
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -167,7 +167,6 @@ impl NativeRule for NoThisInExportedFunction {
             description: "Disallow `this` in exported functions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

@@ -70,7 +70,6 @@ impl NativeRule for PreferNodeProtocol {
             description: "Prefer node: protocol for Node.js built-in modules".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -109,6 +108,7 @@ impl NativeRule for PreferNodeProtocol {
                 severity: Severity::Warning,
                 help: Some(format!("Add `node:` prefix to `{source}`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Replace `{source}` with `node:{source}`"),
                     edits: vec![Edit {
                         span: inner_span,

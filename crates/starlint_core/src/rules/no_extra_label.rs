@@ -27,7 +27,6 @@ impl NativeRule for NoExtraLabel {
             description: "Disallow unnecessary labels".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -82,6 +81,7 @@ impl NativeRule for NoExtraLabel {
             severity: Severity::Warning,
             help: Some(format!("Remove label `{label_name}`")),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Remove label `{label_name}`"),
                 edits,
                 is_snippet: false,

@@ -29,7 +29,6 @@ impl NativeRule for JsxNoDuplicateProps {
             description: "Disallow duplicate props in JSX elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -56,9 +55,12 @@ impl NativeRule for JsxNoDuplicateProps {
                 };
                 if !seen.insert(name) {
                     let attr_span = Span::new(attr.span.start, attr.span.end);
-                    let fix = FixBuilder::new(format!("Remove duplicate `{name}` prop"))
-                        .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
-                        .build();
+                    let fix = FixBuilder::new(
+                        format!("Remove duplicate `{name}` prop"),
+                        FixKind::SuggestionFix,
+                    )
+                    .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                    .build();
                     ctx.report(Diagnostic {
                         rule_name: RULE_NAME.to_owned(),
                         message: format!("Duplicate prop `{name}` found on JSX element"),

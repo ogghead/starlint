@@ -26,7 +26,6 @@ impl NativeRule for HtmlHasLang {
             description: "Enforce `<html>` element has a `lang` attribute".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,7 +67,7 @@ impl NativeRule for HtmlHasLang {
                 } else {
                     opening.span.end.saturating_sub(1)
                 };
-            let fix = FixBuilder::new("Add `lang` attribute")
+            let fix = FixBuilder::new("Add `lang` attribute", FixKind::SuggestionFix)
                 .edit(fix_utils::insert_before(insert_pos, " lang=\"en\""))
                 .build();
             ctx.report(Diagnostic {

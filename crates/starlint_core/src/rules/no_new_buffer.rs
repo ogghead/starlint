@@ -25,7 +25,6 @@ impl NativeRule for NoNewBuffer {
             description: "Disallow `new Buffer()` (deprecated)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,6 +67,7 @@ impl NativeRule for NoNewBuffer {
                 severity: Severity::Error,
                 help: Some(format!("Replace with `Buffer.{method}()`")),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace with `Buffer.{method}()`"),
                     edits: vec![Edit {
                         span: Span::new(new_expr.span.start, new_expr.span.end),

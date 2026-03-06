@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::rule::FixKind;
 use tower_lsp::lsp_types;
 
 use crate::snippet::{APPLY_SNIPPET_COMMAND, SnippetTextEdit, SnippetWorkspaceEdit};
@@ -101,6 +102,8 @@ pub fn fix_to_code_action(
         return None;
     }
 
+    let is_preferred = Some(fix.kind == FixKind::SafeFix);
+
     if fix.is_snippet {
         // Deliver snippet edits via a command that the VS Code extension handles.
         let snippet_edits: Vec<SnippetTextEdit> = fix
@@ -123,6 +126,7 @@ pub fn fix_to_code_action(
             title: fix.message.clone(),
             kind: Some(lsp_types::CodeActionKind::QUICKFIX),
             diagnostics: Some(vec![lsp_diag.clone()]),
+            is_preferred,
             command: Some(lsp_types::Command {
                 title: fix.message.clone(),
                 command: APPLY_SNIPPET_COMMAND.to_owned(),
@@ -147,6 +151,7 @@ pub fn fix_to_code_action(
             title: fix.message.clone(),
             kind: Some(lsp_types::CodeActionKind::QUICKFIX),
             diagnostics: Some(vec![lsp_diag.clone()]),
+            is_preferred,
             edit: Some(lsp_types::WorkspaceEdit {
                 changes: Some(changes),
                 ..Default::default()
@@ -163,6 +168,7 @@ mod tests {
     use super::*;
 
     use starlint_plugin_sdk::diagnostic::{Edit, Fix};
+    use starlint_plugin_sdk::rule::FixKind;
 
     /// Parse a URL for testing. All test URLs are known-valid constants.
     fn test_url(s: &str) -> lsp_types::Url {
@@ -328,6 +334,7 @@ mod tests {
             severity: Severity::Warning,
             help: None,
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove semicolon".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(0, 1),

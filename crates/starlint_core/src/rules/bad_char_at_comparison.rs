@@ -24,7 +24,6 @@ impl NativeRule for BadCharAtComparison {
             description: "Catch `.charAt()` compared to a multi-character string".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,6 +47,7 @@ impl NativeRule for BadCharAtComparison {
         if flagged {
             // Fix: replace the entire comparison with `false`
             let fix = Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace with `false`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(expr.span.start, expr.span.end),

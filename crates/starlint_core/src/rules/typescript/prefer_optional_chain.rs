@@ -25,7 +25,6 @@ impl NativeRule for PreferOptionalChain {
             description: "Prefer `?.` optional chaining over `&&` short-circuit guards".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for PreferOptionalChain {
                 right_text.starts_with(prefix.as_str()).then(|| {
                     let replacement = format!("{guard_name}?.{}", &right_text[prefix.len()..]);
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(logical.span.start, logical.span.end),

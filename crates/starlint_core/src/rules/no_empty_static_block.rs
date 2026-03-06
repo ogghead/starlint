@@ -22,7 +22,6 @@ impl NativeRule for NoEmptyStaticBlock {
             description: "Disallow empty static initialization blocks".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,6 +42,7 @@ impl NativeRule for NoEmptyStaticBlock {
                 severity: Severity::Error,
                 help: Some("Remove the empty `static {}` block".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove empty static block".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(block.span.start, block.span.end),

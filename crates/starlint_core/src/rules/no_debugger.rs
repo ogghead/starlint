@@ -22,7 +22,6 @@ impl NativeRule for NoDebugger {
             description: "Disallow `debugger` statements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -39,7 +38,7 @@ impl NativeRule for NoDebugger {
                 span,
                 severity: Severity::Error,
                 help: Some("Remove the `debugger` statement before deploying".to_owned()),
-                fix: FixBuilder::new("Remove `debugger` statement")
+                fix: FixBuilder::new("Remove `debugger` statement", FixKind::SafeFix)
                     .delete(span)
                     .build(),
                 labels: vec![],

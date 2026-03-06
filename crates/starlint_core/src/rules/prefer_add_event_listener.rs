@@ -25,7 +25,6 @@ impl NativeRule for PreferAddEventListener {
             description: "Prefer `addEventListener` over `on*` property assignment".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for PreferAddEventListener {
                     .get(rhs_span.start as usize..rhs_span.end as usize)
                     .unwrap_or("");
                 (!obj_text.is_empty() && !rhs_text.is_empty()).then(|| Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!(
                         "Replace with `{obj_text}.addEventListener('{event_name}', {rhs_text})`"
                     ),

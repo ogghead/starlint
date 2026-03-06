@@ -46,7 +46,6 @@ impl NativeRule for ConsistentVitestVi {
             description: "Enforce using `vi` instead of `vitest` for mock utilities".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -85,6 +84,7 @@ impl NativeRule for ConsistentVitestVi {
                     "Replace `vitest.{method_name}` with `vi.{method_name}`"
                 )),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace `vitest` with `vi`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(obj.span.start, obj.span.end),

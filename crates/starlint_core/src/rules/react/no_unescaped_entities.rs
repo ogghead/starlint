@@ -24,7 +24,6 @@ impl NativeRule for NoUnescapedEntities {
             description: "Disallow unescaped HTML entities in JSX text".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -57,6 +56,7 @@ impl NativeRule for NoUnescapedEntities {
                     .unwrap_or("");
                 let replaced = text_str.replace(*ch, entity);
                 let fix = (replaced != text_str).then(|| Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Replace `{ch}` with `{entity}`"),
                     edits: vec![Edit {
                         span: Span::new(text.span.start, text.span.end),

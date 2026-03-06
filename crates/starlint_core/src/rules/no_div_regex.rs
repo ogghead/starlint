@@ -23,7 +23,6 @@ impl NativeRule for NoDivRegex {
             description: "Disallow regular expressions that look like division".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,6 +45,7 @@ impl NativeRule for NoDivRegex {
             let raw = source.get(start..end).unwrap_or("");
             // raw is "/=pattern/flags" — insert [=] after first /
             let fix = raw.get(2..).map(|rest| Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Escape leading `=` in regex".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(regex.span.start, regex.span.end),

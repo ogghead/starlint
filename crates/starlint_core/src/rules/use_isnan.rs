@@ -26,7 +26,6 @@ impl NativeRule for UseIsnan {
             description: "Require `Number.isNaN()` instead of comparisons with `NaN`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -68,6 +67,7 @@ impl NativeRule for UseIsnan {
                         format!("Number.isNaN({value_text})")
                     };
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(expr.span.start, expr.span.end),

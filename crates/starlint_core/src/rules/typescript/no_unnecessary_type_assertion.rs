@@ -29,7 +29,6 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
                     "Remove the `as` assertion — replace with `{inner_text}`"
                 )),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove unnecessary type assertion".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(expr.span.start, expr.span.end),

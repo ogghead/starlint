@@ -5,7 +5,7 @@
 //! re-export chain to determine what is actually used.
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -74,7 +74,6 @@ impl NativeRule for NoBarrelFile {
             description: "Disallow barrel files (index files that only re-export)".to_owned(),
             category: Category::Performance,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

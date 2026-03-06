@@ -39,7 +39,6 @@ impl NativeRule for NoCommentedOutTests {
             description: "Disallow commented-out tests".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -68,6 +67,7 @@ impl NativeRule for NoCommentedOutTests {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Remove commented-out test".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(span.start, delete_end),

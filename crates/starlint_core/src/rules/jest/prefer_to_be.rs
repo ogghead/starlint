@@ -25,7 +25,6 @@ impl NativeRule for PreferToBe {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -69,6 +68,7 @@ impl NativeRule for PreferToBe {
                 severity: Severity::Warning,
                 help: Some("Replace `toEqual` with `toBe`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace with `toBe`".to_owned(),
                     edits: vec![Edit {
                         span: prop_span,

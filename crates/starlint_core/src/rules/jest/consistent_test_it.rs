@@ -22,7 +22,6 @@ impl NativeRule for ConsistentTestIt {
             description: "Enforce consistent use of `test` or `it`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -70,6 +69,7 @@ impl NativeRule for ConsistentTestIt {
                 severity: Severity::Warning,
                 help: Some(format!("Replace `{minority}` with `{majority}`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Replace with `{majority}`"),
                     edits: vec![Edit {
                         span: *span,

@@ -36,7 +36,6 @@ impl NativeRule for NoPathConcat {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -71,6 +70,7 @@ impl NativeRule for NoPathConcat {
             .unwrap_or("")
             .to_owned();
         let fix = (!left_text.is_empty() && !right_text.is_empty()).then(|| Fix {
+            kind: FixKind::SuggestionFix,
             message: format!("Replace with `path.join({left_text}, {right_text})`"),
             edits: vec![Edit {
                 span: Span::new(expr.span.start, expr.span.end),

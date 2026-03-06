@@ -27,7 +27,6 @@ impl NativeRule for NoImplicitCoercion {
             description: "Disallow shorthand type conversions".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -53,6 +52,7 @@ impl NativeRule for NoImplicitCoercion {
                             severity: Severity::Warning,
                             help: Some("Replace with `Boolean()`".to_owned()),
                             fix: Some(Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: "Replace with `Boolean()`".to_owned(),
                                 edits: vec![Edit {
                                     span: Span::new(outer.span.start, outer.span.end),
@@ -84,6 +84,7 @@ impl NativeRule for NoImplicitCoercion {
                         severity: Severity::Warning,
                         help: Some("Replace with `Number()`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Replace with `Number()`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),
@@ -114,6 +115,7 @@ impl NativeRule for NoImplicitCoercion {
                         severity: Severity::Warning,
                         help: Some("Replace with `String()`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Replace with `String()`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),

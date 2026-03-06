@@ -26,7 +26,6 @@ impl NativeRule for SwitchCaseBraces {
             description: "Enforce braces around switch case bodies".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -70,6 +69,7 @@ impl NativeRule for SwitchCaseBraces {
                 severity: Severity::Warning,
                 help: Some("Wrap the case body in braces".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Wrap in braces".to_owned(),
                     edits: vec![Edit {
                         span: body_span,

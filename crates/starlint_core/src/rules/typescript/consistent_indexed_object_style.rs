@@ -26,7 +26,6 @@ impl NativeRule for ConsistentIndexedObjectStyle {
             description: "Enforce `Record<K, V>` over index signature syntax".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for ConsistentIndexedObjectStyle {
         let fix = extract_index_sig_types(lit_text).map(|(k, v)| {
             let replacement = format!("Record<{k}, {v}>");
             Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(lit.span.start, lit.span.end),

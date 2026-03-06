@@ -31,7 +31,6 @@ impl NativeRule for NoNamedDefault {
             description: "Forbid named default exports".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for NoNamedDefault {
                 // Replace `{ default as Foo }` with just `Foo`
                 let replacement = line_text.replace(&format!("{{ default as {alias} }}"), &alias);
                 Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Use `import {alias} from ...`"),
                     edits: vec![Edit {
                         span: Span::new(start, end),

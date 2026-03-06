@@ -22,7 +22,6 @@ impl NativeRule for EscapeCase {
             description: "Require uppercase hex digits in escape sequences".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -55,6 +54,7 @@ impl NativeRule for EscapeCase {
                 severity: Severity::Warning,
                 help: Some("Uppercase hex digits in escape sequences".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Uppercase hex digits".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(lit.span.start, lit.span.end),

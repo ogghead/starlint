@@ -27,7 +27,6 @@ impl NativeRule for PreferSetHas {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,6 +76,7 @@ impl NativeRule for PreferSetHas {
                 let a_text = source.get(a_span.start as usize..a_span.end as usize)?;
                 let replacement = format!("new Set({arr_text}).has({a_text})");
                 Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

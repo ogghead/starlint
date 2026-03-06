@@ -25,7 +25,6 @@ impl NativeRule for PreferStringRaw {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -84,6 +83,7 @@ impl NativeRule for PreferStringRaw {
             severity: Severity::Warning,
             help: Some("Prefix with `String.raw`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Prefix with `String.raw`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(template.span.start, template.span.end),

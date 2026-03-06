@@ -28,7 +28,6 @@ impl NativeRule for NoAbusiveEslintDisable {
             description: "Disallow blanket `eslint-disable` comments without rule names".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -63,6 +62,7 @@ impl NativeRule for NoAbusiveEslintDisable {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Remove blanket `eslint-disable` comment".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(span.start, delete_end),

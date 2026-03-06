@@ -10,7 +10,7 @@
 //! a known `EnumName.Member` and the other is a raw literal or non-enum value.
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -25,7 +25,6 @@ impl NativeRule for NoUnsafeEnumComparison {
             description: "Disallow comparing enum members with non-enum values".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

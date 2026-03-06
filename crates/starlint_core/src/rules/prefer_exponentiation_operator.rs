@@ -24,7 +24,6 @@ impl NativeRule for PreferExponentiationOperator {
             description: "Disallow the use of `Math.pow` in favor of `**`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for PreferExponentiationOperator {
                     let first_text = source.get(f_start..f_end).unwrap_or("");
                     let second_text = source.get(s_start..s_end).unwrap_or("");
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Use `**` operator".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

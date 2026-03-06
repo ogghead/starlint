@@ -5,7 +5,7 @@
 //! via configuration.
 
 use starlint_plugin_sdk::diagnostic::Severity;
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::NativeRule;
 
@@ -20,7 +20,6 @@ impl NativeRule for NoRestrictedImports {
             description: "Forbid specific modules when loaded by import".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

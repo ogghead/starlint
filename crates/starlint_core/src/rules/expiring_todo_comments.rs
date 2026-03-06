@@ -29,7 +29,6 @@ impl NativeRule for ExpiringTodoComments {
             description: "Flag TODO/FIXME comments with expired dates".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -58,6 +57,7 @@ impl NativeRule for ExpiringTodoComments {
                         severity: Severity::Warning,
                         help: None,
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Remove expired comment".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(span.start, delete_end),

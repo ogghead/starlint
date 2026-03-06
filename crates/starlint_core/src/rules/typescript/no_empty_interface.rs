@@ -23,7 +23,6 @@ impl NativeRule for NoEmptyInterface {
             description: "Disallow empty interfaces".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -56,6 +55,7 @@ impl NativeRule for NoEmptyInterface {
                 severity: Severity::Warning,
                 help: Some("Convert to a type alias".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Convert to `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(decl.span.start, decl.span.end),

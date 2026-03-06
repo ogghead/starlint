@@ -26,7 +26,6 @@ impl NativeRule for PreferEnumInitializers {
             description: "Require explicit initializers for enum members".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,6 +45,7 @@ impl NativeRule for PreferEnumInitializers {
 
                 // Insert ` = <index>` right after the member identifier (at end of member span)
                 let fix = Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Add initializer `= {index}`"),
                     edits: vec![Edit {
                         span: Span::new(member.span.end, member.span.end),

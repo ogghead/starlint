@@ -27,7 +27,6 @@ impl NativeRule for NoProcessExit {
             description: "Disallow the use of `process.exit()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -64,6 +63,7 @@ impl NativeRule for NoProcessExit {
                     .unwrap_or("1");
                 let replacement = format!("process.exitCode = {code}");
                 Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

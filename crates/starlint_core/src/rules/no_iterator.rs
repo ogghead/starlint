@@ -24,7 +24,6 @@ impl NativeRule for NoIterator {
             description: "Disallow the `__iterator__` property".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -45,6 +44,7 @@ impl NativeRule for NoIterator {
                         .map(|obj_text| {
                             let replacement = format!("{obj_text}[Symbol.iterator]");
                             Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: format!("Replace with `{replacement}`"),
                                 edits: vec![Edit {
                                     span: Span::new(member.span.start, member.span.end),

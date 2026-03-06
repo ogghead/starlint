@@ -23,7 +23,6 @@ impl NativeRule for PreferBigintLiterals {
             description: "Prefer `BigInt` literals over `BigInt()` constructor calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -64,6 +63,7 @@ impl NativeRule for PreferBigintLiterals {
                 severity: Severity::Warning,
                 help: Some(format!("Replace with `{literal_value}n`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Replace with `{literal_value}n`"),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

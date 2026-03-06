@@ -23,7 +23,6 @@ impl NativeRule for RequireNumberToFixedDigitsArgument {
             description: "Require `.toFixed()` to have an explicit digits argument".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for RequireNumberToFixedDigitsArgument {
             severity: Severity::Warning,
             help: Some("Add `0` as the digits argument".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Add `0` argument".to_owned(),
                 edits: vec![Edit {
                     span: insert_span,

@@ -21,7 +21,6 @@ impl NativeRule for NoNamespace {
             description: "Disallow namespaced JSX elements (e.g. `<ns:Component>`)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,6 +43,7 @@ impl NativeRule for NoNamespace {
             severity: Severity::Error,
             help: None,
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Remove namespace prefix `{namespace}:`"),
                 edits: vec![Edit {
                     span: Span::new(ns_name.span.start, ns_name.span.end),

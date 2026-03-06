@@ -25,7 +25,6 @@ impl NativeRule for PreferGlobalThis {
             description: "Prefer globalThis over window/self/global".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,6 +47,7 @@ impl NativeRule for PreferGlobalThis {
                 severity: Severity::Warning,
                 help: Some(format!("Replace `{name}` with `globalThis`")),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace `{name}` with `globalThis`"),
                     edits: vec![Edit {
                         span: ident_span,

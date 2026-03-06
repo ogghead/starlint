@@ -34,7 +34,6 @@ impl NativeRule for PreferModernDomApis {
             description: "Prefer modern DOM APIs over legacy mutation methods".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -77,6 +76,7 @@ impl NativeRule for PreferModernDomApis {
                             source.get(arg_span.start as usize..arg_span.end as usize)?;
                         let replacement = format!("{obj_text}.append({arg_text})");
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),
@@ -93,6 +93,7 @@ impl NativeRule for PreferModernDomApis {
                             source.get(arg_span.start as usize..arg_span.end as usize)?;
                         let replacement = format!("{arg_text}.remove()");
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),
@@ -113,6 +114,7 @@ impl NativeRule for PreferModernDomApis {
                             source.get(old_span.start as usize..old_span.end as usize)?;
                         let replacement = format!("{old_text}.replaceWith({new_text})");
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),

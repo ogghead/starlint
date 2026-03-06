@@ -43,7 +43,6 @@ impl NativeRule for JsxNoTargetBlank {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -113,6 +112,7 @@ impl NativeRule for JsxNoTargetBlank {
                     format!("{existing_value} noreferrer")
                 };
                 Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Add `noreferrer` to the `rel` attribute".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(rel.span.start, rel.span.end),
@@ -135,6 +135,7 @@ impl NativeRule for JsxNoTargetBlank {
                 };
                 let insert_span = Span::new(insert_pos, insert_pos);
                 Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Add `rel=\"noreferrer\"`".to_owned(),
                     edits: vec![Edit {
                         span: insert_span,

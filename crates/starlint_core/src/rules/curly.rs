@@ -43,7 +43,6 @@ impl NativeRule for Curly {
             description: "Require curly braces for all control flow".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -127,6 +126,7 @@ fn report_curly_fix(
         severity: Severity::Warning,
         help: Some("Wrap in curly braces".to_owned()),
         fix: Some(Fix {
+            kind: FixKind::SafeFix,
             message: "Wrap in curly braces".to_owned(),
             edits: vec![Edit {
                 span: Span::new(body_span.start, body_span.end),

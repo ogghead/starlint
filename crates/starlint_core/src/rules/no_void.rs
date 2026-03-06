@@ -23,7 +23,6 @@ impl NativeRule for NoVoid {
             description: "Disallow the `void` operator".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,6 +43,7 @@ impl NativeRule for NoVoid {
                 severity: Severity::Warning,
                 help: Some("Replace `void` expression with `undefined`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace with `undefined`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(unary.span.start, unary.span.end),

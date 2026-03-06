@@ -50,7 +50,6 @@ impl NativeRule for BadArrayMethodOnArguments {
             description: "Detect array methods called on `arguments`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -88,6 +87,7 @@ impl NativeRule for BadArrayMethodOnArguments {
                 call_text.map(|text| {
                     let replacement = text.replacen("arguments.", "Array.from(arguments).", 1);
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `Array.from(arguments).{method}()`"),
                         edits: vec![Edit {
                             span: Span::new(call_span.start, call_span.end),

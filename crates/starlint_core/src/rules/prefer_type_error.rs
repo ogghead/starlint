@@ -25,7 +25,6 @@ impl NativeRule for PreferTypeError {
             description: "Prefer TypeError for type checking".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -53,6 +52,7 @@ impl NativeRule for PreferTypeError {
                 severity: Severity::Warning,
                 help: Some("Replace `Error` with `TypeError`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Replace `Error` with `TypeError`".to_owned(),
                     edits: vec![Edit {
                         span: error_id_span,

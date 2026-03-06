@@ -25,7 +25,6 @@ impl NativeRule for GoogleFontDisplay {
             description: "Enforce `display` parameter in Google Fonts URLs".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for GoogleFontDisplay {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Add `display=swap` parameter".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(

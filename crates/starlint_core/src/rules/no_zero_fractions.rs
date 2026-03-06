@@ -22,7 +22,6 @@ impl NativeRule for NoZeroFractions {
             description: "Disallow unnecessary zero fractions in numeric literals".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -77,6 +76,7 @@ impl NativeRule for NoZeroFractions {
             severity: Severity::Warning,
             help: Some(format!("Replace with `{replacement}`")),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Replace `{raw}` with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(lit.span.start, lit.span.end),

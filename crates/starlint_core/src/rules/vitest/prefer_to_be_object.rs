@@ -29,7 +29,6 @@ impl NativeRule for PreferToBeObject {
             description: "Prefer `toBeTypeOf('object')` over `typeof` assertions".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -106,6 +105,7 @@ impl NativeRule for PreferToBeObject {
                     severity: Severity::Warning,
                     help: Some("Replace with `expect(x).toBeTypeOf('object')`".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Replace with `toBeTypeOf`".to_owned(),
                         edits: vec![
                             Edit {

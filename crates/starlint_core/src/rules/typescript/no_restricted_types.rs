@@ -53,7 +53,6 @@ impl NativeRule for NoRestrictedTypes {
             description: "Disallow specific types from being used".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -94,6 +93,7 @@ fn check_type_reference(
                 severity: Severity::Warning,
                 help: Some(format!("Replace `{banned}` with `{replacement}`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(reference.span.start, reference.span.end),
@@ -125,6 +125,7 @@ fn check_empty_object_type(lit: &oxc_ast::ast::TSTypeLiteral<'_>, ctx: &mut Nati
         severity: Severity::Warning,
         help: Some("Replace `{}` with `object` or `Record<string, unknown>`".to_owned()),
         fix: Some(Fix {
+            kind: FixKind::SafeFix,
             message: "Replace with `object`".to_owned(),
             edits: vec![Edit {
                 span: Span::new(lit.span.start, lit.span.end),

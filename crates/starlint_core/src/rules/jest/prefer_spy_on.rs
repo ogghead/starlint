@@ -26,7 +26,6 @@ impl NativeRule for PreferSpyOn {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for PreferSpyOn {
                 let prop_name = member.property.name.as_str();
                 let replacement = format!("jest.spyOn({obj_text}, '{prop_name}')");
                 Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(assign.span.start, assign.span.end),

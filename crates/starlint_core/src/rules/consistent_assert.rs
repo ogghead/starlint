@@ -37,7 +37,6 @@ impl NativeRule for ConsistentAssert {
             description: "Prefer strict assertion methods".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -77,6 +76,7 @@ impl NativeRule for ConsistentAssert {
                 "Replace `assert.{method}` with `assert.{replacement}` for strict comparison"
             )),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Replace `{method}` with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(member.property.span.start, member.property.span.end),

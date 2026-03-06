@@ -22,7 +22,6 @@ impl NativeRule for SelfClosingComp {
             description: "Components without children should be self-closing".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for SelfClosingComp {
                 severity: Severity::Warning,
                 help: Some("Use a self-closing tag instead".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Convert to self-closing tag".to_owned(),
                     edits: vec![Edit {
                         span: element_span,

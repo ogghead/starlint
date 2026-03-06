@@ -460,7 +460,7 @@ mod tests {
     use oxc_allocator::Allocator;
     use oxc_ast::ast_kind::AstType;
     use starlint_plugin_sdk::diagnostic::Span;
-    use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+    use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
     use crate::parser::parse_file;
 
@@ -475,7 +475,6 @@ mod tests {
                 description: "Disallow debugger statements".to_owned(),
                 category: Category::Correctness,
                 default_severity: starlint_plugin_sdk::diagnostic::Severity::Error,
-                fix_kind: FixKind::SafeFix,
             }
         }
 
@@ -501,7 +500,6 @@ mod tests {
                 description: "Disallow debugger statements (targeted)".to_owned(),
                 category: Category::Correctness,
                 default_severity: starlint_plugin_sdk::diagnostic::Severity::Error,
-                fix_kind: FixKind::SafeFix,
             }
         }
 

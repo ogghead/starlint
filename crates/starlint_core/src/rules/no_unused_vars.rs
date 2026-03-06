@@ -26,7 +26,6 @@ impl NativeRule for NoUnusedVars {
             description: "Disallow unused variables".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -92,7 +91,7 @@ impl NativeRule for NoUnusedVars {
         // Only offer a fix to delete the declaration if ALL bindings are unused.
         let fix: Option<Fix> = if !unused_infos.is_empty() && unused_infos.len() == total_bindings {
             let decl_span = Span::new(decl.span.start, decl.span.end);
-            FixBuilder::new("Remove unused declaration")
+            FixBuilder::new("Remove unused declaration", FixKind::SuggestionFix)
                 .edit(fix_utils::delete_statement(ctx.source_text(), decl_span))
                 .build()
         } else {

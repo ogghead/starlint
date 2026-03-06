@@ -28,7 +28,6 @@ impl NativeRule for NoArrayDelete {
             description: "Disallow using `delete` on array elements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -67,6 +66,7 @@ impl NativeRule for NoArrayDelete {
                     .unwrap_or("");
                 let replacement = format!("{obj_text}.splice({idx_text}, 1)");
                 Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(expr.span.start, expr.span.end),

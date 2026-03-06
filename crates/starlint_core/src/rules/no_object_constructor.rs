@@ -23,7 +23,6 @@ impl NativeRule for NoObjectConstructor {
             description: "Disallow `Object` constructor".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,6 +43,7 @@ impl NativeRule for NoObjectConstructor {
                         severity: Severity::Warning,
                         help: Some("Replace with `{}`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Replace with `{}`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(new_expr.span.start, new_expr.span.end),
@@ -66,6 +66,7 @@ impl NativeRule for NoObjectConstructor {
                         severity: Severity::Warning,
                         help: Some("Replace with `{}`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Replace with `{}`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),

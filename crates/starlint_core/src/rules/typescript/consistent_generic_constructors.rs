@@ -26,7 +26,6 @@ impl NativeRule for ConsistentGenericConstructors {
                     .to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for ConsistentGenericConstructors {
                 severity: Severity::Warning,
                 help: Some("Move type arguments to the constructor call".to_owned()),
                 fix: fix.map(|replacement| Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Move type arguments to constructor".to_owned(),
                     edits: vec![Edit { span, replacement }],
                     is_snippet: false,

@@ -26,7 +26,6 @@ impl NativeRule for PreferCodePoint {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -59,6 +58,7 @@ impl NativeRule for PreferCodePoint {
             severity: Severity::Warning,
             help: Some(format!("Replace `{method}` with `{replacement}`")),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Replace `{method}` with `{replacement}`"),
                 edits: vec![Edit {
                     span: prop_span,

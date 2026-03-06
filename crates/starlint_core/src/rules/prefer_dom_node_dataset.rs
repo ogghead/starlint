@@ -29,7 +29,6 @@ impl NativeRule for PreferDomNodeDataset {
             description: "Prefer `element.dataset` over `getAttribute`/`setAttribute` with `data-*` attributes".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -80,6 +79,7 @@ impl NativeRule for PreferDomNodeDataset {
             if method_name == "getAttribute" {
                 let replacement = format!("{obj_text}.dataset.{dataset_key}");
                 Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),
@@ -93,6 +93,7 @@ impl NativeRule for PreferDomNodeDataset {
                     let val_text = source.get(val_span.start as usize..val_span.end as usize)?;
                     let replacement = format!("{obj_text}.dataset.{dataset_key} = {val_text}");
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

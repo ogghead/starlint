@@ -25,7 +25,6 @@ impl NativeRule for NoHeadImportInDocument {
             description: "Forbid importing `next/head` in `_document`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -57,6 +56,7 @@ impl NativeRule for NoHeadImportInDocument {
                 severity: Severity::Error,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove `next/head` import".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(import.span.start, import.span.end),

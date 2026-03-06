@@ -23,7 +23,6 @@ impl NativeRule for NoLonelyIf {
             description: "Disallow `if` as the only statement in an `else` block".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for NoLonelyIf {
             severity: Severity::Warning,
             help: Some("Combine into `else if`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Combine into `else if`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(block.span.start, block.span.end),

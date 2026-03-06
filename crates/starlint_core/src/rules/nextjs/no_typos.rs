@@ -59,7 +59,6 @@ impl NativeRule for NoTypos {
             description: "Detect common Next.js API typos".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -109,6 +108,7 @@ impl NativeRule for NoTypos {
                 severity: Severity::Error,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Rename to `{correct}`"),
                     edits: vec![Edit {
                         span,

@@ -34,7 +34,6 @@ impl NativeRule for NoAwaitInPromiseMethods {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -99,6 +98,7 @@ impl NativeRule for NoAwaitInPromiseMethods {
 
         if has_await {
             let fix = (!edits.is_empty()).then(|| Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Remove `await` from array elements".to_owned(),
                 edits,
                 is_snippet: false,

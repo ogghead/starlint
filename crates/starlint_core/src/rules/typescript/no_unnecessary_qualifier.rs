@@ -22,7 +22,6 @@ impl NativeRule for NoUnnecessaryQualifier {
             description: "Disallow unnecessary namespace qualifiers".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -46,6 +45,7 @@ impl NativeRule for NoUnnecessaryQualifier {
                 severity: Severity::Warning,
                 help: Some(format!("Remove the `{ns_name}.` qualifier")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Remove `{ns_name}.` qualifier"),
                     edits: vec![Edit {
                         span,

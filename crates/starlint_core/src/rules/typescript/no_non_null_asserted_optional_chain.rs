@@ -45,7 +45,6 @@ impl NativeRule for NoNonNullAssertedOptionalChain {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -73,6 +72,7 @@ impl NativeRule for NoNonNullAssertedOptionalChain {
                 severity: Severity::Error,
                 help: Some("Remove the `!` non-null assertion".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove the `!` non-null assertion".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(expr.span.start, expr.span.end),

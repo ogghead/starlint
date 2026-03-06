@@ -26,7 +26,6 @@ impl NativeRule for MisrefactoredAssignOp {
             description: "Detect `a -= a - b` (probably meant `a -= b`)".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -101,6 +100,7 @@ impl NativeRule for MisrefactoredAssignOp {
                     severity: Severity::Warning,
                     help: Some(format!("Simplify to `{target_src} {op_str} {right_text}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Simplify to `{target_src} {op_str} {right_text}`"),
                         edits: vec![Edit {
                             span: Span::new(rhs_bin.span.start, rhs_bin.span.end),

@@ -87,7 +87,6 @@ impl NativeRule for AutocompleteValid {
             description: "Enforce `autocomplete` attribute has a valid value".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -127,9 +126,12 @@ impl NativeRule for AutocompleteValid {
                     if let Some(last) = tokens.last() {
                         if !VALID_AUTOCOMPLETE.contains(last) && !last.starts_with("section-") {
                             let attr_span = Span::new(attr.span.start, attr.span.end);
-                            let fix = FixBuilder::new("Remove invalid `autoComplete` attribute")
-                                .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
-                                .build();
+                            let fix = FixBuilder::new(
+                                "Remove invalid `autoComplete` attribute",
+                                FixKind::SuggestionFix,
+                            )
+                            .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                            .build();
                             ctx.report(Diagnostic {
                                 rule_name: RULE_NAME.to_owned(),
                                 message: format!("`{val}` is not a valid `autocomplete` value"),

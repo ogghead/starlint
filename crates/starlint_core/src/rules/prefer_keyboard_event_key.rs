@@ -28,7 +28,6 @@ impl NativeRule for PreferKeyboardEventKey {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,6 +53,7 @@ impl NativeRule for PreferKeyboardEventKey {
             severity: Severity::Warning,
             help: Some(format!("Replace `{prop}` with `key`")),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace `{prop}` with `key`"),
                 edits: vec![Edit {
                     span: prop_span,

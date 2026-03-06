@@ -50,7 +50,6 @@ impl NativeRule for BanTypes {
             description: "Disallow certain built-in types that are problematic".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -79,6 +78,7 @@ impl NativeRule for BanTypes {
                     severity: Severity::Warning,
                     help: Some(message.to_owned()),
                     fix: replacement.map(|r| Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Replace `{banned}` with `{r}`"),
                         edits: vec![Edit {
                             span: ident_span,

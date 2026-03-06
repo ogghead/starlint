@@ -28,7 +28,6 @@ impl NativeRule for PreferToHaveLength {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -98,6 +97,7 @@ impl NativeRule for PreferToHaveLength {
             severity: Severity::Warning,
             help: Some("Replace with `expect(arr).toHaveLength(n)`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Replace with `toHaveLength`".to_owned(),
                 edits: vec![
                     Edit {

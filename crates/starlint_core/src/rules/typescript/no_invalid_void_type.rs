@@ -50,7 +50,6 @@ impl NativeRule for NoInvalidVoidType {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -112,6 +111,7 @@ impl NativeRule for NoInvalidVoidType {
                         severity: Severity::Warning,
                         help: Some("Replace `void` with `undefined`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: "Replace with `undefined`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(void_start, void_end),

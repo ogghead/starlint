@@ -27,7 +27,6 @@ impl NativeRule for JsxPropsNoSpreading {
             description: "Disallow spreading props in JSX".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -41,7 +40,7 @@ impl NativeRule for JsxPropsNoSpreading {
         };
 
         let spread_span = Span::new(spread.span.start, spread.span.end);
-        let fix = FixBuilder::new("Remove spread attribute")
+        let fix = FixBuilder::new("Remove spread attribute", FixKind::SuggestionFix)
             .edit(fix_utils::remove_jsx_attr(ctx.source_text(), spread_span))
             .build();
         ctx.report(Diagnostic {

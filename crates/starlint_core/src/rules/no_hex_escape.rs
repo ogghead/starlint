@@ -22,7 +22,6 @@ impl NativeRule for NoHexEscape {
             description: r"Disallow `\xNN` hex escapes — use `\uNNNN` instead".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -54,6 +53,7 @@ impl NativeRule for NoHexEscape {
                 severity: Severity::Warning,
                 help: Some(r"Replace `\xNN` with `\u00NN`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: r"Convert hex escapes to Unicode escapes".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(lit.span.start, lit.span.end),

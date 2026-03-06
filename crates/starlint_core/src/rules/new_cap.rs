@@ -24,7 +24,6 @@ impl NativeRule for NewCap {
             description: "Require constructor names to begin with a capital letter".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for NewCap {
                         .chain(callee_name.chars().skip(1))
                         .collect();
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Capitalize to `{capitalized}`"),
                         edits: vec![Edit {
                             span: Span::new(ident.span.start, ident.span.end),
@@ -80,6 +80,7 @@ impl NativeRule for NewCap {
                         .chain(callee_name.chars().skip(1))
                         .collect();
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Capitalize to `{capitalized}`"),
                         edits: vec![Edit {
                             span: Span::new(member.property.span.start, member.property.span.end),

@@ -27,7 +27,6 @@ impl NativeRule for PreferComparisonMatcher {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -107,6 +106,7 @@ impl NativeRule for PreferComparisonMatcher {
             let negated = if is_true { "" } else { ".not" };
             let replacement = format!("expect({left_text}){negated}.{suggestion}({right_text})");
             (!left_text.is_empty() && !right_text.is_empty()).then(|| Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(call.span.start, call.span.end),

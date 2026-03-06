@@ -26,7 +26,6 @@ impl NativeRule for NoUnsafeNegation {
             description: "Disallow negating the left operand of relational operators".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -67,6 +66,7 @@ impl NativeRule for NoUnsafeNegation {
                         .unwrap_or("");
                     let replacement = format!("!({inner_text} {op_name} {right_text})");
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(expr.span.start, expr.span.end),

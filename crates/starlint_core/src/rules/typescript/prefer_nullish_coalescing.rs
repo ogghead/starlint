@@ -27,7 +27,6 @@ impl NativeRule for PreferNullishCoalescing {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,6 +45,7 @@ impl NativeRule for PreferNullishCoalescing {
                 severity: Severity::Warning,
                 help: Some("Replace `||` with `??`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace `||` with `??`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(start, end),

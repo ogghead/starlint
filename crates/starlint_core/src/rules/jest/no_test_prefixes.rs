@@ -35,7 +35,6 @@ impl NativeRule for NoTestPrefixes {
             description: "Use `.skip`/`.only` instead of `x`/`f` test prefixes".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for NoTestPrefixes {
                     severity: Severity::Warning,
                     help: Some(format!("Replace `{prefix}` with `{replacement}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: id_span,

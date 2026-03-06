@@ -26,7 +26,6 @@ impl NativeRule for NoInferrableTypes {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -67,6 +66,7 @@ impl NativeRule for NoInferrableTypes {
                 severity: Severity::Warning,
                 help: Some(format!("Remove the `{type_name}` type annotation")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Remove the `{type_name}` type annotation"),
                     edits: vec![Edit {
                         span: Span::new(ann_start, ann_end),

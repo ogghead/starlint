@@ -26,7 +26,6 @@ impl NativeRule for ConsistentTypeDefinitions {
             description: "Prefer `interface` over `type` for object type definitions".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for ConsistentTypeDefinitions {
             severity: Severity::Warning,
             help: Some("Replace `type` with `interface`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace `type` with `interface`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(decl.span.start, decl.span.end),

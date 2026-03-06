@@ -99,7 +99,6 @@ impl NativeRule for AriaRole {
             description: "Enforce `role` attribute has a valid value".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -127,10 +126,12 @@ impl NativeRule for AriaRole {
                     let role = lit.value.as_str().trim();
                     if !role.is_empty() && !VALID_ROLES.contains(&role) {
                         let attr_span = Span::new(attr.span.start, attr.span.end);
-                        let fix =
-                            FixBuilder::new(format!("Remove invalid `role=\"{role}\"` attribute"))
-                                .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
-                                .build();
+                        let fix = FixBuilder::new(
+                            format!("Remove invalid `role=\"{role}\"` attribute"),
+                            FixKind::SuggestionFix,
+                        )
+                        .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                        .build();
                         ctx.report(Diagnostic {
                             rule_name: RULE_NAME.to_owned(),
                             message: format!("`{role}` is not a valid WAI-ARIA role"),

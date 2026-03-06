@@ -30,7 +30,6 @@ impl NativeRule for PreferFind {
             description: "Prefer `.find()` over `.filter()[0]` or `.filter().at(0)`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -74,6 +73,7 @@ fn build_filter_to_find_fix(span_text: &str, start: u32, end: u32) -> Option<Fix
             let new_len = replacement.len().saturating_sub(suffix.len());
             replacement.truncate(new_len);
             return Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace `.filter(...)` with `.find(...)`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(start, end),

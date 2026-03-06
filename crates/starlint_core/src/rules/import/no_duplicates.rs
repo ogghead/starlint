@@ -24,7 +24,6 @@ impl NativeRule for NoDuplicates {
             description: "Report duplicate imports from the same module".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::DangerousFix,
         }
     }
 
@@ -71,7 +70,7 @@ impl NativeRule for NoDuplicates {
                             Span::new(first_start, first_end),
                             Span::new(start, end),
                         );
-                        FixBuilder::new("Merge into first import")
+                        FixBuilder::new("Merge into first import", FixKind::DangerousFix)
                             .edits(edits)
                             .build()
                     });

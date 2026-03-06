@@ -24,7 +24,6 @@ impl NativeRule for NoPlusplus {
             description: "Disallow the unary operators `++` and `--`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -56,6 +55,7 @@ impl NativeRule for NoPlusplus {
 
         let replacement = format!("{arg_text} {assign_op}");
         let fix = (!arg_text.is_empty()).then(|| Fix {
+            kind: FixKind::SuggestionFix,
             message: format!("Replace `{op_str}` with `{assign_op}`"),
             edits: vec![Edit {
                 span: Span::new(update.span.start, update.span.end),

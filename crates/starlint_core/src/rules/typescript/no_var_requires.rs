@@ -24,7 +24,6 @@ impl NativeRule for NoVarRequires {
             description: "Disallow `require()` in variable declarations".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -53,6 +52,7 @@ impl NativeRule for NoVarRequires {
                             let module = lit.value.as_str();
                             let replacement = format!("import {name} from \"{module}\"");
                             Some(Fix {
+                                kind: FixKind::SuggestionFix,
                                 message: format!("Replace with `{replacement}`"),
                                 edits: vec![Edit {
                                     span: Span::new(decl.span.start, decl.span.end),

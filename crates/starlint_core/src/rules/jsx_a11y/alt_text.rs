@@ -78,7 +78,6 @@ impl NativeRule for AltText {
                     .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -114,7 +113,7 @@ impl NativeRule for AltText {
                     ctx.source_text(),
                     Span::new(opening.span.start, opening.span.end),
                 );
-                let fix = FixBuilder::new("Add `aria-label` attribute")
+                let fix = FixBuilder::new("Add `aria-label` attribute", FixKind::SuggestionFix)
                     .insert_at(insert_pos, " aria-label=\"${1:object description}\"")
                     .build_snippet();
 
@@ -133,7 +132,7 @@ impl NativeRule for AltText {
                 ctx.source_text(),
                 Span::new(opening.span.start, opening.span.end),
             );
-            let fix = FixBuilder::new("Add `alt` attribute")
+            let fix = FixBuilder::new("Add `alt` attribute", FixKind::SuggestionFix)
                 .insert_at(insert_pos, " alt=\"${1:descriptive text}\"")
                 .build_snippet();
 

@@ -25,7 +25,6 @@ impl NativeRule for NoDanger {
             description: "Disallow usage of `dangerouslySetInnerHTML`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -40,9 +39,12 @@ impl NativeRule for NoDanger {
 
         if attr.is_identifier("dangerouslySetInnerHTML") {
             let attr_span = Span::new(attr.span.start, attr.span.end);
-            let fix = FixBuilder::new("Remove `dangerouslySetInnerHTML` prop")
-                .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
-                .build();
+            let fix = FixBuilder::new(
+                "Remove `dangerouslySetInnerHTML` prop",
+                FixKind::SuggestionFix,
+            )
+            .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+            .build();
             ctx.report(Diagnostic {
                 rule_name: "react/no-danger".to_owned(),
                 message:

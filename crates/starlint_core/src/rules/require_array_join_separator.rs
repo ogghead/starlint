@@ -24,7 +24,6 @@ impl NativeRule for RequireArrayJoinSeparator {
             description: "Enforce using the separator argument with `Array#join()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -56,6 +55,7 @@ impl NativeRule for RequireArrayJoinSeparator {
                 severity: Severity::Warning,
                 help: Some("Add explicit separator argument".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Add `\",\"` separator".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(

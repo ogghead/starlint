@@ -34,7 +34,6 @@ impl NativeRule for NoSyncScripts {
             description: "Forbid synchronous scripts".to_owned(),
             category: Category::Performance,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -91,6 +90,7 @@ impl NativeRule for NoSyncScripts {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Add `async` attribute".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(insert_pos, insert_pos),

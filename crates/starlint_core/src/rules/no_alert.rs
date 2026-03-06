@@ -28,7 +28,6 @@ impl NativeRule for NoAlert {
             description: "Disallow the use of `alert`, `confirm`, and `prompt`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for NoAlert {
         let call_span = Span::new(call.span.start, call.span.end);
         let edit = fix_utils::delete_statement(ctx.source_text(), call_span);
         let fix = Some(Fix {
+            kind: FixKind::SuggestionFix,
             message: "Remove this call".to_owned(),
             edits: vec![edit],
             is_snippet: false,

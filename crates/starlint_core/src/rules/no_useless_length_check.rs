@@ -45,7 +45,6 @@ impl NativeRule for NoUselessLengthCheck {
             description: "Disallow useless .length check before iteration".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -76,6 +75,7 @@ impl NativeRule for NoUselessLengthCheck {
                 severity: Severity::Warning,
                 help: Some("Remove the `.length` check and keep the iteration call".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove `.length` check".to_owned(),
                     edits: vec![Edit {
                         span: if_span,

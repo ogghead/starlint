@@ -54,7 +54,6 @@ impl NativeRule for NewForBuiltins {
             description: "Enforce `new` for constructors, forbid for factories".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -81,6 +80,7 @@ impl NativeRule for NewForBuiltins {
                     severity: Severity::Error,
                     help: Some(format!("Add `new` before `{name}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Add `new` before `{name}`"),
                         edits: vec![Edit {
                             span: Span::new(id.span.start, id.span.start),
@@ -119,6 +119,7 @@ impl NativeRule for NewForBuiltins {
                     severity: Severity::Error,
                     help: Some(format!("Remove `new` before `{name}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Remove `new` before `{name}`"),
                         edits: vec![Edit {
                             span: Span::new(new_expr.span.start, new_expr.span.end),

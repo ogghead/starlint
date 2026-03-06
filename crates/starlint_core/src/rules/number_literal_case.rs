@@ -92,7 +92,6 @@ impl NativeRule for NumberLiteralCase {
             description: "Enforce consistent case for numeric literals".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -122,6 +121,7 @@ impl NativeRule for NumberLiteralCase {
             severity: Severity::Warning,
             help: Some(format!("Replace with `{normalized}`")),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: format!("Replace `{raw}` with `{normalized}`"),
                 edits: vec![Edit {
                     span: Span::new(lit.span.start, lit.span.end),

@@ -26,7 +26,6 @@ impl NativeRule for NoMocksImport {
             description: "Disallow importing from `__mocks__` directories".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -43,7 +42,7 @@ impl NativeRule for NoMocksImport {
 
         if source_value.contains("__mocks__") {
             let import_span = Span::new(import.span.start, import.span.end);
-            let fix = FixBuilder::new("Remove `__mocks__` import")
+            let fix = FixBuilder::new("Remove `__mocks__` import", FixKind::SuggestionFix)
                 .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
                 .build();
             ctx.report(Diagnostic {

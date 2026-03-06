@@ -25,7 +25,6 @@ impl NativeRule for ArrowBodyStyle {
             description: "Enforce consistent arrow function body style".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -80,6 +79,7 @@ impl NativeRule for ArrowBodyStyle {
                     severity: Severity::Warning,
                     help: Some("Replace block body with expression body".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Convert to expression body".to_owned(),
                         edits: vec![Edit {
                             span: body_span,

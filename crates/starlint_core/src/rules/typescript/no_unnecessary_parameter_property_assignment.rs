@@ -24,7 +24,6 @@ impl NativeRule for NoUnnecessaryParameterPropertyAssignment {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -76,6 +75,7 @@ impl NativeRule for NoUnnecessaryParameterPropertyAssignment {
                 severity: Severity::Warning,
                 help: Some(format!("Remove `this.{name} = {name};`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Remove redundant `this.{name} = {name};`"),
                     edits: vec![Edit {
                         span: Span::new(fix_start, fix_end),

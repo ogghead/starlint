@@ -26,7 +26,6 @@ impl NativeRule for NoCondAssign {
             description: "Disallow assignment operators in conditional expressions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -81,6 +80,7 @@ fn check_condition(expr: &Expression<'_>, ctx: &mut NativeLintContext<'_>) {
                 .unwrap_or("");
             let replacement = format!("{left_text} === {right_text}");
             Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{replacement}`"),
                 edits: vec![Edit {
                     span: Span::new(assign.span.start, assign.span.end),

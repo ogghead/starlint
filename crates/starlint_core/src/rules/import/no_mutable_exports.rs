@@ -21,7 +21,6 @@ impl NativeRule for NoMutableExports {
             description: "Forbid using `let` or `var` in exported declarations".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -66,9 +65,12 @@ impl NativeRule for NoMutableExports {
         for (start, end, keyword, kw_offset) in findings {
             let kw_start = u32::try_from(kw_offset).unwrap_or(0);
             let kw_end = kw_start.saturating_add(u32::try_from(keyword.len()).unwrap_or(3));
-            let fix = FixBuilder::new(format!("Replace `{keyword}` with `const`"))
-                .replace(Span::new(kw_start, kw_end), "const")
-                .build();
+            let fix = FixBuilder::new(
+                format!("Replace `{keyword}` with `const`"),
+                FixKind::SuggestionFix,
+            )
+            .replace(Span::new(kw_start, kw_end), "const")
+            .build();
             ctx.report(Diagnostic {
                 rule_name: "import/no-mutable-exports".to_owned(),
                 message: format!(

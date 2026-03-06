@@ -34,7 +34,6 @@ impl NativeRule for NoNewStatics {
             description: "Forbid `new` on Promise static methods".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -63,6 +62,7 @@ impl NativeRule for NoNewStatics {
         if PROMISE_STATICS.contains(&method) {
             // Remove `new ` prefix: from new_expr start to callee (member expr) start
             let fix = Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Remove `new` keyword".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(new_expr.span.start, member.span.start),

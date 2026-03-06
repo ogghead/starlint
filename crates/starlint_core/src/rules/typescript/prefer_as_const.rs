@@ -27,7 +27,6 @@ impl NativeRule for PreferAsConst {
             description: "Prefer `as const` over literal type assertion".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -50,6 +49,7 @@ impl NativeRule for PreferAsConst {
                         severity: Severity::Warning,
                         help: Some("Replace with `as const`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Replace with `as const`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(type_span.start, type_span.end),
@@ -78,6 +78,7 @@ impl NativeRule for PreferAsConst {
                         severity: Severity::Warning,
                         help: Some("Replace with `as const`".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Replace with `as const`".to_owned(),
                             edits: vec![Edit {
                                 span: Span::new(expr.span.start, expr.span.end),

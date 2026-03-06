@@ -23,7 +23,6 @@ impl NativeRule for NoUselessCatch {
             description: "Disallow catch clauses that only rethrow".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -82,6 +81,7 @@ impl NativeRule for NoUselessCatch {
                 severity: Severity::Warning,
                 help: Some("Remove the useless catch clause".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove catch clause".to_owned(),
                     edits: vec![Edit {
                         // Remove from end of try block to start of finally.
@@ -120,6 +120,7 @@ impl NativeRule for NoUselessCatch {
             severity: Severity::Warning,
             help: Some("Remove the try/catch wrapper".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: fix_message,
                 edits: vec![Edit {
                     span: Span::new(stmt.span.start, stmt.span.end),

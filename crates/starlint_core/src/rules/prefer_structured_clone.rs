@@ -25,7 +25,6 @@ impl NativeRule for PreferStructuredClone {
             description: "Prefer structuredClone over JSON.parse(JSON.stringify())".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -75,6 +74,7 @@ impl NativeRule for PreferStructuredClone {
                         .unwrap_or("")
                         .to_owned();
                     (!arg_text.is_empty()).then(|| Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `structuredClone({arg_text})`"),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

@@ -47,8 +47,6 @@ pub struct RuleMeta {
     pub category: Category,
     /// Default severity when not overridden by config.
     pub default_severity: Severity,
-    /// Whether the rule can auto-fix.
-    pub fix_kind: FixKind,
 }
 
 #[cfg(test)]
@@ -63,7 +61,6 @@ mod tests {
             description: "Disallow debugger statements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         };
 
         let json = serde_json::to_string(&meta).ok();

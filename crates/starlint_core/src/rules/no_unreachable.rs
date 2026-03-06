@@ -25,7 +25,6 @@ impl NativeRule for NoUnreachable {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -65,6 +64,7 @@ impl NativeRule for NoUnreachable {
                 }
                 let span = statement_span(stmt);
                 let fix = Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove unreachable code".to_owned(),
                     edits: vec![Edit {
                         span,

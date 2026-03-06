@@ -36,7 +36,6 @@ impl NativeRule for NoUnnecessaryTypeArguments {
             description: "Disallow type arguments that match the default type parameter".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for NoUnnecessaryTypeArguments {
                 severity: Severity::Warning,
                 help: Some(format!("Replace `{type_name}<{default_type}>` with `{type_name}`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Remove redundant type argument `<{default_type}>`"),
                     edits: vec![Edit {
                         span,

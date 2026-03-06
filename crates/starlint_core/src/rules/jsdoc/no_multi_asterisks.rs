@@ -17,7 +17,6 @@ impl NativeRule for NoMultiAsterisks {
             description: "Forbid multiple asterisks in JSDoc comments".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -78,6 +77,7 @@ impl NativeRule for NoMultiAsterisks {
                         severity: Severity::Warning,
                         help: Some("Replace multiple asterisks with a single one".to_owned()),
                         fix: Some(Fix {
+                            kind: FixKind::SafeFix,
                             message: "Remove extra asterisks".to_owned(),
                             edits,
                             is_snippet: false,

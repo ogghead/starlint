@@ -24,7 +24,6 @@ impl NativeRule for BadReplaceAllArg {
             description: "Catch `.replaceAll()` with a regex missing the `g` flag".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -63,6 +62,7 @@ impl NativeRule for BadReplaceAllArg {
                     // Insert `g` at the end
                     let replacement = format!("{regex_text}g");
                     Fix {
+                        kind: FixKind::SafeFix,
                         message: "Add the `g` flag".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(re.span.start, re.span.end),

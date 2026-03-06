@@ -28,7 +28,6 @@ impl NativeRule for NoExportsAssign {
             description: "Disallow direct assignment to `exports`".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -58,6 +57,7 @@ impl NativeRule for NoExportsAssign {
             severity: Severity::Error,
             help: Some("Replace `exports` with `module.exports`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Replace `exports` with `module.exports`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(id.span.start, id.span.end),

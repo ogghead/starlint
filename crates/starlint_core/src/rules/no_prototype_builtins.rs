@@ -30,7 +30,6 @@ impl NativeRule for NoPrototypeBuiltins {
             description: "Disallow calling Object.prototype methods directly on objects".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -75,6 +74,7 @@ impl NativeRule for NoPrototypeBuiltins {
                     let arg = args.first().unwrap_or(&"");
                     let replacement = format!("Object.hasOwn({obj_text}, {arg})");
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),
@@ -90,6 +90,7 @@ impl NativeRule for NoPrototypeBuiltins {
                     };
                     let replacement = format!("Object.prototype.{method_name}.call({all_args})");
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

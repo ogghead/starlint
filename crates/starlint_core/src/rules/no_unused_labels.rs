@@ -24,7 +24,6 @@ impl NativeRule for NoUnusedLabels {
             description: "Disallow unused labels".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -53,6 +52,7 @@ impl NativeRule for NoUnusedLabels {
                 severity: Severity::Error,
                 help: Some(format!("Remove label `{label_name}`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Remove label `{label_name}`"),
                     edits: vec![Edit {
                         span: delete_span,

@@ -24,7 +24,6 @@ impl NativeRule for NoEmptyObjectType {
             description: "Disallow empty object type `{}`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,6 +47,7 @@ impl NativeRule for NoEmptyObjectType {
             severity: Severity::Warning,
             help: Some("Replace `{}` with `object`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Replace `{}` with `object`".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(lit.span.start, lit.span.end),

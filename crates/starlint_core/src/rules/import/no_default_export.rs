@@ -25,7 +25,6 @@ impl NativeRule for NoDefaultExport {
             description: "Disallow default exports".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -46,13 +45,13 @@ impl NativeRule for NoDefaultExport {
             ExportDefaultDeclarationKind::FunctionDeclaration(func) if func.id.is_some() => {
                 // Replace "export default " (15 chars) with "export "
                 let kw_end = export.span.start.saturating_add(15);
-                FixBuilder::new("Convert to named export")
+                FixBuilder::new("Convert to named export", FixKind::SuggestionFix)
                     .replace(Span::new(export.span.start, kw_end), "export ")
                     .build()
             }
             ExportDefaultDeclarationKind::ClassDeclaration(class) if class.id.is_some() => {
                 let kw_end = export.span.start.saturating_add(15);
-                FixBuilder::new("Convert to named export")
+                FixBuilder::new("Convert to named export", FixKind::SuggestionFix)
                     .replace(Span::new(export.span.start, kw_end), "export ")
                     .build()
             }

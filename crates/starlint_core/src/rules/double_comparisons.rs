@@ -23,7 +23,6 @@ impl NativeRule for DoubleComparisons {
             description: "Detect `a >= b && a <= b` (simplify to `a === b`)".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -96,6 +95,7 @@ impl NativeRule for DoubleComparisons {
                 severity: Severity::Warning,
                 help: Some(format!("Simplify to `{replacement_op}`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Simplify to `{replacement_op}`"),
                     edits: vec![Edit {
                         span: Span::new(logical.span.start, logical.span.end),

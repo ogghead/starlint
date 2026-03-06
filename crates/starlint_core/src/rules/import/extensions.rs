@@ -27,7 +27,6 @@ impl NativeRule for Extensions {
             description: "Ensure consistent use of file extension in import path".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -64,6 +63,7 @@ impl NativeRule for Extensions {
                     // Append closing quote
                     fixed.push_str(raw.get(raw.len().saturating_sub(1)..).unwrap_or(""));
                     Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Remove '{ext}' extension"),
                         edits: vec![Edit {
                             span: Span::new(import.source.span.start, import.source.span.end),

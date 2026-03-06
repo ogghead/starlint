@@ -30,7 +30,6 @@ impl NativeRule for PreferNativeCoercionFunctions {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -105,6 +104,7 @@ impl NativeRule for PreferNativeCoercionFunctions {
             severity: Severity::Warning,
             help: Some(format!("Replace with `{callee_name}`")),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace with `{callee_name}`"),
                 edits: vec![Edit {
                     span: Span::new(arrow.span.start, arrow.span.end),

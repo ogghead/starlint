@@ -27,7 +27,6 @@ impl NativeRule for UseStorybookTestingLibrary {
                     .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,6 +54,7 @@ impl NativeRule for UseStorybookTestingLibrary {
                 severity: Severity::Warning,
                 help: None,
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace import source with `@storybook/test`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(

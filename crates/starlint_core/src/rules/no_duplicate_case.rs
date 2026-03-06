@@ -26,7 +26,6 @@ impl NativeRule for NoDuplicateCase {
             description: "Disallow duplicate case labels".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for NoDuplicateCase {
             if !seen.insert(key.clone()) {
                 // Fix: delete the entire duplicate case clause
                 let fix = Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove duplicate case clause".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(case.span.start, case.span.end),

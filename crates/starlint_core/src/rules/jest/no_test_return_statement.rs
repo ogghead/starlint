@@ -28,7 +28,6 @@ impl NativeRule for NoTestReturnStatement {
             description: "Disallow return statements in test callbacks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -49,6 +48,7 @@ impl NativeRule for NoTestReturnStatement {
         if is_inside_test_callback(before) {
             // Build fix: replace `return <expr>;` with `return;`
             let fix = ret.argument.as_ref().map(|_| Fix {
+                kind: FixKind::SuggestionFix,
                 message: "Remove return value".to_owned(),
                 edits: vec![Edit {
                     span: Span::new(ret.span.start, ret.span.end),

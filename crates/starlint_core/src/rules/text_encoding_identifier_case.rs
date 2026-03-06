@@ -58,7 +58,6 @@ impl NativeRule for TextEncodingIdentifierCase {
             description: "Enforce consistent casing for text encoding identifiers".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -84,6 +83,7 @@ impl NativeRule for TextEncodingIdentifierCase {
                 severity: Severity::Warning,
                 help: Some(format!("Replace `'{value}'` with `'{canonical}'`")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Replace with `'{canonical}'`"),
                     edits: vec![Edit {
                         span: Span::new(content_start, content_end),

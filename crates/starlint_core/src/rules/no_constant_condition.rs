@@ -59,7 +59,6 @@ impl NativeRule for NoConstantCondition {
             description: "Disallow constant expressions in conditions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -154,6 +153,7 @@ impl NativeRule for NoConstantCondition {
                         let end = usize::try_from(branch_span.end).ok()?;
                         let branch_text = source.get(start..end)?;
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!(
                                 "Replace with {} branch",
                                 if truthy { "consequent" } else { "alternate" }

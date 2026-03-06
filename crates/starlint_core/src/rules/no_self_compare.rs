@@ -24,7 +24,6 @@ impl NativeRule for NoSelfCompare {
             description: "Disallow comparisons where both sides are the same".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -64,6 +63,7 @@ impl NativeRule for NoSelfCompare {
                 .then(|| {
                     let replacement = format!("Number.isNaN({left})");
                     Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: Span::new(expr.span.start, expr.span.end),

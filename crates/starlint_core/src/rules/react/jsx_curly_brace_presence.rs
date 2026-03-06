@@ -29,7 +29,6 @@ impl NativeRule for JsxCurlyBracePresence {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -55,6 +54,7 @@ impl NativeRule for JsxCurlyBracePresence {
                 severity: Severity::Warning,
                 help: Some("Remove the curly braces and use a plain string".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove unnecessary curly braces".to_owned(),
                     edits: vec![Edit {
                         span: container_span,

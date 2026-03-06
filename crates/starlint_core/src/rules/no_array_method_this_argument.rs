@@ -43,7 +43,6 @@ impl NativeRule for NoArrayMethodThisArgument {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -79,6 +78,7 @@ impl NativeRule for NoArrayMethodThisArgument {
                 let first_end = first.span().end;
                 let second_end = second.span().end;
                 Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Remove the `thisArg` parameter".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(first_end, second_end),

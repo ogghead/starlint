@@ -26,7 +26,6 @@ impl NativeRule for PreferToHaveBeenCalledTimes {
             description: "Suggest using `toHaveBeenCalledTimes()` instead of asserting on `.mock.calls.length`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -89,6 +88,7 @@ impl NativeRule for PreferToHaveBeenCalledTimes {
                         let replacement =
                             format!("expect({mock_name}).toHaveBeenCalledTimes({count_text})");
                         Some(Fix {
+                            kind: FixKind::SuggestionFix,
                             message: format!("Replace with `{replacement}`"),
                             edits: vec![Edit {
                                 span: Span::new(call.span.start, call.span.end),

@@ -23,7 +23,6 @@ impl NativeRule for Radix {
             description: "Require radix parameter in `parseInt()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -61,6 +60,7 @@ impl NativeRule for Radix {
                 severity: Severity::Warning,
                 help: Some("Add radix parameter `10`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Add radix parameter `10`".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(

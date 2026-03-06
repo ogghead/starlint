@@ -26,7 +26,6 @@ impl NativeRule for ConsistentDateClone {
             description: "Prefer `new Date(date)` over `new Date(date.getTime())`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -85,6 +84,7 @@ impl NativeRule for ConsistentDateClone {
         // Replace the entire first argument (the call expression) with just the object
         let arg_span = first_arg.span();
         let fix = (!obj_text.is_empty()).then(|| Fix {
+            kind: FixKind::SafeFix,
             message: format!("Replace `{obj_text}.getTime()` with `{obj_text}`"),
             edits: vec![Edit {
                 span: Span::new(arg_span.start, arg_span.end),

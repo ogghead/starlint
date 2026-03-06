@@ -26,7 +26,6 @@ impl NativeRule for NoUselessCall {
             description: "Disallow unnecessary `.call()` and `.apply()`".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -85,6 +84,7 @@ impl NativeRule for NoUselessCall {
                 let args_str = remaining_args.join(", ");
                 let replacement = format!("{obj_text}({args_str})");
                 Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Replace with `{replacement}`"),
                     edits: vec![Edit {
                         span: Span::new(call.span.start, call.span.end),

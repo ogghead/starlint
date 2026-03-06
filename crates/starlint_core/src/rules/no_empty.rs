@@ -33,7 +33,6 @@ impl NativeRule for NoEmpty {
             description: "Disallow empty block statements".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -52,6 +51,7 @@ impl NativeRule for NoEmpty {
                     severity: Severity::Warning,
                     help: Some("Add a comment inside the block if intentionally empty".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Add `/* empty */` comment".to_owned(),
                         edits: vec![Edit {
                             span,

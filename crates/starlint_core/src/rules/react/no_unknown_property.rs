@@ -83,7 +83,6 @@ impl NativeRule for NoUnknownProperty {
             description: "Disallow usage of unknown DOM properties".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -129,6 +128,7 @@ impl NativeRule for NoUnknownProperty {
                     severity: Severity::Warning,
                     help: Some(format!("Replace `{attr_name}` with `{react_name}`")),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Rename to `{react_name}`"),
                         edits: vec![Edit {
                             span: name_span,

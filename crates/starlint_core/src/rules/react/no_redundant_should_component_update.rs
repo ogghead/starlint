@@ -25,7 +25,6 @@ impl NativeRule for NoRedundantShouldComponentUpdate {
                 .to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -62,6 +61,7 @@ impl NativeRule for NoRedundantShouldComponentUpdate {
                     severity: Severity::Warning,
                     help: None,
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: "Remove redundant `shouldComponentUpdate` method".to_owned(),
                         edits: vec![Edit {
                             span: Span::new(method.span.start, method.span.end),

@@ -26,7 +26,6 @@ impl NativeRule for NoDuplicateImports {
             description: "Disallow duplicate module imports".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -66,7 +65,7 @@ impl NativeRule for NoDuplicateImports {
                 .iter()
                 .map(|(module_source, first_span, dup_span)| {
                     let edits = fix_utils::merge_import_edits(source_text, *first_span, *dup_span);
-                    let fix = FixBuilder::new("Merge into first import")
+                    let fix = FixBuilder::new("Merge into first import", FixKind::SuggestionFix)
                         .edits(edits)
                         .build();
                     Diagnostic {

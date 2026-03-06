@@ -29,7 +29,6 @@ impl NativeRule for PreferPrototypeMethods {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -93,6 +92,7 @@ impl NativeRule for PreferPrototypeMethods {
                 "Replace with `{prototype_owner}.prototype.{prototype_method}.{method}()`"
             )),
             fix: Some(Fix {
+                kind: FixKind::SuggestionFix,
                 message: format!(
                     "Replace with `{prototype_owner}.prototype.{prototype_method}.{method}()`"
                 ),

@@ -46,7 +46,6 @@ impl NativeRule for Lang {
             description: "Enforce `lang` attribute has a valid value".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -83,7 +82,7 @@ impl NativeRule for Lang {
                     let val = lit.value.as_str().trim();
                     if val.is_empty() {
                         // Replace empty lang value with "en"
-                        let fix = FixBuilder::new("Set `lang` to `\"en\"`")
+                        let fix = FixBuilder::new("Set `lang` to `\"en\"`", FixKind::SuggestionFix)
                             .replace(Span::new(lit.span.start, lit.span.end), "\"en\"")
                             .build();
                         ctx.report(Diagnostic {

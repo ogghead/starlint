@@ -8,7 +8,7 @@ use oxc_ast::ast::Statement;
 use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
 use crate::rule::{NativeLintContext, NativeRule};
 
@@ -70,7 +70,6 @@ impl NativeRule for MaxClassesPerFile {
             description: "Enforce a maximum number of classes per file".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 

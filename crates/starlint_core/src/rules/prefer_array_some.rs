@@ -25,7 +25,6 @@ impl NativeRule for PreferArraySome {
             description: "Prefer .some() over .find() for existence checks".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -48,6 +47,7 @@ impl NativeRule for PreferArraySome {
                 severity: Severity::Warning,
                 help: Some("Replace `.find()` with `.some()`".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SuggestionFix,
                     message: "Replace `.find()` with `.some()`".to_owned(),
                     edits: vec![Edit {
                         span: prop_span,

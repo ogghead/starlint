@@ -25,7 +25,6 @@ impl NativeRule for PreferStringSlice {
             description: "Prefer `String#slice()` over `substr()` and `substring()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -54,6 +53,7 @@ impl NativeRule for PreferStringSlice {
                     severity: Severity::Warning,
                     help: Some(format!("Replace `.{method}()` with `.slice()`")),
                     fix: Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace `.{method}()` with `.slice()`"),
                         edits: vec![Edit {
                             span: prop_span,

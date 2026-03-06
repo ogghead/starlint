@@ -25,7 +25,6 @@ impl NativeRule for OperatorAssignment {
             description: "Require assignment operator shorthand where possible".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -71,6 +70,7 @@ impl NativeRule for OperatorAssignment {
                 severity: Severity::Warning,
                 help: Some(format!("Use `{op_str}` shorthand")),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: format!("Use `{op_str}` shorthand"),
                     edits: vec![Edit {
                         span: Span::new(assign.span.start, assign.span.end),

@@ -37,7 +37,6 @@ impl NativeRule for PreferQuerySelector {
                     .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -82,6 +81,7 @@ impl NativeRule for PreferQuerySelector {
                     };
                     let replacement = format!("{obj_text}.{method}('{selector}')");
                     Some(Fix {
+                        kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{method}('{selector}')`"),
                         edits: vec![Edit {
                             span: Span::new(call.span.start, call.span.end),

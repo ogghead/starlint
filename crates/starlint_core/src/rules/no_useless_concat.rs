@@ -25,7 +25,6 @@ impl NativeRule for NoUselessConcat {
             description: "Disallow unnecessary concatenation of strings".to_owned(),
             category: Category::Style,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -58,6 +57,7 @@ impl NativeRule for NoUselessConcat {
                 let right_inner = &right_raw[1..right_raw.len().saturating_sub(1)];
                 let quote = &left_raw[..1];
                 Fix {
+                    kind: FixKind::SafeFix,
                     message: "Combine into a single string".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(expr.span.start, expr.span.end),

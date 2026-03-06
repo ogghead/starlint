@@ -33,7 +33,6 @@ impl NativeRule for NoDisabledTests {
             description: "Disallow disabled tests (`xdescribe`, `xtest`, `.skip`)".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for NoDisabledTests {
                     severity: Severity::Warning,
                     help: Some(format!("Replace `{}` with `{replacement}`", id.name)),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
                             span: id_span,
@@ -100,6 +100,7 @@ impl NativeRule for NoDisabledTests {
                             severity: Severity::Warning,
                             help: Some(format!("Remove `.skip` from `{base_name}.skip`")),
                             fix: Some(Fix {
+                                kind: FixKind::SafeFix,
                                 message: format!("Replace `{base_name}.skip` with `{base_name}`"),
                                 edits: vec![Edit {
                                     span: callee_span,

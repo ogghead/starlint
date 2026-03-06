@@ -28,7 +28,6 @@ impl NativeRule for NoNewNativeNonconstructor {
             description: "Disallow `new` with global non-constructor functions".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Error,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -55,6 +54,7 @@ impl NativeRule for NoNewNativeNonconstructor {
                 let callee_start = callee.span.start as usize;
                 let end = new_expr.span.end as usize;
                 source.get(callee_start..end).map(|call_text| Fix {
+                    kind: FixKind::SuggestionFix,
                     message: format!("Remove `new` — call `{name}()` directly"),
                     edits: vec![Edit {
                         span: Span::new(new_expr.span.start, new_expr.span.end),

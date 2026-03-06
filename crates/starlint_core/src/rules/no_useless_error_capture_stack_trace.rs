@@ -24,7 +24,6 @@ impl NativeRule for NoUselessErrorCaptureStackTrace {
             description: "Flag useless `Error.captureStackTrace()` calls".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -66,6 +65,7 @@ impl NativeRule for NoUselessErrorCaptureStackTrace {
                 severity: Severity::Warning,
                 help: Some("Remove the `Error.captureStackTrace()` call".to_owned()),
                 fix: Some(Fix {
+                    kind: FixKind::SafeFix,
                     message: "Remove `Error.captureStackTrace()` call".to_owned(),
                     edits: vec![Edit {
                         span: fix_span,

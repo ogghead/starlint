@@ -24,7 +24,6 @@ impl NativeRule for NoChildrenProp {
             description: "Disallow passing `children` as a prop".to_owned(),
             category: Category::Correctness,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SuggestionFix,
         }
     }
 
@@ -44,7 +43,7 @@ impl NativeRule for NoChildrenProp {
 
         if name == "children" {
             let attr_span = Span::new(attr.span.start, attr.span.end);
-            let fix = FixBuilder::new("Remove `children` prop")
+            let fix = FixBuilder::new("Remove `children` prop", FixKind::SuggestionFix)
                 .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                 .build();
             ctx.report(Diagnostic {

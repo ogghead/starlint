@@ -26,7 +26,6 @@ impl NativeRule for NoLengthAsSliceEnd {
             description: "Disallow using `.length` as the end argument in `.slice()`".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -82,6 +81,7 @@ impl NativeRule for NoLengthAsSliceEnd {
                     severity: Severity::Warning,
                     help: Some("Remove the `.length` end argument".to_owned()),
                     fix: Some(Fix {
+                        kind: FixKind::SafeFix,
                         message: "Remove `.length` end argument".to_owned(),
                         edits: vec![Edit {
                             span: remove_span,

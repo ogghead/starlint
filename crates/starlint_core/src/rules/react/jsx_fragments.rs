@@ -53,7 +53,6 @@ impl NativeRule for JsxFragments {
                 .to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
-            fix_kind: FixKind::SafeFix,
         }
     }
 
@@ -100,6 +99,7 @@ impl NativeRule for JsxFragments {
             severity: Severity::Warning,
             help: Some("Replace `<React.Fragment>` with `<>`".to_owned()),
             fix: Some(Fix {
+                kind: FixKind::SafeFix,
                 message: "Replace with shorthand fragment syntax".to_owned(),
                 edits,
                 is_snippet: false,
