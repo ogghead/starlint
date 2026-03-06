@@ -95,7 +95,7 @@ impl NativeRule for PreferNegativeIndex {
                         severity: Severity::Warning,
                         help: Some(format!("Replace with `{neg_val}`")),
                         fix: Some(Fix {
-                            kind: FixKind::SuggestionFix,
+                            kind: FixKind::SafeFix,
                             message: format!("Replace `{obj_id}.length - {n}` with `{neg_val}`", obj_id = obj_id.name),
                             edits: vec![Edit {
                                 span: Span::new(bin.span.start, bin.span.end),

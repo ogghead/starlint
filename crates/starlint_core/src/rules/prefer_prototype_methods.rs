@@ -92,7 +92,7 @@ impl NativeRule for PreferPrototypeMethods {
                 "Replace with `{prototype_owner}.prototype.{prototype_method}.{method}()`"
             )),
             fix: Some(Fix {
-                kind: FixKind::SuggestionFix,
+                kind: FixKind::SafeFix,
                 message: format!(
                     "Replace with `{prototype_owner}.prototype.{prototype_method}.{method}()`"
                 ),

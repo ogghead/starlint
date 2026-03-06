@@ -54,7 +54,7 @@ impl NativeRule for NoNewNativeNonconstructor {
                 let callee_start = callee.span.start as usize;
                 let end = new_expr.span.end as usize;
                 source.get(callee_start..end).map(|call_text| Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: format!("Remove `new` — call `{name}()` directly"),
                     edits: vec![Edit {
                         span: Span::new(new_expr.span.start, new_expr.span.end),

@@ -56,7 +56,7 @@ impl NativeRule for NoNewArray {
                 severity: Severity::Warning,
                 help: Some("Remove `new` keyword".to_owned()),
                 fix: Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: "Remove `new` keyword".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(new_expr.span.start, new_expr.span.end),

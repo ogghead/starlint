@@ -55,7 +55,7 @@ impl NativeRule for RequireArrayJoinSeparator {
                 severity: Severity::Warning,
                 help: Some("Add explicit separator argument".to_owned()),
                 fix: Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: "Add `\",\"` separator".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(

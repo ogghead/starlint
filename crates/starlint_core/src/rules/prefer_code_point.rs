@@ -58,7 +58,7 @@ impl NativeRule for PreferCodePoint {
             severity: Severity::Warning,
             help: Some(format!("Replace `{method}` with `{replacement}`")),
             fix: Some(Fix {
-                kind: FixKind::SafeFix,
+                kind: FixKind::SuggestionFix,
                 message: format!("Replace `{method}` with `{replacement}`"),
                 edits: vec![Edit {
                     span: prop_span,

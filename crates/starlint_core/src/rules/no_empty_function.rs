@@ -50,7 +50,7 @@ impl NativeRule for NoEmptyFunction {
             if !has_comment {
                 // Fix: insert a placeholder comment inside the empty body
                 let fix = Some(Fix {
-                    kind: FixKind::SuggestionFix,
+                    kind: FixKind::SafeFix,
                     message: "Add `/* empty */` comment".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(span_start, span_end),
