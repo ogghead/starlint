@@ -40,7 +40,7 @@ jobs:
         run: sudo sysctl kernel.perf_event_paranoid=-1
 
       - name: Cache benchmark corpora
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: benches/corpora
           key: bench-corpora-v1
