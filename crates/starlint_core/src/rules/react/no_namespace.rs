@@ -25,35 +25,50 @@ impl LintRule for NoNamespace {
     }
 
     fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
-        Some(&[AstNodeType::JSXNamespacedName])
+        Some(&[AstNodeType::JSXOpeningElement, AstNodeType::JSXAttribute])
     }
 
     fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
-        let AstNode::JSXNamespacedName(ns_name) = node else {
-            return;
-        };
-
-        let namespace = ns_name.namespace.as_str();
-        let name = ns_name.name.as_str();
-
-        ctx.report(Diagnostic {
-            rule_name: "react/no-namespace".to_owned(),
-            message: format!("React does not support JSX namespaces — found `{namespace}:{name}`"),
-            span: Span::new(ns_name.span.start, ns_name.span.end),
-            severity: Severity::Error,
-            help: None,
-            fix: Some(Fix {
-                kind: FixKind::SuggestionFix,
-                message: format!("Remove namespace prefix `{namespace}:`"),
-                edits: vec![Edit {
-                    span: Span::new(ns_name.span.start, ns_name.span.end),
-                    replacement: name.to_owned(),
-                }],
-                is_snippet: false,
-            }),
-            labels: vec![],
-        });
+        match node {
+            AstNode::JSXOpeningElement(opening) => {
+                if let Some((namespace, name)) = opening.name.split_once(':') {
+                    report_namespaced(namespace, name, opening.span, ctx);
+                }
+            }
+            AstNode::JSXAttribute(attr) => {
+                if let Some((namespace, name)) = attr.name.split_once(':') {
+                    report_namespaced(namespace, name, attr.span, ctx);
+                }
+            }
+            _ => {}
+        }
     }
+}
+
+/// Report a namespaced JSX name.
+fn report_namespaced(
+    namespace: &str,
+    name: &str,
+    span: starlint_ast::types::Span,
+    ctx: &mut LintContext<'_>,
+) {
+    ctx.report(Diagnostic {
+        rule_name: "react/no-namespace".to_owned(),
+        message: format!("React does not support JSX namespaces — found `{namespace}:{name}`"),
+        span: Span::new(span.start, span.end),
+        severity: Severity::Error,
+        help: None,
+        fix: Some(Fix {
+            kind: FixKind::SuggestionFix,
+            message: format!("Remove namespace prefix `{namespace}:`"),
+            edits: vec![Edit {
+                span: Span::new(span.start, span.end),
+                replacement: name.to_owned(),
+            }],
+            is_snippet: false,
+        }),
+        labels: vec![],
+    });
 }
 
 #[cfg(test)]
@@ -70,14 +85,14 @@ mod tests {
     #[test]
     fn test_flags_namespaced_element() {
         let diags = lint(r"const x = <ns:Component />;");
-        // ns:Component generates a JSXNamespacedName node
+        // ns:Component generates a JSXOpeningElement with name "ns:Component"
         assert!(!diags.is_empty(), "should flag namespaced JSX element");
     }
 
     #[test]
     fn test_flags_namespaced_attribute() {
         let diags = lint(r#"const x = <div xml:lang="en" />;"#);
-        // xml:lang generates a JSXNamespacedName for the attribute name
+        // xml:lang generates a JSXAttribute with name "xml:lang"
         assert!(!diags.is_empty(), "should flag namespaced JSX attribute");
     }
 

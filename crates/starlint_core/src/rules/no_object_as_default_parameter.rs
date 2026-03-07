@@ -38,11 +38,10 @@ impl LintRule for NoObjectAsDefaultParameter {
             _ => return,
         };
 
-        // In the flat AST, default params are modeled as AssignmentExpression nodes
-        // where the right side is the default value. Iterate param NodeIds and check.
+        // Iterate param NodeIds. Default params produce AssignmentPattern nodes
+        // with `left` = binding and `right` = default value expression.
         for param_id in &**params {
-            // Check if this param is an assignment expression (i.e., has a default)
-            let Some(AstNode::AssignmentExpression(assign)) = ctx.node(*param_id) else {
+            let Some(AstNode::AssignmentPattern(assign)) = ctx.node(*param_id) else {
                 continue;
             };
 

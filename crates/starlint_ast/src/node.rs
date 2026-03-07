@@ -139,11 +139,13 @@ pub enum AstNode {
     /// `debugger;`
     DebuggerStatement(DebuggerStatementNode),
 
-    // === Patterns (2) ===
+    // === Patterns (3) ===
     /// `[a, b] = ...`
     ArrayPattern(ArrayPatternNode),
     /// `{ a, b } = ...`
     ObjectPattern(ObjectPatternNode),
+    /// `param = defaultValue` (default parameter or destructuring default).
+    AssignmentPattern(AssignmentPatternNode),
 
     // === Modules (5) ===
     /// `import ... from "source"`
@@ -277,6 +279,7 @@ impl AstNode {
             Self::DebuggerStatement(n) => n.span,
             Self::ArrayPattern(n) => n.span,
             Self::ObjectPattern(n) => n.span,
+            Self::AssignmentPattern(n) => n.span,
             Self::ImportDeclaration(n) => n.span,
             Self::ImportSpecifier(n) => n.span,
             Self::ExportNamedDeclaration(n) => n.span,
@@ -820,6 +823,15 @@ impl AstNode {
     #[must_use]
     pub const fn as_object_pattern(&self) -> Option<&ObjectPatternNode> {
         if let Self::ObjectPattern(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+    /// Narrow to `AssignmentPatternNode`.
+    #[must_use]
+    pub const fn as_assignment_pattern(&self) -> Option<&AssignmentPatternNode> {
+        if let Self::AssignmentPattern(n) = self {
             Some(n)
         } else {
             None
@@ -1433,6 +1445,8 @@ pub struct VariableDeclaratorNode {
     pub span: Span,
     /// Binding pattern (identifier or destructuring).
     pub id: NodeId,
+    /// Optional TypeScript type annotation (e.g. `let x: string`).
+    pub type_annotation: Option<NodeId>,
     /// Optional initializer expression.
     pub init: Option<NodeId>,
 }
@@ -1444,8 +1458,12 @@ pub struct FunctionNode {
     pub span: Span,
     /// Optional function name.
     pub id: Option<NodeId>,
+    /// TypeScript type parameters (e.g. `<T, U>`).
+    pub type_parameters: Box<[NodeId]>,
     /// Parameters (each is a binding pattern node).
     pub params: Box<[NodeId]>,
+    /// TypeScript return type annotation.
+    pub return_type: Option<NodeId>,
     /// Function body.
     pub body: Option<NodeId>,
     /// Whether this is an `async` function.
@@ -1836,6 +1854,19 @@ pub struct ObjectPatternNode {
     pub rest: Option<NodeId>,
 }
 
+/// Assignment pattern (default value in parameter or destructuring).
+///
+/// Represents `left = right`, e.g. `x = 42` as a default parameter value.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssignmentPatternNode {
+    /// Span covering `left = right`.
+    pub span: Span,
+    /// The binding (left side).
+    pub left: NodeId,
+    /// The default value expression (right side).
+    pub right: NodeId,
+}
+
 // ---------------------------------------------------------------------------
 // Modules
 // ---------------------------------------------------------------------------
@@ -2051,6 +2082,8 @@ pub struct TSTypeAliasDeclarationNode {
     pub id: NodeId,
     /// Type parameters.
     pub type_parameters: Box<[NodeId]>,
+    /// The aliased type (right-hand side of `=`).
+    pub type_annotation: Option<NodeId>,
 }
 
 /// TypeScript interface declaration.

@@ -10,7 +10,7 @@ use oxc_ast::ast::{
     self as oxc, Argument, ArrayExpressionElement, AssignmentTarget, BindingPattern, ChainElement,
     ClassElement, ExportDefaultDeclarationKind, Expression, ForStatementInit, ForStatementLeft,
     ImportDeclarationSpecifier, ObjectPropertyKind, PropertyKey, SimpleAssignmentTarget, Statement,
-    TSEnumMemberName,
+    TSEnumMemberName, TSSignature, TSType, TSTypeName,
 };
 use oxc_span::GetSpan;
 
@@ -31,9 +31,10 @@ use starlint_ast::node::{
     ObjectPatternNode, ObjectPropertyNode, PropertyDefinitionNode, RegExpLiteralNode,
     ReturnStatementNode, SequenceExpressionNode, SpreadElementNode, StaticBlockNode,
     StaticMemberExpressionNode, StringLiteralNode, SwitchCaseNode, SwitchStatementNode,
-    TSAsExpressionNode, TSEnumDeclarationNode, TSEnumMemberNode, TSInterfaceDeclarationNode,
-    TSModuleDeclarationNode, TSNonNullExpressionNode, TSTypeAliasDeclarationNode,
-    TSTypeAssertionNode, TSTypeParameterNode, TaggedTemplateExpressionNode, TemplateLiteralNode,
+    TSAnyKeywordNode, TSAsExpressionNode, TSEnumDeclarationNode, TSEnumMemberNode,
+    TSInterfaceDeclarationNode, TSModuleDeclarationNode, TSNonNullExpressionNode,
+    TSTypeAliasDeclarationNode, TSTypeAssertionNode, TSTypeLiteralNode, TSTypeParameterNode,
+    TSTypeReferenceNode, TSVoidKeywordNode, TaggedTemplateExpressionNode, TemplateLiteralNode,
     ThisExpressionNode, ThrowStatementNode, TryStatementNode, UnaryExpressionNode, UnknownNode,
     UpdateExpressionNode, VariableDeclarationNode, VariableDeclaratorNode, WhileStatementNode,
     WithStatementNode,
@@ -558,6 +559,11 @@ impl AstConverter {
         let id = self.reserve();
         self.parent_stack.push(id);
         let binding_id = self.convert_binding_pattern(&it.id);
+        // Convert the TS type annotation (e.g. `let x: Array<number>`)
+        let type_annotation = it
+            .type_annotation
+            .as_ref()
+            .map(|ta| self.convert_ts_type(&ta.type_annotation));
         let init = it.init.as_ref().map(|i| self.convert_expression(i));
         self.parent_stack.pop();
         self.tree.set(
@@ -565,6 +571,7 @@ impl AstConverter {
             AstNode::VariableDeclarator(VariableDeclaratorNode {
                 span: Self::span(it.span),
                 id: binding_id,
+                type_annotation,
                 init,
             }),
         );
@@ -579,12 +586,28 @@ impl AstConverter {
             .id
             .as_ref()
             .map(|name| self.convert_binding_identifier(name));
+        // Convert TS type parameters (e.g. `<T extends any>`)
+        let type_parameters: Vec<NodeId> = it
+            .type_parameters
+            .as_ref()
+            .map(|tp| {
+                tp.params
+                    .iter()
+                    .map(|p| self.convert_ts_type_parameter(p))
+                    .collect()
+            })
+            .unwrap_or_default();
         let params: Vec<NodeId> = it
             .params
             .items
             .iter()
-            .map(|p| self.convert_binding_pattern(&p.pattern))
+            .map(|p| self.convert_formal_parameter(p))
             .collect();
+        // Convert TS return type annotation (e.g. `function f(): void`)
+        let return_type = it
+            .return_type
+            .as_ref()
+            .map(|rt| self.convert_ts_type(&rt.type_annotation));
         let body = it.body.as_ref().map(|b| self.convert_function_body(b));
         self.parent_stack.pop();
         self.tree.set(
@@ -592,7 +615,9 @@ impl AstConverter {
             AstNode::Function(FunctionNode {
                 span: Self::span(it.span),
                 id: func_id,
+                type_parameters: type_parameters.into_boxed_slice(),
                 params: params.into_boxed_slice(),
+                return_type,
                 body,
                 is_async: it.r#async,
                 is_generator: it.generator,
@@ -1198,7 +1223,7 @@ impl AstConverter {
             .params
             .items
             .iter()
-            .map(|p| self.convert_binding_pattern(&p.pattern))
+            .map(|p| self.convert_formal_parameter(p))
             .collect();
         let body = self.convert_function_body(&it.body);
         self.parent_stack.pop();
@@ -1277,9 +1302,10 @@ impl AstConverter {
         self.parent_stack.push(id);
         let expression = match &it.expression {
             ChainElement::CallExpression(c) => self.convert_call_expression(c),
+            ChainElement::TSNonNullExpression(e) => self.convert_ts_non_null_expression(e),
             ChainElement::StaticMemberExpression(m) => self.convert_static_member_expression(m),
             ChainElement::ComputedMemberExpression(m) => self.convert_computed_member_expression(m),
-            _ => self.push_unknown(it.expression.span()),
+            ChainElement::PrivateFieldExpression(_) => self.push_unknown(it.expression.span()),
         };
         self.parent_stack.pop();
         self.tree.set(
@@ -1295,6 +1321,35 @@ impl AstConverter {
     // -----------------------------------------------------------------------
     // Patterns / Bindings
     // -----------------------------------------------------------------------
+
+    /// Formal parameter → node.
+    ///
+    /// When the parameter has a default initializer, wraps the binding in an
+    /// `AssignmentPattern` node with `left` = binding and `right` = default value.
+    fn convert_formal_parameter(&mut self, param: &oxc::FormalParameter<'_>) -> NodeId {
+        let binding = self.convert_binding_pattern(&param.pattern);
+        // Convert TS type annotation on the parameter (e.g. `function f(x: string)`)
+        if let Some(ta) = &param.type_annotation {
+            self.convert_ts_type(&ta.type_annotation);
+        }
+        if let Some(initializer) = &param.initializer {
+            let id = self.reserve();
+            self.parent_stack.push(id);
+            let right = self.convert_expression(initializer);
+            self.parent_stack.pop();
+            self.tree.set(
+                id,
+                AstNode::AssignmentPattern(n::AssignmentPatternNode {
+                    span: Self::span(param.span),
+                    left: binding,
+                    right,
+                }),
+            );
+            id
+        } else {
+            binding
+        }
+    }
 
     /// Binding pattern → node.
     fn convert_binding_pattern(&mut self, pat: &BindingPattern<'_>) -> NodeId {
@@ -1366,9 +1421,21 @@ impl AstConverter {
                 id
             }
             BindingPattern::AssignmentPattern(ap) => {
-                // Assignment pattern in destructuring (e.g. `{ a = 1 }`) —
-                // convert the left side, ignoring the default value for now.
-                self.convert_binding_pattern(&ap.left)
+                // Assignment pattern: `param = defaultValue`
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                let left = self.convert_binding_pattern(&ap.left);
+                let right = self.convert_expression(&ap.right);
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::AssignmentPattern(n::AssignmentPatternNode {
+                        span: Self::span(ap.span),
+                        left,
+                        right,
+                    }),
+                );
+                id
             }
         }
     }
@@ -1746,6 +1813,8 @@ impl AstConverter {
                     .collect()
             })
             .unwrap_or_default();
+        // Convert the aliased type (e.g. `type Foo = Array<number>`)
+        let type_annotation = Some(self.convert_ts_type(&it.type_annotation));
         self.parent_stack.pop();
         self.tree.set(
             id,
@@ -1753,6 +1822,7 @@ impl AstConverter {
                 span: Self::span(it.span),
                 id: type_id,
                 type_parameters: type_parameters.into_boxed_slice(),
+                type_annotation,
             }),
         );
         id
@@ -1763,14 +1833,19 @@ impl AstConverter {
         let id = self.reserve();
         self.parent_stack.push(id);
         let intf_id = self.convert_binding_identifier(&it.id);
-        // Interface body members are not deeply converted yet
+        let body: Vec<NodeId> = it
+            .body
+            .body
+            .iter()
+            .map(|sig| self.convert_ts_signature(sig))
+            .collect();
         self.parent_stack.pop();
         self.tree.set(
             id,
             AstNode::TSInterfaceDeclaration(TSInterfaceDeclarationNode {
                 span: Self::span(it.span),
                 id: intf_id,
-                body: Box::new([]),
+                body: body.into_boxed_slice(),
             }),
         );
         id
@@ -1899,15 +1974,304 @@ impl AstConverter {
 
     /// TS type parameter.
     fn convert_ts_type_parameter(&mut self, it: &oxc::TSTypeParameter<'_>) -> NodeId {
-        self.tree.push(
+        let id = self.reserve();
+        self.parent_stack.push(id);
+        let constraint = it.constraint.as_ref().map(|c| self.convert_ts_type(c));
+        let default = it.default.as_ref().map(|d| self.convert_ts_type(d));
+        self.parent_stack.pop();
+        self.tree.set(
+            id,
             AstNode::TSTypeParameter(TSTypeParameterNode {
                 span: Self::span(it.span),
                 name: it.name.name.to_string(),
-                constraint: None,
-                default: None,
+                constraint,
+                default,
             }),
-            self.current_parent(),
-        )
+        );
+        id
+    }
+
+    /// Convert a `TSType` enum to the appropriate node.
+    #[allow(clippy::too_many_lines)]
+    fn convert_ts_type(&mut self, ty: &TSType<'_>) -> NodeId {
+        match ty {
+            TSType::TSTypeReference(it) => self.convert_ts_type_reference(it),
+            TSType::TSTypeLiteral(it) => self.convert_ts_type_literal(it),
+            TSType::TSAnyKeyword(it) => self.tree.push(
+                AstNode::TSAnyKeyword(TSAnyKeywordNode {
+                    span: Self::span(it.span),
+                }),
+                self.current_parent(),
+            ),
+            TSType::TSVoidKeyword(it) => self.tree.push(
+                AstNode::TSVoidKeyword(TSVoidKeywordNode {
+                    span: Self::span(it.span),
+                }),
+                self.current_parent(),
+            ),
+            TSType::TSFunctionType(it) => {
+                // Convert function types so rules that inspect them (e.g. no-unsafe-function-type)
+                // can see the inner structure. We represent them as Unknown for now but still walk
+                // their parameters and return type.
+                self.push_unknown(it.span)
+            }
+            TSType::TSUnionType(it) => {
+                // Walk union members so nested TSTypeReferences are still created
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                for member in &it.types {
+                    self.convert_ts_type(member);
+                }
+                self.parent_stack.pop();
+                // Represent as Unknown for now (no dedicated node yet)
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSType::TSIntersectionType(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                for member in &it.types {
+                    self.convert_ts_type(member);
+                }
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSType::TSParenthesizedType(it) => self.convert_ts_type(&it.type_annotation),
+            TSType::TSArrayType(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                self.convert_ts_type(&it.element_type);
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSType::TSTupleType(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                for element in &it.element_types {
+                    self.convert_ts_tuple_element(element);
+                }
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSType::TSConditionalType(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                self.convert_ts_type(&it.check_type);
+                self.convert_ts_type(&it.extends_type);
+                self.convert_ts_type(&it.true_type);
+                self.convert_ts_type(&it.false_type);
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSType::TSMappedType(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                if let Some(ta) = &it.type_annotation {
+                    self.convert_ts_type(ta);
+                }
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSType::TSTypeOperatorType(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                self.convert_ts_type(&it.type_annotation);
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSType::TSIndexedAccessType(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                self.convert_ts_type(&it.object_type);
+                self.convert_ts_type(&it.index_type);
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            // All other type nodes (keywords, etc.) that don't need children
+            _ => self.push_unknown(ty.span()),
+        }
+    }
+
+    /// Convert a `TSTupleElement`.
+    ///
+    /// `TSTupleElement` inherits all `TSType` variants plus `TSOptionalType` and
+    /// `TSRestType`. We handle the extra variants explicitly and delegate the
+    /// `TSType`-inherited variants to `convert_ts_type` via `to_ts_type()`.
+    fn convert_ts_tuple_element(&mut self, element: &oxc::TSTupleElement<'_>) -> NodeId {
+        match element {
+            oxc::TSTupleElement::TSOptionalType(opt) => self.convert_ts_type(&opt.type_annotation),
+            oxc::TSTupleElement::TSRestType(rest) => self.convert_ts_type(&rest.type_annotation),
+            _ => self.push_unknown(element.span()),
+        }
+    }
+
+    /// Convert a `TSTypeReference` to a `TSTypeReferenceNode`.
+    fn convert_ts_type_reference(&mut self, it: &oxc::TSTypeReference<'_>) -> NodeId {
+        let id = self.reserve();
+        self.parent_stack.push(id);
+        let type_arguments: Vec<NodeId> = it
+            .type_arguments
+            .as_ref()
+            .map(|ta| ta.params.iter().map(|t| self.convert_ts_type(t)).collect())
+            .unwrap_or_default();
+        self.parent_stack.pop();
+        self.tree.set(
+            id,
+            AstNode::TSTypeReference(TSTypeReferenceNode {
+                span: Self::span(it.span),
+                type_name: ts_type_name_to_string(&it.type_name),
+                type_arguments: type_arguments.into_boxed_slice(),
+            }),
+        );
+        id
+    }
+
+    /// Convert a `TSTypeLiteral` to a `TSTypeLiteralNode`.
+    fn convert_ts_type_literal(&mut self, it: &oxc::TSTypeLiteral<'_>) -> NodeId {
+        let id = self.reserve();
+        self.parent_stack.push(id);
+        let members: Vec<NodeId> = it
+            .members
+            .iter()
+            .map(|m| self.convert_ts_signature(m))
+            .collect();
+        self.parent_stack.pop();
+        self.tree.set(
+            id,
+            AstNode::TSTypeLiteral(TSTypeLiteralNode {
+                span: Self::span(it.span),
+                members: members.into_boxed_slice(),
+            }),
+        );
+        id
+    }
+
+    /// Convert a `TSSignature` member (property signature, index signature, etc.)
+    fn convert_ts_signature(&mut self, sig: &TSSignature<'_>) -> NodeId {
+        match sig {
+            TSSignature::TSPropertySignature(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                let _key = self.convert_property_key(&it.key);
+                if let Some(ta) = &it.type_annotation {
+                    self.convert_ts_type(&ta.type_annotation);
+                }
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSSignature::TSIndexSignature(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                self.convert_ts_type(&it.type_annotation.type_annotation);
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSSignature::TSCallSignatureDeclaration(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                if let Some(rt) = &it.return_type {
+                    self.convert_ts_type(&rt.type_annotation);
+                }
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSSignature::TSConstructSignatureDeclaration(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                if let Some(rt) = &it.return_type {
+                    self.convert_ts_type(&rt.type_annotation);
+                }
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+            TSSignature::TSMethodSignature(it) => {
+                let id = self.reserve();
+                self.parent_stack.push(id);
+                let _key = self.convert_property_key(&it.key);
+                if let Some(rt) = &it.return_type {
+                    self.convert_ts_type(&rt.type_annotation);
+                }
+                self.parent_stack.pop();
+                self.tree.set(
+                    id,
+                    AstNode::Unknown(UnknownNode {
+                        span: Self::span(it.span),
+                    }),
+                );
+                id
+            }
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -2120,6 +2484,18 @@ fn jsx_attribute_name_to_string(name: &oxc::JSXAttributeName<'_>) -> String {
         oxc::JSXAttributeName::NamespacedName(ns) => {
             format!("{}:{}", ns.namespace.name, ns.name.name)
         }
+    }
+}
+
+/// Convert a `TSTypeName` to a dotted string.
+fn ts_type_name_to_string(name: &TSTypeName<'_>) -> String {
+    match name {
+        TSTypeName::IdentifierReference(id) => id.name.to_string(),
+        TSTypeName::QualifiedName(qn) => {
+            let left = ts_type_name_to_string(&qn.left);
+            format!("{left}.{}", qn.right.name)
+        }
+        TSTypeName::ThisExpression(_) => "this".to_owned(),
     }
 }
 

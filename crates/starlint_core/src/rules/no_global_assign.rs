@@ -76,6 +76,10 @@ impl LintRule for NoGlobalAssign {
         }
     }
 
+    fn needs_semantic(&self) -> bool {
+        true
+    }
+
     fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[AstNodeType::AssignmentExpression])
     }

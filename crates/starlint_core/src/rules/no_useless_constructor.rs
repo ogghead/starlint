@@ -58,10 +58,10 @@ impl LintRule for NoUselessConstructor {
 
             let params = func.params.clone();
 
-            let Some(AstNode::BlockStatement(body)) = ctx.node(body_id) else {
+            let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
                 continue;
             };
-            let body_stmts = body.body.clone();
+            let body_stmts = body.statements.clone();
 
             // Empty constructor with no super class
             if body_stmts.is_empty() && !has_super {

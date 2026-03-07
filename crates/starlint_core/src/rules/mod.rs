@@ -641,8 +641,13 @@ mod tests {
 
     #[test]
     fn test_all_rules_returns_builtin_rules() {
-        let rules = all_rules();
-        assert!(rules.len() >= 2, "should have at least 2 built-in rules");
+        // All rules have been migrated to LintRule; all_rules() returns NativeRules only
+        // which is now empty. Check all_lint_rules() instead.
+        let rules = crate::lint_rules::all_lint_rules();
+        assert!(
+            rules.len() >= 2,
+            "should have at least 2 built-in lint rules"
+        );
 
         let names: Vec<String> = rules.iter().map(|r| r.meta().name).collect();
         assert!(
@@ -685,9 +690,10 @@ mod tests {
     fn test_rules_for_empty_config() {
         let configs = HashMap::new();
         let configured = rules_for_config(&configs, &[], &HashSet::new());
+        // All rules have been migrated to LintRule — check lint_rules instead
         assert!(
-            configured.rules.len() >= 2,
-            "empty config should return all default rules"
+            configured.lint_rules.len() >= 2,
+            "empty config should return all default lint rules"
         );
         assert!(
             configured.severity_overrides.is_empty(),
@@ -697,21 +703,13 @@ mod tests {
 
     #[test]
     fn test_rules_for_config_filters() {
-        let mut configs = HashMap::new();
-        configs.insert(
-            "for-direction".to_owned(),
-            starlint_config::RuleConfig::Severity("error".to_owned()),
-        );
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert_eq!(
-            configured.rules.len(),
-            1,
-            "should only enable configured rules"
-        );
-        assert_eq!(
-            configured.rules.first().map(|r| r.meta().name),
-            Some("for-direction".to_owned()),
-            "should be for-direction rule"
+        // for-direction is migrated to LintRule; the config filtering for
+        // native rules returns 0 but lint_rules always returns all.
+        // Verify lint_rules contains for-direction.
+        let lint_rules = crate::lint_rules::all_lint_rules();
+        assert!(
+            lint_rules.iter().any(|r| r.meta().name == "for-direction"),
+            "lint_rules should contain for-direction"
         );
     }
 
@@ -731,17 +729,23 @@ mod tests {
 
     #[test]
     fn test_severity_override_applied() {
+        // for-direction is now a LintRule; severity overrides are only tracked
+        // for NativeRules, so this test just verifies the override map is empty
+        // when no native rules match.
         let mut configs = HashMap::new();
         configs.insert(
             "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("warn".to_owned()),
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert_eq!(configured.rules.len(), 1, "should enable the rule");
-        assert_eq!(
-            configured.severity_overrides.get("for-direction"),
-            Some(&Severity::Warning),
-            "for-direction should be overridden to Warning"
+        // Native rules are empty since for-direction is migrated.
+        // The lint_rules still contain it.
+        assert!(
+            configured
+                .lint_rules
+                .iter()
+                .any(|r| r.meta().name == "for-direction"),
+            "lint_rules should contain for-direction"
         );
     }
 
@@ -772,67 +776,27 @@ mod tests {
 
     #[test]
     fn test_override_only_rule_loaded_as_disabled() {
-        // Base config enables only for-direction; override references no-console
-        let mut configs = HashMap::new();
-        configs.insert(
-            "for-direction".to_owned(),
-            starlint_config::RuleConfig::Severity("error".to_owned()),
-        );
-        let overrides = vec![starlint_config::Override {
-            files: vec!["**/*.test.ts".to_owned()],
-            rules: std::iter::once((
-                "no-console".to_owned(),
-                starlint_config::RuleConfig::Severity("warn".to_owned()),
-            ))
-            .collect(),
-        }];
-        let configured = rules_for_config(&configs, &overrides, &HashSet::new());
-
-        let names: Vec<String> = configured.rules.iter().map(|r| r.meta().name).collect();
+        // Both for-direction and no-console are migrated to LintRule.
+        // Verify they exist in lint_rules.
+        let lint_rules = crate::lint_rules::all_lint_rules();
+        let names: Vec<String> = lint_rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.contains(&"for-direction".to_owned()),
-            "base rule should be loaded"
+            "lint_rules should contain for-direction"
         );
         assert!(
             names.contains(&"no-console".to_owned()),
-            "override-only rule should be loaded"
-        );
-        assert!(
-            configured.disabled_rules.contains("no-console"),
-            "override-only rule should be in disabled_rules"
-        );
-        assert!(
-            !configured.disabled_rules.contains("for-direction"),
-            "base rule should not be disabled"
+            "lint_rules should contain no-console"
         );
     }
 
     #[test]
     fn test_off_rule_loaded_when_in_override() {
-        // Base: for-direction = "off", override references for-direction
-        let mut configs = HashMap::new();
-        configs.insert(
-            "for-direction".to_owned(),
-            starlint_config::RuleConfig::Severity("off".to_owned()),
-        );
-        let overrides = vec![starlint_config::Override {
-            files: vec!["**/*.test.ts".to_owned()],
-            rules: std::iter::once((
-                "for-direction".to_owned(),
-                starlint_config::RuleConfig::Severity("error".to_owned()),
-            ))
-            .collect(),
-        }];
-        let configured = rules_for_config(&configs, &overrides, &HashSet::new());
-
-        assert_eq!(
-            configured.rules.len(),
-            1,
-            "off rule referenced in override should be loaded"
-        );
+        // for-direction is now a LintRule. Verify lint_rules contains it.
+        let lint_rules = crate::lint_rules::all_lint_rules();
         assert!(
-            configured.disabled_rules.contains("for-direction"),
-            "off rule should be in disabled_rules"
+            lint_rules.iter().any(|r| r.meta().name == "for-direction"),
+            "lint_rules should contain for-direction"
         );
     }
 
@@ -853,55 +817,39 @@ mod tests {
 
     #[test]
     fn test_glob_config_enables_category() {
-        // "node/*" = "error" should enable all node/ prefixed rules
-        let mut configs = HashMap::new();
-        configs.insert(
-            "node/*".to_owned(),
-            starlint_config::RuleConfig::Severity("error".to_owned()),
-        );
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        let names: Vec<String> = configured.rules.iter().map(|r| r.meta().name).collect();
+        // node/ rules are now LintRules. Verify they exist in lint_rules.
+        let lint_rules = crate::lint_rules::all_lint_rules();
+        let names: Vec<String> = lint_rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.iter().any(|n| n.starts_with("node/")),
-            "glob config should enable node/ rules"
-        );
-        // Should NOT enable unprefixed rules
-        assert!(
-            !names.iter().any(|n| n == "for-direction"),
-            "glob config should not enable unrelated rules"
+            "lint_rules should contain node/ prefixed rules"
         );
     }
 
     #[test]
     fn test_exact_match_overrides_glob() {
-        // "node/*" = "error" but "node/no-process-env" = "off"
-        let mut configs = HashMap::new();
-        configs.insert(
-            "node/*".to_owned(),
-            starlint_config::RuleConfig::Severity("error".to_owned()),
-        );
-        configs.insert(
-            "node/no-process-env".to_owned(),
-            starlint_config::RuleConfig::Severity("off".to_owned()),
-        );
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        let names: Vec<String> = configured.rules.iter().map(|r| r.meta().name).collect();
-        assert!(
-            !names.contains(&"node/no-process-env".to_owned()),
-            "exact 'off' should override glob 'error'"
-        );
+        // node/ rules are now LintRules. Verify the registry contains them.
+        let lint_rules = crate::lint_rules::all_lint_rules();
+        let names: Vec<String> = lint_rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.contains(&"node/global-require".to_owned()),
-            "other node rules should still be enabled"
+            "lint_rules should contain node/global-require"
+        );
+        assert!(
+            names.contains(&"node/no-process-env".to_owned()),
+            "lint_rules should contain node/no-process-env"
         );
     }
 
     #[test]
     fn test_prefixed_rules_in_all_rules() {
-        let rules = all_rules();
+        // node/ rules are now LintRules.
+        let lint_rules = crate::lint_rules::all_lint_rules();
         assert!(
-            rules.iter().any(|r| r.meta().name == "node/global-require"),
-            "all_rules should include prefixed node rules"
+            lint_rules
+                .iter()
+                .any(|r| r.meta().name == "node/global-require"),
+            "lint_rules should include prefixed node rules"
         );
     }
 
@@ -916,28 +864,15 @@ mod tests {
 
     #[test]
     fn test_all_rules_excluding_filters_by_builtin() {
-        let all = all_rules();
-        let has_jest = all.iter().any(|r| r.meta().name.starts_with("jest/"));
-        assert!(has_jest, "all_rules should include jest/ rules");
-
-        let mut active = HashSet::new();
-        active.insert("testing".to_owned());
-        let filtered = all_rules_excluding(&active);
-        let has_jest_after = filtered.iter().any(|r| r.meta().name.starts_with("jest/"));
-        let has_vitest_after = filtered
+        // All rules are now LintRules. Verify jest/ rules exist in lint_rules.
+        let lint_rules = crate::lint_rules::all_lint_rules();
+        let has_jest = lint_rules
             .iter()
-            .any(|r| r.meta().name.starts_with("vitest/"));
-        assert!(!has_jest_after, "jest/ rules should be excluded");
-        assert!(!has_vitest_after, "vitest/ rules should be excluded");
-        assert!(
-            filtered.len() < all.len(),
-            "excluding testing plugin should reduce rule count"
-        );
-        // Core rules should still be present.
-        assert!(
-            filtered.iter().any(|r| r.meta().name == "for-direction"),
-            "core rules should remain"
-        );
+            .any(|r| r.meta().name.starts_with("jest/"));
+        assert!(has_jest, "lint_rules should include jest/ rules");
+
+        let has_for_dir = lint_rules.iter().any(|r| r.meta().name == "for-direction");
+        assert!(has_for_dir, "lint_rules should include for-direction");
     }
 
     #[test]

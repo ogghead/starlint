@@ -124,6 +124,7 @@ fn find_this_in_statement(stmt_id: NodeId, ctx: &LintContext<'_>) -> Option<Span
 }
 
 /// Find `this` expression recursively, returning its span.
+#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
 fn find_this_in_expression(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<Span> {
     match ctx.node(expr_id)? {
         AstNode::ThisExpression(this) => Some(Span::new(this.span.start, this.span.end)),
@@ -135,9 +136,12 @@ fn find_this_in_expression(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<Spa
             find_this_in_expression(assign.right, ctx)
         }
         AstNode::CallExpression(call) => {
-            // Skip super() calls -- that's what we're looking for
-            if matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name == "super")
-            {
+            // Skip super() calls -- that's what we're looking for.
+            // `super` maps to Unknown in starlint_ast so check source text.
+            if ctx.node(call.callee).is_some_and(|n| {
+                let sp = n.span();
+                ctx.source_text().get(sp.start as usize..sp.end as usize) == Some("super")
+            }) {
                 return None;
             }
             find_this_in_expression(call.callee, ctx)
@@ -161,11 +165,18 @@ fn statement_has_super_call(stmt_id: NodeId, ctx: &LintContext<'_>) -> bool {
 /// Check if an expression is a `super()` call.
 fn expression_is_super_call(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
     match ctx.node(expr_id) {
-        Some(AstNode::CallExpression(call)) => {
-            matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name == "super")
-        }
+        Some(AstNode::CallExpression(call)) => is_callee_super(call.callee, ctx),
         _ => false,
     }
+}
+
+/// Check if a callee node represents `super` by inspecting source text.
+#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
+fn is_callee_super(callee_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    ctx.node(callee_id).is_some_and(|n| {
+        let sp = n.span();
+        ctx.source_text().get(sp.start as usize..sp.end as usize) == Some("super")
+    })
 }
 
 #[cfg(test)]

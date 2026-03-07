@@ -722,18 +722,6 @@ pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
 ///
 /// These must be excluded from the native rule set to avoid duplicate diagnostics.
 pub const MIGRATED_RULE_NAMES: &[&str] = &[
-    ")) {
-            let abs_pos = search_start.saturating_add(offset);
-            let after_name = source
-                .get(abs_pos.saturating_add(5)..)
-                .unwrap_or_default()
-                .trim_start();
-
-            // Extract the quoted name value
-            let (quote, rest) = if let Some(b'\'' | b'",
-    ", ",
-    "ExportName",
-    "Math.PI",
     "accessor-pairs",
     "array-callback-return",
     "arrow-body-style",
@@ -1239,7 +1227,6 @@ pub const MIGRATED_RULE_NAMES: &[&str] = &[
     "uninvoked-array-callback",
     "use-isnan",
     "valid-typeof",
-    "value",
     "vars-on-top",
     "yoda",
 ];

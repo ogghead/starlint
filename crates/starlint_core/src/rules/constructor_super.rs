@@ -116,15 +116,25 @@ fn statement_contains_super_call(stmt_id: NodeId, ctx: &LintContext<'_>) -> bool
 }
 
 /// Check if an expression is or contains a `super()` call.
+#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
 fn expression_contains_super_call(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
     let Some(expr) = ctx.node(expr_id) else {
         return false;
     };
     match expr {
         AstNode::CallExpression(call) => {
-            // Check if callee is an identifier "super" (super calls are represented
-            // as IdentifierReference with name "super" in starlint_ast)
-            matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name == "super")
+            // `super` is not a first-class node in starlint_ast — it maps to
+            // Unknown. Check the source text of the callee span instead.
+            if let Some(callee_node) = ctx.node(call.callee) {
+                let callee_span = callee_node.span();
+                let callee_text = ctx
+                    .source_text()
+                    .get(callee_span.start as usize..callee_span.end as usize)
+                    .unwrap_or("");
+                callee_text == "super"
+            } else {
+                false
+            }
         }
         AstNode::SequenceExpression(seq) => seq
             .expressions

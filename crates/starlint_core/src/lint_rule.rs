@@ -273,15 +273,26 @@ pub fn lint_source(source: &str, file_path: &str, rules: &[Box<dyn LintRule>]) -
     use oxc_span::SourceType;
 
     use crate::ast_converter;
+    use crate::parser::build_semantic;
     use crate::traversal::{LintDispatchTable, traverse_ast_tree};
 
     let path = Path::new(file_path);
     let allocator = Allocator::default();
+    let is_pure_ts = path
+        .extension()
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("ts"));
     let source_type = SourceType::from_path(path)
         .unwrap_or_default()
-        .with_jsx(true);
+        .with_jsx(!is_pure_ts);
     let parsed = Parser::new(&allocator, source, source_type).parse();
-    let tree = ast_converter::convert(&parsed.program);
+
+    // Arena-allocate the program so semantic analysis can reference it.
+    let program = allocator.alloc(parsed.program);
+
+    let needs_semantic = rules.iter().any(|r| r.needs_semantic());
+    let semantic = needs_semantic.then(|| build_semantic(program));
+
+    let tree = ast_converter::convert(program);
     let traversal_indices: Vec<usize> = rules
         .iter()
         .enumerate()
@@ -295,7 +306,15 @@ pub fn lint_source(source: &str, file_path: &str, rules: &[Box<dyn LintRule>]) -
         .map(|(i, _)| i)
         .collect();
     let table = LintDispatchTable::build_from_indices(rules, &traversal_indices);
-    traverse_ast_tree(&tree, rules, &table, &run_once_indices, source, path, None)
+    traverse_ast_tree(
+        &tree,
+        rules,
+        &table,
+        &run_once_indices,
+        source,
+        path,
+        semantic.as_ref(),
+    )
 }
 
 #[cfg(test)]

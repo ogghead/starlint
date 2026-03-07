@@ -62,22 +62,27 @@ impl LintRule for PreferConst {
                 return false;
             }
 
-            // Resolve the binding id
-            let Some(binding_node) = ctx.node(declarator.id) else {
+            // Get all binding identifiers (handles both simple and destructuring patterns)
+            let bindings = ctx.tree().get_binding_identifiers(declarator.id);
+            if bindings.is_empty() {
                 return false;
-            };
-            let Some(binding) = binding_node.as_binding_identifier() else {
-                return false;
-            };
+            }
 
-            // starlint_ast's BindingIdentifierNode does not carry symbol_id,
-            // so we cannot look up resolved references. Use a simplified
-            // heuristic: search source text for re-assignments to this name.
-            // For now, skip semantic-based checking (always consider const-eligible
-            // if we got here and have a valid binding).
-            let _ = binding;
-            let _ = scoping;
-            true
+            // Each binding must have no write references after declaration
+            bindings.iter().all(|(_, binding)| {
+                let span = starlint_ast::types::Span {
+                    start: binding.span.start,
+                    end: binding.span.end,
+                };
+                let Some(symbol_id) = ctx.resolve_symbol_id(span) else {
+                    // Can't resolve — conservatively consider const-eligible
+                    return true;
+                };
+                // Check for write references to this symbol
+                !scoping
+                    .get_resolved_references(symbol_id)
+                    .any(oxc_semantic::Reference::is_write)
+            })
         });
 
         if all_const_eligible && !decl.declarations.is_empty() {

@@ -61,6 +61,10 @@ impl LintRule for SortKeys {
             .iter()
             .filter_map(|prop_id| {
                 if let Some(AstNode::ObjectProperty(p)) = ctx.node(*prop_id) {
+                    // Skip computed properties — they can't be statically sorted
+                    if p.computed {
+                        return None;
+                    }
                     let key_span = ctx.node(p.key).map_or(
                         starlint_ast::types::Span::EMPTY,
                         starlint_ast::AstNode::span,

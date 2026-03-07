@@ -74,10 +74,41 @@ impl LintRule for NoMisusedNew {
                     });
                 }
             }
-            AstNode::TSTypeAliasDeclaration(_decl) => {
-                // TSTypeAliasDeclarationNode in starlint_ast does not expose
-                // the type annotation body, so we cannot inspect members.
-                // This check requires richer AST support; skip for now.
+            AstNode::TSTypeAliasDeclaration(decl) => {
+                // Check if the aliased type is a type literal with construct signatures.
+                let Some(type_ann_id) = decl.type_annotation else {
+                    return;
+                };
+                let Some(AstNode::TSTypeLiteral(type_lit)) = ctx.node(type_ann_id) else {
+                    return;
+                };
+                let construct_spans: Vec<(u32, u32)> = {
+                    let source = ctx.source_text();
+                    type_lit
+                        .members
+                        .iter()
+                        .filter_map(|member_id| {
+                            ctx.node(*member_id).map(starlint_ast::AstNode::span)
+                        })
+                        .filter(|sp| {
+                            let text = source.get(sp.start as usize..sp.end as usize).unwrap_or("");
+                            text.trim_start().starts_with("new") && text.contains('(')
+                        })
+                        .map(|sp| (sp.start, sp.end))
+                        .collect()
+                };
+                for (start, end) in construct_spans {
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Do not use `new()` in a type alias — use a class instead"
+                            .to_owned(),
+                        span: Span::new(start, end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
+                }
             }
             _ => {}
         }

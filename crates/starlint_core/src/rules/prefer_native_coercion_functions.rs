@@ -60,33 +60,23 @@ impl LintRule for PreferNativeCoercionFunctions {
         };
         let param_name = param_ident.name.clone();
 
-        // Body must be a block statement with one expression statement,
-        // or the body NodeId directly points to the expression (expression body)
-        let Some(body_node) = ctx.node(arrow.body) else {
+        // The body is always a FunctionBody node. For expression arrows,
+        // the FunctionBody contains one ExpressionStatement wrapping the expression.
+        let Some(AstNode::FunctionBody(body)) = ctx.node(arrow.body) else {
             return;
         };
 
-        // For expression arrows, body might be a BlockStatement with one ExpressionStatement
-        // or directly the expression. Let's handle both.
-        let expr_id = match body_node {
-            AstNode::BlockStatement(block) => {
-                if block.body.len() != 1 {
-                    return;
-                }
-                let Some(stmt_id) = block.body.first() else {
-                    return;
-                };
-                let Some(stmt_node) = ctx.node(*stmt_id) else {
-                    return;
-                };
-                match stmt_node {
-                    AstNode::ExpressionStatement(es) => es.expression,
-                    _ => return,
-                }
-            }
-            // The body itself might be the expression for expression arrows
-            _ => arrow.body,
+        if body.statements.len() != 1 {
+            return;
+        }
+
+        let Some(stmt_id) = body.statements.first() else {
+            return;
         };
+        let Some(AstNode::ExpressionStatement(es)) = ctx.node(*stmt_id) else {
+            return;
+        };
+        let expr_id = es.expression;
 
         // The expression must be a call to a coercion function
         let Some(AstNode::CallExpression(call)) = ctx.node(expr_id) else {

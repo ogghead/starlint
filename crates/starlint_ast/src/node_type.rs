@@ -81,6 +81,7 @@ pub enum AstNodeType {
     // Patterns
     ArrayPattern = 55,
     ObjectPattern = 56,
+    AssignmentPattern = 87,
 
     // Modules
     ImportDeclaration = 57,
@@ -118,11 +119,11 @@ pub enum AstNodeType {
     TSTypeParameter = 83,
     TSAnyKeyword = 84,
     TSVoidKeyword = 85,
-    Unknown = 86,
+    Unknown = 88,
 }
 
 /// Total number of `AstNodeType` variants (for sizing dispatch tables).
-pub const AST_NODE_TYPE_COUNT: usize = 87;
+pub const AST_NODE_TYPE_COUNT: usize = 89;
 
 impl From<&AstNode> for AstNodeType {
     fn from(node: &AstNode) -> Self {
@@ -184,6 +185,7 @@ impl From<&AstNode> for AstNodeType {
             AstNode::DebuggerStatement(_) => Self::DebuggerStatement,
             AstNode::ArrayPattern(_) => Self::ArrayPattern,
             AstNode::ObjectPattern(_) => Self::ObjectPattern,
+            AstNode::AssignmentPattern(_) => Self::AssignmentPattern,
             AstNode::ImportDeclaration(_) => Self::ImportDeclaration,
             AstNode::ImportSpecifier(_) => Self::ImportSpecifier,
             AstNode::ExportNamedDeclaration(_) => Self::ExportNamedDeclaration,

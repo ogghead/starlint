@@ -39,21 +39,21 @@ impl LintRule for NoCondAssign {
     fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         match node {
             AstNode::IfStatement(if_stmt) => {
-                check_condition(if_stmt.test, ctx);
+                check_condition(if_stmt.test, false, ctx);
             }
             AstNode::WhileStatement(while_stmt) => {
-                check_condition(while_stmt.test, ctx);
+                check_condition(while_stmt.test, false, ctx);
             }
             AstNode::DoWhileStatement(do_while) => {
-                check_condition(do_while.test, ctx);
+                check_condition(do_while.test, false, ctx);
             }
             AstNode::ForStatement(for_stmt) => {
                 if let Some(test) = for_stmt.test {
-                    check_condition(test, ctx);
+                    check_condition(test, false, ctx);
                 }
             }
             AstNode::ConditionalExpression(cond) => {
-                check_condition(cond.test, ctx);
+                check_condition(cond.test, true, ctx);
             }
             _ => {}
         }
@@ -61,13 +61,36 @@ impl LintRule for NoCondAssign {
 }
 
 /// Check if an expression (used as a condition) is an assignment.
-fn check_condition(test_id: NodeId, ctx: &mut LintContext<'_>) {
+///
+/// When `is_ternary` is true, parenthesized assignments are considered
+/// intentional (consistent with `ESLint`'s default "except-parens" mode).
+/// For if/while/for/do-while the condition is always syntactically wrapped
+/// in `()`, so extra parens would mean double-parens `((x = 5))`.
+fn check_condition(test_id: NodeId, is_ternary: bool, ctx: &mut LintContext<'_>) {
     let Some(AstNode::AssignmentExpression(assign)) = ctx.node(test_id) else {
         return;
     };
 
     // Extract spans before mutably borrowing ctx
     let assign_span = assign.span;
+
+    // For ternary expressions, the converter unwraps ParenthesizedExpression
+    // but we can detect it was parenthesized by checking if `(` precedes
+    // the assignment span. Statement conditions (if/while/etc.) always have
+    // syntactic parens so this check only applies to ternaries.
+    if is_ternary {
+        #[allow(clippy::as_conversions)]
+        let start = assign_span.start as usize;
+        if let Some(prev_byte) = start
+            .checked_sub(1)
+            .and_then(|i| ctx.source_text().as_bytes().get(i))
+        {
+            if *prev_byte == b'(' {
+                return;
+            }
+        }
+    }
+
     let left_id = assign.left;
     let right_id = assign.right;
 

@@ -117,11 +117,18 @@ impl AstTree {
     /// This is a convenience method — for high-performance traversal, use
     /// [`TreeCursor`](crate::TreeCursor) instead.
     #[must_use]
+    #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
     pub fn children(&self, id: NodeId) -> Vec<NodeId> {
-        let Some(node) = self.get(id) else {
-            return Vec::new();
-        };
-        node_children(node)
+        // Use the parent pointer array to find all direct children of this
+        // node. This ensures TS type-annotation nodes (and any other nodes
+        // that are created as children but not stored in struct fields) are
+        // included.
+        self.parents
+            .iter()
+            .enumerate()
+            .filter(|(_, parent)| **parent == Some(id))
+            .map(|(i, _)| NodeId(i as u32))
+            .collect()
     }
 
     /// Reserve a slot in the tree, returning its [`NodeId`].
@@ -276,6 +283,9 @@ fn node_children(node: &AstNode) -> Vec<NodeId> {
         AstNode::VariableDeclaration(n) => n.declarations.to_vec(),
         AstNode::VariableDeclarator(n) => {
             let mut c = vec![n.id];
+            if let Some(ta) = n.type_annotation {
+                c.push(ta);
+            }
             if let Some(init) = n.init {
                 c.push(init);
             }
@@ -286,7 +296,11 @@ fn node_children(node: &AstNode) -> Vec<NodeId> {
             if let Some(id) = n.id {
                 c.push(id);
             }
+            c.extend_from_slice(&n.type_parameters);
             c.extend_from_slice(&n.params);
+            if let Some(rt) = n.return_type {
+                c.push(rt);
+            }
             if let Some(body) = n.body {
                 c.push(body);
             }
@@ -371,6 +385,7 @@ fn node_children(node: &AstNode) -> Vec<NodeId> {
             }
             c
         }
+        AstNode::AssignmentPattern(n) => vec![n.left, n.right],
         AstNode::ImportDeclaration(n) => n.specifiers.to_vec(),
         AstNode::ExportNamedDeclaration(n) => {
             let mut c = Vec::new();
@@ -402,6 +417,9 @@ fn node_children(node: &AstNode) -> Vec<NodeId> {
         AstNode::TSTypeAliasDeclaration(n) => {
             let mut c = vec![n.id];
             c.extend_from_slice(&n.type_parameters);
+            if let Some(ta) = n.type_annotation {
+                c.push(ta);
+            }
             c
         }
         AstNode::TSInterfaceDeclaration(n) => {
