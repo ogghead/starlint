@@ -946,5 +946,9 @@ fn resolve_callee(tree: &serde_json::Value, id: u64) -> String {
         }
         return format!("{object_path}.{property}");
     }
+    if let Some(call) = node.get("CallExpression") {
+        let callee_id = call.get("callee").and_then(|c| c.as_u64()).unwrap_or(0);
+        return resolve_callee(tree, callee_id);
+    }
     String::new()
 }
