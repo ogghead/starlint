@@ -939,7 +939,6 @@ var pn = parseInt('071');
 const ts = new Date().getTime();
 var pw = Math.pow(2, 3);
 const big = 10000;
-arr.map(x => Number(x));
 [].forEach.call(obj, fn);
 var greeting = 'hi ' + user;
 ";

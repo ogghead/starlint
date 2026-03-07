@@ -285,4 +285,27 @@ mod tests {
         let result = parse("if (true) { x; } else { y; }", ParseOptions::default());
         assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
     }
+
+    #[test]
+    fn parse_jsx_nested_self_closing_in_attr() {
+        let opts = ParseOptions {
+            jsx: true,
+            ..ParseOptions::default()
+        };
+        let result = parse("const el = <Foo icon={<Icon />} />;", opts);
+        assert!(result.errors.is_empty(), "errors: {:?}", result.errors);
+        // Check that we have JSXExpressionContainer containing a JSXElement
+        let has_container = result.tree.nodes().iter().any(|n| {
+            if let AstNode::JSXExpressionContainer(c) = n {
+                c.expression
+                    .is_some_and(|eid| matches!(result.tree.get(eid), Some(AstNode::JSXElement(_))))
+            } else {
+                false
+            }
+        });
+        assert!(
+            has_container,
+            "should have JSXExpressionContainer with JSXElement child"
+        );
+    }
 }

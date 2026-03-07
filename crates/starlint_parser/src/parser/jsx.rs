@@ -59,16 +59,13 @@ impl Parser<'_> {
             false
         };
         if self.at(TokenKind::RAngle) {
-            // For non-self-closing, switch to JsxChild mode BEFORE bumping
-            // so the first child token is lexed correctly.
-            if !is_self_closing {
+            // Switch mode BEFORE bumping so the next token is lexed correctly.
+            if is_self_closing {
+                self.lexer.set_mode(LexerMode::Normal);
+            } else {
                 self.lexer.set_mode(LexerMode::JsxChild);
             }
             self.bump(); // `>`
-        }
-
-        if is_self_closing {
-            self.lexer.set_mode(LexerMode::Normal);
         }
 
         let opening_end = self.prev_end;

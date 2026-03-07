@@ -3,7 +3,8 @@
 use starlint_ast::node::{
     AstNode, TSAnyKeywordNode, TSAsExpressionNode, TSEnumDeclarationNode, TSEnumMemberNode,
     TSInterfaceDeclarationNode, TSModuleDeclarationNode, TSTypeAliasDeclarationNode,
-    TSTypeLiteralNode, TSTypeParameterNode, TSTypeReferenceNode, TSVoidKeywordNode, UnknownNode,
+    TSTypeAssertionNode, TSTypeLiteralNode, TSTypeParameterNode, TSTypeReferenceNode,
+    TSVoidKeywordNode, UnknownNode,
 };
 use starlint_ast::types::{NodeId, Span};
 
@@ -288,6 +289,56 @@ impl Parser<'_> {
         param_id
     }
 
+    /// Skip type parameters and/or parenthesized parameter lists.
+    fn skip_paren_or_type_params(&mut self) {
+        if self.at(TokenKind::LAngle) {
+            self.skip_ts_type_parameters();
+        }
+        if self.at(TokenKind::LParen) {
+            self.bump(); // `(`
+            let mut depth = 1u32;
+            while depth > 0 && !self.at(TokenKind::Eof) {
+                match self.cur() {
+                    TokenKind::LParen => {
+                        depth = depth.saturating_add(1);
+                        self.bump();
+                    }
+                    TokenKind::RParen => {
+                        depth = depth.saturating_sub(1);
+                        self.bump();
+                    }
+                    _ => {
+                        self.bump();
+                    }
+                }
+            }
+        }
+    }
+
+    /// Skip type parameters `<...>` without creating AST nodes.
+    fn skip_ts_type_parameters(&mut self) {
+        if !self.at(TokenKind::LAngle) {
+            return;
+        }
+        self.bump(); // `<`
+        let mut depth = 1u32;
+        while depth > 0 && !self.at(TokenKind::Eof) {
+            match self.cur() {
+                TokenKind::LAngle => {
+                    depth = depth.saturating_add(1);
+                    self.bump();
+                }
+                TokenKind::RAngle => {
+                    depth = depth.saturating_sub(1);
+                    self.bump();
+                }
+                _ => {
+                    self.bump();
+                }
+            }
+        }
+    }
+
     /// Parse a type literal `{ ... }`.
     fn parse_ts_type_literal(&mut self, parent: Option<NodeId>) -> NodeId {
         let start = self.start();
@@ -314,38 +365,76 @@ impl Parser<'_> {
         lit_id
     }
 
-    /// Parse a type member (property signature, method signature, etc.).
+    /// Parse a type member (property signature, method signature, call signature).
+    ///
+    /// Handles `name: Type`, `name?: Type`, `[key: Type]: Type`,
+    /// method signatures, and call signatures `(): Type`.
+    /// The member node itself is `Unknown` but the type annotation is properly
+    /// parsed so downstream rules can see type references.
     fn parse_ts_type_member(&mut self, parent: Option<NodeId>) -> NodeId {
         let start = self.start();
-        // Simplified: consume until `;` or `,` or `}`
-        let mut depth = 0u32;
-        loop {
-            match self.cur() {
-                TokenKind::Eof => break,
-                TokenKind::RBrace if depth == 0 => break,
-                TokenKind::Semicolon | TokenKind::Comma if depth == 0 => {
-                    self.bump();
-                    break;
+        let member_id = self.reserve(parent);
+
+        // Skip `readonly` modifier
+        if self.at(TokenKind::Identifier) && self.cur_text() == "readonly" {
+            self.bump();
+        }
+
+        // Call/construct signature: `(): Type`, `<T>(params): Type`, `new (): Type`
+        if self.at(TokenKind::LParen) || self.at(TokenKind::LAngle) {
+            self.skip_paren_or_type_params();
+        } else {
+            // Computed property name: `[key: Type]`
+            if self.at(TokenKind::LBracket) {
+                self.bump(); // `[`
+                let mut depth = 1u32;
+                while depth > 0 && !self.at(TokenKind::Eof) {
+                    match self.cur() {
+                        TokenKind::LBracket => {
+                            depth = depth.saturating_add(1);
+                            self.bump();
+                        }
+                        TokenKind::RBracket => {
+                            depth = depth.saturating_sub(1);
+                            self.bump();
+                        }
+                        _ => {
+                            self.bump();
+                        }
+                    }
                 }
-                TokenKind::LBrace | TokenKind::LParen | TokenKind::LBracket => {
-                    depth = depth.saturating_add(1);
-                    self.bump();
-                }
-                TokenKind::RBrace | TokenKind::RParen | TokenKind::RBracket => {
-                    depth = depth.saturating_sub(1);
-                    self.bump();
-                }
-                _ => {
-                    self.bump();
-                }
+            } else {
+                // Property name (identifier, string, or keyword used as name)
+                self.bump();
+            }
+
+            // Optional `?`
+            self.eat(TokenKind::Question);
+
+            // Method signature: `name(...)` or `name<T>(...)`
+            if self.at(TokenKind::LParen) || self.at(TokenKind::LAngle) {
+                self.skip_paren_or_type_params();
             }
         }
-        self.push(
+
+        // Type annotation: `: Type`
+        if self.at(TokenKind::Colon) {
+            self.bump(); // `:`
+            let _type_id = self.parse_ts_type(Some(member_id));
+        }
+
+        // Consume separator (`;` or `,`)
+        if self.at(TokenKind::Semicolon) || self.at(TokenKind::Comma) {
+            self.bump();
+        }
+
+        self.tree.set(
+            member_id,
             AstNode::Unknown(UnknownNode {
                 span: Span::new(start, self.prev_end),
             }),
-            parent,
-        )
+        );
+        member_id
     }
 
     /// Parse a tuple type `[T, U, V]`.
@@ -553,13 +642,34 @@ impl Parser<'_> {
         member_id
     }
 
-    /// Parse `namespace Name { ... }` or `module Name { ... }`.
+    /// Parse `namespace Name { ... }` or `module Name { ... }` or `module "name" { ... }`.
     pub(crate) fn parse_ts_module(&mut self, parent: Option<NodeId>) -> NodeId {
         let start = self.start();
         let mod_id = self.reserve(parent);
         self.bump(); // `namespace` or `module`
 
-        let id = self.parse_binding_identifier(Some(mod_id));
+        // Ambient module with string literal name: `module "express" { ... }`
+        let id = if self.at(TokenKind::String) {
+            let str_start = self.start();
+            let raw = self.cur_text();
+            let value = if raw.len() >= 2 {
+                raw.get(1..raw.len().saturating_sub(1))
+                    .unwrap_or_default()
+                    .to_owned()
+            } else {
+                String::new()
+            };
+            let tok = self.bump();
+            self.push(
+                AstNode::StringLiteral(starlint_ast::node::StringLiteralNode {
+                    span: Span::new(str_start, tok.end),
+                    value,
+                }),
+                Some(mod_id),
+            )
+        } else {
+            self.parse_binding_identifier(Some(mod_id))
+        };
 
         let body = if self.at(TokenKind::LBrace) {
             let block = self.parse_block_statement(Some(mod_id));
@@ -612,5 +722,24 @@ impl Parser<'_> {
             expr = as_id;
         }
         expr
+    }
+
+    /// Parse an angle-bracket type assertion: `<Type>expr`.
+    pub(crate) fn parse_ts_type_assertion(&mut self, parent: Option<NodeId>) -> NodeId {
+        let start = self.start();
+        let assert_id = self.reserve(parent);
+        self.bump(); // `<`
+        let _type_id = self.parse_ts_type(Some(assert_id));
+        let _ = self.expect(TokenKind::RAngle);
+        let expression = self.parse_unary_expression(Some(assert_id));
+        let end = self.tree.span(expression).map_or(self.prev_end, |s| s.end);
+        self.tree.set(
+            assert_id,
+            AstNode::TSTypeAssertion(TSTypeAssertionNode {
+                span: Span::new(start, end),
+                expression,
+            }),
+        );
+        assert_id
     }
 }

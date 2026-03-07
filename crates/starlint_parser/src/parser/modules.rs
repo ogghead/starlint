@@ -17,9 +17,8 @@ impl Parser<'_> {
         let import_id = self.reserve(parent);
         self.bump(); // `import`
 
-        // `import type` (TS)
-        let is_type_only =
-            self.options.typescript && self.at(TokenKind::Type) && !self.peek_is_from_or_comma();
+        // `import type` — supported in both TS and JS (transpilers like Babel support it)
+        let is_type_only = self.at(TokenKind::Type) && !self.peek_is_from_or_comma();
         if is_type_only {
             self.bump(); // `type`
         }
@@ -79,6 +78,23 @@ impl Parser<'_> {
         // `from "module"`
         let _ = self.expect(TokenKind::From);
         let source = self.parse_string_value();
+
+        // Import attributes: `with { type: 'json' }` or `assert { type: 'json' }`
+        if self.at(TokenKind::With)
+            || (self.at(TokenKind::Identifier) && self.cur_text() == "assert")
+        {
+            self.bump(); // `with` or `assert`
+            if self.at(TokenKind::LBrace) {
+                self.bump(); // `{`
+                while !self.at(TokenKind::RBrace) && !self.at(TokenKind::Eof) {
+                    self.bump();
+                }
+                if self.at(TokenKind::RBrace) {
+                    self.bump(); // `}`
+                }
+            }
+        }
+
         self.expect_semicolon();
 
         self.tree.set(

@@ -1,14 +1,15 @@
 //! Expression parsing with Pratt (precedence climbing) for binary operators.
 
 use starlint_ast::node::{
-    ArrayExpressionNode, ArrowFunctionExpressionNode, AssignmentExpressionNode, AstNode,
-    AwaitExpressionNode, BinaryExpressionNode, BooleanLiteralNode, CallExpressionNode,
-    ChainExpressionNode, ComputedMemberExpressionNode, ConditionalExpressionNode,
-    IdentifierReferenceNode, LogicalExpressionNode, NewExpressionNode, NullLiteralNode,
-    NumericLiteralNode, ObjectExpressionNode, ObjectPropertyNode, RegExpLiteralNode,
-    SequenceExpressionNode, SpreadElementNode, StaticMemberExpressionNode, StringLiteralNode,
-    TSNonNullExpressionNode, TaggedTemplateExpressionNode, TemplateLiteralNode, ThisExpressionNode,
-    UnaryExpressionNode, UnknownNode, UpdateExpressionNode,
+    ArrayExpressionNode, ArrowFunctionExpressionNode, AssignmentExpressionNode,
+    AssignmentPatternNode, AstNode, AwaitExpressionNode, BinaryExpressionNode,
+    BindingIdentifierNode, BooleanLiteralNode, CallExpressionNode, ChainExpressionNode,
+    ComputedMemberExpressionNode, ConditionalExpressionNode, IdentifierReferenceNode,
+    LogicalExpressionNode, NewExpressionNode, NullLiteralNode, NumericLiteralNode,
+    ObjectExpressionNode, ObjectPropertyNode, RegExpLiteralNode, SequenceExpressionNode,
+    SpreadElementNode, StaticMemberExpressionNode, StringLiteralNode, TSNonNullExpressionNode,
+    TaggedTemplateExpressionNode, TemplateLiteralNode, ThisExpressionNode, UnaryExpressionNode,
+    UnknownNode, UpdateExpressionNode,
 };
 use starlint_ast::operator::{
     AssignmentOperator, BinaryOperator, LogicalOperator, PropertyKind, UnaryOperator,
@@ -306,7 +307,7 @@ impl Parser<'_> {
     }
 
     /// Parse a unary expression (prefix operators).
-    fn parse_unary_expression(&mut self, parent: Option<NodeId>) -> NodeId {
+    pub(crate) fn parse_unary_expression(&mut self, parent: Option<NodeId>) -> NodeId {
         match self.cur() {
             // Prefix unary
             TokenKind::Bang
@@ -804,11 +805,14 @@ impl Parser<'_> {
             TokenKind::String => {
                 let tok = self.bump();
                 let raw = self.text(start, tok.end);
-                // Strip quotes
+                // Strip quotes and process escape sequences
                 let value = if raw.len() >= 2 {
-                    raw.get(1..raw.len().saturating_sub(1))
-                        .unwrap_or_default()
-                        .to_owned()
+                    let inner = raw.get(1..raw.len().saturating_sub(1)).unwrap_or_default();
+                    if inner.contains('\\') {
+                        unescape_string(inner)
+                    } else {
+                        inner.to_owned()
+                    }
                 } else {
                     String::new()
                 };
@@ -884,6 +888,10 @@ impl Parser<'_> {
             TokenKind::Function => self.parse_function_expression(parent, false),
             TokenKind::Class => self.parse_class_expression(parent),
             TokenKind::LAngle if self.options.jsx => self.parse_jsx_element(parent),
+            TokenKind::LAngle if self.options.typescript && !self.options.jsx => {
+                // TypeScript angle-bracket type assertion: `<Type>expr`
+                self.parse_ts_type_assertion(parent)
+            }
             TokenKind::Super => {
                 let tok = self.bump();
                 self.push(
@@ -1004,6 +1012,11 @@ impl Parser<'_> {
         let arrow_id = self.reserve(parent);
         self.bump(); // `=>`
 
+        // Apply cover grammar: convert expression nodes to binding/pattern nodes.
+        for &param_id in params {
+            self.convert_expr_to_param(param_id);
+        }
+
         let is_expression = !self.at(TokenKind::LBrace);
         let body = self.parse_arrow_function_concise_body(Some(arrow_id));
         let end = self.tree.span(body).map_or(0, |s| s.end);
@@ -1060,6 +1073,45 @@ impl Parser<'_> {
             }),
         );
         arrow_id
+    }
+
+    /// Convert expression nodes to binding/pattern nodes for arrow function cover grammar.
+    ///
+    /// When `(a, b = 1)` is parsed as expressions and then `=>` is found, the
+    /// expression nodes must be reinterpreted: `IdentifierReference` becomes
+    /// `BindingIdentifier`, `AssignmentExpression(=)` becomes `AssignmentPattern`.
+    fn convert_expr_to_param(&mut self, id: NodeId) {
+        let node = self.tree.get(id).cloned();
+        match node {
+            Some(AstNode::IdentifierReference(ident)) => {
+                self.tree.set(
+                    id,
+                    AstNode::BindingIdentifier(BindingIdentifierNode {
+                        span: ident.span,
+                        name: ident.name,
+                    }),
+                );
+            }
+            Some(AstNode::AssignmentExpression(assign))
+                if assign.operator == AssignmentOperator::Assign =>
+            {
+                // Convert `left = right` to `AssignmentPattern { left, right }`
+                // First convert the left side recursively
+                self.convert_expr_to_param(assign.left);
+                self.tree.set(
+                    id,
+                    AstNode::AssignmentPattern(AssignmentPatternNode {
+                        span: assign.span,
+                        left: assign.left,
+                        right: assign.right,
+                    }),
+                );
+            }
+            _ => {
+                // Other expression types (ObjectExpression, ArrayExpression, etc.)
+                // are left as-is for now — rules handle them adequately.
+            }
+        }
     }
 
     /// Parse the concise body of an arrow function (either expression or block).
@@ -1439,6 +1491,37 @@ fn parse_number(text: &str) -> f64 {
     // Strip BigInt suffix and separators
     let cleaned = text.trim_end_matches('n').replace('_', "");
     cleaned.parse::<f64>().unwrap_or(f64::NAN)
+}
+
+/// Process JavaScript escape sequences in a string literal.
+fn unescape_string(s: &str) -> String {
+    let mut result = String::with_capacity(s.len());
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n') => result.push('\n'),
+                Some('r') => result.push('\r'),
+                Some('t') => result.push('\t'),
+                Some('\\') => result.push('\\'),
+                Some('\'') => result.push('\''),
+                Some('"') => result.push('"'),
+                Some('0') => result.push('\0'),
+                Some('b') => result.push('\u{0008}'),
+                Some('f') => result.push('\u{000C}'),
+                Some('v') => result.push('\u{000B}'),
+                Some(other) => {
+                    // Unknown escapes: keep as-is (e.g. \u, \x — leave raw)
+                    result.push('\\');
+                    result.push(other);
+                }
+                None => result.push('\\'),
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    result
 }
 
 /// Parse a regex literal `/pattern/flags`.

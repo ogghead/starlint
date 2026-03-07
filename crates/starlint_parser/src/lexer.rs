@@ -938,10 +938,6 @@ impl<'a> Lexer<'a> {
     fn scan_jsx_tag_token(&mut self) -> Token {
         let start = self.pos as u32;
         match self.peek() {
-            Some(b'>' | b'/') if self.peek() == Some(b'/') && self.peek_at(1) == Some(b'>') => {
-                self.advance_by(2);
-                self.make(TokenKind::Slash, start)
-            }
             Some(b'>') => {
                 self.advance();
                 self.make(TokenKind::RAngle, start)
