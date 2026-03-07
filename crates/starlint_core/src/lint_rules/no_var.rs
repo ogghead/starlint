@@ -63,30 +63,18 @@ impl LintRule for NoVar {
 mod tests {
     use std::path::Path;
 
-    use oxc_allocator::Allocator;
-    use oxc_parser::Parser;
-    use oxc_span::SourceType;
+    use starlint_parser::ParseOptions;
 
     use super::*;
-    use crate::ast_converter;
     use crate::lint_rule::LintRule;
     use crate::traversal::{LintDispatchTable, traverse_ast_tree};
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        let parsed = Parser::new(&allocator, source, SourceType::mjs()).parse();
-        let tree = ast_converter::convert(&parsed.program);
+        let path = Path::new("test.js");
+        let tree = starlint_parser::parse(source, ParseOptions::from_path(path)).tree;
         let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoVar)];
         let table = LintDispatchTable::build_from_indices(&rules, &[0]);
-        traverse_ast_tree(
-            &tree,
-            &rules,
-            &table,
-            &[],
-            source,
-            Path::new("test.js"),
-            None,
-        )
+        traverse_ast_tree(&tree, &rules, &table, &[], source, path, None)
     }
 
     #[test]

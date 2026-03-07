@@ -170,7 +170,7 @@ fn walk_node_recursive(
     }
 
     // Visit children.
-    for child_id in tree.children(node_id) {
+    for &child_id in tree.children(node_id) {
         walk_node_recursive(tree, child_id, rules, table, active, ctx);
     }
 

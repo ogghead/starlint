@@ -1,6 +1,6 @@
-//! Bridge between oxc AST and WIT plugin types.
+//! Bridge between `AstTree` and WIT plugin types.
 //!
-//! The [`NodeCollector`] traverses the oxc AST and converts matching nodes
+//! The [`NodeCollector`] traverses the `AstTree` and converts matching nodes
 //! to the simplified, stable WIT representation for WASM plugins.
 
 use serde::{Deserialize, Serialize};

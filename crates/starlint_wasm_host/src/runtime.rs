@@ -96,12 +96,10 @@ mod host {
     use std::sync::OnceLock;
 
     use globset::{Glob, GlobSet, GlobSetBuilder};
-    use oxc_ast::ast::Program;
-    use oxc_ast_visit::Visit;
+    use starlint_ast::tree::AstTree;
     use wasmtime::component::{Component, Linker};
     use wasmtime::{Engine, Store, StoreLimits, StoreLimitsBuilder};
 
-    use starlint_core::ast_converter;
     use starlint_core::plugin::PluginHost;
     use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Label, Severity, Span};
     use starlint_plugin_sdk::rule::FixKind;
@@ -372,7 +370,7 @@ mod host {
             &self,
             file_path: &Path,
             source_text: &str,
-            program: &Program<'_>,
+            tree: &AstTree,
         ) -> Vec<Diagnostic> {
             let mut all_diagnostics = Vec::new();
 
@@ -384,7 +382,7 @@ mod host {
                         &self.limits,
                         file_path,
                         source_text,
-                        program,
+                        tree,
                     ),
                     PluginPre::V2(_) => lint_with_plugin_v2(
                         plugin,
@@ -392,7 +390,7 @@ mod host {
                         &self.limits,
                         file_path,
                         source_text,
-                        program,
+                        tree,
                     ),
                 };
 
@@ -417,9 +415,9 @@ mod host {
             &self,
             file_path: &Path,
             source_text: &str,
-            program: &Program<'_>,
+            tree: &AstTree,
         ) -> Vec<Diagnostic> {
-            self.lint_file_internal(file_path, source_text, program)
+            self.lint_file_internal(file_path, source_text, tree)
         }
     }
 
@@ -522,7 +520,7 @@ mod host {
         limits: &ResourceLimits,
         file_path: &Path,
         source_text: &str,
-        program: &Program<'_>,
+        tree: &AstTree,
     ) -> Result<Vec<Diagnostic>, WasmError> {
         let PluginPre::V1(ref pre) = plugin.pre else {
             return Ok(Vec::new());
@@ -542,9 +540,9 @@ mod host {
             return Ok(Vec::new());
         }
 
-        // Collect matching AST nodes.
+        // Collect matching AST nodes from the AstTree.
         let mut collector = NodeCollector::new(interests);
-        collector.visit_program(program);
+        collector.collect(tree);
         let bridge_nodes = collector.into_nodes();
 
         // Skip calling the plugin if no matching nodes were found
@@ -664,7 +662,7 @@ mod host {
         limits: &ResourceLimits,
         file_path: &Path,
         source_text: &str,
-        program: &Program<'_>,
+        tree: &AstTree,
     ) -> Result<Vec<Diagnostic>, WasmError> {
         let PluginPre::V2(ref pre) = plugin.pre else {
             return Ok(Vec::new());
@@ -677,9 +675,8 @@ mod host {
             }
         }
 
-        // Convert oxc AST to AstTree and serialize to JSON bytes.
-        let ast_tree = ast_converter::convert(program);
-        let tree_bytes = serde_json::to_vec(&ast_tree).map_err(|err| WasmError::RuntimeError {
+        // Serialize the AstTree directly to JSON bytes.
+        let tree_bytes = serde_json::to_vec(tree).map_err(|err| WasmError::RuntimeError {
             plugin_name: plugin.name.clone(),
             reason: format!("failed to serialize AST tree: {err}"),
         })?;

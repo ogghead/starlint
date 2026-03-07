@@ -7,8 +7,8 @@ use std::path::{Path, PathBuf};
 
 use oxc_allocator::Allocator;
 use rayon::prelude::*;
+use starlint_parser::ParseOptions;
 
-use crate::ast_converter;
 use crate::diagnostic::OutputFormat;
 use crate::error::LintError;
 use crate::lint_rule::LintRule;
@@ -151,46 +151,71 @@ impl LintSession {
     /// Lint a single file.
     #[must_use]
     pub fn lint_single_file(&self, file_path: &Path, source_text: &str) -> FileDiagnostics {
+        // Validate file extension before parsing.
+        if !Self::is_supported_extension(file_path) {
+            let err = LintError::Parse {
+                path: file_path.display().to_string(),
+            };
+            return FileDiagnostics {
+                path: file_path.to_path_buf(),
+                source_text: String::new(),
+                diagnostics: vec![err.into_diagnostic()],
+            };
+        }
+
+        // Fast path: parse with the custom parser directly into AstTree (no copy).
+        let options = ParseOptions::from_path(file_path);
+        let parse_result = starlint_parser::parse(source_text, options);
+
+        if parse_result.panicked {
+            tracing::warn!("parse errors in {}", file_path.display());
+        }
+
+        let tree = parse_result.tree;
+
+        // Plugin host now receives the AstTree directly — no oxc needed.
+        let mut plugin_diags = self
+            .plugin_host
+            .as_ref()
+            .map(|host| host.lint_file(file_path, source_text, &tree))
+            .unwrap_or_default();
+
+        // If semantic analysis is needed, parse again with oxc (slow path).
+        // Only ~2% of files trigger semantic rules in practice.
         let allocator = Allocator::default();
-        let parse_result = parse_file(&allocator, source_text, file_path);
 
-        let mut diagnostics = match parse_result {
-            Ok(parsed) => {
-                if parsed.panicked {
-                    tracing::warn!("parse errors in {}", file_path.display());
+        let semantic = if self.needs_semantic {
+            match parse_file(&allocator, source_text, file_path) {
+                Ok(parsed) => {
+                    let program = allocator.alloc(parsed.program);
+                    Some(build_semantic(program))
                 }
-
-                // Arena-allocate the program so it can be shared with semantic analysis.
-                let program = allocator.alloc(parsed.program);
-
-                // Build semantic data (scope tree, symbol table) if any rule needs it.
-                let semantic = self.needs_semantic.then(|| build_semantic(program));
-
-                // Convert oxc AST → flat AstTree and traverse with lint rules.
-                let tree = ast_converter::convert(program);
-                let mut diags = traverse_ast_tree(
-                    &tree,
-                    &self.rules,
-                    &self.dispatch_table,
-                    &self.run_once_indices,
-                    source_text,
-                    file_path,
-                    semantic.as_ref(),
-                );
-
-                // External plugin host (WASM, etc.).
-                if let Some(host) = &self.plugin_host {
-                    let plugin_diags = host.lint_file(file_path, source_text, program);
-                    diags.extend(plugin_diags);
+                Err(err) => {
+                    tracing::warn!("{err}");
+                    return FileDiagnostics {
+                        path: file_path.to_path_buf(),
+                        source_text: source_text.to_owned(),
+                        diagnostics: vec![err.into_diagnostic()],
+                    };
                 }
-
-                diags
             }
-            Err(err) => {
-                tracing::warn!("{err}");
-                vec![err.into_diagnostic()]
-            }
+        } else {
+            None
         };
+
+        // Traverse the custom-parsed AstTree with lint rules.
+        let mut diagnostics = traverse_ast_tree(
+            &tree,
+            &self.rules,
+            &self.dispatch_table,
+            &self.run_once_indices,
+            source_text,
+            file_path,
+            semantic.as_ref(),
+        );
+
+        // Merge plugin diagnostics.
+        diagnostics.append(&mut plugin_diags);
 
         // Apply severity overrides from config.
         if !self.severity_overrides.is_empty() {
@@ -223,6 +248,19 @@ impl LintSession {
     #[must_use]
     pub const fn output_format(&self) -> OutputFormat {
         self.output_format
+    }
+
+    /// Check if a file has a supported JS/TS extension.
+    fn is_supported_extension(file_path: &Path) -> bool {
+        file_path
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .is_some_and(|ext| {
+                matches!(
+                    ext,
+                    "js" | "mjs" | "cjs" | "jsx" | "mjsx" | "ts" | "mts" | "cts" | "tsx" | "mtsx"
+                )
+            })
     }
 }
 

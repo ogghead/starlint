@@ -23,12 +23,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 wasmtime = { workspace = true, optional = true }
 
-oxc_ast = { workspace = true }
-oxc_ast_visit = { workspace = true }
+starlint_ast = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
-oxc_allocator = { workspace = true }
+starlint_parser = { workspace = true }
 criterion = { workspace = true }
 
 [[bench]]

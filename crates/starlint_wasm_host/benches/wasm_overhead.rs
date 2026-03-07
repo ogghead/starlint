@@ -19,11 +19,17 @@
 use std::path::Path;
 
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use oxc_allocator::Allocator;
+use starlint_ast::tree::AstTree;
+use starlint_parser::ParseOptions;
 
-use starlint_core::parser::parse_file;
 use starlint_core::plugin::PluginHost;
 use starlint_wasm_host::runtime::{ResourceLimits, WasmPluginHost};
+
+/// Parse source text into an `AstTree` using the custom parser.
+fn parse_tree(source: &str, file_path: &Path) -> AstTree {
+    let options = ParseOptions::from_path(file_path);
+    starlint_parser::parse(source, options).tree
+}
 
 /// Path to the pre-built example plugin (no file patterns — matches all files).
 const EXAMPLE_PLUGIN: &str = concat!(
@@ -130,11 +136,10 @@ fn bench_per_file_lint(c: &mut Criterion) {
 
     for (label, source) in cases {
         group.bench_with_input(BenchmarkId::new("example", label), source, |b, src| {
-            let allocator = Allocator::default();
             let path = Path::new("bench.js");
-            let parsed = parse_file(&allocator, src, path).expect("parse");
+            let tree = parse_tree(src, path);
             b.iter(|| {
-                let diags = host.lint_file(black_box(path), black_box(src), &parsed.program);
+                let diags = host.lint_file(black_box(path), black_box(src), &tree);
                 black_box(diags);
             });
         });
@@ -156,22 +161,20 @@ fn bench_file_pattern_skip(c: &mut Criterion) {
 
     // Lint a .js file — should be skipped by glob pattern before any work.
     group.bench_function("skip_non_matching_js", |b| {
-        let allocator = Allocator::default();
         let path = Path::new("bench.js");
-        let parsed = parse_file(&allocator, MEDIUM_JS, path).expect("parse");
+        let tree = parse_tree(MEDIUM_JS, path);
         b.iter(|| {
-            let diags = host.lint_file(black_box(path), black_box(MEDIUM_JS), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(MEDIUM_JS), &tree);
             black_box(diags);
         });
     });
 
     // Lint a .jsx file — should proceed to full WASM call.
     group.bench_function("match_jsx_file", |b| {
-        let allocator = Allocator::default();
         let path = Path::new("bench.jsx");
-        let parsed = parse_file(&allocator, JSX_SOURCE, path).expect("parse");
+        let tree = parse_tree(JSX_SOURCE, path);
         b.iter(|| {
-            let diags = host.lint_file(black_box(path), black_box(JSX_SOURCE), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(JSX_SOURCE), &tree);
             black_box(diags);
         });
     });
@@ -194,22 +197,20 @@ fn bench_multi_plugin(c: &mut Criterion) {
 
     // .js file: example plugin runs, JSX plugin skips.
     group.bench_function("js_file_2_plugins", |b| {
-        let allocator = Allocator::default();
         let path = Path::new("bench.js");
-        let parsed = parse_file(&allocator, MEDIUM_JS, path).expect("parse");
+        let tree = parse_tree(MEDIUM_JS, path);
         b.iter(|| {
-            let diags = host.lint_file(black_box(path), black_box(MEDIUM_JS), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(MEDIUM_JS), &tree);
             black_box(diags);
         });
     });
 
     // .jsx file: both plugins run.
     group.bench_function("jsx_file_2_plugins", |b| {
-        let allocator = Allocator::default();
         let path = Path::new("bench.jsx");
-        let parsed = parse_file(&allocator, JSX_SOURCE, path).expect("parse");
+        let tree = parse_tree(JSX_SOURCE, path);
         b.iter(|| {
-            let diags = host.lint_file(black_box(path), black_box(JSX_SOURCE), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(JSX_SOURCE), &tree);
             black_box(diags);
         });
     });
@@ -236,11 +237,10 @@ const c = add(a, b);
 ";
 
     group.bench_function("clean_source", |b| {
-        let allocator = Allocator::default();
         let path = Path::new("bench.js");
-        let parsed = parse_file(&allocator, clean_source, path).expect("parse");
+        let tree = parse_tree(clean_source, path);
         b.iter(|| {
-            let diags = host.lint_file(black_box(path), black_box(clean_source), &parsed.program);
+            let diags = host.lint_file(black_box(path), black_box(clean_source), &tree);
             black_box(diags);
         });
     });

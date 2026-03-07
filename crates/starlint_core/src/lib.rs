@@ -3,7 +3,6 @@
 //! Provides parsing, AST traversal, rule dispatch, file discovery,
 //! and diagnostic formatting.
 
-pub mod ast_converter;
 pub mod diagnostic;
 pub mod engine;
 #[allow(unused_assignments)] // False positive from thiserror 2.x macro-generated Display impls

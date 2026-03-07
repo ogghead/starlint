@@ -15,6 +15,10 @@ pub struct AstTree {
     nodes: Vec<AstNode>,
     /// Parent of each node (parallel to `nodes`). `None` for root.
     parents: Vec<Option<NodeId>>,
+    /// Children of each node (parallel to `nodes`). Maintained during `push()`.
+    /// Derived from `parents`, so skipped during serialization.
+    #[serde(skip)]
+    children: Vec<Vec<NodeId>>,
 }
 
 impl AstTree {
@@ -24,6 +28,7 @@ impl AstTree {
         Self {
             nodes: Vec::new(),
             parents: Vec::new(),
+            children: Vec::new(),
         }
     }
 
@@ -33,6 +38,7 @@ impl AstTree {
         Self {
             nodes: Vec::with_capacity(cap),
             parents: Vec::with_capacity(cap),
+            children: Vec::with_capacity(cap),
         }
     }
 
@@ -42,6 +48,13 @@ impl AstTree {
         let id = NodeId(self.nodes.len() as u32);
         self.nodes.push(node);
         self.parents.push(parent);
+        self.children.push(Vec::new());
+        // Register this node as a child of its parent.
+        if let Some(pid) = parent {
+            if let Some(siblings) = self.children.get_mut(pid.index()) {
+                siblings.push(id);
+            }
+        }
         id
     }
 
@@ -112,23 +125,13 @@ impl AstTree {
         result
     }
 
-    /// Collect child [`NodeId`]s for a given node by inspecting its fields.
+    /// Get the direct children of a node.
     ///
-    /// This is a convenience method — for high-performance traversal, use
-    /// [`TreeCursor`](crate::TreeCursor) instead.
+    /// Returns a slice of child [`NodeId`]s in insertion order. O(1) lookup
+    /// via the pre-computed children index.
     #[must_use]
-    #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
-    pub fn children(&self, id: NodeId) -> Vec<NodeId> {
-        // Use the parent pointer array to find all direct children of this
-        // node. This ensures TS type-annotation nodes (and any other nodes
-        // that are created as children but not stored in struct fields) are
-        // included.
-        self.parents
-            .iter()
-            .enumerate()
-            .filter(|(_, parent)| **parent == Some(id))
-            .map(|(i, _)| NodeId(i as u32))
-            .collect()
+    pub fn children(&self, id: NodeId) -> &[NodeId] {
+        self.children.get(id.index()).map_or(&[], Vec::as_slice)
     }
 
     /// Reserve a slot in the tree, returning its [`NodeId`].
@@ -204,6 +207,21 @@ impl AstTree {
     #[must_use]
     pub fn parents(&self) -> &[Option<NodeId>] {
         &self.parents
+    }
+
+    /// Rebuild the children index from the parent array.
+    ///
+    /// Call this after deserialization (the `children` field is `serde(skip)`).
+    #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
+    pub fn rebuild_children_index(&mut self) {
+        self.children = vec![Vec::new(); self.nodes.len()];
+        for (i, parent) in self.parents.iter().enumerate() {
+            if let Some(pid) = parent {
+                if let Some(siblings) = self.children.get_mut(pid.index()) {
+                    siblings.push(NodeId(i as u32));
+                }
+            }
+        }
     }
 }
 

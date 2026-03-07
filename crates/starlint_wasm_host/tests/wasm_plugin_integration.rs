@@ -13,13 +13,18 @@
 
 use std::path::Path;
 
-use oxc_allocator::Allocator;
-
 use std::collections::HashSet;
 
-use starlint_core::parser::parse_file;
+use starlint_ast::tree::AstTree;
 use starlint_core::plugin::PluginHost;
+use starlint_parser::ParseOptions;
 use starlint_wasm_host::runtime::{ResourceLimits, WasmPluginHost};
+
+/// Parse source text into an `AstTree` using the custom parser.
+fn parse_tree(source: &str, file_path: &Path) -> AstTree {
+    let options = ParseOptions::from_path(file_path);
+    starlint_parser::parse(source, options).tree
+}
 
 /// Path to the pre-built example plugin component.
 const EXAMPLE_PLUGIN: &str = concat!(
@@ -65,12 +70,10 @@ fn test_load_example_plugin() {
 #[test]
 fn test_debugger_statement_detected() {
     let host = host_with_example_plugin();
-    let allocator = Allocator::default();
     let source = "debugger;";
     let path = Path::new("test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert_eq!(diags.len(), 1, "should detect one debugger statement");
 
     let first = diags.first().expect("should have a diagnostic");
@@ -87,12 +90,10 @@ fn test_debugger_statement_detected() {
 #[test]
 fn test_import_star_detected() {
     let host = host_with_example_plugin();
-    let allocator = Allocator::default();
     let source = "import * as utils from 'utils';";
     let path = Path::new("test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert_eq!(diags.len(), 1, "should detect one wildcard import");
 
     let first = diags.first().expect("should have a diagnostic");
@@ -109,12 +110,10 @@ fn test_import_star_detected() {
 #[test]
 fn test_named_import_not_flagged() {
     let host = host_with_example_plugin();
-    let allocator = Allocator::default();
     let source = "import { foo, bar } from 'utils';";
     let path = Path::new("test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "named imports should not be flagged, got: {diags:?}"
@@ -124,12 +123,10 @@ fn test_named_import_not_flagged() {
 #[test]
 fn test_default_import_not_flagged() {
     let host = host_with_example_plugin();
-    let allocator = Allocator::default();
     let source = "import utils from 'utils';";
     let path = Path::new("test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "default imports should not be flagged, got: {diags:?}"
@@ -139,12 +136,10 @@ fn test_default_import_not_flagged() {
 #[test]
 fn test_multiple_issues_detected() {
     let host = host_with_example_plugin();
-    let allocator = Allocator::default();
     let source = "import * as all from 'mod';\ndebugger;\nimport { ok } from 'other';";
     let path = Path::new("test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert_eq!(
         diags.len(),
         2,
@@ -165,12 +160,10 @@ fn test_multiple_issues_detected() {
 #[test]
 fn test_clean_file_no_diagnostics() {
     let host = host_with_example_plugin();
-    let allocator = Allocator::default();
     let source = "const x = 1;\nconst y = x + 2;\nconsole.log(y);";
     let path = Path::new("test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "clean file should have no diagnostics, got: {diags:?}"
@@ -214,12 +207,10 @@ fn test_load_jsx_plugin() {
 #[test]
 fn test_jsx_img_missing_alt() {
     let host = host_with_jsx_plugin();
-    let allocator = Allocator::default();
     let source = r#"const el = <img src="photo.jpg" />;"#;
     let path = Path::new("test.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert_eq!(diags.len(), 1, "should detect missing alt on img");
 
     let first = diags.first().expect("should have a diagnostic");
@@ -230,12 +221,10 @@ fn test_jsx_img_missing_alt() {
 #[test]
 fn test_jsx_img_with_alt_ok() {
     let host = host_with_jsx_plugin();
-    let allocator = Allocator::default();
     let source = r#"const el = <img src="photo.jpg" alt="A photo" />;"#;
     let path = Path::new("test.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "img with alt should not be flagged, got: {diags:?}"
@@ -245,12 +234,10 @@ fn test_jsx_img_with_alt_ok() {
 #[test]
 fn test_jsx_img_with_spread_ok() {
     let host = host_with_jsx_plugin();
-    let allocator = Allocator::default();
     let source = r#"const el = <img src="photo.jpg" {...props} />;"#;
     let path = Path::new("test.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "img with spread should not be flagged (spread may include alt), got: {diags:?}"
@@ -260,12 +247,10 @@ fn test_jsx_img_with_spread_ok() {
 #[test]
 fn test_jsx_target_blank_without_noreferrer() {
     let host = host_with_jsx_plugin();
-    let allocator = Allocator::default();
     let source = r#"const el = <a href="https://example.com" target="_blank">Link</a>;"#;
     let path = Path::new("test.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert_eq!(
         diags.len(),
         1,
@@ -279,13 +264,11 @@ fn test_jsx_target_blank_without_noreferrer() {
 #[test]
 fn test_jsx_target_blank_with_noreferrer_ok() {
     let host = host_with_jsx_plugin();
-    let allocator = Allocator::default();
     let source =
         r#"const el = <a href="https://example.com" target="_blank" rel="noreferrer">Link</a>;"#;
     let path = Path::new("test.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "target=_blank with noreferrer should not be flagged, got: {diags:?}"
@@ -295,12 +278,10 @@ fn test_jsx_target_blank_with_noreferrer_ok() {
 #[test]
 fn test_jsx_non_img_not_flagged() {
     let host = host_with_jsx_plugin();
-    let allocator = Allocator::default();
     let source = r#"const el = <div className="container"><span>Hello</span></div>;"#;
     let path = Path::new("test.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse should succeed");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "non-img elements should not be flagged, got: {diags:?}"
@@ -325,12 +306,10 @@ fn test_load_storybook_plugin() {
 #[test]
 fn test_storybook_default_exports_missing() {
     let host = host_with_storybook_plugin();
-    let allocator = Allocator::default();
     let source = "export const Primary = {};";
     let path = Path::new("Button.stories.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"storybook/default-exports"),
@@ -341,12 +320,10 @@ fn test_storybook_default_exports_missing() {
 #[test]
 fn test_storybook_default_exports_present() {
     let host = host_with_storybook_plugin();
-    let allocator = Allocator::default();
     let source = "export default { component: Button };\nexport const Primary = {};";
     let path = Path::new("Button.stories.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         !names.contains(&"storybook/default-exports"),
@@ -357,12 +334,10 @@ fn test_storybook_default_exports_present() {
 #[test]
 fn test_storybook_story_exports_missing() {
     let host = host_with_storybook_plugin();
-    let allocator = Allocator::default();
     let source = "export default { component: Button };";
     let path = Path::new("Button.stories.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"storybook/story-exports"),
@@ -373,12 +348,10 @@ fn test_storybook_story_exports_missing() {
 #[test]
 fn test_storybook_no_stories_of() {
     let host = host_with_storybook_plugin();
-    let allocator = Allocator::default();
     let source = "export default {};\nexport const Primary = {};\nstoriesOf('Button', module);";
     let path = Path::new("Button.stories.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"storybook/no-stories-of"),
@@ -389,12 +362,10 @@ fn test_storybook_no_stories_of() {
 #[test]
 fn test_storybook_use_storybook_testing_library() {
     let host = host_with_storybook_plugin();
-    let allocator = Allocator::default();
     let source = "import { render } from '@testing-library/react';\nexport default { component: Button };\nexport const Primary = {};";
     let path = Path::new("Button.stories.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"storybook/use-storybook-testing-library"),
@@ -405,12 +376,10 @@ fn test_storybook_use_storybook_testing_library() {
 #[test]
 fn test_storybook_hierarchy_separator() {
     let host = host_with_storybook_plugin();
-    let allocator = Allocator::default();
     let source = "export default { component: Button, title: 'Components|Button' };\nexport const Primary = {};";
     let path = Path::new("Button.stories.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"storybook/hierarchy-separator"),
@@ -421,13 +390,11 @@ fn test_storybook_hierarchy_separator() {
 #[test]
 fn test_storybook_file_pattern_skip() {
     let host = host_with_storybook_plugin();
-    let allocator = Allocator::default();
     // Same source but NOT a stories file — should be skipped.
     let source = "storiesOf('Button', module);";
     let path = Path::new("Button.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "non-story files should be skipped entirely, got: {diags:?}"
@@ -437,7 +404,6 @@ fn test_storybook_file_pattern_skip() {
 #[test]
 fn test_storybook_clean_story() {
     let host = host_with_storybook_plugin();
-    let allocator = Allocator::default();
     let source = r"
 import { Button } from './Button';
 export default { component: Button };
@@ -445,9 +411,8 @@ export const Primary = {};
 export const Secondary = { args: { variant: 'secondary' } };
 ";
     let path = Path::new("Button.stories.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "clean story should have no diagnostics, got: {diags:?}"
@@ -478,12 +443,10 @@ fn test_load_testing_plugin() {
 #[test]
 fn test_testing_no_disabled_tests() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source = "describe('suite', () => { xit('should work', () => {}); });";
     let path = Path::new("foo.test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jest/no-disabled-tests"),
@@ -494,12 +457,10 @@ fn test_testing_no_disabled_tests() {
 #[test]
 fn test_testing_no_focused_tests() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source = "describe.only('suite', () => { it('focused', () => { expect(1).toBe(1); }); });";
     let path = Path::new("foo.test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jest/no-focused-tests"),
@@ -510,12 +471,10 @@ fn test_testing_no_focused_tests() {
 #[test]
 fn test_testing_no_mocks_import() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source = "import foo from './__mocks__/bar';\ndescribe('test', () => { it('works', () => { expect(foo).toBe(1); }); });";
     let path = Path::new("foo.test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jest/no-mocks-import"),
@@ -526,12 +485,10 @@ fn test_testing_no_mocks_import() {
 #[test]
 fn test_testing_vitest_no_import_node_test() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source = "import { test } from 'node:test';\ndescribe('suite', () => { it('works', () => { expect(1).toBe(1); }); });";
     let path = Path::new("foo.test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"vitest/no-import-node-test"),
@@ -542,12 +499,10 @@ fn test_testing_vitest_no_import_node_test() {
 #[test]
 fn test_testing_no_commented_out_tests() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source = "// it('should work', () => {});\ndescribe('suite', () => { it('works', () => { expect(1).toBe(1); }); });";
     let path = Path::new("foo.test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jest/no-commented-out-tests"),
@@ -558,12 +513,10 @@ fn test_testing_no_commented_out_tests() {
 #[test]
 fn test_testing_no_export() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source = "const helper = () => {};\nexport { helper };\ndescribe('suite', () => { it('works', () => { expect(helper()).toBe(1); }); });";
     let path = Path::new("foo.test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jest/no-export"),
@@ -574,12 +527,10 @@ fn test_testing_no_export() {
 #[test]
 fn test_testing_file_pattern_skip() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source = "const x = 1;";
     let path = Path::new("src/utils.js"); // Not a test file
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "non-test file should have no diagnostics, got: {diags:?}"
@@ -589,12 +540,10 @@ fn test_testing_file_pattern_skip() {
 #[test]
 fn test_testing_consistent_test_it() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source = "describe('suite', () => {\n  it('one', () => { expect(1).toBe(1); });\n  test('two', () => { expect(2).toBe(2); });\n});";
     let path = Path::new("foo.test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jest/consistent-test-it"),
@@ -605,13 +554,11 @@ fn test_testing_consistent_test_it() {
 #[test]
 fn test_testing_vitest_prefer_to_be_truthy() {
     let host = host_with_testing_plugin();
-    let allocator = Allocator::default();
     let source =
         "describe('suite', () => {\n  it('checks true', () => { expect(foo).toBe(true); });\n});";
     let path = Path::new("foo.test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"vitest/prefer-to-be-truthy"),
@@ -643,12 +590,10 @@ fn test_load_react_plugin() {
 #[test]
 fn test_react_jsx_no_target_blank() {
     let host = host_with_react_plugin();
-    let allocator = Allocator::default();
     let source = "export default function App() { return <a href=\"https://example.com\" target=\"_blank\">Link</a>; }";
     let path = Path::new("App.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"react/jsx-no-target-blank"),
@@ -659,12 +604,10 @@ fn test_react_jsx_no_target_blank() {
 #[test]
 fn test_react_a11y_alt_text() {
     let host = host_with_react_plugin();
-    let allocator = Allocator::default();
     let source = "export default function App() { return <img src=\"photo.jpg\" />; }";
     let path = Path::new("App.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jsx-a11y/alt-text"),
@@ -675,12 +618,10 @@ fn test_react_a11y_alt_text() {
 #[test]
 fn test_react_a11y_html_has_lang() {
     let host = host_with_react_plugin();
-    let allocator = Allocator::default();
     let source = "export default function Page() { return <html><body>Hello</body></html>; }";
     let path = Path::new("Page.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jsx-a11y/html-has-lang"),
@@ -691,13 +632,11 @@ fn test_react_a11y_html_has_lang() {
 #[test]
 fn test_react_button_has_type() {
     let host = host_with_react_plugin();
-    let allocator = Allocator::default();
     let source =
         "export default function App() { return <button onClick={handleClick}>Click</button>; }";
     let path = Path::new("App.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"react/button-has-type"),
@@ -708,12 +647,10 @@ fn test_react_button_has_type() {
 #[test]
 fn test_react_no_danger() {
     let host = host_with_react_plugin();
-    let allocator = Allocator::default();
     let source = "export default function App() { return <div dangerouslySetInnerHTML={{__html: '<b>hi</b>'}} />; }";
     let path = Path::new("App.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"react/no-danger"),
@@ -724,12 +661,10 @@ fn test_react_no_danger() {
 #[test]
 fn test_react_file_pattern_skip() {
     let host = host_with_react_plugin();
-    let allocator = Allocator::default();
     let source = "const x = 1;";
     let path = Path::new("utils.js"); // Not a .jsx/.tsx file
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "non-JSX file should have no diagnostics, got: {diags:?}"
@@ -739,12 +674,10 @@ fn test_react_file_pattern_skip() {
 #[test]
 fn test_react_iframe_missing_sandbox() {
     let host = host_with_react_plugin();
-    let allocator = Allocator::default();
     let source = "export default function App() { return <iframe src=\"https://example.com\" />; }";
     let path = Path::new("App.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"react/iframe-missing-sandbox"),
@@ -755,13 +688,11 @@ fn test_react_iframe_missing_sandbox() {
 #[test]
 fn test_react_a11y_click_events_have_key_events() {
     let host = host_with_react_plugin();
-    let allocator = Allocator::default();
     let source =
         "export default function App() { return <div onClick={handleClick}>Click me</div>; }";
     let path = Path::new("App.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jsx-a11y/click-events-have-key-events"),
@@ -793,12 +724,10 @@ fn test_load_modules_plugin() {
 #[test]
 fn test_import_no_duplicates() {
     let host = host_with_modules_plugin();
-    let allocator = Allocator::default();
     let source = "import { foo } from 'lodash';\nimport { bar } from 'lodash';\n";
     let path = Path::new("index.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"import/no-duplicates"),
@@ -809,12 +738,10 @@ fn test_import_no_duplicates() {
 #[test]
 fn test_import_no_default_export() {
     let host = host_with_modules_plugin();
-    let allocator = Allocator::default();
     let source = "export default function main() {}";
     let path = Path::new("utils.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"import/no-default-export"),
@@ -825,12 +752,10 @@ fn test_import_no_default_export() {
 #[test]
 fn test_import_no_namespace() {
     let host = host_with_modules_plugin();
-    let allocator = Allocator::default();
     let source = "import * as utils from './utils';";
     let path = Path::new("app.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"import/no-namespace"),
@@ -841,12 +766,10 @@ fn test_import_no_namespace() {
 #[test]
 fn test_node_no_process_exit() {
     let host = host_with_modules_plugin();
-    let allocator = Allocator::default();
     let source = "process.exit(1);";
     let path = Path::new("server.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"node/no-process-exit"),
@@ -857,12 +780,10 @@ fn test_node_no_process_exit() {
 #[test]
 fn test_promise_prefer_await_to_then() {
     let host = host_with_modules_plugin();
-    let allocator = Allocator::default();
     let source = "fetch('/api').then(data => data.json());";
     let path = Path::new("api.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"promise/prefer-await-to-then"),
@@ -873,12 +794,10 @@ fn test_promise_prefer_await_to_then() {
 #[test]
 fn test_promise_no_nesting() {
     let host = host_with_modules_plugin();
-    let allocator = Allocator::default();
     let source = "fetch('/a').then(() => { return fetch('/b').then(() => {}); });";
     let path = Path::new("nested.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"promise/no-nesting"),
@@ -889,12 +808,10 @@ fn test_promise_no_nesting() {
 #[test]
 fn test_import_no_nodejs_modules() {
     let host = host_with_modules_plugin();
-    let allocator = Allocator::default();
     let source = "import punycode from 'punycode';";
     let path = Path::new("legacy.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"import/no-nodejs-modules"),
@@ -905,12 +822,10 @@ fn test_import_no_nodejs_modules() {
 #[test]
 fn test_modules_all_files_no_pattern_skip() {
     let host = host_with_modules_plugin();
-    let allocator = Allocator::default();
     let source = "export default function main() {}";
     let path = Path::new("deeply/nested/component.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         !diags.is_empty(),
         "modules plugin should lint ALL files (no file pattern filter)"
@@ -941,12 +856,10 @@ fn test_load_nextjs_plugin() {
 #[test]
 fn test_nextjs_no_img_element() {
     let host = host_with_nextjs_plugin();
-    let allocator = Allocator::default();
     let source = "export default function Page() { return <img src=\"/photo.jpg\" />; }";
     let path = Path::new("page.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"nextjs/no-img-element"),
@@ -957,12 +870,10 @@ fn test_nextjs_no_img_element() {
 #[test]
 fn test_nextjs_no_head_element() {
     let host = host_with_nextjs_plugin();
-    let allocator = Allocator::default();
     let source = "export default function Page() { return <head><title>Hi</title></head>; }";
     let path = Path::new("page.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"nextjs/no-head-element"),
@@ -973,12 +884,10 @@ fn test_nextjs_no_head_element() {
 #[test]
 fn test_nextjs_no_html_link_for_pages() {
     let host = host_with_nextjs_plugin();
-    let allocator = Allocator::default();
     let source = "export default function Nav() { return <a href=\"/about\">About</a>; }";
     let path = Path::new("nav.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"nextjs/no-html-link-for-pages"),
@@ -989,13 +898,11 @@ fn test_nextjs_no_html_link_for_pages() {
 #[test]
 fn test_nextjs_no_sync_scripts() {
     let host = host_with_nextjs_plugin();
-    let allocator = Allocator::default();
     let source =
         "export default function Page() { return <script src=\"/analytics.js\"></script>; }";
     let path = Path::new("page.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"nextjs/no-sync-scripts"),
@@ -1006,13 +913,11 @@ fn test_nextjs_no_sync_scripts() {
 #[test]
 fn test_nextjs_no_document_import_in_page() {
     let host = host_with_nextjs_plugin();
-    let allocator = Allocator::default();
     let source =
         "import Document from 'next/document';\nexport default function Page() { return <div />; }";
     let path = Path::new("page.jsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"nextjs/no-document-import-in-page"),
@@ -1023,12 +928,10 @@ fn test_nextjs_no_document_import_in_page() {
 #[test]
 fn test_nextjs_no_async_client_component() {
     let host = host_with_nextjs_plugin();
-    let allocator = Allocator::default();
     let source = "\"use client\";\nexport default async function Page() { return <div />; }";
     let path = Path::new("page.tsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"nextjs/no-async-client-component"),
@@ -1060,12 +963,10 @@ fn test_load_vue_plugin() {
 #[test]
 fn test_vue_no_arrow_functions_in_watch() {
     let host = host_with_vue_plugin();
-    let allocator = Allocator::default();
     let source = "export default { watch: { count: (val) => console.log(val) } }";
     let path = Path::new("Counter.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"vue/no-arrow-functions-in-watch"),
@@ -1076,13 +977,11 @@ fn test_vue_no_arrow_functions_in_watch() {
 #[test]
 fn test_vue_no_async_in_computed() {
     let host = host_with_vue_plugin();
-    let allocator = Allocator::default();
     let source =
         "export default { computed: { async fetchedData() { return await fetch('/api'); } } }";
     let path = Path::new("Data.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"vue/no-async-in-computed-properties"),
@@ -1093,12 +992,10 @@ fn test_vue_no_async_in_computed() {
 #[test]
 fn test_vue_no_child_content_with_v_html() {
     let host = host_with_vue_plugin();
-    let allocator = Allocator::default();
     let source = "const template = `<div v-html=\"rawHtml\">Some text</div>`;";
     let path = Path::new("Unsafe.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"vue/no-child-content"),
@@ -1109,12 +1006,10 @@ fn test_vue_no_child_content_with_v_html() {
 #[test]
 fn test_vue_no_ref_reactivity_loss() {
     let host = host_with_vue_plugin();
-    let allocator = Allocator::default();
     let source = "import { ref } from 'vue';\nconst { value } = ref(42);";
     let path = Path::new("setup.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"vue/no-ref-object-reactivity-loss"),
@@ -1125,12 +1020,10 @@ fn test_vue_no_ref_reactivity_loss() {
 #[test]
 fn test_vue_no_component_options_typo() {
     let host = host_with_vue_plugin();
-    let allocator = Allocator::default();
     let source = "export default { methdos: { fetchData() {} } }";
     let path = Path::new("Component.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"vue/no-component-options-typo"),
@@ -1162,12 +1055,10 @@ fn test_load_jsdoc_plugin() {
 #[test]
 fn test_jsdoc_check_tag_names() {
     let host = host_with_jsdoc_plugin();
-    let allocator = Allocator::default();
     let source = "/** @foobar This is a test */\nfunction test() {}";
     let path = Path::new("utils.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jsdoc/check-tag-names"),
@@ -1178,12 +1069,10 @@ fn test_jsdoc_check_tag_names() {
 #[test]
 fn test_jsdoc_check_types() {
     let host = host_with_jsdoc_plugin();
-    let allocator = Allocator::default();
     let source = "/** @param {String} name The name */\nfunction greet(name) {}";
     let path = Path::new("greet.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jsdoc/check-types"),
@@ -1194,12 +1083,10 @@ fn test_jsdoc_check_types() {
 #[test]
 fn test_jsdoc_require_param_type() {
     let host = host_with_jsdoc_plugin();
-    let allocator = Allocator::default();
     let source = "/** @param name The name */\nfunction greet(name) {}";
     let path = Path::new("greet.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jsdoc/require-param-type"),
@@ -1210,12 +1097,10 @@ fn test_jsdoc_require_param_type() {
 #[test]
 fn test_jsdoc_no_defaults() {
     let host = host_with_jsdoc_plugin();
-    let allocator = Allocator::default();
     let source = "/** @default 42 */\nconst ANSWER = 42;";
     let path = Path::new("constants.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jsdoc/no-defaults"),
@@ -1226,12 +1111,10 @@ fn test_jsdoc_no_defaults() {
 #[test]
 fn test_jsdoc_match_description() {
     let host = host_with_jsdoc_plugin();
-    let allocator = Allocator::default();
     let source = "/** lowercase description */\nfunction test() {}";
     let path = Path::new("test.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"jsdoc/match-description"),
@@ -1263,12 +1146,10 @@ fn test_load_typescript_plugin() {
 #[test]
 fn test_typescript_ban_ts_comment() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "// @ts-ignore\nconst x = 42;";
     let path = Path::new("index.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"typescript/ban-ts-comment")
@@ -1280,12 +1161,10 @@ fn test_typescript_ban_ts_comment() {
 #[test]
 fn test_typescript_no_explicit_any() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "function process(data: any) { return data; }";
     let path = Path::new("utils.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"typescript/no-explicit-any"),
@@ -1296,12 +1175,10 @@ fn test_typescript_no_explicit_any() {
 #[test]
 fn test_typescript_no_var_requires() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "const fs = require('fs');";
     let path = Path::new("legacy.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"typescript/no-var-requires"),
@@ -1312,12 +1189,10 @@ fn test_typescript_no_var_requires() {
 #[test]
 fn test_typescript_no_empty_interface() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "interface Foo {}";
     let path = Path::new("types.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"typescript/no-empty-interface"),
@@ -1328,12 +1203,10 @@ fn test_typescript_no_empty_interface() {
 #[test]
 fn test_typescript_triple_slash_reference() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "/// <reference path=\"global.d.ts\" />\nconst x = 1;";
     let path = Path::new("app.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"typescript/triple-slash-reference"),
@@ -1344,12 +1217,10 @@ fn test_typescript_triple_slash_reference() {
 #[test]
 fn test_typescript_no_unsafe_declaration_merging() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "interface Foo { x: number; }\nclass Foo { y: string = ''; }";
     let path = Path::new("merge.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"typescript/no-unsafe-declaration-merging"),
@@ -1360,12 +1231,10 @@ fn test_typescript_no_unsafe_declaration_merging() {
 #[test]
 fn test_typescript_prefer_includes() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "const found = arr.indexOf(item);";
     let path = Path::new("search.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"typescript/prefer-includes"),
@@ -1376,12 +1245,10 @@ fn test_typescript_prefer_includes() {
 #[test]
 fn test_typescript_require_sort_compare() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "const sorted = items.sort();";
     let path = Path::new("sort.ts");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         names.contains(&"typescript/require-array-sort-compare"),
@@ -1392,12 +1259,10 @@ fn test_typescript_require_sort_compare() {
 #[test]
 fn test_typescript_file_pattern_skip() {
     let host = host_with_typescript_plugin();
-    let allocator = Allocator::default();
     let source = "const x: any = 42;";
     let path = Path::new("script.js");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         diags.is_empty(),
         "typescript plugin should skip .js files, got: {diags:?}"
@@ -1420,11 +1285,10 @@ fn test_load_builtin_storybook() {
     );
 
     // Lint a story file — should produce diagnostics.
-    let allocator = Allocator::default();
     let source = "export const foo = {};";
     let path = Path::new("Button.stories.tsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     assert!(
         !diags.is_empty(),
         "storybook builtin should produce diagnostics for a story file"
@@ -1438,11 +1302,10 @@ fn test_load_builtin_react() {
     host.load_builtins(&active).expect("load builtins");
     assert_eq!(host.plugin_count(), 1);
 
-    let allocator = Allocator::default();
     let source = r#"import React from "react"; function App() { return <img />; }"#;
     let path = Path::new("App.tsx");
-    let parsed = parse_file(&allocator, source, path).expect("parse");
-    let diags = host.lint_file(path, source, &parsed.program);
+    let tree = parse_tree(source, path);
+    let diags = host.lint_file(path, source, &tree);
     let rule_names: Vec<&str> = diags.iter().map(|d| d.rule_name.as_str()).collect();
     assert!(
         rule_names

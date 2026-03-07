@@ -2319,6 +2319,7 @@ dependencies = [
  "serde_json",
  "starlint_ast",
  "starlint_config",
+ "starlint_parser",
  "starlint_plugin_sdk",
  "thiserror 2.0.18",
  "toml 0.8.23",
@@ -2342,6 +2343,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "starlint_parser"
+version = "0.1.0"
+dependencies = [
+ "miette",
+ "pretty_assertions",
+ "starlint_ast",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "starlint_plugin_sdk"
 version = "0.1.0"
 dependencies = [
@@ -2357,13 +2368,12 @@ dependencies = [
  "criterion",
  "globset",
  "miette",
- "oxc_allocator",
- "oxc_ast",
- "oxc_ast_visit",
  "pretty_assertions",
  "serde",
  "serde_json",
+ "starlint_ast",
  "starlint_core",
+ "starlint_parser",
  "starlint_plugin_sdk",
  "thiserror 2.0.18",
  "tracing",

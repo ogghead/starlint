@@ -55,8 +55,7 @@ impl<'a> TreeCursor<'a> {
         let descend = visitor.enter_node(id, node);
 
         if descend {
-            let children = self.tree.children(id);
-            for child_id in children {
+            for &child_id in self.tree.children(id) {
                 if let Some(child_node) = self.tree.get(child_id) {
                     self.walk_node(child_id, child_node, visitor);
                 }

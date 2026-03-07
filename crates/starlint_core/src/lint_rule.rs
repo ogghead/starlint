@@ -268,31 +268,29 @@ impl<'a> LintContext<'a> {
 /// parse → convert → dispatch boilerplate.
 #[cfg(test)]
 pub fn lint_source(source: &str, file_path: &str, rules: &[Box<dyn LintRule>]) -> Vec<Diagnostic> {
-    use oxc_allocator::Allocator;
-    use oxc_parser::Parser;
-    use oxc_span::SourceType;
+    use starlint_parser::ParseOptions;
 
-    use crate::ast_converter;
-    use crate::parser::build_semantic;
     use crate::traversal::{LintDispatchTable, traverse_ast_tree};
 
     let path = Path::new(file_path);
-    let allocator = Allocator::default();
-    let is_pure_ts = path
-        .extension()
-        .is_some_and(|ext| ext.eq_ignore_ascii_case("ts"));
-    let source_type = SourceType::from_path(path)
-        .unwrap_or_default()
-        .with_jsx(!is_pure_ts);
-    let parsed = Parser::new(&allocator, source, source_type).parse();
+    let options = ParseOptions::from_path(path);
+    let tree = starlint_parser::parse(source, options).tree;
 
-    // Arena-allocate the program so semantic analysis can reference it.
-    let program = allocator.alloc(parsed.program);
-
+    // Semantic analysis: fall back to oxc for the ~2% of rules that need it.
+    // Allocator must outlive Semantic<'a>, so declare it at this scope.
+    let allocator = oxc_allocator::Allocator::default();
     let needs_semantic = rules.iter().any(|r| r.needs_semantic());
-    let semantic = needs_semantic.then(|| build_semantic(program));
+    let semantic = if needs_semantic {
+        use crate::parser::{build_semantic, parse_file};
 
-    let tree = ast_converter::convert(program);
+        parse_file(&allocator, source, path).ok().map(|parsed| {
+            let program = allocator.alloc(parsed.program);
+            build_semantic(program)
+        })
+    } else {
+        None
+    };
+
     let traversal_indices: Vec<usize> = rules
         .iter()
         .enumerate()

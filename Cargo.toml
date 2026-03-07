@@ -51,6 +51,7 @@ tokio = { version = "1", features = ["rt", "io-std", "macros", "time"] }
 starlint_ast = { path = "crates/starlint_ast" }
 starlint_core = { path = "crates/starlint_core" }
 starlint_config = { path = "crates/starlint_config" }
+starlint_parser = { path = "crates/starlint_parser" }
 starlint_plugin_sdk = { path = "crates/starlint_plugin_sdk" }
 starlint_wasm_host = { path = "crates/starlint_wasm_host" }
 starlint_lsp = { path = "crates/starlint_lsp" }

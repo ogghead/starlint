@@ -1,0 +1,19 @@
+[package]
+name = "starlint_parser"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Hand-written JS/TS/JSX parser producing starlint_ast directly"
+
+[dependencies]
+starlint_ast = { workspace = true }
+miette = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = { workspace = true }
+
+[lints]
+workspace = true
