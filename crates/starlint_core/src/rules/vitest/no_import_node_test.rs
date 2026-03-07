@@ -4,13 +4,13 @@
 //! the built-in Node.js test runner is almost certainly a mistake. Tests
 //! should use Vitest's test runner instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "vitest/no-import-node-test";
@@ -19,7 +19,7 @@ const RULE_NAME: &str = "vitest/no-import-node-test";
 #[derive(Debug)]
 pub struct NoImportNodeTest;
 
-impl NativeRule for NoImportNodeTest {
+impl LintRule for NoImportNodeTest {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -29,25 +29,25 @@ impl NativeRule for NoImportNodeTest {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let source_value = import.source.value.as_str();
+        let source_value = import.source.as_str();
 
         if source_value == "node:test" {
             // Replace the import source string literal (including quotes)
-            let source_span = Span::new(import.source.span.start, import.source.span.end);
+            let source_span = Span::new(import.source_span.start, import.source_span.end);
             // Determine the quote character used in the source
             let src = ctx.source_text();
             let quote = src
                 .as_bytes()
-                .get(usize::try_from(import.source.span.start).unwrap_or(0))
+                .get(usize::try_from(import.source_span.start).unwrap_or(0))
                 .copied()
                 .unwrap_or(b'"');
             let quote_char = char::from(quote);
@@ -75,22 +75,11 @@ impl NativeRule for NoImportNodeTest {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoImportNodeTest)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoImportNodeTest)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

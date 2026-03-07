@@ -3,13 +3,13 @@
 //! Forbid importing `next/document` outside of `pages/_document`.
 //! The Document component and its exports are only valid in `_document`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "nextjs/no-document-import-in-page";
@@ -18,7 +18,7 @@ const RULE_NAME: &str = "nextjs/no-document-import-in-page";
 #[derive(Debug)]
 pub struct NoDocumentImportInPage;
 
-impl NativeRule for NoDocumentImportInPage {
+impl LintRule for NoDocumentImportInPage {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -28,16 +28,16 @@ impl NativeRule for NoDocumentImportInPage {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let source_value = import.source.value.as_str();
+        let source_value = import.source.as_str();
         if source_value != "next/document" {
             return;
         }
@@ -73,32 +73,19 @@ impl NativeRule for NoDocumentImportInPage {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint_with_path(
-        source: &str,
-        path: &Path,
-    ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDocumentImportInPage)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+    fn lint_with_path(source: &str, path: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDocumentImportInPage)];
+        lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_document_import_in_page() {
         let diags = lint_with_path(
             r#"import Document from "next/document";"#,
-            Path::new("pages/index.ts"),
+            "pages/index.ts",
         );
         assert_eq!(
             diags.len(),
@@ -111,7 +98,7 @@ mod tests {
     fn test_allows_document_import_in_document() {
         let diags = lint_with_path(
             r#"import Document from "next/document";"#,
-            Path::new("pages/_document.ts"),
+            "pages/_document.ts",
         );
         assert!(
             diags.is_empty(),
@@ -123,7 +110,7 @@ mod tests {
     fn test_allows_other_imports() {
         let diags = lint_with_path(
             r#"import Head from "next/head";"#,
-            Path::new("pages/index.ts"),
+            "pages/index.ts",
         );
         assert!(diags.is_empty(), "other next imports should not be flagged");
     }

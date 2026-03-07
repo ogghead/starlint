@@ -38,11 +38,7 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(
             no_before_interactive_script_outside_document::NoBeforeInteractiveScriptOutsideDocument,
         ),
-        Box::new(no_css_tags::NoCssTags),
-        Box::new(no_document_import_in_page::NoDocumentImportInPage),
-        Box::new(no_head_element::NoHeadElement),
-        Box::new(no_head_import_in_document::NoHeadImportInDocument),
-        Box::new(no_html_link_for_pages::NoHtmlLinkForPages),
+        Box::new(no_css_tags::NoCssTags),        Box::new(no_head_element::NoHeadElement),        Box::new(no_html_link_for_pages::NoHtmlLinkForPages),
         Box::new(no_img_element::NoImgElement),
         Box::new(no_page_custom_font::NoPageCustomFont),
         Box::new(no_script_component_in_head::NoScriptComponentInHead),

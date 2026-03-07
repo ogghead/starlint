@@ -5,21 +5,21 @@
 //! available. As a useful stub, this rule flags self-imports — a module
 //! importing from its own file path — which is the simplest form of cycle.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags self-imports as the simplest detectable import cycle.
 #[derive(Debug)]
 pub struct NoCycle;
 
-impl NativeRule for NoCycle {
+impl LintRule for NoCycle {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/no-cycle".to_owned(),
@@ -30,16 +30,16 @@ impl NativeRule for NoCycle {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let source_value = import.source.value.as_str();
+        let source_value = import.source.as_str();
 
         // Only check relative imports
         if !source_value.starts_with('.') {
@@ -91,32 +91,19 @@ impl NativeRule for NoCycle {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint_with_path(
-        source: &str,
-        path: &Path,
-    ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoCycle)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+    fn lint_with_path(source: &str, path: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoCycle)];
+        lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_self_import() {
         let diags = lint_with_path(
             r#"import { foo } from "./myModule";"#,
-            Path::new("myModule.ts"),
+            "myModule.ts",
         );
         assert_eq!(diags.len(), 1, "self-import should be flagged as a cycle");
     }
@@ -125,7 +112,7 @@ mod tests {
     fn test_allows_different_module() {
         let diags = lint_with_path(
             r#"import { foo } from "./other";"#,
-            Path::new("myModule.ts"),
+            "myModule.ts",
         );
         assert!(
             diags.is_empty(),
@@ -135,7 +122,7 @@ mod tests {
 
     #[test]
     fn test_allows_bare_specifier() {
-        let diags = lint_with_path(r#"import { foo } from "lodash";"#, Path::new("myModule.ts"));
+        let diags = lint_with_path(r#"import { foo } from "lodash";"#, "myModule.ts");
         assert!(diags.is_empty(), "bare specifier should not be flagged");
     }
 }

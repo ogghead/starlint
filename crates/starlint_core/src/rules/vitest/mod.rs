@@ -27,9 +27,7 @@ use crate::rule::NativeRule;
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
     vec![
         Box::new(consistent_each_for::ConsistentEachFor),
-        Box::new(consistent_vitest_vi::ConsistentVitestVi),
-        Box::new(no_import_node_test::NoImportNodeTest),
-        Box::new(no_importing_vitest_globals::NoImportingVitestGlobals),
+        Box::new(consistent_vitest_vi::ConsistentVitestVi),        Box::new(no_importing_vitest_globals::NoImportingVitestGlobals),
         Box::new(prefer_called_once::PreferCalledOnce),
         Box::new(prefer_describe_function_title::PreferDescribeFunctionTitle),
         Box::new(prefer_to_be_falsy::PreferToBeFalsy),

@@ -1408,6 +1408,7 @@ impl AstConverter {
             AstNode::ImportDeclaration(ImportDeclarationNode {
                 span: Self::span(it.span),
                 source: it.source.value.to_string(),
+                source_span: Self::span(it.source.span),
                 specifiers: specifiers.into_boxed_slice(),
                 import_kind_is_type: it.import_kind.is_type(),
             }),

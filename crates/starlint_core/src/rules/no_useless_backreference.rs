@@ -7,19 +7,19 @@
 //! This is a simplified implementation that catches the most common cases:
 //! forward references in `new RegExp(...)`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags useless backreferences in regular expressions.
 #[derive(Debug)]
 pub struct NoUselessBackreference;
 
-impl NativeRule for NoUselessBackreference {
+impl LintRule for NoUselessBackreference {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-useless-backreference".to_owned(),
@@ -29,16 +29,16 @@ impl NativeRule for NoUselessBackreference {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::RegExpLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::RegExpLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::RegExpLiteral(regex) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::RegExpLiteral(regex) = node else {
             return;
         };
 
-        let pattern = regex.regex.pattern.text.as_str();
+        let pattern = regex.pattern.as_str();
         if let Some(issue) = find_useless_backreference(pattern) {
             ctx.report(Diagnostic {
                 rule_name: "no-useless-backreference".to_owned(),
@@ -138,22 +138,11 @@ fn find_useless_backreference(pattern: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessBackreference)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessBackreference)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

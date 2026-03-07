@@ -3,15 +3,15 @@
 //! Forbid Node.js built-in modules. Useful for browser-only or Deno
 //! projects where Node.js builtins are not available.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Known Node.js built-in module names.
 const NODE_BUILTINS: &[&str] = &[
@@ -63,7 +63,7 @@ const NODE_BUILTINS: &[&str] = &[
 #[derive(Debug)]
 pub struct NoNodejsModules;
 
-impl NativeRule for NoNodejsModules {
+impl LintRule for NoNodejsModules {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/no-nodejs-modules".to_owned(),
@@ -73,16 +73,16 @@ impl NativeRule for NoNodejsModules {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let source_value = import.source.value.as_str();
+        let source_value = import.source.as_str();
 
         // Check both bare name (`fs`) and node: protocol (`node:fs`)
         let module_name = source_value.strip_prefix("node:").unwrap_or(source_value);
@@ -112,22 +112,11 @@ impl NativeRule for NoNodejsModules {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoNodejsModules)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNodejsModules)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

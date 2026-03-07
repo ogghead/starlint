@@ -3,19 +3,19 @@
 //! Flag all async/await usage. Some codebases prefer explicit Promise chains
 //! over async/await syntax.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags async functions and `await` expressions.
 #[derive(Debug)]
 pub struct NoAsyncAwait;
 
-impl NativeRule for NoAsyncAwait {
+impl LintRule for NoAsyncAwait {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-async-await".to_owned(),
@@ -25,17 +25,17 @@ impl NativeRule for NoAsyncAwait {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::AwaitExpression,
-            AstType::Function,
+            AstNodeType::ArrowFunctionExpression,
+            AstNodeType::AwaitExpression,
+            AstNodeType::Function,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::Function(func) if func.r#async => {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::Function(func) if func.is_async => {
                 ctx.report(Diagnostic {
                     rule_name: "no-async-await".to_owned(),
                     message: "Unexpected async function".to_owned(),
@@ -46,7 +46,7 @@ impl NativeRule for NoAsyncAwait {
                     labels: vec![],
                 });
             }
-            AstKind::ArrowFunctionExpression(arrow) if arrow.r#async => {
+            AstNode::ArrowFunctionExpression(arrow) if arrow.is_async => {
                 ctx.report(Diagnostic {
                     rule_name: "no-async-await".to_owned(),
                     message: "Unexpected async function".to_owned(),
@@ -57,7 +57,7 @@ impl NativeRule for NoAsyncAwait {
                     labels: vec![],
                 });
             }
-            AstKind::AwaitExpression(await_expr) => {
+            AstNode::AwaitExpression(await_expr) => {
                 ctx.report(Diagnostic {
                     rule_name: "no-async-await".to_owned(),
                     message: "Unexpected `await` expression".to_owned(),
@@ -75,23 +75,12 @@ impl NativeRule for NoAsyncAwait {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
     /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAsyncAwait)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAsyncAwait)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

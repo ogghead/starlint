@@ -5,19 +5,19 @@
 //! like a single character but are composed of multiple code points, and
 //! character classes in regex match individual code points.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags character classes containing multi-code-point characters.
 #[derive(Debug)]
 pub struct NoMisleadingCharacterClass;
 
-impl NativeRule for NoMisleadingCharacterClass {
+impl LintRule for NoMisleadingCharacterClass {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-misleading-character-class".to_owned(),
@@ -27,16 +27,16 @@ impl NativeRule for NoMisleadingCharacterClass {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::RegExpLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::RegExpLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::RegExpLiteral(regex) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::RegExpLiteral(regex) = node else {
             return;
         };
 
-        let pattern = regex.regex.pattern.text.as_str();
+        let pattern = regex.pattern.as_str();
 
         if has_misleading_char_class(pattern) {
             ctx.report(Diagnostic {
@@ -125,22 +125,11 @@ const fn is_variation_selector(ch: char) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoMisleadingCharacterClass)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoMisleadingCharacterClass)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

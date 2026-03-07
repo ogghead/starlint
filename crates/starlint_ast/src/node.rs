@@ -1845,8 +1845,10 @@ pub struct ObjectPatternNode {
 pub struct ImportDeclarationNode {
     /// Span.
     pub span: Span,
-    /// Module source string.
+    /// Module source string (the string value without quotes).
     pub source: String,
+    /// Span of the source string literal (including quotes).
+    pub source_span: Span,
     /// Import specifiers.
     pub specifiers: Box<[NodeId]>,
     /// Whether this is `import type ...`.

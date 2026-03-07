@@ -740,7 +740,7 @@ fn fix_idempotent_prefer_string_raw() {
 
 #[test]
 fn fix_idempotent_no_regex_spaces() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_regex_spaces::NoRegexSpaces)],
         "var re = /foo  bar/;",
         "no_regex_spaces",
