@@ -14,7 +14,8 @@
     clippy::shadow_unrelated,
     clippy::cast_precision_loss,
     clippy::too_many_lines,
-    clippy::match_same_arms
+    clippy::match_same_arms,
+    clippy::multiple_inherent_impl
 )]
 
 pub mod error;
