@@ -3,21 +3,21 @@
 //! Disallow the unary operators `++` and `--`. These can be confusing due
 //! to automatic semicolon insertion and can be replaced with `+= 1`/`-= 1`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::UpdateOperator;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::UpdateOperator;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `++` and `--` unary operators.
 #[derive(Debug)]
 pub struct NoPlusplus;
 
-impl NativeRule for NoPlusplus {
+impl LintRule for NoPlusplus {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-plusplus".to_owned(),
@@ -27,13 +27,13 @@ impl NativeRule for NoPlusplus {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::UpdateExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::UpdateExpression])
     }
 
-    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::UpdateExpression(update) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::UpdateExpression(update) = node else {
             return;
         };
 
@@ -49,9 +49,13 @@ impl NativeRule for NoPlusplus {
 
         // Extract the argument source text for the fix
         let source = ctx.source_text();
-        let arg_start = update.argument.span().start as usize;
-        let arg_end = update.argument.span().end as usize;
-        let arg_text = source.get(arg_start..arg_end).unwrap_or("").to_owned();
+        let arg_text = ctx
+            .node(update.argument)
+            .and_then(|arg_node| {
+                let s = arg_node.span();
+                source.get(s.start as usize..s.end as usize)
+            })
+            .unwrap_or("");
 
         let replacement = format!("{arg_text} {assign_op}");
         let fix = (!arg_text.is_empty()).then(|| Fix {
@@ -78,23 +82,12 @@ impl NativeRule for NoPlusplus {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoPlusplus)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoPlusplus)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -75,6 +75,17 @@ pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(rules::no_optional_chaining::NoOptionalChaining),
         Box::new(rules::no_this_assignment::NoThisAssignment),
         Box::new(rules::unicode_bom::UnicodeBom),
+        // Batch 8
+        Box::new(rules::no_alert::NoAlert),
+        Box::new(rules::no_array_constructor::NoArrayConstructor),
+        Box::new(rules::no_bitwise::NoBitwise),
+        Box::new(rules::no_div_regex::NoDivRegex),
+        Box::new(rules::no_eq_null::NoEqNull),
+        Box::new(rules::no_label_var::NoLabelVar),
+        Box::new(rules::no_plusplus::NoPlusplus),
+        Box::new(rules::no_process_exit::NoProcessExit),
+        Box::new(rules::no_throw_literal::NoThrowLiteral),
+        Box::new(rules::symbol_description::SymbolDescription),
     ]
 }
 
@@ -137,4 +148,15 @@ pub const MIGRATED_RULE_NAMES: &[&str] = &[
     "no-optional-chaining",
     "no-this-assignment",
     "unicode-bom",
+    // Batch 8
+    "no-alert",
+    "no-array-constructor",
+    "no-bitwise",
+    "no-div-regex",
+    "no-eq-null",
+    "no-label-var",
+    "no-plusplus",
+    "no-process-exit",
+    "no-throw-literal",
+    "symbol-description",
 ];

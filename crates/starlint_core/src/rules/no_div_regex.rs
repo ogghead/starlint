@@ -4,19 +4,20 @@
 //! `/=foo/` can be confused with a division assignment and should be
 //! written as `/[=]foo/` or `new RegExp("=foo")`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags regex literals that start with `=`.
 #[derive(Debug)]
 pub struct NoDivRegex;
 
-impl NativeRule for NoDivRegex {
+impl LintRule for NoDivRegex {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-div-regex".to_owned(),
@@ -26,22 +27,21 @@ impl NativeRule for NoDivRegex {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::RegExpLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::RegExpLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::RegExpLiteral(regex) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::RegExpLiteral(regex) = node else {
             return;
         };
 
-        let pattern = regex.regex.pattern.text.as_str();
-
-        if pattern.starts_with('=') {
+        if regex.pattern.starts_with('=') {
             // Fix: escape the leading = by wrapping in char class [=]
             let source = ctx.source_text();
-            let start = usize::try_from(regex.span.start).unwrap_or(0);
-            let end = usize::try_from(regex.span.end).unwrap_or(0);
+            let start = regex.span.start as usize;
+            let end = regex.span.end as usize;
             let raw = source.get(start..end).unwrap_or("");
             // raw is "/=pattern/flags" — insert [=] after first /
             let fix = raw.get(2..).map(|rest| Fix {
@@ -69,23 +69,12 @@ impl NativeRule for NoDivRegex {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDivRegex)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDivRegex)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

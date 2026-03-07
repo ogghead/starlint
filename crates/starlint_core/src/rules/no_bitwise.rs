@@ -3,20 +3,21 @@
 //! Disallow bitwise operators. Bitwise operators are rarely used in
 //! JavaScript and are often typos for logical operators (e.g. `&` vs `&&`).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::BinaryOperator;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{BinaryOperator, UnaryOperator};
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags bitwise operators.
 #[derive(Debug)]
 pub struct NoBitwise;
 
-impl NativeRule for NoBitwise {
+impl LintRule for NoBitwise {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-bitwise".to_owned(),
@@ -26,13 +27,13 @@ impl NativeRule for NoBitwise {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression, AstType::UnaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression, AstNodeType::UnaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::BinaryExpression(expr) => {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::BinaryExpression(expr) => {
                 if is_bitwise_binary(expr.operator) {
                     ctx.report(Diagnostic {
                         rule_name: "no-bitwise".to_owned(),
@@ -45,8 +46,8 @@ impl NativeRule for NoBitwise {
                     });
                 }
             }
-            AstKind::UnaryExpression(expr) => {
-                if expr.operator == oxc_ast::ast::UnaryOperator::BitwiseNot {
+            AstNode::UnaryExpression(expr) => {
+                if expr.operator == UnaryOperator::BitwiseNot {
                     ctx.report(Diagnostic {
                         rule_name: "no-bitwise".to_owned(),
                         message: "Unexpected use of bitwise operator `~`".to_owned(),
@@ -78,23 +79,12 @@ const fn is_bitwise_binary(op: BinaryOperator) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoBitwise)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoBitwise)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

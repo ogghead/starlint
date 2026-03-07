@@ -3,22 +3,20 @@
 //! Restrict what can be thrown as an exception. Only `Error` objects (or
 //! subclasses) should be thrown because they capture a stack trace.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `throw` statements that throw non-Error values.
 #[derive(Debug)]
 pub struct NoThrowLiteral;
 
-impl NativeRule for NoThrowLiteral {
+impl LintRule for NoThrowLiteral {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-throw-literal".to_owned(),
@@ -28,86 +26,78 @@ impl NativeRule for NoThrowLiteral {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ThrowStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ThrowStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ThrowStatement(throw) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ThrowStatement(throw) = node else {
             return;
         };
 
-        if is_literal_or_non_error(&throw.argument) {
-            #[allow(clippy::as_conversions)]
-            let fix = {
-                let arg_span = throw.argument.span();
-                let source = ctx.source_text();
-                source
-                    .get(arg_span.start as usize..arg_span.end as usize)
-                    .map(|arg_text| {
-                        let replacement = format!("new Error({arg_text})");
-                        Fix {
-                            kind: FixKind::SuggestionFix,
-                            message: format!("Replace with `throw {replacement}`"),
-                            edits: vec![Edit {
-                                span: Span::new(arg_span.start, arg_span.end),
-                                replacement,
-                            }],
-                            is_snippet: false,
-                        }
-                    })
-            };
+        let Some(arg_node) = ctx.node(throw.argument) else {
+            return;
+        };
 
-            ctx.report(Diagnostic {
-                rule_name: "no-throw-literal".to_owned(),
-                message: "Expected an Error object to be thrown".to_owned(),
-                span: Span::new(throw.span.start, throw.span.end),
-                severity: Severity::Error,
-                help: Some(
-                    "Wrap the thrown value in `new Error(...)` for better stack traces".to_owned(),
-                ),
-                fix,
-                labels: vec![],
-            });
+        if !is_literal_or_non_error(arg_node) {
+            return;
         }
+
+        let arg_span = arg_node.span();
+        let source = ctx.source_text();
+        let fix = source
+            .get(arg_span.start as usize..arg_span.end as usize)
+            .map(|arg_text| {
+                let replacement = format!("new Error({arg_text})");
+                Fix {
+                    kind: FixKind::SuggestionFix,
+                    message: format!("Replace with `throw {replacement}`"),
+                    edits: vec![Edit {
+                        span: Span::new(arg_span.start, arg_span.end),
+                        replacement,
+                    }],
+                    is_snippet: false,
+                }
+            });
+
+        ctx.report(Diagnostic {
+            rule_name: "no-throw-literal".to_owned(),
+            message: "Expected an Error object to be thrown".to_owned(),
+            span: Span::new(throw.span.start, throw.span.end),
+            severity: Severity::Error,
+            help: Some(
+                "Wrap the thrown value in `new Error(...)` for better stack traces".to_owned(),
+            ),
+            fix,
+            labels: vec![],
+        });
     }
 }
 
-/// Check if an expression is a literal value (string, number, boolean, null,
-/// undefined) rather than an Error object.
-const fn is_literal_or_non_error(expr: &Expression<'_>) -> bool {
+/// Check if a node is a literal value (string, number, boolean, null,
+/// template literal, object, array) rather than an Error object.
+const fn is_literal_or_non_error(node: &AstNode) -> bool {
     matches!(
-        expr,
-        Expression::StringLiteral(_)
-            | Expression::NumericLiteral(_)
-            | Expression::BooleanLiteral(_)
-            | Expression::NullLiteral(_)
-            | Expression::BigIntLiteral(_)
-            | Expression::TemplateLiteral(_)
-            | Expression::ObjectExpression(_)
-            | Expression::ArrayExpression(_)
+        node,
+        AstNode::StringLiteral(_)
+            | AstNode::NumericLiteral(_)
+            | AstNode::BooleanLiteral(_)
+            | AstNode::NullLiteral(_)
+            | AstNode::TemplateLiteral(_)
+            | AstNode::ObjectExpression(_)
+            | AstNode::ArrayExpression(_)
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoThrowLiteral)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoThrowLiteral)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

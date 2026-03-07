@@ -4,15 +4,15 @@
 //! browser-native dialogs that are generally bad UX and should not
 //! appear in production code.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `alert()`, `confirm()`, and `prompt()` calls.
 #[derive(Debug)]
@@ -21,7 +21,7 @@ pub struct NoAlert;
 /// Blocked global function names.
 const BLOCKED_NAMES: &[&str] = &["alert", "confirm", "prompt"];
 
-impl NativeRule for NoAlert {
+impl LintRule for NoAlert {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-alert".to_owned(),
@@ -31,23 +31,23 @@ impl NativeRule for NoAlert {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let is_blocked = match &call.callee {
-            Expression::Identifier(id) => BLOCKED_NAMES.contains(&id.name.as_str()),
-            Expression::StaticMemberExpression(member) => {
-                BLOCKED_NAMES.contains(&member.property.name.as_str())
+        let is_blocked = match ctx.node(call.callee) {
+            Some(AstNode::IdentifierReference(id)) => BLOCKED_NAMES.contains(&id.name.as_str()),
+            Some(AstNode::StaticMemberExpression(member)) => {
+                BLOCKED_NAMES.contains(&member.property.as_str())
                     && matches!(
-                        &member.object,
-                        Expression::Identifier(id) if id.name.as_str() == "window"
-                            || id.name.as_str() == "globalThis"
+                        ctx.node(member.object),
+                        Some(AstNode::IdentifierReference(id))
+                            if id.name == "window" || id.name == "globalThis"
                     )
             }
             _ => false,
@@ -79,23 +79,12 @@ impl NativeRule for NoAlert {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAlert)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAlert)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -453,11 +453,11 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_abusive_eslint_disable::NoAbusiveEslintDisable),
         Box::new(no_accessor_recursion::NoAccessorRecursion),
         Box::new(no_accumulating_spread::NoAccumulatingSpread),
-        Box::new(no_alert::NoAlert),
+
         Box::new(no_anonymous_default_export::NoAnonymousDefaultExport),
         Box::new(no_array_reverse::NoArrayReverse),
         Box::new(no_array_callback_reference::NoArrayCallbackReference),
-        Box::new(no_array_constructor::NoArrayConstructor),
+
         Box::new(no_array_for_each::NoArrayForEach),
         Box::new(no_array_method_this_argument::NoArrayMethodThisArgument),
         Box::new(no_array_push_push::NoArrayPushPush::new()),
@@ -470,7 +470,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_await_in_promise_methods::NoAwaitInPromiseMethods),
         Box::new(no_await_expression_member::NoAwaitExpressionMember),
         Box::new(no_barrel_file::NoBarrelFile),
-        Box::new(no_bitwise::NoBitwise),
+
         Box::new(no_case_declarations::NoCaseDeclarations),
         Box::new(no_class_assign::NoClassAssign),
 
@@ -482,7 +482,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_constant_condition::NoConstantCondition),
         Box::new(no_constructor_return::NoConstructorReturn),
         Box::new(no_control_regex::NoControlRegex),
-        Box::new(no_div_regex::NoDivRegex),
+
 
         Box::new(no_dupe_class_members::NoDupeClassMembers),
         Box::new(no_dupe_else_if::NoDupeElseIf),
@@ -492,7 +492,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_else_return::NoElseReturn),
         Box::new(no_empty_file::NoEmptyFile),
         Box::new(no_empty_pattern::NoEmptyPattern),
-        Box::new(no_eq_null::NoEqNull),
+
         Box::new(no_eval::NoEval),
         Box::new(no_ex_assign::NoExAssign),
         Box::new(no_extend_native::NoExtendNative),
@@ -514,7 +514,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_invalid_remove_event_listener::NoInvalidRemoveEventListener),
         Box::new(no_irregular_whitespace::NoIrregularWhitespace),
         Box::new(no_keyword_prefix::NoKeywordPrefix),
-        Box::new(no_label_var::NoLabelVar),
+
         Box::new(no_length_as_slice_end::NoLengthAsSliceEnd),
         Box::new(no_lone_blocks::NoLoneBlocks),
         Box::new(no_lonely_if::NoLonelyIf),
@@ -536,8 +536,8 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_object_constructor::NoObjectConstructor),
 
         Box::new(no_param_reassign::NoParamReassign),
-        Box::new(no_plusplus::NoPlusplus),
-        Box::new(no_process_exit::NoProcessExit),
+
+
         Box::new(no_promise_executor_return::NoPromiseExecutorReturn),
         Box::new(no_prototype_builtins::NoPrototypeBuiltins),
         Box::new(no_redeclare::NoRedeclare),
@@ -560,7 +560,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
 
         Box::new(no_this_before_super::NoThisBeforeSuper),
         Box::new(no_this_in_exported_function::NoThisInExportedFunction),
-        Box::new(no_throw_literal::NoThrowLiteral),
+
         Box::new(no_typeof_undefined::NoTypeofUndefined),
         Box::new(no_unassigned_vars::NoUnassignedVars),
         Box::new(no_undef::NoUndef),
@@ -680,7 +680,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(sort_keys::SortKeys),
         Box::new(sort_vars::SortVars),
         Box::new(switch_case_braces::SwitchCaseBraces),
-        Box::new(symbol_description::SymbolDescription),
+
         Box::new(text_encoding_identifier_case::TextEncodingIdentifierCase),
         Box::new(throw_new_error::ThrowNewError),
 

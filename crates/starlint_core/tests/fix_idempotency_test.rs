@@ -609,7 +609,7 @@ fn fix_idempotent_yoda() {
 
 #[test]
 fn fix_idempotent_no_eq_null() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_eq_null::NoEqNull)],
         "if (x == null) {}",
         "no_eq_null",
@@ -636,7 +636,7 @@ fn fix_idempotent_no_object_constructor() {
 
 #[test]
 fn fix_idempotent_no_array_constructor() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_array_constructor::NoArrayConstructor)],
         "var arr = new Array(1, 2, 3);",
         "no_array_constructor",
@@ -769,7 +769,7 @@ fn fix_idempotent_prefer_object_has_own() {
 
 #[test]
 fn fix_idempotent_no_div_regex() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_div_regex::NoDivRegex)],
         "var r = /=foo/;",
         "no_div_regex",

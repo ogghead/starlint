@@ -3,22 +3,20 @@
 //! Disallow `Array` constructors. Use array literal syntax `[]` instead.
 //! `new Array(1, 2)` should be `[1, 2]`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `Array()` and `new Array()` with multiple arguments.
 #[derive(Debug)]
 pub struct NoArrayConstructor;
 
-impl NativeRule for NoArrayConstructor {
+impl LintRule for NoArrayConstructor {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-array-constructor".to_owned(),
@@ -28,78 +26,62 @@ impl NativeRule for NoArrayConstructor {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression, AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression, AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::NewExpression(new_expr) => {
-                if matches!(&new_expr.callee, Expression::Identifier(id) if id.name.as_str() == "Array")
-                    && new_expr.arguments.len() != 1
-                {
-                    let source = ctx.source_text();
-                    let replacement = build_array_literal(&new_expr.arguments, source);
-                    ctx.report(Diagnostic {
-                        rule_name: "no-array-constructor".to_owned(),
-                        message: "Use array literal `[]` instead of `Array` constructor".to_owned(),
-                        span: Span::new(new_expr.span.start, new_expr.span.end),
-                        severity: Severity::Warning,
-                        help: Some("Replace with array literal".to_owned()),
-                        fix: Some(Fix {
-                            kind: FixKind::SafeFix,
-                            message: "Replace with array literal".to_owned(),
-                            edits: vec![Edit {
-                                span: Span::new(new_expr.span.start, new_expr.span.end),
-                                replacement,
-                            }],
-                            is_snippet: false,
-                        }),
-                        labels: vec![],
-                    });
-                }
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let (callee_id, arguments, span) = match node {
+            AstNode::NewExpression(new_expr) => {
+                (new_expr.callee, &new_expr.arguments, new_expr.span)
             }
-            AstKind::CallExpression(call) => {
-                if matches!(&call.callee, Expression::Identifier(id) if id.name.as_str() == "Array")
-                    && call.arguments.len() != 1
-                {
-                    let source = ctx.source_text();
-                    let replacement = build_array_literal(&call.arguments, source);
-                    ctx.report(Diagnostic {
-                        rule_name: "no-array-constructor".to_owned(),
-                        message: "Use array literal `[]` instead of `Array` constructor".to_owned(),
-                        span: Span::new(call.span.start, call.span.end),
-                        severity: Severity::Warning,
-                        help: Some("Replace with array literal".to_owned()),
-                        fix: Some(Fix {
-                            kind: FixKind::SafeFix,
-                            message: "Replace with array literal".to_owned(),
-                            edits: vec![Edit {
-                                span: Span::new(call.span.start, call.span.end),
-                                replacement,
-                            }],
-                            is_snippet: false,
-                        }),
-                        labels: vec![],
-                    });
-                }
-            }
-            _ => {}
+            AstNode::CallExpression(call) => (call.callee, &call.arguments, call.span),
+            _ => return,
+        };
+
+        let is_array = matches!(
+            ctx.node(callee_id),
+            Some(AstNode::IdentifierReference(id)) if id.name == "Array"
+        );
+
+        if !is_array || arguments.len() == 1 {
+            return;
         }
+
+        let source = ctx.source_text();
+        let replacement = build_array_literal(arguments, ctx, source);
+        ctx.report(Diagnostic {
+            rule_name: "no-array-constructor".to_owned(),
+            message: "Use array literal `[]` instead of `Array` constructor".to_owned(),
+            span: Span::new(span.start, span.end),
+            severity: Severity::Warning,
+            help: Some("Replace with array literal".to_owned()),
+            fix: Some(Fix {
+                kind: FixKind::SafeFix,
+                message: "Replace with array literal".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(span.start, span.end),
+                    replacement,
+                }],
+                is_snippet: false,
+            }),
+            labels: vec![],
+        });
     }
 }
 
-/// Build an array literal string from arguments.
-fn build_array_literal(args: &[oxc_ast::ast::Argument<'_>], source: &str) -> String {
+/// Build an array literal string from argument `NodeId`s.
+#[allow(clippy::as_conversions)]
+fn build_array_literal(args: &[NodeId], ctx: &LintContext<'_>, source: &str) -> String {
     if args.is_empty() {
         return "[]".to_owned();
     }
-    if let (Some(first), Some(last)) = (args.first(), args.last()) {
-        let first_span: oxc_span::Span = first.span();
-        let last_span: oxc_span::Span = last.span();
-        let first_start = usize::try_from(first_span.start).unwrap_or(0);
-        let last_end = usize::try_from(last_span.end).unwrap_or(0);
-        let args_text = source.get(first_start..last_end).unwrap_or("");
+    let first_span = args.first().and_then(|&id| ctx.node(id)).map(AstNode::span);
+    let last_span = args.last().and_then(|&id| ctx.node(id)).map(AstNode::span);
+    if let (Some(first), Some(last)) = (first_span, last_span) {
+        let args_text = source
+            .get(first.start as usize..last.end as usize)
+            .unwrap_or("");
         format!("[{args_text}]")
     } else {
         "[]".to_owned()
@@ -108,23 +90,12 @@ fn build_array_literal(args: &[oxc_ast::ast::Argument<'_>], source: &str) -> Str
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoArrayConstructor)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrayConstructor)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
