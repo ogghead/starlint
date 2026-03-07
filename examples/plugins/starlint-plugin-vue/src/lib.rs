@@ -5,13 +5,13 @@
 //! and composition API patterns.
 
 wit_bindgen::generate!({
-    world: "linter-plugin-v2",
+    world: "linter-plugin",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin_v2::Guest;
+use exports::starlint::plugin::plugin::Guest;
 use starlint::plugin::types::{
-    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnostic, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -53,7 +53,7 @@ impl Guest for VuePlugin {
         Vec::new()
     }
 
-    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnostic> {
         let source = &file.source_text;
         let mut diags = Vec::new();
 
@@ -101,8 +101,8 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
-    LintDiagnosticV2 {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+    LintDiagnostic {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
@@ -113,8 +113,8 @@ fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     }
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
-    LintDiagnosticV2 {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+    LintDiagnostic {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
@@ -128,7 +128,7 @@ fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
 // ==================== Source-text scanning rules ====================
 
 /// vue/no-arrow-functions-in-watch: watch option should use regular functions
-fn check_no_arrow_functions_in_watch(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_arrow_functions_in_watch(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Look for watch: { ... } with arrow functions inside
     if let Some(watch_pos) = source.find("watch:") {
         let after = &source[watch_pos..];
@@ -162,7 +162,7 @@ fn check_no_arrow_functions_in_watch(source: &str, diags: &mut Vec<LintDiagnosti
 }
 
 /// vue/no-async-in-computed-properties: computed properties should not be async
-fn check_no_async_in_computed(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_async_in_computed(source: &str, diags: &mut Vec<LintDiagnostic>) {
     if let Some(computed_pos) = source.find("computed:") {
         let after = &source[computed_pos..];
         if let Some(brace) = after.find('{') {
@@ -181,13 +181,13 @@ fn check_no_async_in_computed(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
 }
 
 /// vue/no-expose-after-await: expose() should be called before await in setup()
-fn check_no_expose_after_await(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_expose_after_await(source: &str, diags: &mut Vec<LintDiagnostic>) {
     check_after_await(source, "expose(", "vue/no-expose-after-await",
         "expose() should be called before any await in setup()", diags);
 }
 
 /// vue/no-lifecycle-after-await: lifecycle hooks should be called before await in setup()
-fn check_no_lifecycle_after_await(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_lifecycle_after_await(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let hooks = [
         "onMounted(", "onUpdated(", "onUnmounted(", "onBeforeMount(",
         "onBeforeUpdate(", "onBeforeUnmount(", "onActivated(", "onDeactivated(",
@@ -201,7 +201,7 @@ fn check_no_lifecycle_after_await(source: &str, diags: &mut Vec<LintDiagnosticV2
 }
 
 /// vue/no-watch-after-await: watch() should be called before await in setup()
-fn check_no_watch_after_await(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_watch_after_await(source: &str, diags: &mut Vec<LintDiagnostic>) {
     check_after_await(source, "watch(", "vue/no-watch-after-await",
         "watch() should be called before any await in setup()", diags);
     check_after_await(source, "watchEffect(", "vue/no-watch-after-await",
@@ -209,7 +209,7 @@ fn check_no_watch_after_await(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
 }
 
 /// Helper: check if a call appears after `await` inside setup()
-fn check_after_await(source: &str, call: &str, rule_name: &str, msg: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_after_await(source: &str, call: &str, rule_name: &str, msg: &str, diags: &mut Vec<LintDiagnostic>) {
     // Find setup() function
     if let Some(setup_pos) = source.find("setup(") {
         let after_setup = &source[setup_pos..];
@@ -229,7 +229,7 @@ fn check_after_await(source: &str, call: &str, rule_name: &str, msg: &str, diags
 }
 
 /// vue/no-setup-props-reactivity-loss: destructuring props loses reactivity
-fn check_no_setup_props_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_setup_props_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Look for setup(props) or setup({ ... }) patterns
     if let Some(pos) = source.find("setup(") {
         let after = &source[pos + 6..];
@@ -245,7 +245,7 @@ fn check_no_setup_props_reactivity_loss(source: &str, diags: &mut Vec<LintDiagno
 }
 
 /// vue/no-child-content: elements with v-html/v-text should not have children
-fn check_no_child_content(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_child_content(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let directives = ["v-html", "v-text"];
     for directive in &directives {
         let mut search_from = 0;
@@ -271,7 +271,7 @@ fn check_no_child_content(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
 }
 
 /// vue/no-ref-object-reactivity-loss: destructuring ref() loses reactivity
-fn check_no_ref_object_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_ref_object_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Pattern: const { value } = ref(...)
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("} = ref(") {
@@ -297,7 +297,7 @@ fn check_no_ref_object_reactivity_loss(source: &str, diags: &mut Vec<LintDiagnos
 }
 
 /// vue/prefer-define-options: prefer defineOptions() in <script setup>
-fn check_prefer_define_options(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_prefer_define_options(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Only relevant in <script setup> context
     if !source.contains("<script setup") {
         return;
@@ -312,7 +312,7 @@ fn check_prefer_define_options(source: &str, diags: &mut Vec<LintDiagnosticV2>) 
 }
 
 /// vue/no-dupe-keys: duplicate keys across data, computed, methods, etc.
-fn check_no_dupe_keys(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_dupe_keys(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Collect property names from known sections
     let sections = ["data()", "computed:", "methods:", "props:"];
     let mut all_keys: Vec<(&str, usize)> = Vec::new();
@@ -361,7 +361,7 @@ fn check_no_dupe_keys(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
 }
 
 /// vue/no-component-options-typo: detect common typos in Vue options
-fn check_no_component_options_typo(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_component_options_typo(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let typos: &[(&str, &str)] = &[
         ("beforeCreated:", "beforeCreate:"),
         ("created:", "created:"), // valid, skip
@@ -393,7 +393,7 @@ fn check_no_component_options_typo(source: &str, diags: &mut Vec<LintDiagnosticV
 }
 
 /// vue/component-definition-name-casing: enforce PascalCase component names
-fn check_component_definition_name_casing(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_component_definition_name_casing(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Check defineComponent({ name: 'xxx' }) or name: 'xxx' in export default
     let pattern = "name:";
     let mut search_from = 0;
@@ -420,7 +420,7 @@ fn check_component_definition_name_casing(source: &str, diags: &mut Vec<LintDiag
 }
 
 /// vue/no-reserved-component-names: disallow reserved HTML element names
-fn check_no_reserved_component_names(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_reserved_component_names(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let reserved = [
         "html", "body", "base", "head", "link", "meta", "style", "title",
         "address", "article", "aside", "footer", "header", "h1", "h2", "h3",
@@ -460,7 +460,7 @@ fn check_no_reserved_component_names(source: &str, diags: &mut Vec<LintDiagnosti
 fn check_custom_event_name_casing(
     call: &serde_json::Value,
     tree: &serde_json::Value,
-    _diags: &mut Vec<LintDiagnosticV2>,
+    _diags: &mut Vec<LintDiagnostic>,
 ) {
     let callee_path = get_callee_path(tree, call);
     let _span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });

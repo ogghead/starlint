@@ -4,13 +4,13 @@
 //! using a mix of source-text scanning and AST node inspection.
 
 wit_bindgen::generate!({
-    world: "linter-plugin-v2",
+    world: "linter-plugin",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin_v2::Guest;
+use exports::starlint::plugin::plugin::Guest;
 use starlint::plugin::types::{
-    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnostic, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -50,7 +50,7 @@ impl Guest for StorybookPlugin {
         Vec::new()
     }
 
-    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnostic> {
         let source = &file.source_text;
         let file_path = &file.file_path;
         let ext = &file.extension;
@@ -132,8 +132,8 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnosticV2 {
-    LintDiagnosticV2 {
+fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnostic {
+    LintDiagnostic {
         rule_name: rule.into(),
         message: msg.into(),
         span,
@@ -144,13 +144,13 @@ fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) 
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Warning, None)
 }
 
 // --- Text-scanning rule implementations ---
 
-fn check_default_exports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_default_exports(source: &str, diags: &mut Vec<LintDiagnostic>) {
     if !source.contains("export default") {
         diags.push(warn(
             "storybook/default-exports",
@@ -160,7 +160,7 @@ fn check_default_exports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_story_exports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_story_exports(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let has_named = source.contains("export const ")
         || source.contains("export let ")
         || source.contains("export function ")
@@ -176,7 +176,7 @@ fn check_story_exports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_hierarchy_separator(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_hierarchy_separator(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let patterns = ["title: '", "title: \"", "title:'", "title:\""];
 
     for pattern in &patterns {
@@ -203,7 +203,7 @@ fn check_hierarchy_separator(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_csf_component(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_csf_component(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let Some(default_pos) = source.find("export default") else { return };
     let after = &source[default_pos..];
     let Some(brace_off) = after.find('{') else { return };
@@ -219,7 +219,7 @@ fn check_csf_component(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_await_interactions(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_await_interactions(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let patterns = ["userEvent.", "within("];
 
     for pattern in &patterns {
@@ -241,7 +241,7 @@ fn check_await_interactions(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_context_in_play_function(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_context_in_play_function(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = ".play()";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -255,7 +255,7 @@ fn check_context_in_play_function(source: &str, diags: &mut Vec<LintDiagnosticV2
     }
 }
 
-fn check_no_title_property_in_meta(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_title_property_in_meta(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let Some(default_pos) = source.find("export default") else { return };
     let after = &source[default_pos..];
     let Some(brace_off) = after.find('{') else { return };
@@ -288,7 +288,7 @@ fn check_no_title_property_in_meta(source: &str, diags: &mut Vec<LintDiagnosticV
     }
 }
 
-fn check_meta_inline_properties(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_meta_inline_properties(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let Some(default_pos) = source.find("export default") else { return };
     let after = &source[default_pos..];
     let Some(brace_off) = after.find('{') else { return };
@@ -320,7 +320,7 @@ fn check_meta_inline_properties(source: &str, diags: &mut Vec<LintDiagnosticV2>)
     }
 }
 
-fn check_prefer_pascal_case(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_prefer_pascal_case(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let patterns = ["export const ", "export let "];
 
     for pattern in &patterns {
@@ -357,7 +357,7 @@ fn is_pascal_case(s: &str) -> bool {
     first.is_ascii_uppercase() && !s.contains('-')
 }
 
-fn check_no_redundant_story_name(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_redundant_story_name(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "export const ";
     let mut pos = 0;
 
@@ -389,7 +389,7 @@ fn check_no_redundant_story_name(source: &str, diags: &mut Vec<LintDiagnosticV2>
     }
 }
 
-fn check_meta_satisfies_type(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_meta_satisfies_type(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let Some(default_pos) = source.find("export default") else { return };
     let after = &source[default_pos..];
 
@@ -403,7 +403,7 @@ fn check_meta_satisfies_type(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_use_storybook_expect(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_use_storybook_expect(source: &str, diags: &mut Vec<LintDiagnostic>) {
     if !source.contains("expect(") {
         return;
     }
@@ -423,7 +423,7 @@ fn check_use_storybook_expect(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_no_uninstalled_addons(source: &str, file_path: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_uninstalled_addons(source: &str, file_path: &str, diags: &mut Vec<LintDiagnostic>) {
     // Only applies to storybook config files.
     let is_config = file_path.contains(".storybook") && file_path.contains("main");
     if !is_config || !source.contains("addons") {

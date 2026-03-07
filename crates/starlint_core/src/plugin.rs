@@ -32,7 +32,7 @@ pub struct FileContext<'a> {
 
 /// Unified plugin trait for lint rule providers.
 ///
-/// Mirrors the WASM v2 plugin interface (`plugin-v2` in `plugin.wit`):
+/// Mirrors the WASM plugin interface (`plugin` in `plugin.wit`):
 /// `get-rules`, `lint-file`, `get-file-patterns`, `configure`.
 ///
 /// Native rule bundles implement this via [`LintRulePlugin`](crate::lint_rule_plugin::LintRulePlugin),

@@ -1,17 +1,17 @@
-//! Example starlint WASM plugin for JSX linting (v2 — full AST tree + fix support).
+//! Example starlint WASM plugin for JSX linting.
 //!
 //! Demonstrates the JSX AST node support by implementing:
 //! - `jsx-example/img-alt-text`: Require `alt` attribute on `<img>` elements.
 //! - `jsx-example/no-target-blank`: Require `rel="noreferrer"` when using `target="_blank"`.
 
 wit_bindgen::generate!({
-    world: "linter-plugin-v2",
+    world: "linter-plugin",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin_v2::Guest;
+use exports::starlint::plugin::plugin::Guest;
 use starlint::plugin::types::{
-    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity, Span,
+    Category, FileContext, LintDiagnostic, PluginConfig, RuleMeta, Severity, Span,
 };
 
 struct JsxExamplePlugin;
@@ -43,7 +43,7 @@ impl Guest for JsxExamplePlugin {
         Vec::new()
     }
 
-    fn lint_file(_file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+    fn lint_file(_file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnostic> {
         let tree: serde_json::Value = match serde_json::from_slice(&tree) {
             Ok(v) => v,
             Err(_) => return Vec::new(),
@@ -82,7 +82,7 @@ impl Guest for JsxExamplePlugin {
 
                         // Only flag if no `alt` and no spread (spread might include alt)
                         if !has_alt && !has_spread {
-                            diagnostics.push(LintDiagnosticV2 {
+                            diagnostics.push(LintDiagnostic {
                                 rule_name: "jsx-example/img-alt-text".into(),
                                 message: "`<img>` elements must have an `alt` attribute".into(),
                                 span,
@@ -128,7 +128,7 @@ impl Guest for JsxExamplePlugin {
                         }
 
                         if has_target_blank && !has_rel_noreferrer {
-                            diagnostics.push(LintDiagnosticV2 {
+                            diagnostics.push(LintDiagnostic {
                                 rule_name: "jsx-example/no-target-blank".into(),
                                 message:
                                     "Using `target=\"_blank\"` without `rel=\"noreferrer\"` is a security risk"

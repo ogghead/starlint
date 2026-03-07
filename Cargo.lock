@@ -2010,7 +2010,6 @@ dependencies = [
  "globset",
  "miette",
  "pretty_assertions",
- "serde",
  "serde_json",
  "starlint_ast",
  "starlint_core",

@@ -5,13 +5,13 @@
 //! analysis, and source-text scanning.
 
 wit_bindgen::generate!({
-    world: "linter-plugin-v2",
+    world: "linter-plugin",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin_v2::Guest;
+use exports::starlint::plugin::plugin::Guest;
 use starlint::plugin::types::{
-    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity,
+    Category, FileContext, LintDiagnostic, PluginConfig, RuleMeta, Severity,
     Span,
 };
 
@@ -131,7 +131,7 @@ impl Guest for ReactPlugin {
         Vec::new()
     }
 
-    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnostic> {
         let source = &file.source_text;
         let ext = &file.extension;
         let mut diags = Vec::new();
@@ -199,8 +199,8 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnosticV2 {
-    LintDiagnosticV2 {
+fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnostic {
+    LintDiagnostic {
         rule_name: rule.into(),
         message: msg.into(),
         span,
@@ -211,11 +211,11 @@ fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) 
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Warning, None)
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Error, None)
 }
 
@@ -285,12 +285,12 @@ fn check_jsx_rules(
     jsx: &serde_json::Value,
     tree: &serde_json::Value,
     _source: &str,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let name = jsx.get("name").and_then(|n| n.as_str()).unwrap_or("");
     let span = extract_span(jsx).unwrap_or(Span { start: 0, end: 0 });
     let self_closing = jsx.get("self_closing").and_then(|s| s.as_bool()).unwrap_or(false);
-    // v2 JSXOpeningElement doesn't have children_count, approximate with 0 for self-closing
+    // JSXOpeningElement doesn't have children_count, approximate with 0 for self-closing
     let children_count: u32 = if self_closing { 0 } else { 1 }; // conservative: assume non-self-closing has children
     let attrs = collect_attrs(jsx, tree);
 
@@ -443,7 +443,7 @@ fn check_jsx_rules(
 fn check_a11y_rules(
     jsx: &serde_json::Value,
     tree: &serde_json::Value,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let name = jsx.get("name").and_then(|n| n.as_str()).unwrap_or("");
     let span = extract_span(jsx).unwrap_or(Span { start: 0, end: 0 });
@@ -750,7 +750,7 @@ fn check_react_perf_rules(
     jsx: &serde_json::Value,
     tree: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let span = extract_span(jsx).unwrap_or(Span { start: 0, end: 0 });
     let start_usize = span.start as usize;
@@ -811,7 +811,7 @@ fn check_call_expr_rules(
     call: &serde_json::Value,
     tree: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let callee = get_callee_path(tree, call);
     let span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });
@@ -879,7 +879,7 @@ fn check_call_expr_rules(
 
 fn check_import_rules(
     import: &serde_json::Value,
-    _diags: &mut Vec<LintDiagnosticV2>,
+    _diags: &mut Vec<LintDiagnostic>,
 ) {
     // Most import-related react rules are handled by text scanning
     let _source = import.get("source").and_then(|s| s.as_str()).unwrap_or("");
@@ -890,7 +890,7 @@ fn check_import_rules(
 fn check_member_expr_rules(
     member: &serde_json::Value,
     tree: &serde_json::Value,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
     let span = extract_span(member).unwrap_or(Span { start: 0, end: 0 });
@@ -907,7 +907,7 @@ fn check_member_expr_rules(
 
 // ==================== Text-scanning rules ====================
 
-fn check_no_multi_comp(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_multi_comp(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let patterns = ["extends Component", "extends React.Component", "extends PureComponent"];
     let mut comp_count = 0;
     for pattern in &patterns {
@@ -920,11 +920,11 @@ fn check_no_multi_comp(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_no_unescaped_entities(_source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_unescaped_entities(_source: &str, _diags: &mut Vec<LintDiagnostic>) {
     // Skip -- requires JSX text node detection which is complex in text scanning
 }
 
-fn check_jsx_no_comment_textnodes(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_jsx_no_comment_textnodes(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Look for HTML comments inside JSX
     let pattern = "<!-- ";
     let mut pos = 0;
@@ -943,7 +943,7 @@ fn check_jsx_no_comment_textnodes(source: &str, diags: &mut Vec<LintDiagnosticV2
     }
 }
 
-fn check_only_export_components(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_only_export_components(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Check if file exports non-component items alongside components
     let has_jsx = source.contains("<") && source.contains("/>");
     if !has_jsx {
@@ -984,11 +984,11 @@ fn check_only_export_components(source: &str, diags: &mut Vec<LintDiagnosticV2>)
     }
 }
 
-fn check_react_in_jsx_scope(_source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+fn check_react_in_jsx_scope(_source: &str, _diags: &mut Vec<LintDiagnostic>) {
     // In modern React (17+), this is not needed. Skip.
 }
 
-fn check_no_direct_mutation_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_direct_mutation_state(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "this.state.";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1012,7 +1012,7 @@ fn check_no_direct_mutation_state(source: &str, diags: &mut Vec<LintDiagnosticV2
     }
 }
 
-fn check_no_string_refs(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_string_refs(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "ref=\"";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1038,23 +1038,23 @@ fn check_no_string_refs(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_no_this_in_sfc(_source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_this_in_sfc(_source: &str, _diags: &mut Vec<LintDiagnostic>) {
     // Skip -- requires component type detection
 }
 
-fn check_jsx_filename_extension(_ext: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+fn check_jsx_filename_extension(_ext: &str, _diags: &mut Vec<LintDiagnostic>) {
     // File pattern already restricts to jsx/tsx -- this rule is about enforcing that
 }
 
-fn check_no_did_mount_set_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_did_mount_set_state(source: &str, diags: &mut Vec<LintDiagnostic>) {
     check_lifecycle_set_state(source, "componentDidMount", "react/no-did-mount-set-state", diags);
 }
 
-fn check_no_will_update_set_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_will_update_set_state(source: &str, diags: &mut Vec<LintDiagnostic>) {
     check_lifecycle_set_state(source, "componentWillUpdate", "react/no-will-update-set-state", diags);
 }
 
-fn check_no_set_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_set_state(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "this.setState(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1068,7 +1068,7 @@ fn check_no_set_state(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_lifecycle_set_state(source: &str, lifecycle: &str, rule_name: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_lifecycle_set_state(source: &str, lifecycle: &str, rule_name: &str, diags: &mut Vec<LintDiagnostic>) {
     if let Some(lifecycle_pos) = source.find(lifecycle) {
         let after = &source[lifecycle_pos..];
         if let Some(body_start) = after.find('{') {
@@ -1085,7 +1085,7 @@ fn check_lifecycle_set_state(source: &str, lifecycle: &str, rule_name: &str, dia
     }
 }
 
-fn check_no_is_mounted(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_is_mounted(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "this.isMounted()";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1099,7 +1099,7 @@ fn check_no_is_mounted(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_jsx_fragments(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_jsx_fragments(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "<React.Fragment>";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -1117,7 +1117,7 @@ fn check_jsx_fragments(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_rules_of_hooks(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_rules_of_hooks(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let hooks = ["useState(", "useEffect(", "useCallback(", "useMemo(", "useRef(", "useContext(", "useReducer("];
 
     for hook in &hooks {
@@ -1145,12 +1145,12 @@ fn check_rules_of_hooks(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_display_name(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+fn check_display_name(source: &str, _diags: &mut Vec<LintDiagnostic>) {
     // Skip -- complex to detect anonymous components reliably via text scanning
     let _ = source;
 }
 
-fn check_require_render_return(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_require_render_return(source: &str, diags: &mut Vec<LintDiagnostic>) {
     if let Some(render_pos) = source.find("render()") {
         let after = &source[render_pos..];
         if let Some(body_start) = after.find('{') {
@@ -1183,7 +1183,7 @@ fn check_require_render_return(source: &str, diags: &mut Vec<LintDiagnosticV2>) 
     }
 }
 
-fn check_state_in_constructor(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_state_in_constructor(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Check for state assignment outside constructor
     if source.contains("state = {") && !source.contains("constructor(") {
         if let Some(pos) = source.find("state = {") {
@@ -1196,7 +1196,7 @@ fn check_state_in_constructor(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_prefer_es6_class(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_prefer_es6_class(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "React.createClass(";
     if let Some(pos) = source.find(pattern) {
         diags.push(warn(
@@ -1207,7 +1207,7 @@ fn check_prefer_es6_class(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_no_unsafe(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_unsafe(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let unsafe_methods = [
         "UNSAFE_componentWillMount",
         "UNSAFE_componentWillReceiveProps",

@@ -1,17 +1,17 @@
-//! Example starlint WASM plugin (v2 — full AST tree + fix support).
+//! Example starlint WASM plugin.
 //!
 //! Implements two rules:
 //! - `example/no-debugger`: Flags `debugger` statements and offers a fix to remove them.
 //! - `example/no-import-star`: Flags wildcard imports (`import * as X from 'Y'`).
 
 wit_bindgen::generate!({
-    world: "linter-plugin-v2",
+    world: "linter-plugin",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin_v2::Guest;
+use exports::starlint::plugin::plugin::Guest;
 use starlint::plugin::types::{
-    Category, Edit, FileContext, Fix, FixKind, Label, LintDiagnosticV2, PluginConfig, RuleMeta,
+    Category, Edit, FileContext, Fix, FixKind, Label, LintDiagnostic, PluginConfig, RuleMeta,
     Severity, Span,
 };
 
@@ -44,7 +44,7 @@ impl Guest for ExamplePlugin {
         Vec::new()
     }
 
-    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnostic> {
         // Deserialize the AST tree from JSON bytes.
         let tree: serde_json::Value = match serde_json::from_slice(&tree) {
             Ok(v) => v,
@@ -59,7 +59,7 @@ impl Guest for ExamplePlugin {
                 // Check for DebuggerStatement nodes.
                 if let Some(debugger) = node.get("DebuggerStatement") {
                     if let Some(span) = extract_span(debugger) {
-                        diagnostics.push(LintDiagnosticV2 {
+                        diagnostics.push(LintDiagnostic {
                             rule_name: "example/no-debugger".into(),
                             message: "Unexpected `debugger` statement".into(),
                             span,
@@ -96,30 +96,39 @@ impl Guest for ExamplePlugin {
 }
 
 /// Check if an import declaration has wildcard imports.
+///
+/// Uses a source-text heuristic: looks for `* as` within the import span.
+/// This demonstrates that plugins have access to source text via `FileContext`.
 fn check_import_star(
     import: &serde_json::Value,
-    _file: &FileContext,
-    diagnostics: &mut Vec<LintDiagnosticV2>,
+    file: &FileContext,
+    diagnostics: &mut Vec<LintDiagnostic>,
 ) {
-    let source = import
+    let source_module = import
         .get("source")
         .and_then(|s| s.as_str())
         .unwrap_or("<unknown>");
     let span = extract_span(import).unwrap_or(Span { start: 0, end: 0 });
 
-    // Check specifiers for namespace imports (local name with "*" pattern).
-    // In the serialized AST, import specifiers are child nodes referenced by NodeId.
-    // For simplicity, we check the source text for "* as" pattern.
-    // A production plugin would walk the tree more carefully.
-    if let Some(specifiers) = import.get("specifiers").and_then(|s| s.as_array()) {
-        // specifiers are NodeId references - we'd need the full tree to resolve them.
-        // For this example, just check if there are specifiers (simplified check).
-        let _ = specifiers;
-    }
+    // Extract the import statement text and look for "* as" pattern.
+    let start = span.start as usize;
+    let end = span.end as usize;
+    let import_text = file
+        .source_text
+        .get(start..end.min(file.source_text.len()))
+        .unwrap_or("");
 
-    // Simple heuristic: check source text around the import span for "* as"
-    // This demonstrates that v2 plugins have access to source text via FileContext.
-    let _ = (source, span, diagnostics);
+    if import_text.contains("* as") {
+        diagnostics.push(LintDiagnostic {
+            rule_name: "example/no-import-star".into(),
+            message: format!("Unexpected wildcard import from '{source_module}'"),
+            span,
+            severity: Severity::Warning,
+            help: Some("Import specific exports instead of using `* as`".into()),
+            fix: None,
+            labels: vec![],
+        });
+    }
 }
 
 /// Extract a WIT Span from a JSON node's "span" field.

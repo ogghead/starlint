@@ -1,19 +1,10 @@
 /// starlint plugin interface.
 ///
 /// Defines the contract between starlint and WASM plugins.
-/// Two worlds are available:
-///   - `linter-plugin`    (v1): Simplified AST nodes via `node-batch`.
-///   - `linter-plugin-v2` (v2): Full AST tree + fix support.
-///
-/// New plugins should target `linter-plugin-v2`. The v1 world is kept
-/// for backward compatibility with existing compiled plugins.
+/// Plugins export the `plugin` interface to provide lint rules.
 package starlint:plugin@0.1.0;
 
 interface types {
-    // ----------------------------------------------------------------
-    // Shared types (used by both v1 and v2)
-    // ----------------------------------------------------------------
-
     /// Byte-offset span in source text.
     record span {
         start: u32,
@@ -54,185 +45,6 @@ interface types {
         extension: string,
     }
 
-    // ----------------------------------------------------------------
-    // v1 types (simplified AST nodes, no fix support)
-    // ----------------------------------------------------------------
-
-    /// A lint diagnostic emitted by a rule (v1 — no fix support).
-    record lint-diagnostic {
-        rule-name: string,
-        message: string,
-        span: span,
-        severity: severity,
-        help: option<string>,
-    }
-
-    /// Flags declaring which node types a plugin is interested in.
-    ///
-    /// `source-text` is special: when set, the plugin receives the full
-    /// source text even when no AST nodes match — enabling text-based
-    /// scanning rules (e.g. pattern matching on raw source).
-    flags node-interest {
-        import-declaration,
-        export-default-declaration,
-        export-named-declaration,
-        call-expression,
-        member-expression,
-        identifier-reference,
-        arrow-function-expression,
-        function-declaration,
-        variable-declaration,
-        string-literal,
-        object-expression,
-        array-expression,
-        debugger-statement,
-        jsx-opening-element,
-        source-text,
-    }
-
-    /// Simplified AST node representations for the WASM boundary (v1).
-    variant ast-node {
-        import-decl(import-declaration-node),
-        export-default-decl(export-default-node),
-        export-named-decl(export-named-node),
-        call-expr(call-expression-node),
-        debugger-stmt(debugger-statement-node),
-        member-expr(member-expression-node),
-        identifier-ref(identifier-reference-node),
-        arrow-fn-expr(arrow-function-expression-node),
-        fn-decl(function-declaration-node),
-        var-decl(variable-declaration-node),
-        string-lit(string-literal-node),
-        object-expr(object-expression-node),
-        array-expr(array-expression-node),
-        jsx-element(jsx-opening-element-node),
-    }
-
-    /// Import declaration.
-    record import-declaration-node {
-        span: span,
-        source: string,
-        specifiers: list<import-specifier>,
-    }
-
-    /// Import specifier.
-    record import-specifier {
-        local: string,
-        imported: option<string>,
-    }
-
-    /// Export default declaration.
-    record export-default-node {
-        span: span,
-    }
-
-    /// Export named declaration.
-    record export-named-node {
-        span: span,
-        names: list<string>,
-    }
-
-    /// Call expression.
-    record call-expression-node {
-        span: span,
-        callee-path: string,
-        argument-count: u32,
-        is-awaited: bool,
-    }
-
-    /// Debugger statement.
-    record debugger-statement-node {
-        span: span,
-    }
-
-    /// Member expression (e.g., `obj.prop` or `obj[expr]`).
-    record member-expression-node {
-        span: span,
-        object: string,
-        property: string,
-        computed: bool,
-    }
-
-    /// Identifier reference.
-    record identifier-reference-node {
-        span: span,
-        name: string,
-    }
-
-    /// Arrow function expression.
-    record arrow-function-expression-node {
-        span: span,
-        params-count: u32,
-        is-async: bool,
-        is-expression: bool,
-    }
-
-    /// Function declaration.
-    record function-declaration-node {
-        span: span,
-        name: option<string>,
-        params-count: u32,
-        is-async: bool,
-        is-generator: bool,
-    }
-
-    /// Variable declarator.
-    record variable-declarator {
-        name: string,
-        has-init: bool,
-    }
-
-    /// Variable declaration.
-    record variable-declaration-node {
-        span: span,
-        kind: string,
-        declarations: list<variable-declarator>,
-    }
-
-    /// String literal.
-    record string-literal-node {
-        span: span,
-        value: string,
-    }
-
-    /// Object expression.
-    record object-expression-node {
-        span: span,
-        property-count: u32,
-    }
-
-    /// Array expression.
-    record array-expression-node {
-        span: span,
-        element-count: u32,
-    }
-
-    /// A JSX attribute (name/value pair or spread).
-    record jsx-attribute {
-        name: string,
-        value: option<string>,
-        is-spread: bool,
-    }
-
-    /// JSX opening element (collected from `<Tag ...>` or `<Tag ... />`).
-    record jsx-opening-element-node {
-        span: span,
-        name: string,
-        attributes: list<jsx-attribute>,
-        self-closing: bool,
-        children-count: u32,
-    }
-
-    /// A batch of nodes for a single file (v1).
-    record node-batch {
-        file: file-context,
-        nodes: list<ast-node>,
-    }
-
-    // ----------------------------------------------------------------
-    // v2 types (full AST tree + fix support)
-    // ----------------------------------------------------------------
-
     /// Safety classification of a fix.
     enum fix-kind {
         /// Fix is safe and preserves semantics.
@@ -271,8 +83,8 @@ interface types {
         message: string,
     }
 
-    /// A lint diagnostic with full fix support (v2).
-    record lint-diagnostic-v2 {
+    /// A lint diagnostic with fix support.
+    record lint-diagnostic {
         rule-name: string,
         message: string,
         span: span,
@@ -296,35 +108,12 @@ interface types {
     type serialized-ast-tree = list<u8>;
 }
 
-/// v1 plugin interface (simplified AST nodes, no fix support).
+/// Plugin interface (full AST tree + fix support).
 ///
-/// Kept for backward compatibility with existing compiled plugins.
+/// Receives the complete AST tree for each file, enabling deep
+/// navigation and fix production.
 interface plugin {
-    use types.{rule-meta, lint-diagnostic, node-interest, node-batch, plugin-config};
-
-    /// Return metadata for all rules provided by this plugin.
-    get-rules: func() -> list<rule-meta>;
-
-    /// Declare which AST node types this plugin needs.
-    get-node-interests: func() -> node-interest;
-
-    /// Declare file-path glob patterns this plugin applies to.
-    /// Empty list = all files (default). Example: ["*.stories.*", "*.test.*"]
-    get-file-patterns: func() -> list<string>;
-
-    /// Configure the plugin. Returns a list of validation errors (empty = OK).
-    configure: func(config: plugin-config) -> list<string>;
-
-    /// Lint a file. Receives a batch of matching nodes, returns diagnostics.
-    lint-file: func(batch: node-batch) -> list<lint-diagnostic>;
-}
-
-/// v2 plugin interface (full AST tree + fix support).
-///
-/// New plugins should target this interface. Receives the complete AST
-/// tree for each file, enabling deep navigation and fix production.
-interface plugin-v2 {
-    use types.{rule-meta, lint-diagnostic-v2, file-context, serialized-ast-tree, plugin-config};
+    use types.{rule-meta, lint-diagnostic, file-context, serialized-ast-tree, plugin-config};
 
     /// Return metadata for all rules provided by this plugin.
     get-rules: func() -> list<rule-meta>;
@@ -337,15 +126,10 @@ interface plugin-v2 {
     configure: func(config: plugin-config) -> list<string>;
 
     /// Lint a file. Receives the full AST tree, returns diagnostics with fix support.
-    lint-file: func(file: file-context, tree: serialized-ast-tree) -> list<lint-diagnostic-v2>;
+    lint-file: func(file: file-context, tree: serialized-ast-tree) -> list<lint-diagnostic>;
 }
 
-/// v1 world — plugins export the simplified `plugin` interface.
+/// Plugins export the `plugin` interface.
 world linter-plugin {
     export plugin;
-}
-
-/// v2 world — plugins export the full `plugin-v2` interface.
-world linter-plugin-v2 {
-    export plugin-v2;
 }

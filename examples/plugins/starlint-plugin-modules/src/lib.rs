@@ -1,4 +1,4 @@
-//! Modules WASM plugin for starlint (v2 — full AST tree + fix support).
+//! Modules WASM plugin for starlint.
 //!
 //! Implements import (33), node (6), and promise (16) lint rules
 //! as a single WASM component. These rules apply to ALL files
@@ -6,13 +6,13 @@
 //! call expressions, and source-text scanning.
 
 wit_bindgen::generate!({
-    world: "linter-plugin-v2",
+    world: "linter-plugin",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin_v2::Guest;
+use exports::starlint::plugin::plugin::Guest;
 use starlint::plugin::types::{
-    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity, Span,
+    Category, FileContext, LintDiagnostic, PluginConfig, RuleMeta, Severity, Span,
 };
 
 struct ModulesPlugin;
@@ -96,7 +96,7 @@ impl Guest for ModulesPlugin {
         Vec::new()
     }
 
-    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnostic> {
         let tree: serde_json::Value = match serde_json::from_slice(&tree) {
             Ok(v) => v,
             Err(_) => serde_json::Value::Null,
@@ -165,8 +165,8 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnosticV2 {
-    LintDiagnosticV2 {
+fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) -> LintDiagnostic {
+    LintDiagnostic {
         rule_name: rule.into(),
         message: msg.into(),
         span,
@@ -177,11 +177,11 @@ fn diag(rule: &str, msg: &str, span: Span, sev: Severity, help: Option<String>) 
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Warning, None)
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
     diag(rule, msg, Span { start: start as u32, end: end as u32 }, Severity::Error, None)
 }
 
@@ -190,7 +190,7 @@ fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
 fn check_import_decl_rules(
     import: &serde_json::Value,
     tree: &serde_json::Value,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let source_mod = import.get("source").and_then(|s| s.as_str()).unwrap_or("");
     let span = extract_span(import).unwrap_or(Span { start: 0, end: 0 });
@@ -288,7 +288,7 @@ fn check_import_decl_rules(
 fn check_export_default_rules(
     exp: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let span = extract_span(exp).unwrap_or(Span { start: 0, end: 0 });
 
@@ -307,12 +307,12 @@ fn check_export_default_rules(
 fn check_export_named_rules(
     exp: &serde_json::Value,
     tree: &serde_json::Value,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let span = extract_span(exp).unwrap_or(Span { start: 0, end: 0 });
 
     // --- import/no-named-export ---
-    // In v2, ExportNamedDeclaration has specifiers (NodeIds) and an optional declaration.
+    // In the serialized AST, ExportNamedDeclaration has specifiers (NodeIds) and an optional declaration.
     // Check if there are specifiers or a declaration to determine if named exports exist.
     let has_specifiers = exp
         .get("specifiers")
@@ -357,7 +357,7 @@ fn check_call_expr_rules(
     call: &serde_json::Value,
     tree: &serde_json::Value,
     source: &str,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let callee = get_callee_path(tree, call);
     let span = extract_span(call).unwrap_or(Span { start: 0, end: 0 });
@@ -482,7 +482,7 @@ fn check_call_expr_rules(
 fn check_member_expr_rules(
     member: &serde_json::Value,
     tree: &serde_json::Value,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let span = extract_span(member).unwrap_or(Span { start: 0, end: 0 });
     let property = member.get("property").and_then(|p| p.as_str()).unwrap_or("");
@@ -506,7 +506,7 @@ fn check_member_expr_rules(
 
 fn check_identifier_rules(
     ident: &serde_json::Value,
-    _diags: &mut Vec<LintDiagnosticV2>,
+    _diags: &mut Vec<LintDiagnostic>,
 ) {
     let name = ident.get("name").and_then(|n| n.as_str()).unwrap_or("");
 
@@ -519,7 +519,7 @@ fn check_identifier_rules(
 
 // ==================== Text-scanning rules ====================
 
-fn check_import_first(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_first(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let mut found_non_import = false;
     for line in source.lines() {
         let trimmed = line.trim();
@@ -539,7 +539,7 @@ fn check_import_first(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_import_exports_last(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_exports_last(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let mut last_export_pos = 0;
     let mut found_after_export = false;
 
@@ -559,7 +559,7 @@ fn check_import_exports_last(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_import_no_duplicates(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_no_duplicates(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let mut seen_modules: Vec<String> = Vec::new();
 
     let import_pattern = "from '";
@@ -585,7 +585,7 @@ fn check_import_no_duplicates(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_import_no_mutable_exports(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_no_mutable_exports(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let patterns = ["export let ", "export var "];
     for pattern in &patterns {
         let mut pos = 0;
@@ -597,7 +597,7 @@ fn check_import_no_mutable_exports(source: &str, diags: &mut Vec<LintDiagnosticV
     }
 }
 
-fn check_import_max_dependencies(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_max_dependencies(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let max: usize = 20;
     let import_count = count_occurrences(source, "import ");
     if import_count > max {
@@ -605,7 +605,7 @@ fn check_import_max_dependencies(source: &str, diags: &mut Vec<LintDiagnosticV2>
     }
 }
 
-fn check_import_no_self_import(source: &str, file_path: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_no_self_import(source: &str, file_path: &str, diags: &mut Vec<LintDiagnostic>) {
     // Check if any import references the current file
     let file_name = file_path.rsplit('/').next().unwrap_or(file_path);
     let stem = file_name.split('.').next().unwrap_or(file_name);
@@ -624,7 +624,7 @@ fn check_import_no_self_import(source: &str, file_path: &str, diags: &mut Vec<Li
     }
 }
 
-fn check_import_unambiguous(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_unambiguous(source: &str, _diags: &mut Vec<LintDiagnostic>) {
     let has_import = source.contains("import ") || source.contains("import{");
     let has_export = source.contains("export ");
     if !has_import && !has_export {
@@ -632,12 +632,12 @@ fn check_import_unambiguous(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_import_group_exports(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_group_exports(source: &str, _diags: &mut Vec<LintDiagnostic>) {
     // Check if exports are scattered
     let _ = source;
 }
 
-fn check_import_prefer_default_export(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_import_prefer_default_export(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let named_export_count = count_occurrences(source, "export const ")
         + count_occurrences(source, "export function ")
         + count_occurrences(source, "export class ");
@@ -654,7 +654,7 @@ fn check_import_prefer_default_export(source: &str, diags: &mut Vec<LintDiagnost
     }
 }
 
-fn check_node_no_path_concat(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_node_no_path_concat(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let patterns = ["__dirname +", "__filename +", "__dirname+", "__filename+",
                      "+ __dirname", "+ __filename", "+__dirname", "+__filename"];
     for pattern in &patterns {
@@ -664,7 +664,7 @@ fn check_node_no_path_concat(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_node_no_exports_assign(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_node_no_exports_assign(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "exports =";
     if let Some(pos) = source.find(pattern) {
         // Check it's not module.exports
@@ -674,7 +674,7 @@ fn check_node_no_exports_assign(source: &str, diags: &mut Vec<LintDiagnosticV2>)
     }
 }
 
-fn check_promise_always_return(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_promise_always_return(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = ".then(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -695,7 +695,7 @@ fn check_promise_always_return(source: &str, diags: &mut Vec<LintDiagnosticV2>) 
     }
 }
 
-fn check_promise_no_nesting(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_promise_no_nesting(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = ".then(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -711,7 +711,7 @@ fn check_promise_no_nesting(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_promise_no_return_in_finally(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_promise_no_return_in_finally(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = ".finally(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -727,7 +727,7 @@ fn check_promise_no_return_in_finally(source: &str, diags: &mut Vec<LintDiagnost
     }
 }
 
-fn check_promise_no_return_wrap(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_promise_no_return_wrap(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let patterns = ["return Promise.resolve(", "return Promise.reject("];
     for pattern in &patterns {
         let mut pos = 0;
@@ -739,12 +739,12 @@ fn check_promise_no_return_wrap(source: &str, diags: &mut Vec<LintDiagnosticV2>)
     }
 }
 
-fn check_promise_prefer_await_to_then(source: &str, _diags: &mut Vec<LintDiagnosticV2>) {
+fn check_promise_prefer_await_to_then(source: &str, _diags: &mut Vec<LintDiagnostic>) {
     // Already handled in call expression rules
     let _ = source;
 }
 
-fn check_promise_param_names(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_promise_param_names(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "new Promise(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {
@@ -773,7 +773,7 @@ fn check_promise_param_names(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
     }
 }
 
-fn check_promise_no_multiple_resolved(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_promise_no_multiple_resolved(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let pattern = "new Promise(";
     let mut pos = 0;
     while let Some(found) = source[pos..].find(pattern) {

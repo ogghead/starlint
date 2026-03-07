@@ -1,16 +1,16 @@
-//! Next.js WASM plugin for starlint (v2 — full AST tree + fix support).
+//! Next.js WASM plugin for starlint.
 //!
 //! Implements 22 Next.js lint rules as a single WASM component,
 //! using JSX node inspection, import analysis, and source-text scanning.
 
 wit_bindgen::generate!({
-    world: "linter-plugin-v2",
+    world: "linter-plugin",
     path: "wit",
 });
 
-use exports::starlint::plugin::plugin_v2::Guest;
+use exports::starlint::plugin::plugin::Guest;
 use starlint::plugin::types::{
-    Category, FileContext, LintDiagnosticV2, PluginConfig, RuleMeta, Severity, Span,
+    Category, FileContext, LintDiagnostic, PluginConfig, RuleMeta, Severity, Span,
 };
 
 struct NextjsPlugin;
@@ -57,7 +57,7 @@ impl Guest for NextjsPlugin {
         Vec::new()
     }
 
-    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnosticV2> {
+    fn lint_file(file: FileContext, tree: Vec<u8>) -> Vec<LintDiagnostic> {
         let tree: serde_json::Value = match serde_json::from_slice(&tree) {
             Ok(v) => v,
             Err(_) => serde_json::Value::Null,
@@ -112,8 +112,8 @@ fn rule(name: &str, desc: &str, cat: Category, sev: Severity) -> RuleMeta {
     }
 }
 
-fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
-    LintDiagnosticV2 {
+fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+    LintDiagnostic {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
@@ -124,8 +124,8 @@ fn warn(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
     }
 }
 
-fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnosticV2 {
-    LintDiagnosticV2 {
+fn err(rule: &str, msg: &str, start: usize, end: usize) -> LintDiagnostic {
+    LintDiagnostic {
         rule_name: rule.into(),
         message: msg.into(),
         span: Span { start: start as u32, end: end as u32 },
@@ -169,7 +169,7 @@ fn get_attr_value(tree: &serde_json::Value, jsx: &serde_json::Value, name: &str)
 // ==================== Source-text scanning rules ====================
 
 /// nextjs/no-async-client-component: async exports in "use client" files
-fn check_no_async_client_component(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_async_client_component(source: &str, diags: &mut Vec<LintDiagnostic>) {
     if !source.contains("\"use client\"") && !source.contains("'use client'") {
         return;
     }
@@ -191,7 +191,7 @@ fn check_no_async_client_component(source: &str, diags: &mut Vec<LintDiagnosticV
 }
 
 /// nextjs/no-duplicate-head: multiple Head imports/usages
-fn check_no_duplicate_head(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_duplicate_head(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let mut count = 0;
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("<Head") {
@@ -213,7 +213,7 @@ fn check_no_duplicate_head(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
 }
 
 /// nextjs/no-typos: common Next.js API name typos
-fn check_no_typos(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_typos(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let typos: &[(&str, &str)] = &[
         ("getstaticprops", "getStaticProps"),
         ("getStaticprops", "getStaticProps"),
@@ -236,7 +236,7 @@ fn check_no_typos(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
 }
 
 /// nextjs/no-assign-module-variable: assignment to module variable
-fn check_no_assign_module_variable(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_no_assign_module_variable(source: &str, diags: &mut Vec<LintDiagnostic>) {
     // Look for `module.exports =` or `module.exports=`
     let patterns = ["module.exports =", "module.exports="];
     for pattern in &patterns {
@@ -251,7 +251,7 @@ fn check_no_assign_module_variable(source: &str, diags: &mut Vec<LintDiagnosticV
 }
 
 /// nextjs/google-font-display: Google Fonts URLs should have display param
-fn check_google_font_display(source: &str, diags: &mut Vec<LintDiagnosticV2>) {
+fn check_google_font_display(source: &str, diags: &mut Vec<LintDiagnostic>) {
     let mut search_from = 0;
     while let Some(pos) = source[search_from..].find("fonts.googleapis.com") {
         let abs_pos = search_from + pos;
@@ -278,7 +278,7 @@ fn check_jsx_rules(
     _file_stem: &str,
     is_document: bool,
     is_app: bool,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let name = jsx.get("name").and_then(|n| n.as_str()).unwrap_or("");
     let span = extract_span(jsx).unwrap_or(Span { start: 0, end: 0 });
@@ -375,7 +375,7 @@ fn check_jsx_rules(
     // --- nextjs/inline-script-id ---
     if name == "Script" && !has_attr(tree, jsx, "src") && !has_attr(tree, jsx, "id") {
         // Inline Script without id — check if it has children or dangerouslySetInnerHTML
-        // In v2, children_count isn't directly available on JSXOpeningElement,
+        // In the serialized AST, children_count isn't directly available on JSXOpeningElement,
         // so we check for dangerouslySetInnerHTML attribute or use a heuristic
         let is_self_closing = jsx.get("self_closing").and_then(|s| s.as_bool()).unwrap_or(false);
         if !is_self_closing || has_attr(tree, jsx, "dangerouslySetInnerHTML") {
@@ -470,7 +470,7 @@ fn check_jsx_rules(
 fn check_import_rules(
     import: &serde_json::Value,
     is_document: bool,
-    diags: &mut Vec<LintDiagnosticV2>,
+    diags: &mut Vec<LintDiagnostic>,
 ) {
     let source_module = import.get("source").and_then(|s| s.as_str()).unwrap_or("");
     let span = extract_span(import).unwrap_or(Span { start: 0, end: 0 });
