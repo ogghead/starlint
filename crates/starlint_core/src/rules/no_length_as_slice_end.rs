@@ -5,21 +5,19 @@
 //! it is equivalent to omitting the second argument entirely since
 //! `.slice()` defaults to slicing to the end.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.slice(start, X.length)` patterns where `.length` is redundant.
 #[derive(Debug)]
 pub struct NoLengthAsSliceEnd;
 
-impl NativeRule for NoLengthAsSliceEnd {
+impl LintRule for NoLengthAsSliceEnd {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-length-as-slice-end".to_owned(),
@@ -29,21 +27,22 @@ impl NativeRule for NoLengthAsSliceEnd {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::indexing_slicing)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for `.slice(...)` member call
-        let Expression::StaticMemberExpression(slice_member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(slice_member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if slice_member.property.name.as_str() != "slice" {
+        if slice_member.property.as_str() != "slice" {
             return;
         }
 
@@ -52,26 +51,31 @@ impl NativeRule for NoLengthAsSliceEnd {
             return;
         }
 
-        let Some(second_arg) = call.arguments.get(1) else {
+        let second_arg_id = call.arguments[1];
+        let Some(second_arg) = ctx.node(second_arg_id) else {
             return;
         };
 
         // Check if the second argument is a `.length` member access
-        if !is_length_member_access(second_arg) {
+        let AstNode::StaticMemberExpression(length_member) = second_arg else {
+            return;
+        };
+        if length_member.property.as_str() != "length" {
             return;
         }
 
         // Extract the receiver of `.slice()` and the object of `.length`
         // to check if they refer to the same entity
-        let slice_receiver_text = extract_source_text(&slice_member.object, ctx.source_text());
-        let length_object_text = extract_length_object_source(second_arg, ctx.source_text());
+        let source = ctx.source_text();
+        let slice_receiver_text = extract_source_text_by_id(ctx, slice_member.object, source);
+        let length_object_text = extract_source_text_by_id(ctx, length_member.object, source);
 
         if let (Some(receiver), Some(length_obj)) = (slice_receiver_text, length_object_text) {
             if receiver == length_obj {
                 let call_span = Span::new(call.span.start, call.span.end);
                 // Remove from end of first argument to end of second argument
-                // This removes ", X.length" from ".slice(start, X.length)"
-                let first_arg_end = call.arguments.first().map_or(0, |a| a.span().end);
+                let first_arg_span = ctx.node(call.arguments[0]).map(starlint_ast::AstNode::span);
+                let first_arg_end = first_arg_span.map_or(0, |s| s.end);
                 let second_arg_end = second_arg.span().end;
                 let remove_span = Span::new(first_arg_end, second_arg_end);
                 ctx.report(Diagnostic {
@@ -96,50 +100,28 @@ impl NativeRule for NoLengthAsSliceEnd {
     }
 }
 
-/// Check if an argument is a `.length` static member expression.
-fn is_length_member_access(arg: &Argument<'_>) -> bool {
-    matches!(
-        arg,
-        Argument::StaticMemberExpression(member) if member.property.name.as_str() == "length"
-    )
-}
-
-/// Extract source text for an expression using span offsets.
-fn extract_source_text<'a>(expr: &Expression<'_>, source: &'a str) -> Option<&'a str> {
-    let span = expr.span();
+/// Extract source text for a node by its ID.
+fn extract_source_text_by_id<'a>(
+    ctx: &LintContext<'_>,
+    id: NodeId,
+    source: &'a str,
+) -> Option<&'a str> {
+    let node = ctx.node(id)?;
+    let span = node.span();
     let start = usize::try_from(span.start).unwrap_or(0);
     let end = usize::try_from(span.end).unwrap_or(0);
     source.get(start..end)
 }
 
-/// Extract the source text of the object in a `.length` member access argument.
-fn extract_length_object_source<'a>(arg: &Argument<'_>, source: &'a str) -> Option<&'a str> {
-    if let Argument::StaticMemberExpression(member) = arg {
-        extract_source_text(&member.object, source)
-    } else {
-        None
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoLengthAsSliceEnd)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLengthAsSliceEnd)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

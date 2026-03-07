@@ -5,13 +5,13 @@
 //! with more specific alternatives such as `object`, `Record<string, unknown>`,
 //! or a concrete type.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Default banned type names: (`banned_name`, message, replacement).
 const BANNED_TYPE_NAMES: &[(&str, &str, &str)] = &[
@@ -46,7 +46,7 @@ const BANNED_TYPE_NAMES: &[(&str, &str, &str)] = &[
 #[derive(Debug)]
 pub struct NoRestrictedTypes;
 
-impl NativeRule for NoRestrictedTypes {
+impl LintRule for NoRestrictedTypes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-restricted-types".to_owned(),
@@ -56,16 +56,16 @@ impl NativeRule for NoRestrictedTypes {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSTypeLiteral, AstType::TSTypeReference])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSTypeLiteral, AstNodeType::TSTypeReference])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::TSTypeReference(reference) => {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::TSTypeReference(reference) => {
                 check_type_reference(reference, ctx);
             }
-            AstKind::TSTypeLiteral(lit) => {
+            AstNode::TSTypeLiteral(lit) => {
                 check_empty_object_type(lit, ctx);
             }
             _ => {}
@@ -75,14 +75,11 @@ impl NativeRule for NoRestrictedTypes {
 
 /// Check if a type reference uses a banned type name.
 fn check_type_reference(
-    reference: &oxc_ast::ast::TSTypeReference<'_>,
-    ctx: &mut NativeLintContext<'_>,
+    reference: &starlint_ast::node::TSTypeReferenceNode,
+    ctx: &mut LintContext<'_>,
 ) {
-    let Some(ident) = reference.type_name.get_identifier_reference() else {
-        return;
-    };
-
-    let name = ident.name.as_str();
+    // TSTypeReferenceNode has type_name: String
+    let name = reference.type_name.as_str();
 
     for &(banned, message, replacement) in BANNED_TYPE_NAMES {
         if name == banned {
@@ -110,7 +107,7 @@ fn check_type_reference(
 
 /// Check if a type literal is an empty `{}` which is equivalent to any
 /// non-nullish value.
-fn check_empty_object_type(lit: &oxc_ast::ast::TSTypeLiteral<'_>, ctx: &mut NativeLintContext<'_>) {
+fn check_empty_object_type(lit: &starlint_ast::node::TSTypeLiteralNode, ctx: &mut LintContext<'_>) {
     if !lit.members.is_empty() {
         return;
     }
@@ -139,23 +136,13 @@ fn check_empty_object_type(lit: &oxc_ast::ast::TSTypeLiteral<'_>, ctx: &mut Nati
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoRestrictedTypes)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRestrictedTypes)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

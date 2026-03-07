@@ -5,19 +5,19 @@
 //! nothing else, `String.raw` makes the intent clearer and avoids
 //! double-escaping issues.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags template literals with escape sequences that could use `String.raw`.
 #[derive(Debug)]
 pub struct PreferStringRaw;
 
-impl NativeRule for PreferStringRaw {
+impl LintRule for PreferStringRaw {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-string-raw".to_owned(),
@@ -28,12 +28,12 @@ impl NativeRule for PreferStringRaw {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TemplateLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TemplateLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TemplateLiteral(template) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TemplateLiteral(template) = node else {
             return;
         };
 
@@ -47,15 +47,13 @@ impl NativeRule for PreferStringRaw {
             return;
         }
 
-        let Some(quasi) = template.quasis.first() else {
+        let Some(raw) = template.quasis.first() else {
             return;
         };
 
         // If the raw text contains a backslash, there are escape sequences.
-        // The `raw` field preserves the original source text (including `\n`,
-        // `\t`, etc.) while the `cooked` field contains the processed result.
-        // When they differ, escapes are present.
-        let raw = quasi.value.raw.as_str();
+        // The quasis are stored as raw strings preserving the original source
+        // text (including `\n`, `\t`, etc.).
         if !raw.contains('\\') {
             return;
         }
@@ -98,23 +96,13 @@ impl NativeRule for PreferStringRaw {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferStringRaw)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStringRaw)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

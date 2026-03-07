@@ -4,21 +4,19 @@
 //! `{["foo"]: 1}` is equivalent to `{foo: 1}` and the computed form
 //! is unnecessarily complex.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::PropertyKey;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags computed property keys that use a literal value unnecessarily.
 #[derive(Debug)]
 pub struct NoUselessComputedKey;
 
-impl NativeRule for NoUselessComputedKey {
+impl LintRule for NoUselessComputedKey {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-useless-computed-key".to_owned(),
@@ -28,28 +26,32 @@ impl NativeRule for NoUselessComputedKey {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::MethodDefinition,
-            AstType::ObjectProperty,
-            AstType::PropertyDefinition,
+            AstNodeType::MethodDefinition,
+            AstNodeType::ObjectProperty,
+            AstNodeType::PropertyDefinition,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let (computed, key, prop_span) = match kind {
-            AstKind::ObjectProperty(prop) => (prop.computed, &prop.key, prop.span),
-            AstKind::MethodDefinition(method) => (method.computed, &method.key, method.span),
-            AstKind::PropertyDefinition(prop) => (prop.computed, &prop.key, prop.span),
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let (computed, key_id, prop_span) = match node {
+            AstNode::ObjectProperty(prop) => (prop.computed, prop.key, prop.span),
+            AstNode::MethodDefinition(method) => (method.computed, method.key, method.span),
+            AstNode::PropertyDefinition(prop) => (prop.computed, prop.key, prop.span),
             _ => return,
         };
 
-        if !computed || !is_literal_key(key) {
+        let Some(key_node) = ctx.node(key_id) else {
+            return;
+        };
+
+        if !computed || !is_literal_key(key_node) {
             return;
         }
 
         let source = ctx.source_text();
-        let key_span = key.span();
+        let key_span = key_node.span();
         let key_start = usize::try_from(key_span.start).unwrap_or(0);
         let key_end = usize::try_from(key_span.end).unwrap_or(0);
         let key_source = source.get(key_start..key_end).unwrap_or("");
@@ -88,33 +90,20 @@ impl NativeRule for NoUselessComputedKey {
     }
 }
 
-/// Check if a property key is a literal string or number.
-const fn is_literal_key(key: &PropertyKey<'_>) -> bool {
-    matches!(
-        key,
-        PropertyKey::StringLiteral(_) | PropertyKey::NumericLiteral(_)
-    )
+/// Check if a property key node is a literal string or number.
+const fn is_literal_key(key: &AstNode) -> bool {
+    matches!(key, AstNode::StringLiteral(_) | AstNode::NumericLiteral(_))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessComputedKey)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessComputedKey)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

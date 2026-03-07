@@ -4,20 +4,19 @@
 //! can lead to confusing behavior and unexpected side effects.
 //! This is a simplified version that flags direct assignment to parameter names.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BindingPattern, FormalParameters, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags reassignment of function parameters (simplified).
 #[derive(Debug)]
 pub struct NoParamReassign;
 
-impl NativeRule for NoParamReassign {
+impl LintRule for NoParamReassign {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-param-reassign".to_owned(),
@@ -27,24 +26,27 @@ impl NativeRule for NoParamReassign {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Look for function declarations/expressions and check their body
         // for assignments to parameter names
-        let (params, body) = match kind {
-            AstKind::Function(func) => {
-                let Some(body) = &func.body else {
+        let (params, body_stmts) = match node {
+            AstNode::Function(func) => {
+                let Some(body_id) = func.body else {
                     return;
                 };
-                (&func.params, &body.statements)
+                let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+                    return;
+                };
+                (&func.params, &*body.statements)
             }
             _ => return,
         };
 
-        let param_names = collect_param_names(params);
+        let param_names = collect_param_names(params, ctx);
         if param_names.is_empty() {
             return;
         }
@@ -53,14 +55,20 @@ impl NativeRule for NoParamReassign {
         let source = ctx.source_text();
         let mut spans_to_report: Vec<(String, Span)> = Vec::new();
 
-        for stmt in body {
-            if let Statement::ExpressionStatement(expr_stmt) = stmt {
-                if let oxc_ast::ast::Expression::AssignmentExpression(assign) =
-                    &expr_stmt.expression
+        for stmt_id in body_stmts {
+            if let Some(AstNode::ExpressionStatement(expr_stmt)) = ctx.node(*stmt_id) {
+                if let Some(AstNode::AssignmentExpression(assign)) = ctx.node(expr_stmt.expression)
                 {
-                    let target_span = assign.left.span();
-                    let start = usize::try_from(target_span.start).unwrap_or(0);
-                    let end = usize::try_from(target_span.end).unwrap_or(0);
+                    let (start, end) = match ctx.node(assign.left) {
+                        Some(n) => {
+                            let s = n.span();
+                            (
+                                usize::try_from(s.start).unwrap_or(0),
+                                usize::try_from(s.end).unwrap_or(0),
+                            )
+                        }
+                        None => (0, 0),
+                    };
                     let target_text = source.get(start..end).unwrap_or("");
 
                     for name in &param_names {
@@ -89,14 +97,12 @@ impl NativeRule for NoParamReassign {
     }
 }
 
-use oxc_span::GetSpan;
-
-/// Collect parameter names from formal parameters.
-fn collect_param_names(params: &FormalParameters<'_>) -> Vec<String> {
+/// Collect parameter names from formal parameters (Box<[`NodeId`]>).
+fn collect_param_names(params: &[NodeId], ctx: &LintContext<'_>) -> Vec<String> {
     let mut names = Vec::new();
-    for param in &params.items {
-        if let BindingPattern::BindingIdentifier(id) = &param.pattern {
-            names.push(id.name.to_string());
+    for param_id in params {
+        if let Some(AstNode::BindingIdentifier(id)) = ctx.node(*param_id) {
+            names.push(id.name.clone());
         }
     }
     names
@@ -104,23 +110,13 @@ fn collect_param_names(params: &FormalParameters<'_>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoParamReassign)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoParamReassign)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

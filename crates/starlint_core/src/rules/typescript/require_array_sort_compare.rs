@@ -5,20 +5,19 @@
 //! lexicographically, which is often not what you want for numeric or complex
 //! data.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.sort()` calls with zero arguments.
 #[derive(Debug)]
 pub struct RequireArraySortCompare;
 
-impl NativeRule for RequireArraySortCompare {
+impl LintRule for RequireArraySortCompare {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/require-array-sort-compare".to_owned(),
@@ -29,20 +28,21 @@ impl NativeRule for RequireArraySortCompare {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
-            return;
-        };
+        let is_sort = matches!(
+            ctx.node(call.callee),
+            Some(AstNode::StaticMemberExpression(member)) if member.property.as_str() == "sort"
+        );
 
-        if member.property.name.as_str() != "sort" {
+        if !is_sort {
             return;
         }
 
@@ -62,23 +62,13 @@ impl NativeRule for RequireArraySortCompare {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RequireArraySortCompare)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RequireArraySortCompare)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

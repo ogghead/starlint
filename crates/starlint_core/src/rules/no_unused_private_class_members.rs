@@ -5,20 +5,19 @@
 
 use std::collections::{HashMap, HashSet};
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{ClassElement, Expression, PropertyKey};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags unused private class members (fields and methods).
 #[derive(Debug)]
 pub struct NoUnusedPrivateClassMembers;
 
-impl NativeRule for NoUnusedPrivateClassMembers {
+impl LintRule for NoUnusedPrivateClassMembers {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unused-private-class-members".to_owned(),
@@ -28,12 +27,13 @@ impl NativeRule for NoUnusedPrivateClassMembers {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Class])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Class])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Class(class) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Class(class) = node else {
             return;
         };
 
@@ -42,31 +42,66 @@ impl NativeRule for NoUnusedPrivateClassMembers {
         // Collect used private member names
         let mut used: HashSet<String> = HashSet::new();
 
-        for element in &class.body.body {
-            match element {
-                ClassElement::MethodDefinition(method) => {
-                    if let PropertyKey::PrivateIdentifier(id) = &method.key {
-                        let name = id.name.to_string();
-                        declared.insert(name, Span::new(id.span.start, id.span.end));
+        for element_id in &class.body {
+            match ctx.node(*element_id) {
+                Some(AstNode::MethodDefinition(method)) => {
+                    let key_id = method.key;
+                    let value_id = method.value;
+                    // Check if key is a private identifier by looking at source text
+                    if let Some(key_node) = ctx.node(key_id) {
+                        let key_span = key_node.span();
+                        let source = ctx.source_text();
+                        if let Some(key_text) =
+                            source.get(key_span.start as usize..key_span.end as usize)
+                        {
+                            if key_text.starts_with('#') {
+                                let name = key_text.trim_start_matches('#').to_owned();
+                                declared.insert(name, Span::new(key_span.start, key_span.end));
+                            }
+                        }
                     }
                     // Check method body for private member usage
-                    if let Some(body) = &method.value.body {
-                        collect_private_references_from_source(
-                            ctx.source_text(),
-                            body.span.start,
-                            body.span.end,
-                            &mut used,
-                        );
+                    if let Some(AstNode::Function(func)) = ctx.node(value_id) {
+                        if let Some(body_id) = func.body {
+                            if let Some(body_node) = ctx.node(body_id) {
+                                let body_span = body_node.span();
+                                collect_private_references_from_source(
+                                    ctx.source_text(),
+                                    body_span.start,
+                                    body_span.end,
+                                    &mut used,
+                                );
+                            }
+                        }
                     }
                 }
-                ClassElement::PropertyDefinition(prop) => {
-                    if let PropertyKey::PrivateIdentifier(id) = &prop.key {
-                        let name = id.name.to_string();
-                        declared.insert(name, Span::new(id.span.start, id.span.end));
+                Some(AstNode::PropertyDefinition(prop)) => {
+                    let key_id = prop.key;
+                    let value_opt = prop.value;
+                    // Check if key is a private identifier by looking at source text
+                    if let Some(key_node) = ctx.node(key_id) {
+                        let key_span = key_node.span();
+                        let source = ctx.source_text();
+                        if let Some(key_text) =
+                            source.get(key_span.start as usize..key_span.end as usize)
+                        {
+                            if key_text.starts_with('#') {
+                                let name = key_text.trim_start_matches('#').to_owned();
+                                declared.insert(name, Span::new(key_span.start, key_span.end));
+                            }
+                        }
                     }
-                    // Check initializer for private member usage
-                    if let Some(init) = &prop.value {
-                        collect_private_references_from_expr(init, &mut used);
+                    // Check initializer for private member usage via source text
+                    if let Some(init_id) = value_opt {
+                        if let Some(init_node) = ctx.node(init_id) {
+                            let init_span = init_node.span();
+                            collect_private_references_from_source(
+                                ctx.source_text(),
+                                init_span.start,
+                                init_span.end,
+                                &mut used,
+                            );
+                        }
                     }
                 }
                 _ => {}
@@ -134,34 +169,15 @@ fn collect_private_references_from_source(
     }
 }
 
-/// Collect private member references from an expression.
-fn collect_private_references_from_expr(expr: &Expression<'_>, used: &mut HashSet<String>) {
-    if let Expression::PrivateFieldExpression(field) = expr {
-        used.insert(field.field.name.to_string());
-    }
-    // For more complex expressions we'd need recursive walking;
-    // the source text heuristic above covers most cases.
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnusedPrivateClassMembers)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnusedPrivateClassMembers)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

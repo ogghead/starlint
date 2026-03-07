@@ -2,14 +2,13 @@
 //!
 //! Forbid words like "image", "picture", or "photo" in `<img>` alt text.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/img-redundant-alt";
@@ -20,7 +19,7 @@ const REDUNDANT_WORDS: &[&str] = &["image", "picture", "photo", "img", "photogra
 #[derive(Debug)]
 pub struct ImgRedundantAlt;
 
-impl NativeRule for ImgRedundantAlt {
+impl LintRule for ImgRedundantAlt {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -31,51 +30,44 @@ impl NativeRule for ImgRedundantAlt {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let is_img = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str() == "img",
-            _ => false,
-        };
-
-        if !is_img {
+        // opening.name is a String
+        if opening.name.as_str() != "img" {
             return;
         }
 
-        for item in &opening.attributes {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let is_alt = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "alt",
-                    JSXAttributeName::NamespacedName(_) => false,
-                };
-
-                if !is_alt {
+        for attr_id in &*opening.attributes {
+            if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
+                if attr.name.as_str() != "alt" {
                     continue;
                 }
 
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    let alt_lower = lit.value.as_str().to_lowercase();
-                    for word in REDUNDANT_WORDS {
-                        if alt_lower.contains(word) {
-                            ctx.report(Diagnostic {
-                                rule_name: RULE_NAME.to_owned(),
-                                message: format!(
-                                    "Redundant alt text. Screen readers already announce `<img>` elements as images. Avoid using \"{word}\""
-                                ),
-                                span: Span::new(opening.span.start, opening.span.end),
-                                severity: Severity::Warning,
-                                help: None,
-                                fix: None,
-                                labels: vec![],
-                            });
-                            break;
+                if let Some(value_id) = attr.value {
+                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                        let alt_lower = lit.value.as_str().to_lowercase();
+                        for word in REDUNDANT_WORDS {
+                            if alt_lower.contains(word) {
+                                ctx.report(Diagnostic {
+                                    rule_name: RULE_NAME.to_owned(),
+                                    message: format!(
+                                        "Redundant alt text. Screen readers already announce `<img>` elements as images. Avoid using \"{word}\""
+                                    ),
+                                    span: Span::new(opening.span.start, opening.span.end),
+                                    severity: Severity::Warning,
+                                    help: None,
+                                    fix: None,
+                                    labels: vec![],
+                                });
+                                break;
+                            }
                         }
                     }
                 }
@@ -86,22 +78,13 @@ impl NativeRule for ImgRedundantAlt {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ImgRedundantAlt)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ImgRedundantAlt)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

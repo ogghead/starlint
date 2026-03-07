@@ -359,6 +359,7 @@ use crate::rule::NativeRule;
 // ---------------------------------------------------------------------------
 
 /// Test-runner files (jest / vitest): skip unless the source contains test globals.
+#[allow(dead_code)]
 fn is_test_file(source: &str, _path: &std::path::Path) -> bool {
     source.contains("describe(")
         || source.contains("test(")
@@ -367,11 +368,13 @@ fn is_test_file(source: &str, _path: &std::path::Path) -> bool {
 }
 
 /// `JSDoc`-annotated files: skip unless the source contains a `JSDoc` comment opener.
+#[allow(dead_code)]
 fn is_jsdoc_file(source: &str, _path: &std::path::Path) -> bool {
     source.contains("/**")
 }
 
 /// JSX files: skip unless the source contains JSX syntax.
+#[allow(dead_code)]
 fn is_jsx_file(source: &str, _path: &std::path::Path) -> bool {
     // Fast heuristic: JSX always uses `<` followed by an uppercase letter or
     // a lowercase tag name. Checking for `<` alone would match `<` in
@@ -381,6 +384,7 @@ fn is_jsx_file(source: &str, _path: &std::path::Path) -> bool {
 }
 
 /// Next.js files: skip unless the source references Next.js-specific APIs.
+#[allow(dead_code)]
 fn is_nextjs_file(source: &str, _path: &std::path::Path) -> bool {
     source.contains("next/")
         || source.contains("getServerSideProps")
@@ -389,6 +393,7 @@ fn is_nextjs_file(source: &str, _path: &std::path::Path) -> bool {
 }
 
 /// Storybook story files: skip unless the path or source matches story patterns.
+#[allow(dead_code)]
 fn is_storybook_file(source: &str, path: &std::path::Path) -> bool {
     let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
     file_name.contains(".stories.")
@@ -397,6 +402,7 @@ fn is_storybook_file(source: &str, path: &std::path::Path) -> bool {
 }
 
 /// Vue files: skip unless the source uses Vue APIs.
+#[allow(dead_code)]
 fn is_vue_file(source: &str, _path: &std::path::Path) -> bool {
     source.contains("defineComponent") || source.contains("createApp") || source.contains("vue")
 }
@@ -405,278 +411,7 @@ fn is_vue_file(source: &str, _path: &std::path::Path) -> bool {
 #[must_use]
 #[allow(clippy::too_many_lines, clippy::large_stack_frames)]
 pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
-    let mut rules: Vec<Box<dyn NativeRule>> = vec![
-        Box::new(accessor_pairs::AccessorPairs),
-        Box::new(array_callback_return::ArrayCallbackReturn),
-        Box::new(arrow_body_style::ArrowBodyStyle),
-        Box::new(bad_array_method_on_arguments::BadArrayMethodOnArguments),
-        Box::new(block_scoped_var::BlockScopedVar::new()),
-        Box::new(bad_min_max_func::BadMinMaxFunc),
-        Box::new(bad_object_literal_comparison::BadObjectLiteralComparison),
-        Box::new(better_regex::BetterRegex),
-        Box::new(branches_sharing_code::BranchesSharingCode),
-        Box::new(catch_error_name::CatchErrorName::new()),
-        Box::new(consistent_assert::ConsistentAssert),
-        Box::new(consistent_date_clone::ConsistentDateClone),
-        Box::new(consistent_destructuring::ConsistentDestructuring::new()),
-        Box::new(consistent_existence_index_check::ConsistentExistenceIndexCheck),
-        Box::new(consistent_function_scoping::ConsistentFunctionScoping::new()),
-        Box::new(consistent_template_literal_escape::ConsistentTemplateLiteralEscape),
-        Box::new(class_methods_use_this::ClassMethodsUseThis::new()),
-        Box::new(const_comparisons::ConstComparisons),
-        Box::new(constructor_super::ConstructorSuper),
-        Box::new(curly::Curly),
-        // default_case → migrated to LintRule
-        // default_case_last → migrated to LintRule
-        Box::new(default_param_last::DefaultParamLast),
-        Box::new(explicit_length_check::ExplicitLengthCheck),
-        Box::new(for_direction::ForDirection),
-        Box::new(getter_return::GetterReturn),
-        Box::new(grouped_accessor_pairs::GroupedAccessorPairs),
-        Box::new(guard_for_in::GuardForIn),
-        Box::new(init_declarations::InitDeclarations),
-        Box::new(max_classes_per_file::MaxClassesPerFile::new()),
-        Box::new(max_complexity::MaxComplexity::new()),
-        Box::new(max_depth::MaxDepth::new()),
-        Box::new(max_lines_per_function::MaxLinesPerFunction::new()),
-        Box::new(max_nested_callbacks::MaxNestedCallbacks::new()),
-        // max_params → migrated to LintRule
-        Box::new(max_statements::MaxStatements::new()),
-        Box::new(misrefactored_assign_op::MisrefactoredAssignOp),
-        Box::new(missing_throw::MissingThrow),
-        Box::new(new_cap::NewCap),
-        Box::new(new_for_builtins::NewForBuiltins),
-        Box::new(no_accessor_recursion::NoAccessorRecursion),
-        Box::new(no_accumulating_spread::NoAccumulatingSpread),
-        Box::new(no_anonymous_default_export::NoAnonymousDefaultExport),
-        Box::new(no_array_reverse::NoArrayReverse),
-        Box::new(no_array_callback_reference::NoArrayCallbackReference),
-        Box::new(no_array_for_each::NoArrayForEach),
-        Box::new(no_array_method_this_argument::NoArrayMethodThisArgument),
-        Box::new(no_array_push_push::NoArrayPushPush::new()),
-        Box::new(no_array_reduce::NoArrayReduce),
-        Box::new(no_array_sort::NoArraySort),        Box::new(no_async_endpoint_handlers::NoAsyncEndpointHandlers),
-        Box::new(no_async_promise_executor::NoAsyncPromiseExecutor),
-        Box::new(no_await_in_loop::NoAwaitInLoop::new()),
-        Box::new(no_await_in_promise_methods::NoAwaitInPromiseMethods),
-        Box::new(no_await_expression_member::NoAwaitExpressionMember),
-        Box::new(no_case_declarations::NoCaseDeclarations),
-        Box::new(no_class_assign::NoClassAssign),
-        Box::new(no_cond_assign::NoCondAssign),
-        Box::new(no_console::NoConsole),
-        Box::new(no_console_spaces::NoConsoleSpaces),
-        Box::new(no_const_assign::NoConstAssign),
-        Box::new(no_constant_binary_expression::NoConstantBinaryExpression),
-        Box::new(no_constant_condition::NoConstantCondition),
-        Box::new(no_constructor_return::NoConstructorReturn),        Box::new(no_dupe_class_members::NoDupeClassMembers),
-        Box::new(no_dupe_else_if::NoDupeElseIf),
-        Box::new(no_dupe_keys::NoDupeKeys),
-        // no_duplicate_case → migrated to LintRule
-        // no_duplicate_imports → migrated to LintRule
-        Box::new(no_else_return::NoElseReturn),
-        Box::new(no_eval::NoEval),
-        Box::new(no_ex_assign::NoExAssign),
-        Box::new(no_extend_native::NoExtendNative),
-        Box::new(no_extra_bind::NoExtraBind),
-        Box::new(no_extra_label::NoExtraLabel),
-        Box::new(no_fallthrough::NoFallthrough),
-        Box::new(no_func_assign::NoFuncAssign),
-        Box::new(no_global_assign::NoGlobalAssign),
-        Box::new(no_immediate_mutation::NoImmediateMutation),
-        Box::new(no_implicit_coercion::NoImplicitCoercion),
-        Box::new(no_import_assign::NoImportAssign),
-        Box::new(no_inner_declarations::NoInnerDeclarations),
-        Box::new(no_instanceof_array::NoInstanceofArray),
-        Box::new(no_instanceof_builtins::NoInstanceofBuiltins),
-        Box::new(no_invalid_fetch_options::NoInvalidFetchOptions),
-        Box::new(no_invalid_regexp::NoInvalidRegexp),
-        Box::new(no_invalid_remove_event_listener::NoInvalidRemoveEventListener),
-        Box::new(no_length_as_slice_end::NoLengthAsSliceEnd),
-        Box::new(no_lone_blocks::NoLoneBlocks),
-        Box::new(no_lonely_if::NoLonelyIf),
-        Box::new(no_loop_func::NoLoopFunc),
-        Box::new(no_magic_array_flat_depth::NoMagicArrayFlatDepth),        Box::new(no_map_spread::NoMapSpread),        Box::new(no_negated_condition::NoNegatedCondition),
-        Box::new(no_negation_in_equality_check::NoNegationInEqualityCheck),
-        Box::new(no_new_array::NoNewArray),
-        Box::new(no_new_buffer::NoNewBuffer),
-        Box::new(no_new_native_nonconstructor::NoNewNativeNonconstructor),
-        Box::new(no_obj_calls::NoObjCalls),
-        Box::new(no_object_as_default_parameter::NoObjectAsDefaultParameter),
-        Box::new(no_object_constructor::NoObjectConstructor),
-        Box::new(no_param_reassign::NoParamReassign),
-        Box::new(no_promise_executor_return::NoPromiseExecutorReturn),
-        Box::new(no_prototype_builtins::NoPrototypeBuiltins),
-        Box::new(no_redeclare::NoRedeclare),        Box::new(no_rest_spread_properties::NoRestSpreadProperties),
-        Box::new(no_return_assign::NoReturnAssign),
-        Box::new(no_self_assign::NoSelfAssign),
-        Box::new(no_self_compare::NoSelfCompare),
-        // no_sequences → migrated to LintRule
-        Box::new(no_setter_return::NoSetterReturn),
-        Box::new(no_shadow::NoShadow),
-        Box::new(no_single_promise_in_promise_methods::NoSinglePromiseInPromiseMethods),
-        Box::new(no_sparse_arrays::NoSparseArrays),
-        Box::new(no_static_only_class::NoStaticOnlyClass),
-        Box::new(no_thenable::NoThenable),
-        Box::new(no_this_before_super::NoThisBeforeSuper),
-        Box::new(no_typeof_undefined::NoTypeofUndefined),
-        Box::new(no_unassigned_vars::NoUnassignedVars),
-        Box::new(no_undef::NoUndef),
-        Box::new(no_unmodified_loop_condition::NoUnmodifiedLoopCondition),
-        Box::new(no_unexpected_multiline::NoUnexpectedMultiline),
-        Box::new(no_unnecessary_array_flat_depth::NoUnnecessaryArrayFlatDepth),
-        Box::new(no_unnecessary_array_splice_count::NoUnnecessaryArraySpliceCount),
-        Box::new(no_unnecessary_await::NoUnnecessaryAwait),
-        Box::new(no_unnecessary_slice_end::NoUnnecessarySliceEnd),
-        Box::new(no_unneeded_ternary::NoUnneededTernary),
-        Box::new(no_unreachable::NoUnreachable),
-        Box::new(no_unreadable_array_destructuring::NoUnreadableArrayDestructuring),
-        Box::new(no_unreadable_iife::NoUnreadableIife),
-        Box::new(no_unsafe_finally::NoUnsafeFinally),
-        Box::new(no_unsafe_negation::NoUnsafeNegation),
-        Box::new(no_unsafe_optional_chaining::NoUnsafeOptionalChaining),
-        Box::new(no_unused_expressions::NoUnusedExpressions),
-        Box::new(no_unused_labels::NoUnusedLabels),
-        Box::new(no_unused_private_class_members::NoUnusedPrivateClassMembers),
-        Box::new(no_unused_vars::NoUnusedVars),
-        Box::new(no_use_before_define::NoUseBeforeDefine),        Box::new(no_useless_call::NoUselessCall),
-        Box::new(no_useless_catch::NoUselessCatch),
-        Box::new(no_useless_collection_argument::NoUselessCollectionArgument),
-        Box::new(no_useless_computed_key::NoUselessComputedKey),
-        Box::new(no_useless_constructor::NoUselessConstructor),
-        Box::new(no_useless_error_capture_stack_trace::NoUselessErrorCaptureStackTrace),
-        Box::new(no_useless_fallback_in_spread::NoUselessFallbackInSpread),
-        Box::new(no_useless_length_check::NoUselessLengthCheck),
-        Box::new(no_useless_promise_resolve_reject::NoUselessPromiseResolveReject),
-        // no_useless_rename → migrated to LintRule
-        Box::new(no_useless_return::NoUselessReturn),
-        Box::new(no_useless_spread::NoUselessSpread),
-        // no_useless_switch_case → migrated to LintRule
-        Box::new(no_useless_undefined::NoUselessUndefined),
-        Box::new(number_arg_out_of_range::NumberArgOutOfRange),
-        Box::new(only_used_in_recursion::OnlyUsedInRecursion),
-        Box::new(operator_assignment::OperatorAssignment),
-        Box::new(prefer_array_find::PreferArrayFind),
-        Box::new(prefer_array_flat::PreferArrayFlat),
-        Box::new(prefer_array_flat_map::PreferArrayFlatMap),
-        Box::new(prefer_array_index_of::PreferArrayIndexOf),
-        Box::new(prefer_array_some::PreferArraySome),
-        Box::new(prefer_add_event_listener::PreferAddEventListener),
-        Box::new(prefer_at::PreferAt),
-        Box::new(prefer_bigint_literals::PreferBigintLiterals),
-        Box::new(prefer_blob_reading_methods::PreferBlobReadingMethods),
-        Box::new(prefer_class_fields::PreferClassFields),
-        Box::new(prefer_classlist_toggle::PreferClasslistToggle),
-        Box::new(prefer_code_point::PreferCodePoint),
-        Box::new(prefer_const::PreferConst),
-        Box::new(prefer_date_now::PreferDateNow),
-        Box::new(prefer_default_parameters::PreferDefaultParameters),
-        Box::new(prefer_destructuring::PreferDestructuring),
-        Box::new(prefer_dom_node_append::PreferDomNodeAppend),
-        Box::new(prefer_dom_node_dataset::PreferDomNodeDataset),
-        Box::new(prefer_dom_node_remove::PreferDomNodeRemove),
-        Box::new(prefer_dom_node_text_content::PreferDomNodeTextContent),
-        Box::new(prefer_event_target::PreferEventTarget),
-        Box::new(prefer_exponentiation_operator::PreferExponentiationOperator),
-        Box::new(prefer_includes::PreferIncludes),
-        Box::new(prefer_keyboard_event_key::PreferKeyboardEventKey),
-        Box::new(prefer_logical_operator_over_ternary::PreferLogicalOperatorOverTernary),
-        Box::new(prefer_math_min_max::PreferMathMinMax),
-        Box::new(prefer_math_trunc::PreferMathTrunc),
-        Box::new(prefer_modern_dom_apis::PreferModernDomApis),
-        Box::new(prefer_modern_math_apis::PreferModernMathApis),
-        Box::new(prefer_module::PreferModule),
-        Box::new(prefer_native_coercion_functions::PreferNativeCoercionFunctions),
-        Box::new(prefer_negative_index::PreferNegativeIndex),        Box::new(prefer_number_properties::PreferNumberProperties),
-        Box::new(prefer_numeric_literals::PreferNumericLiterals),
-        Box::new(prefer_object_from_entries::PreferObjectFromEntries),
-        Box::new(prefer_object_has_own::PreferObjectHasOwn),
-        Box::new(prefer_object_spread::PreferObjectSpread),
-        Box::new(prefer_optional_catch_binding::PreferOptionalCatchBinding),
-        Box::new(prefer_promise_reject_errors::PreferPromiseRejectErrors),
-        Box::new(prefer_prototype_methods::PreferPrototypeMethods),
-        Box::new(prefer_query_selector::PreferQuerySelector),
-        Box::new(prefer_reflect_apply::PreferReflectApply),
-        Box::new(prefer_regexp_test::PreferRegexpTest),
-        Box::new(prefer_response_static_json::PreferResponseStaticJson),
-        Box::new(prefer_set_has::PreferSetHas),
-        Box::new(prefer_set_size::PreferSetSize),
-        Box::new(prefer_spread::PreferSpread),
-        Box::new(prefer_string_raw::PreferStringRaw),
-        Box::new(prefer_string_replace_all::PreferStringReplaceAll),
-        Box::new(prefer_string_slice::PreferStringSlice),
-        Box::new(prefer_string_starts_ends_with::PreferStringStartsEndsWith),
-        Box::new(prefer_string_trim_start_end::PreferStringTrimStartEnd),
-        Box::new(prefer_structured_clone::PreferStructuredClone),
-        Box::new(prefer_switch::PreferSwitch),
-        Box::new(prefer_template::PreferTemplate),
-        Box::new(prefer_ternary::PreferTernary),
-        Box::new(prefer_top_level_await::PreferTopLevelAwait),
-        Box::new(prefer_type_error::PreferTypeError),
-        Box::new(preserve_caught_error::PreserveCaughtError),
-        Box::new(prevent_abbreviations::PreventAbbreviations),
-        Box::new(radix::Radix),
-        Box::new(relative_url_style::RelativeUrlStyle),
-        Box::new(require_array_join_separator::RequireArrayJoinSeparator),
-        // require_await → migrated to LintRule
-        Box::new(require_module_attributes::RequireModuleAttributes),
-        Box::new(require_module_specifiers::RequireModuleSpecifiers),
-        Box::new(require_number_to_fixed_digits_argument::RequireNumberToFixedDigitsArgument),
-        Box::new(require_post_message_target_origin::RequirePostMessageTargetOrigin),
-        // require_yield → migrated to LintRule
-        Box::new(sort_imports::SortImports),
-        Box::new(sort_keys::SortKeys),
-        Box::new(sort_vars::SortVars),
-        Box::new(switch_case_braces::SwitchCaseBraces),
-        Box::new(throw_new_error::ThrowNewError),
-        Box::new(uninvoked_array_callback::UninvokedArrayCallback),
-        Box::new(vars_on_top::VarsOnTop),
-        Box::new(yoda::Yoda),
-    ];
-
-    // Append prefixed plugin-category rules, skipping categories handled by
-    // active builtin plugins.
-    //
-    // Categories with file-level guards skip irrelevant files entirely
-    // (e.g. jest rules skip non-test files), reducing per-node dispatch cost.
-    rules.extend(import::category_rules());
-    rules.extend(category_guard::guard_all(
-        jest::category_rules(),
-        is_test_file,
-    ));
-    rules.extend(category_guard::guard_all(
-        jsdoc::category_rules(),
-        is_jsdoc_file,
-    ));
-    rules.extend(category_guard::guard_all(
-        jsx_a11y::category_rules(),
-        is_jsx_file,
-    ));
-    rules.extend(category_guard::guard_all(
-        nextjs::category_rules(),
-        is_nextjs_file,
-    ));
-    rules.extend(node::category_rules());
-    rules.extend(promise::category_rules());
-    rules.extend(react::category_rules());
-    rules.extend(category_guard::guard_all(
-        react_perf::category_rules(),
-        is_jsx_file,
-    ));
-    rules.extend(category_guard::guard_all(
-        storybook::category_rules(),
-        is_storybook_file,
-    ));
-    rules.extend(typescript::category_rules());
-    rules.extend(category_guard::guard_all(
-        vitest::category_rules(),
-        is_test_file,
-    ));
-    rules.extend(category_guard::guard_all(
-        vue::category_rules(),
-        is_vue_file,
-    ));
-
-    rules
+    vec![]
 }
 
 /// Mapping from builtin plugin name to the native rule‐name prefixes it replaces.

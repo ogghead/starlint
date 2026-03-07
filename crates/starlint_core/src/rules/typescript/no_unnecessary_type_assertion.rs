@@ -4,24 +4,24 @@
 //! type `T`. Without full type inference we detect obvious literal cases:
 //! string literal `as string`, number literal `as number`, boolean literal
 //! `as boolean`, `null as null`, and `undefined as undefined`.
-
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, TSType};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
+//!
+//! Since `TSAsExpressionNode` has no `type_annotation` field in `starlint_ast`,
+//! we use source-text parsing to extract the type keyword after ` as `.
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `as T` assertions that are unnecessary because the expression already
 /// matches the asserted type.
 #[derive(Debug)]
 pub struct NoUnnecessaryTypeAssertion;
 
-impl NativeRule for NoUnnecessaryTypeAssertion {
+impl LintRule for NoUnnecessaryTypeAssertion {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-unnecessary-type-assertion".to_owned(),
@@ -32,22 +32,33 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSAsExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSAsExpression])
     }
 
-    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSAsExpression(expr) = kind else {
+    #[allow(clippy::as_conversions)] // u32->usize is lossless on 32/64-bit
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSAsExpression(expr) = node else {
             return;
         };
 
-        if let Some(description) = is_unnecessary_assertion(&expr.expression, &expr.type_annotation)
-        {
+        let expr_node = ctx.node(expr.expression);
+
+        // Extract the type annotation from source text.
+        // TSAsExpression spans `expr as T`; we find the text after " as ".
+        let source = ctx.source_text();
+        let full_text = source
+            .get(expr.span.start as usize..expr.span.end as usize)
+            .unwrap_or("");
+        let type_text = full_text.rsplit_once(" as ").map_or("", |(_, t)| t.trim());
+
+        if let Some(description) = is_unnecessary_assertion(expr_node, type_text) {
             // Fix: replace `expr as T` with just `expr`
-            let inner_span = expr.expression.span();
-            let inner_text =
-                ctx.source_text()[inner_span.start as usize..inner_span.end as usize].to_owned();
+            let inner_span = expr_node.map(starlint_ast::AstNode::span);
+            let inner_text = inner_span
+                .and_then(|s| source.get(s.start as usize..s.end as usize))
+                .unwrap_or("")
+                .to_owned();
 
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-unnecessary-type-assertion".to_owned(),
@@ -55,7 +66,7 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
                 span: Span::new(expr.span.start, expr.span.end),
                 severity: Severity::Warning,
                 help: Some(format!(
-                    "Remove the `as` assertion — replace with `{inner_text}`"
+                    "Remove the `as` assertion \u{2014} replace with `{inner_text}`"
                 )),
                 fix: Some(Fix {
                     kind: FixKind::SafeFix,
@@ -77,26 +88,18 @@ impl NativeRule for NoUnnecessaryTypeAssertion {
 ///
 /// Returns a human-readable description when the assertion is unnecessary,
 /// or `None` when it is (potentially) meaningful.
-fn is_unnecessary_assertion<'a>(
-    expression: &Expression<'a>,
-    type_annotation: &TSType<'a>,
-) -> Option<&'static str> {
-    match (expression, type_annotation) {
-        (Expression::StringLiteral(_), TSType::TSStringKeyword(_)) => {
-            Some("string literal is already of type `string`")
-        }
-        (Expression::NumericLiteral(_), TSType::TSNumberKeyword(_)) => {
+fn is_unnecessary_assertion(expression: Option<&AstNode>, type_text: &str) -> Option<&'static str> {
+    let expr = expression?;
+    match (expr, type_text) {
+        (AstNode::StringLiteral(_), "string") => Some("string literal is already of type `string`"),
+        (AstNode::NumericLiteral(_), "number") => {
             Some("number literal is already of type `number`")
         }
-        (Expression::BooleanLiteral(_), TSType::TSBooleanKeyword(_)) => {
+        (AstNode::BooleanLiteral(_), "boolean") => {
             Some("boolean literal is already of type `boolean`")
         }
-        (Expression::NullLiteral(_), TSType::TSNullKeyword(_)) => {
-            Some("`null` is already of type `null`")
-        }
-        (Expression::Identifier(ident), TSType::TSUndefinedKeyword(_))
-            if ident.name == "undefined" =>
-        {
+        (AstNode::NullLiteral(_), "null") => Some("`null` is already of type `null`"),
+        (AstNode::IdentifierReference(ident), "undefined") if ident.name == "undefined" => {
             Some("`undefined` is already of type `undefined`")
         }
         _ => None,
@@ -105,23 +108,13 @@ fn is_unnecessary_assertion<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnnecessaryTypeAssertion)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryTypeAssertion)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

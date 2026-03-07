@@ -4,22 +4,22 @@
 //! are most likely errors. This rule flags variables, functions, and
 //! function parameters that are declared but never read.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::VariableDeclarationKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::VariableDeclarationKind;
+use starlint_ast::types::NodeId;
 
 /// Flags variables that are declared but never read.
 #[derive(Debug)]
 pub struct NoUnusedVars;
 
-impl NativeRule for NoUnusedVars {
+impl LintRule for NoUnusedVars {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unused-vars".to_owned(),
@@ -33,12 +33,12 @@ impl NativeRule for NoUnusedVars {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclaration(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclaration(decl) = node else {
             return;
         };
 
@@ -59,10 +59,14 @@ impl NativeRule for NoUnusedVars {
         let mut total_bindings: usize = 0;
         let mut unused_infos: Vec<(String, Span)> = Vec::new();
 
-        for declarator in &decl.declarations {
-            let binding_ids = declarator.id.get_binding_identifiers();
+        for &declarator_id in &*decl.declarations {
+            let Some(AstNode::VariableDeclarator(declarator)) = ctx.node(declarator_id) else {
+                continue;
+            };
+            let pattern_id = declarator.id;
+            let bindings = ctx.tree().get_binding_identifiers(pattern_id);
 
-            for binding in &binding_ids {
+            for (_, binding) in &bindings {
                 // Skip variables starting with `_` (conventional "unused" marker)
                 if binding.name.starts_with('_') {
                     continue;
@@ -70,7 +74,7 @@ impl NativeRule for NoUnusedVars {
 
                 total_bindings = total_bindings.saturating_add(1);
 
-                let Some(symbol_id) = binding.symbol_id.get() else {
+                let Some(symbol_id) = ctx.resolve_symbol_id(binding.span) else {
                     continue;
                 };
 
@@ -81,7 +85,7 @@ impl NativeRule for NoUnusedVars {
 
                 if !has_read {
                     unused_infos.push((
-                        binding.name.to_string(),
+                        binding.name.clone(),
                         Span::new(binding.span.start, binding.span.end),
                     ));
                 }
@@ -114,30 +118,13 @@ impl NativeRule for NoUnusedVars {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnusedVars)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnusedVars)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

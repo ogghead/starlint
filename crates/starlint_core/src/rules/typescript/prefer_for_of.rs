@@ -8,23 +8,20 @@
 //! pattern: numeric initializer at `0`, a `.length` comparison test, and
 //! an increment (`++`) update.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{
-    BinaryOperator, BindingPattern, Expression, ForStatementInit, SimpleAssignmentTarget,
-    UpdateOperator,
-};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{BinaryOperator, UpdateOperator};
+use starlint_ast::types::NodeId;
 
 /// Flags classic index-based `for` loops that could use `for...of`.
 #[derive(Debug)]
 pub struct PreferForOf;
 
-impl NativeRule for PreferForOf {
+impl LintRule for PreferForOf {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/prefer-for-of".to_owned(),
@@ -34,36 +31,36 @@ impl NativeRule for PreferForOf {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ForStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ForStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ForStatement(stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ForStatement(stmt) = node else {
             return;
         };
 
         // Step 1: init must be `let i = 0` (variable declaration with numeric literal 0)
-        let Some(init) = &stmt.init else {
+        let Some(init_id) = stmt.init else {
             return;
         };
-        let Some(counter_name) = extract_zero_init(init) else {
+        let Some(counter_name) = extract_zero_init(init_id, ctx) else {
             return;
         };
 
         // Step 2: test must be `i < <something>.length`
-        let Some(test) = &stmt.test else {
+        let Some(test_id) = stmt.test else {
             return;
         };
-        if !is_length_comparison(test, counter_name) {
+        if !is_length_comparison(test_id, &counter_name, ctx) {
             return;
         }
 
         // Step 3: update must be `i++` or `++i`
-        let Some(update) = &stmt.update else {
+        let Some(update_id) = stmt.update else {
             return;
         };
-        if !is_increment(update, counter_name) {
+        if !is_increment(update_id, &counter_name, ctx) {
             return;
         }
 
@@ -82,15 +79,19 @@ impl NativeRule for PreferForOf {
 
 /// Check if the `for` loop init is a `VariableDeclaration` with a single
 /// declarator initialized to `0`. Returns the counter variable name if so.
-fn extract_zero_init<'a>(init: &'a ForStatementInit<'a>) -> Option<&'a str> {
-    let ForStatementInit::VariableDeclaration(decl) = init else {
+fn extract_zero_init(init_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let AstNode::VariableDeclaration(decl) = ctx.node(init_id)? else {
         return None;
     };
 
-    let declarator = decl.declarations.first()?;
+    let &first_decl_id = decl.declarations.first()?;
+    let AstNode::VariableDeclarator(declarator) = ctx.node(first_decl_id)? else {
+        return None;
+    };
 
     // Init must be `0`
-    let Some(Expression::NumericLiteral(lit)) = &declarator.init else {
+    let init_node_id = declarator.init?;
+    let AstNode::NumericLiteral(lit) = ctx.node(init_node_id)? else {
         return None;
     };
 
@@ -100,16 +101,16 @@ fn extract_zero_init<'a>(init: &'a ForStatementInit<'a>) -> Option<&'a str> {
     }
 
     // Binding must be a simple identifier
-    let BindingPattern::BindingIdentifier(ident) = &declarator.id else {
+    let AstNode::BindingIdentifier(ident) = ctx.node(declarator.id)? else {
         return None;
     };
 
-    Some(ident.name.as_str())
+    Some(ident.name.clone())
 }
 
 /// Check if the test expression is `counter < something.length`.
-fn is_length_comparison(test: &Expression<'_>, counter_name: &str) -> bool {
-    let Expression::BinaryExpression(bin) = test else {
+fn is_length_comparison(test_id: NodeId, counter_name: &str, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::BinaryExpression(bin)) = ctx.node(test_id) else {
         return false;
     };
 
@@ -118,7 +119,7 @@ fn is_length_comparison(test: &Expression<'_>, counter_name: &str) -> bool {
     }
 
     // Left side must be our counter variable
-    let Expression::Identifier(left_id) = &bin.left else {
+    let Some(AstNode::IdentifierReference(left_id)) = ctx.node(bin.left) else {
         return false;
     };
     if left_id.name.as_str() != counter_name {
@@ -126,16 +127,16 @@ fn is_length_comparison(test: &Expression<'_>, counter_name: &str) -> bool {
     }
 
     // Right side must be `<something>.length`
-    let Expression::StaticMemberExpression(member) = &bin.right else {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(bin.right) else {
         return false;
     };
 
-    member.property.name.as_str() == "length"
+    member.property.as_str() == "length"
 }
 
 /// Check if the update expression is `counter++` or `++counter`.
-fn is_increment(update: &Expression<'_>, counter_name: &str) -> bool {
-    let Expression::UpdateExpression(upd) = update else {
+fn is_increment(update_id: NodeId, counter_name: &str, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::UpdateExpression(upd)) = ctx.node(update_id) else {
         return false;
     };
 
@@ -143,7 +144,8 @@ fn is_increment(update: &Expression<'_>, counter_name: &str) -> bool {
         return false;
     }
 
-    let SimpleAssignmentTarget::AssignmentTargetIdentifier(ident) = &upd.argument else {
+    // The argument of an update expression is the identifier being updated
+    let Some(AstNode::IdentifierReference(ident)) = ctx.node(upd.argument) else {
         return false;
     };
 
@@ -152,22 +154,13 @@ fn is_increment(update: &Expression<'_>, counter_name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferForOf)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferForOf)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

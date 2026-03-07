@@ -4,22 +4,19 @@
 //! an array literal. Array literals used as lookup tables should be converted
 //! to a `Set` for O(1) lookups instead of O(n) scans.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.includes()` calls on array literals.
 #[derive(Debug)]
 pub struct PreferSetHas;
 
-impl NativeRule for PreferSetHas {
+impl LintRule for PreferSetHas {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-set-has".to_owned(),
@@ -30,20 +27,20 @@ impl NativeRule for PreferSetHas {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "includes" {
+        if member.property.as_str() != "includes" {
             return;
         }
 
@@ -53,24 +50,29 @@ impl NativeRule for PreferSetHas {
         }
 
         // The first argument must not be a spread element
-        if let Some(Argument::SpreadElement(_)) = call.arguments.first() {
-            return;
+        if let Some(&first_id) = call.arguments.first() {
+            if matches!(ctx.node(first_id), Some(AstNode::SpreadElement(_))) {
+                return;
+            }
         }
 
         // The object must be an array literal
-        if !matches!(&member.object, Expression::ArrayExpression(_)) {
+        if !matches!(ctx.node(member.object), Some(AstNode::ArrayExpression(_))) {
             return;
         }
 
-        // Fix: [1,2,3].includes(x) → new Set([1,2,3]).has(x)
+        // Fix: [1,2,3].includes(x) -> new Set([1,2,3]).has(x)
         #[allow(clippy::as_conversions)]
         let fix = {
             let source = ctx.source_text();
-            let arr_span = member.object.span();
+            let arr_span = ctx.node(member.object).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
             let arr_text = source
                 .get(arr_span.start as usize..arr_span.end as usize)
                 .unwrap_or("");
-            let arg = call.arguments.first();
+            let arg = call.arguments.first().and_then(|&id| ctx.node(id));
             arg.and_then(|a| {
                 let a_span = a.span();
                 let a_text = source.get(a_span.start as usize..a_span.end as usize)?;
@@ -103,23 +105,13 @@ impl NativeRule for PreferSetHas {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferSetHas)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferSetHas)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -5,24 +5,25 @@
 //! or a function body. While ES6 allows block-level functions in strict mode,
 //! `var` declarations in blocks are still hoisted and can be confusing.
 //!
-//! Uses semantic analysis to walk the ancestor chain and determine whether a
-//! declaration is inside a nested block (not directly in a program or function body).
+//! Uses the parent-chain from `AstTree` to determine whether a declaration is
+//! inside a nested block (not directly in a program or function body).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::VariableDeclarationKind;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
+#![allow(clippy::match_same_arms)]
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::VariableDeclarationKind;
+use starlint_ast::types::NodeId;
 
 /// Flags function or `var` declarations inside nested blocks.
 #[derive(Debug)]
 pub struct NoInnerDeclarations;
 
-/// Check whether the given node is directly inside a valid (non-nested) context.
+/// Check whether the given node is directly inside a valid (non-nested) context
+/// by walking the parent chain from the `AstTree`.
 ///
 /// A declaration is valid if its nearest enclosing statement container is:
 /// - The program body
@@ -31,44 +32,53 @@ pub struct NoInnerDeclarations;
 ///
 /// It is invalid (inner) if the nearest container is a block inside an
 /// `if`/`for`/`while`/`switch`/etc.
-fn is_in_valid_position(
-    node_id: oxc_semantic::NodeId,
-    semantic: &oxc_semantic::Semantic<'_>,
-) -> bool {
-    let nodes = semantic.nodes();
+fn is_in_valid_position(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let mut current = node_id;
+    while let Some(parent_id) = ctx.parent(current) {
+        match ctx.node(parent_id) {
+            // Program, function body, or static block -> valid position.
+            Some(
+                AstNode::Program(_)
+                | AstNode::Function(_)
+                | AstNode::ArrowFunctionExpression(_)
+                | AstNode::StaticBlock(_),
+            ) => return true,
 
-    for ancestor in nodes.ancestors(node_id) {
-        match ancestor.kind() {
-            // Program, function body, or static block → valid position.
-            AstKind::Program(_)
-            | AstKind::Function(_)
-            | AstKind::ArrowFunctionExpression(_)
-            | AstKind::StaticBlock(_) => return true,
+            // FunctionBody is just a container, keep going up.
+            Some(AstNode::FunctionBody(_)) => {}
 
-            // Control-flow / nesting constructs → invalid (inner) position.
-            AstKind::IfStatement(_)
-            | AstKind::ForStatement(_)
-            | AstKind::ForInStatement(_)
-            | AstKind::ForOfStatement(_)
-            | AstKind::WhileStatement(_)
-            | AstKind::DoWhileStatement(_)
-            | AstKind::SwitchStatement(_)
-            | AstKind::SwitchCase(_)
-            | AstKind::WithStatement(_)
-            | AstKind::TryStatement(_)
-            | AstKind::CatchClause(_) => return false,
+            // BlockStatement: check if it's the body of a function or program (keep going)
+            // or a nested block under control flow (invalid).
+            Some(AstNode::BlockStatement(_)) => {
+                // Keep walking - the parent of this block will tell us the context.
+            }
 
-            // Everything else (block, export, label, function body, exprs) —
-            // keep walking up the ancestor chain.
+            // Control-flow / nesting constructs -> invalid (inner) position.
+            Some(
+                AstNode::IfStatement(_)
+                | AstNode::ForStatement(_)
+                | AstNode::ForInStatement(_)
+                | AstNode::ForOfStatement(_)
+                | AstNode::WhileStatement(_)
+                | AstNode::DoWhileStatement(_)
+                | AstNode::SwitchStatement(_)
+                | AstNode::SwitchCase(_)
+                | AstNode::WithStatement(_)
+                | AstNode::TryStatement(_)
+                | AstNode::CatchClause(_),
+            ) => return false,
+
+            // Everything else (export, label, exprs) -- keep walking.
             _ => {}
         }
+        current = parent_id;
     }
 
     // If we exhaust ancestors without finding a container, treat as valid.
     true
 }
 
-impl NativeRule for NoInnerDeclarations {
+impl LintRule for NoInnerDeclarations {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-inner-declarations".to_owned(),
@@ -78,59 +88,36 @@ impl NativeRule for NoInnerDeclarations {
         }
     }
 
-    fn needs_semantic(&self) -> bool {
-        true
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Function, AstNodeType::VariableDeclaration])
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::CatchClause,
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::Function,
-            AstType::IfStatement,
-            AstType::Program,
-            AstType::StaticBlock,
-            AstType::SwitchCase,
-            AstType::SwitchStatement,
-            AstType::TryStatement,
-            AstType::VariableDeclaration,
-            AstType::WhileStatement,
-            AstType::WithStatement,
-        ])
-    }
-
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let Some(semantic) = ctx.semantic() else {
-            return;
-        };
-
-        match kind {
-            AstKind::Function(func) => {
+    #[allow(clippy::match_same_arms)]
+    fn run(&self, node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::Function(func) => {
                 // Only flag function declarations (not expressions or arrow functions).
-                if !func.is_declaration() {
+                // A function is a declaration if it has a name (id) -- named functions in blocks
+                // are the concern. We also skip if `is_declare` (TypeScript ambient).
+                if func.id.is_none() || func.is_declare {
                     return;
                 }
 
-                // Find this function's node ID in the semantic tree.
-                let Some(node_id) = find_node_id_by_span(semantic, func.span) else {
-                    return;
-                };
-
-                if !is_in_valid_position(node_id, semantic) {
-                    let name = func.id.as_ref().map_or("anonymous", |id| id.name.as_str());
+                if !is_in_valid_position(node_id, ctx) {
+                    let name = func.id.and_then(|id| {
+                        if let Some(AstNode::BindingIdentifier(bi)) = ctx.node(id) {
+                            Some(bi.name.clone())
+                        } else {
+                            None
+                        }
+                    });
+                    let name_str = name.as_deref().unwrap_or("anonymous");
                     ctx.report(Diagnostic {
                         rule_name: "no-inner-declarations".to_owned(),
                         message: format!(
-                            "Move function declaration '{name}' to program or function body root"
+                            "Move function declaration '{name_str}' to program or function body root"
                         ),
-                        span: starlint_plugin_sdk::diagnostic::Span::new(
-                            func.span.start,
-                            func.span.end,
-                        ),
+                        span: Span::new(func.span.start, func.span.end),
                         severity: Severity::Warning,
                         help: None,
                         fix: None,
@@ -138,25 +125,18 @@ impl NativeRule for NoInnerDeclarations {
                     });
                 }
             }
-            AstKind::VariableDeclaration(decl) => {
+            AstNode::VariableDeclaration(decl) => {
                 // Only flag `var` declarations (let/const are block-scoped by design).
                 if decl.kind != VariableDeclarationKind::Var {
                     return;
                 }
 
-                let Some(node_id) = find_node_id_by_span(semantic, decl.span) else {
-                    return;
-                };
-
-                if !is_in_valid_position(node_id, semantic) {
+                if !is_in_valid_position(node_id, ctx) {
                     ctx.report(Diagnostic {
                         rule_name: "no-inner-declarations".to_owned(),
                         message: "Move variable declaration to program or function body root"
                             .to_owned(),
-                        span: starlint_plugin_sdk::diagnostic::Span::new(
-                            decl.span.start,
-                            decl.span.end,
-                        ),
+                        span: Span::new(decl.span.start, decl.span.end),
                         severity: Severity::Warning,
                         help: None,
                         fix: None,
@@ -169,48 +149,15 @@ impl NativeRule for NoInnerDeclarations {
     }
 }
 
-/// Find the semantic [`NodeId`] for a node with the given span.
-///
-/// Iterates semantic nodes to find a match. Returns `None` if no node matches.
-fn find_node_id_by_span(
-    semantic: &oxc_semantic::Semantic<'_>,
-    span: oxc_span::Span,
-) -> Option<oxc_semantic::NodeId> {
-    for node in semantic.nodes() {
-        if node.kind().span() == span {
-            return Some(node.id());
-        }
-    }
-    None
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code with semantic analysis.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoInnerDeclarations)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInnerDeclarations)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

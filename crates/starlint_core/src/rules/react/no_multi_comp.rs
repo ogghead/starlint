@@ -3,24 +3,24 @@
 //! Only one component definition per file. Multiple component definitions
 //! in a single file make it harder to find and maintain components.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags files with multiple component definitions.
 ///
 /// Simplified detection: counts top-level functions/classes that contain JSX
 /// by scanning the source text for JSX return patterns. Uses a heuristic
-/// approach based on counting `AstKind::JSXElement` occurrences at the
+/// approach based on counting `AstNode::JSXElement` occurrences at the
 /// top-level function/class boundary.
 #[derive(Debug)]
 pub struct NoMultiComp;
 
-impl NativeRule for NoMultiComp {
+impl LintRule for NoMultiComp {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/no-multi-comp".to_owned(),
@@ -30,11 +30,11 @@ impl NativeRule for NoMultiComp {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Simplified: flag React.createClass / createReactClass beyond the first,
         // or detect multiple class components / function components returning JSX.
         // For a practical implementation, we count top-level arrow/function expressions
@@ -47,14 +47,14 @@ impl NativeRule for NoMultiComp {
 
         // We use a stub approach: flag nothing at the per-node level.
         // The real check happens in run_once.
-        let _ = (kind, ctx);
+        let _ = (node, ctx);
     }
 
     fn needs_traversal(&self) -> bool {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
 
         // Simplified heuristic: count patterns that look like component definitions.
@@ -92,22 +92,13 @@ impl NativeRule for NoMultiComp {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.jsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoMultiComp)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.jsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoMultiComp)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

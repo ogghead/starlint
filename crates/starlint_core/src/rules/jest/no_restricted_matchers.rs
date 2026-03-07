@@ -2,14 +2,13 @@
 //!
 //! Warn when restricted matchers are used (e.g., `.toBeTruthy()`, `.toBeFalsy()`).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/no-restricted-matchers";
@@ -28,7 +27,7 @@ const RESTRICTED_MATCHERS: &[&str] = &[
 #[derive(Debug)]
 pub struct NoRestrictedMatchers;
 
-impl NativeRule for NoRestrictedMatchers {
+impl LintRule for NoRestrictedMatchers {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -38,28 +37,28 @@ impl NativeRule for NoRestrictedMatchers {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Match `expect(...).matcher(...)` or `expect(...).not.matcher(...)` or
         // `expect(...).resolves/rejects`
-        let matcher_name = match &call.callee {
-            Expression::StaticMemberExpression(member) => member.property.name.as_str(),
+        let matcher_name = match ctx.node(call.callee) {
+            Some(AstNode::StaticMemberExpression(member)) => member.property.clone(),
             _ => return,
         };
 
-        if !RESTRICTED_MATCHERS.contains(&matcher_name) {
+        if !RESTRICTED_MATCHERS.contains(&matcher_name.as_str()) {
             return;
         }
 
         // Verify this is part of an expect chain by walking up the member expression
-        let is_expect_chain = is_in_expect_chain(&call.callee);
+        let is_expect_chain = is_in_expect_chain(call.callee, ctx);
 
         if is_expect_chain {
             ctx.report(Diagnostic {
@@ -79,26 +78,28 @@ impl NativeRule for NoRestrictedMatchers {
 
 /// Check whether a callee expression is part of an `expect(...)` chain.
 /// Walks through member expression objects looking for `expect(...)`.
-fn is_in_expect_chain(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::StaticMemberExpression(member) => is_expect_call_or_chain(&member.object),
+fn is_in_expect_chain(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(id) {
+        Some(AstNode::StaticMemberExpression(member)) => {
+            is_expect_call_or_chain(member.object, ctx)
+        }
         _ => false,
     }
 }
 
 /// Recursively check if an expression is `expect(...)` or a chain from it.
-fn is_expect_call_or_chain(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::CallExpression(call) => {
+fn is_expect_call_or_chain(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(id) {
+        Some(AstNode::CallExpression(call)) => {
             // Direct `expect(...)` call
             matches!(
-                &call.callee,
-                Expression::Identifier(id) if id.name.as_str() == "expect"
+                ctx.node(call.callee),
+                Some(AstNode::IdentifierReference(ident)) if ident.name.as_str() == "expect"
             )
         }
-        Expression::StaticMemberExpression(member) => {
+        Some(AstNode::StaticMemberExpression(member)) => {
             // `expect(...).not` or `expect(...).resolves` etc.
-            is_expect_call_or_chain(&member.object)
+            is_expect_call_or_chain(member.object, ctx)
         }
         _ => false,
     }
@@ -106,22 +107,13 @@ fn is_expect_call_or_chain(expr: &Expression<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoRestrictedMatchers)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRestrictedMatchers)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

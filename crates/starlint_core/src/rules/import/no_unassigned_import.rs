@@ -4,21 +4,21 @@
 //! Side-effect imports make it hard to determine what a module depends on
 //! and can cause unexpected behavior.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags side-effect imports that have no specifiers.
 #[derive(Debug)]
 pub struct NoUnassignedImport;
 
-impl NativeRule for NoUnassignedImport {
+impl LintRule for NoUnassignedImport {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/no-unassigned-import".to_owned(),
@@ -28,21 +28,18 @@ impl NativeRule for NoUnassignedImport {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        // Side-effect import: `import 'foo'` — specifiers is None
-        // Empty named block: `import {} from 'foo'` — specifiers is Some([])
-        let is_unassigned = import
-            .specifiers
-            .as_ref()
-            .is_none_or(|specs| specs.is_empty());
+        // Side-effect import: `import 'foo'` — specifiers is empty
+        // Empty named block: `import {} from 'foo'` — specifiers is empty
+        let is_unassigned = import.specifiers.is_empty();
 
         if is_unassigned {
             let import_span = Span::new(import.span.start, import.span.end);
@@ -64,22 +61,13 @@ impl NativeRule for NoUnassignedImport {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnassignedImport)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnassignedImport)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

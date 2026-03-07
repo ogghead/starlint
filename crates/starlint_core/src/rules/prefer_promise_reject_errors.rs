@@ -3,22 +3,19 @@
 //! Require using Error objects as Promise rejection reasons.
 //! `Promise.reject('error')` should be `Promise.reject(new Error('error'))`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `Promise.reject()` calls with non-Error arguments.
 #[derive(Debug)]
 pub struct PreferPromiseRejectErrors;
 
-impl NativeRule for PreferPromiseRejectErrors {
+impl LintRule for PreferPromiseRejectErrors {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-promise-reject-errors".to_owned(),
@@ -28,42 +25,48 @@ impl NativeRule for PreferPromiseRejectErrors {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for Promise.reject(...)
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "reject" {
+        if member.property.as_str() != "reject" {
             return;
         }
 
-        if !matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Promise") {
+        if !matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Promise")
+        {
             return;
         }
 
         // Check the first argument — flag if it's a literal (not an Error)
-        if let Some(first_arg) = call.arguments.first() {
+        if let Some(first_arg_id) = call.arguments.first() {
             let is_literal_rejection = matches!(
-                first_arg,
-                Argument::StringLiteral(_)
-                    | Argument::NumericLiteral(_)
-                    | Argument::BooleanLiteral(_)
-                    | Argument::NullLiteral(_)
+                ctx.node(*first_arg_id),
+                Some(
+                    AstNode::StringLiteral(_)
+                        | AstNode::NumericLiteral(_)
+                        | AstNode::BooleanLiteral(_)
+                        | AstNode::NullLiteral(_)
+                )
             );
 
             if is_literal_rejection {
                 #[allow(clippy::as_conversions)]
                 let fix = {
-                    let arg_span = first_arg.span();
+                    let arg_span = ctx.node(*first_arg_id).map_or(
+                        starlint_ast::types::Span::EMPTY,
+                        starlint_ast::AstNode::span,
+                    );
                     let source = ctx.source_text();
                     source
                         .get(arg_span.start as usize..arg_span.end as usize)
@@ -100,23 +103,13 @@ impl NativeRule for PreferPromiseRejectErrors {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferPromiseRejectErrors)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferPromiseRejectErrors)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

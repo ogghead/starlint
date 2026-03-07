@@ -4,14 +4,13 @@
 //! for tests that need to be written. While useful during development, they
 //! should not remain indefinitely in the test suite.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "vitest/warn-todo";
@@ -20,7 +19,7 @@ const RULE_NAME: &str = "vitest/warn-todo";
 #[derive(Debug)]
 pub struct WarnTodo;
 
-impl NativeRule for WarnTodo {
+impl LintRule for WarnTodo {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -30,26 +29,27 @@ impl NativeRule for WarnTodo {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Match `test.todo(...)` or `it.todo(...)`.
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "todo" {
+        if member.property.as_str() != "todo" {
             return;
         }
 
-        let obj_name = match &member.object {
-            Expression::Identifier(id) => id.name.as_str(),
+        let obj_name = match ctx.node(member.object) {
+            Some(AstNode::IdentifierReference(id)) => id.name.as_str(),
             _ => return,
         };
 
@@ -57,21 +57,36 @@ impl NativeRule for WarnTodo {
             return;
         }
 
+        // property is a String with no span. Use source text to find ".todo(" for the fix.
+        let source = ctx.source_text();
+        let call_start = usize::try_from(call.span.start).unwrap_or(0);
+        let call_end = usize::try_from(call.span.end).unwrap_or(0);
+        let call_text = source.get(call_start..call_end).unwrap_or("");
+        let fix = call_text.find(".todo(").map(|offset| {
+            let prop_start = call
+                .span
+                .start
+                .saturating_add(offset as u32)
+                .saturating_add(1);
+            let prop_end = prop_start.saturating_add(4); // "todo" is 4 chars
+            Fix {
+                kind: FixKind::SuggestionFix,
+                message: "Replace `.todo` with `.skip`".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(prop_start, prop_end),
+                    replacement: "skip".to_owned(),
+                }],
+                is_snippet: false,
+            }
+        });
+
         ctx.report(Diagnostic {
             rule_name: RULE_NAME.to_owned(),
             message: format!("`{obj_name}.todo` found — implement or remove this test placeholder"),
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: None,
-            fix: Some(Fix {
-                kind: FixKind::SuggestionFix,
-                message: "Replace `.todo` with `.skip`".to_owned(),
-                edits: vec![Edit {
-                    span: Span::new(member.property.span.start, member.property.span.end),
-                    replacement: "skip".to_owned(),
-                }],
-                is_snippet: false,
-            }),
+            fix,
             labels: vec![],
         });
     }
@@ -79,22 +94,13 @@ impl NativeRule for WarnTodo {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(WarnTodo)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(WarnTodo)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

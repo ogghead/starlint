@@ -4,20 +4,19 @@
 //! a lowercase identifier is almost always a mistake — constructors should
 //! follow the `PascalCase` convention.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new` expressions where the callee starts with a lowercase letter.
 #[derive(Debug)]
 pub struct NewCap;
 
-impl NativeRule for NewCap {
+impl LintRule for NewCap {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "new-cap".to_owned(),
@@ -27,27 +26,25 @@ impl NativeRule for NewCap {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
         // Determine the relevant name to check:
-        // - `new foo()` → check "foo"
-        // - `new foo.Bar()` → check "Bar" (the last property)
-        // - `new foo.bar()` → check "bar"
-        let name = match &new_expr.callee {
-            Expression::Identifier(ident) => Some(ident.name.as_str()),
-            Expression::StaticMemberExpression(member) => Some(member.property.name.as_str()),
-            _ => None,
-        };
-
-        let Some(callee_name) = name else {
-            return;
+        // - `new foo()` -> check "foo"
+        // - `new foo.Bar()` -> check "Bar" (the last property)
+        // - `new foo.bar()` -> check "bar"
+        let (callee_name, callee_span) = match ctx.node(new_expr.callee) {
+            Some(AstNode::IdentifierReference(ident)) => {
+                (ident.name.as_str().to_owned(), Some(ident.span))
+            }
+            Some(AstNode::StaticMemberExpression(member)) => (member.property.clone(), None),
+            _ => return,
         };
 
         // Check if the first character is lowercase
@@ -58,38 +55,23 @@ impl NativeRule for NewCap {
 
         if ch.is_lowercase() {
             // Fix: capitalize the first letter of the constructor name
-            let fix = match &new_expr.callee {
-                Expression::Identifier(ident) => {
-                    let capitalized: String = ch
-                        .to_uppercase()
-                        .chain(callee_name.chars().skip(1))
-                        .collect();
-                    Some(Fix {
-                        kind: FixKind::SuggestionFix,
-                        message: format!("Capitalize to `{capitalized}`"),
-                        edits: vec![Edit {
-                            span: Span::new(ident.span.start, ident.span.end),
-                            replacement: capitalized,
-                        }],
-                        is_snippet: false,
-                    })
-                }
-                Expression::StaticMemberExpression(member) => {
-                    let capitalized: String = ch
-                        .to_uppercase()
-                        .chain(callee_name.chars().skip(1))
-                        .collect();
-                    Some(Fix {
-                        kind: FixKind::SuggestionFix,
-                        message: format!("Capitalize to `{capitalized}`"),
-                        edits: vec![Edit {
-                            span: Span::new(member.property.span.start, member.property.span.end),
-                            replacement: capitalized,
-                        }],
-                        is_snippet: false,
-                    })
-                }
-                _ => None,
+            let fix = if let Some(span) = callee_span {
+                let capitalized: String = ch
+                    .to_uppercase()
+                    .chain(callee_name.chars().skip(1))
+                    .collect();
+                Some(Fix {
+                    kind: FixKind::SuggestionFix,
+                    message: format!("Capitalize to `{capitalized}`"),
+                    edits: vec![Edit {
+                        span: Span::new(span.start, span.end),
+                        replacement: capitalized,
+                    }],
+                    is_snippet: false,
+                })
+            } else {
+                // StaticMemberExpression property is a String, no span available for just the property
+                None
             };
 
             ctx.report(Diagnostic {
@@ -109,23 +91,13 @@ impl NativeRule for NewCap {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NewCap)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NewCap)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

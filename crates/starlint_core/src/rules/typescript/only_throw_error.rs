@@ -6,16 +6,13 @@
 //!
 //! Simplified syntax-only version — full checking requires type information.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/only-throw-error";
@@ -24,7 +21,7 @@ const RULE_NAME: &str = "typescript/only-throw-error";
 #[derive(Debug)]
 pub struct OnlyThrowError;
 
-impl NativeRule for OnlyThrowError {
+impl LintRule for OnlyThrowError {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -34,28 +31,33 @@ impl NativeRule for OnlyThrowError {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ThrowStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ThrowStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ThrowStatement(throw) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ThrowStatement(throw) = node else {
             return;
         };
 
-        if is_non_error_literal(&throw.argument) {
+        if is_non_error_literal(throw.argument, ctx) {
             // Fix: throw "msg" → throw new Error("msg")
             #[allow(clippy::as_conversions)]
             let fix = {
                 let source = ctx.source_text();
-                let arg_span = throw.argument.span();
+                let arg_node = ctx.node(throw.argument);
+                let arg_span = match arg_node {
+                    Some(n) => n.span(),
+                    None => return,
+                };
+                let is_string_or_template = matches!(
+                    arg_node,
+                    Some(AstNode::StringLiteral(_) | AstNode::TemplateLiteral(_))
+                );
                 source
                     .get(arg_span.start as usize..arg_span.end as usize)
                     .map(|text| {
-                        let wrapped = if matches!(
-                            throw.argument,
-                            Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
-                        ) {
+                        let wrapped = if is_string_or_template {
                             format!("new Error({text})")
                         } else {
                             format!("new Error(String({text}))")
@@ -85,44 +87,35 @@ impl NativeRule for OnlyThrowError {
     }
 }
 
-/// Returns `true` if the expression is a literal value that is not an Error:
+/// Returns `true` if the expression (by `NodeId`) is a literal value that is not an Error:
 /// string, number, boolean, null, undefined, bigint.
-fn is_non_error_literal(expr: &Expression<'_>) -> bool {
+fn is_non_error_literal(id: NodeId, ctx: &LintContext<'_>) -> bool {
     matches!(
-        expr,
-        Expression::StringLiteral(_)
-            | Expression::NumericLiteral(_)
-            | Expression::BooleanLiteral(_)
-            | Expression::NullLiteral(_)
-            | Expression::BigIntLiteral(_)
-            | Expression::TemplateLiteral(_)
-    ) || is_undefined_identifier(expr)
+        ctx.node(id),
+        Some(
+            AstNode::StringLiteral(_)
+                | AstNode::NumericLiteral(_)
+                | AstNode::BooleanLiteral(_)
+                | AstNode::NullLiteral(_)
+                | AstNode::TemplateLiteral(_)
+        )
+    ) || is_undefined_identifier(id, ctx)
 }
 
-/// Returns `true` if the expression is the identifier `undefined`.
-fn is_undefined_identifier(expr: &Expression<'_>) -> bool {
-    matches!(expr, Expression::Identifier(ident) if ident.name == "undefined")
+/// Returns `true` if the expression (by `NodeId`) is the identifier `undefined`.
+fn is_undefined_identifier(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    matches!(ctx.node(id), Some(AstNode::IdentifierReference(ident)) if ident.name == "undefined")
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(OnlyThrowError)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(OnlyThrowError)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

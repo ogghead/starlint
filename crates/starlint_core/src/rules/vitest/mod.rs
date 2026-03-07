@@ -25,14 +25,5 @@ use crate::rule::NativeRule;
 /// Return all Vitest rules.
 #[must_use]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![
-        Box::new(consistent_each_for::ConsistentEachFor),
-        Box::new(consistent_vitest_vi::ConsistentVitestVi),        Box::new(no_importing_vitest_globals::NoImportingVitestGlobals),
-        Box::new(prefer_called_once::PreferCalledOnce),
-        Box::new(prefer_describe_function_title::PreferDescribeFunctionTitle),
-        Box::new(prefer_to_be_falsy::PreferToBeFalsy),
-        Box::new(prefer_to_be_object::PreferToBeObject),
-        Box::new(prefer_to_be_truthy::PreferToBeTruthy),
-        Box::new(warn_todo::WarnTodo),
-    ]
+    vec![]
 }

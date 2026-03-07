@@ -5,20 +5,19 @@
 //! named constants. `.flat()`, `.flat(1)`, `.flat(Infinity)`, and
 //! `.flat(depth)` (variable) are all acceptable.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.flat(n)` calls with magic number depths greater than 1.
 #[derive(Debug)]
 pub struct NoMagicArrayFlatDepth;
 
-impl NativeRule for NoMagicArrayFlatDepth {
+impl LintRule for NoMagicArrayFlatDepth {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-magic-array-flat-depth".to_owned(),
@@ -29,21 +28,21 @@ impl NativeRule for NoMagicArrayFlatDepth {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for `.flat(...)` member call
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "flat" {
+        if member.property.as_str() != "flat" {
             return;
         }
 
@@ -52,13 +51,13 @@ impl NativeRule for NoMagicArrayFlatDepth {
             return;
         }
 
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
             return;
         };
 
         // Only flag numeric literals > 1
         // Allow: .flat(), .flat(1), .flat(Infinity), .flat(someVar)
-        if is_magic_flat_depth(first_arg) {
+        if is_magic_flat_depth(*first_arg_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: "no-magic-array-flat-depth".to_owned(),
                 message: "Magic number depth in `.flat()` — use a named constant for non-trivial flat depths".to_owned(),
@@ -75,9 +74,9 @@ impl NativeRule for NoMagicArrayFlatDepth {
 /// Check if an argument is a numeric literal with value > 1.
 ///
 /// Returns `false` for non-numeric arguments (variables, `Infinity`, etc.).
-fn is_magic_flat_depth(arg: &Argument<'_>) -> bool {
-    match arg {
-        Argument::NumericLiteral(num) => {
+fn is_magic_flat_depth(arg_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(arg_id) {
+        Some(AstNode::NumericLiteral(num)) => {
             // Allow .flat(1) — this is the default depth
             // Flag .flat(2), .flat(3), .flat(5), etc.
             num.value > 1.0 && num.value.is_finite()
@@ -90,23 +89,13 @@ fn is_magic_flat_depth(arg: &Argument<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoMagicArrayFlatDepth)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoMagicArrayFlatDepth)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

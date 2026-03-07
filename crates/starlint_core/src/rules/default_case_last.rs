@@ -49,7 +49,10 @@ impl LintRule for DefaultCaseLast {
             .iter()
             .filter_map(|&case_id| {
                 let case = ctx.node(case_id)?.as_switch_case()?;
-                Some((Span::new(case.span.start, case.span.end), case.test.is_none()))
+                Some((
+                    Span::new(case.span.start, case.span.end),
+                    case.test.is_none(),
+                ))
             })
             .collect();
 

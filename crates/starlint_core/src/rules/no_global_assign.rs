@@ -4,14 +4,13 @@
 //! globals like `Object`, `Array`, `undefined`, etc. can cause unexpected
 //! behavior throughout the application.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::AssignmentTarget;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags assignment to native/global objects.
 #[derive(Debug)]
@@ -67,7 +66,7 @@ const READ_ONLY_GLOBALS: &[&str] = &[
     "encodeURIComponent",
 ];
 
-impl NativeRule for NoGlobalAssign {
+impl LintRule for NoGlobalAssign {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-global-assign".to_owned(),
@@ -77,34 +76,31 @@ impl NativeRule for NoGlobalAssign {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::AssignmentExpression(assign) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
-        let AssignmentTarget::AssignmentTargetIdentifier(id) = &assign.left else {
-            return;
+        // Extract owned data from the identifier to avoid borrow conflicts
+        // with ctx.report().
+        let (name, id_span) = {
+            let Some(AstNode::IdentifierReference(id)) = ctx.node(assign.left) else {
+                return;
+            };
+            (id.name.clone(), id.span)
         };
 
-        let name = id.name.as_str();
-        if !READ_ONLY_GLOBALS.contains(&name) {
+        if !READ_ONLY_GLOBALS.contains(&name.as_str()) {
             return;
         }
 
-        // Only flag if the name is not locally declared (unresolved reference)
-        if let Some(semantic) = ctx.semantic() {
-            if id
-                .reference_id
-                .get()
-                .and_then(|ref_id| semantic.scoping().get_reference(ref_id).symbol_id())
-                .is_some()
-            {
-                return;
-            }
+        // Only flag if the name is not locally declared (unresolved reference).
+        if ctx.is_reference_resolved_at(&name, id_span) {
+            return;
         }
 
         ctx.report(Diagnostic {
@@ -121,30 +117,13 @@ impl NativeRule for NoGlobalAssign {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoGlobalAssign)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoGlobalAssign)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

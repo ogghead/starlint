@@ -3,15 +3,13 @@
 //! Flags regular expressions that contain character classes which can be
 //! replaced with shorter built-in shorthand classes (e.g. `[0-9]` to `\d`).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Known improvable character class patterns and their replacements.
 const IMPROVABLE_PATTERNS: &[(&str, &str)] = &[
@@ -45,7 +43,7 @@ const FIXABLE_PATTERNS: &[(&str, &str)] = &[
 #[derive(Debug)]
 pub struct BetterRegex;
 
-impl NativeRule for BetterRegex {
+impl LintRule for BetterRegex {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "better-regex".to_owned(),
@@ -55,16 +53,16 @@ impl NativeRule for BetterRegex {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::RegExpLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::RegExpLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::RegExpLiteral(regex) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::RegExpLiteral(regex) = node else {
             return;
         };
 
-        let pattern = regex.regex.pattern.text.as_str();
+        let pattern = regex.pattern.as_str();
 
         for &(class, replacement) in IMPROVABLE_PATTERNS {
             if pattern.contains(class) {
@@ -73,15 +71,14 @@ impl NativeRule for BetterRegex {
                 let fix = FIXABLE_PATTERNS.iter().find(|(c, _)| *c == class).and_then(
                     |(_, shorthand)| {
                         let source = ctx.source_text();
-                        let regex_span = regex.span();
                         let regex_text =
-                            source.get(regex_span.start as usize..regex_span.end as usize)?;
+                            source.get(regex.span.start as usize..regex.span.end as usize)?;
                         let new_regex = regex_text.replacen(class, shorthand, 1);
                         Some(Fix {
                             kind: FixKind::SafeFix,
                             message: format!("Replace `{class}` with `{shorthand}`"),
                             edits: vec![Edit {
-                                span: Span::new(regex_span.start, regex_span.end),
+                                span: Span::new(regex.span.start, regex.span.end),
                                 replacement: new_regex,
                             }],
                             is_snippet: false,
@@ -109,23 +106,13 @@ impl NativeRule for BetterRegex {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(BetterRegex)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BetterRegex)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

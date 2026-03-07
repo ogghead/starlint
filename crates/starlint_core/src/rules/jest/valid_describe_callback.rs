@@ -2,14 +2,13 @@
 //!
 //! Error when `describe` callback is async or returns a value.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/valid-describe-callback";
@@ -18,7 +17,7 @@ const RULE_NAME: &str = "jest/valid-describe-callback";
 #[derive(Debug)]
 pub struct ValidDescribeCallback;
 
-impl NativeRule for ValidDescribeCallback {
+impl LintRule for ValidDescribeCallback {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -28,19 +27,19 @@ impl NativeRule for ValidDescribeCallback {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check callee is `describe`
         let is_describe = matches!(
-            &call.callee,
-            Expression::Identifier(id) if id.name.as_str() == "describe"
+            ctx.node(call.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "describe"
         );
 
         if !is_describe {
@@ -48,72 +47,56 @@ impl NativeRule for ValidDescribeCallback {
         }
 
         // The callback is the second argument
-        let Some(callback) = call.arguments.get(1) else {
+        let Some(callback_id) = call.arguments.get(1) else {
             return;
         };
 
-        match callback {
-            Argument::ArrowFunctionExpression(arrow) => {
-                if arrow.r#async {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: "`describe` callback must not be async".to_owned(),
-                        span: Span::new(arrow.span.start, arrow.span.end),
-                        severity: Severity::Error,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
-                }
-                // Check for expression body (implicit return)
-                if arrow.expression {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: "`describe` callback must not return a value".to_owned(),
-                        span: Span::new(arrow.span.start, arrow.span.end),
-                        severity: Severity::Error,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
-                }
+        // Extract needed data before calling ctx.report() to avoid borrow conflict
+        let callback_info = match ctx.node(*callback_id) {
+            Some(AstNode::ArrowFunctionExpression(arrow)) => {
+                Some((arrow.span, arrow.is_async, arrow.expression, true))
             }
-            Argument::FunctionExpression(func) => {
-                if func.r#async {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: "`describe` callback must not be async".to_owned(),
-                        span: Span::new(func.span.start, func.span.end),
-                        severity: Severity::Error,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
-                }
+            Some(AstNode::Function(func)) => Some((func.span, func.is_async, false, false)),
+            _ => None,
+        };
+
+        if let Some((span, is_async, is_expression, is_arrow)) = callback_info {
+            if is_async {
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "`describe` callback must not be async".to_owned(),
+                    span: Span::new(span.start, span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
             }
-            _ => {}
+            // Check for expression body (implicit return) - only for arrow functions
+            if is_arrow && is_expression {
+                ctx.report(Diagnostic {
+                    rule_name: RULE_NAME.to_owned(),
+                    message: "`describe` callback must not return a value".to_owned(),
+                    span: Span::new(span.start, span.end),
+                    severity: Severity::Error,
+                    help: None,
+                    fix: None,
+                    labels: vec![],
+                });
+            }
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ValidDescribeCallback)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ValidDescribeCallback)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

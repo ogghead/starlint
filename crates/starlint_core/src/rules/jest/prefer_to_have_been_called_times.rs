@@ -4,22 +4,19 @@
 //! The dedicated matcher provides clearer failure messages showing the actual
 //! call count.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `expect(mock.mock.calls.length).toBe(n)` patterns.
 #[derive(Debug)]
 pub struct PreferToHaveBeenCalledTimes;
 
-impl NativeRule for PreferToHaveBeenCalledTimes {
+impl LintRule for PreferToHaveBeenCalledTimes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "jest/prefer-to-have-been-called-times".to_owned(),
@@ -29,31 +26,32 @@ impl NativeRule for PreferToHaveBeenCalledTimes {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Must be `.toBe(n)` or `.toEqual(n)`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
-        let method = member.property.name.as_str();
+        let method = member.property.as_str();
         if method != "toBe" && method != "toEqual" {
             return;
         }
 
         // Object must be `expect(...)` call
-        let Expression::CallExpression(expect_call) = &member.object else {
+        let Some(AstNode::CallExpression(expect_call)) = ctx.node(member.object) else {
             return;
         };
         let is_expect = matches!(
-            &expect_call.callee,
-            Expression::Identifier(id) if id.name.as_str() == "expect"
+            ctx.node(expect_call.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "expect"
         );
         if !is_expect {
             return;
@@ -61,27 +59,25 @@ impl NativeRule for PreferToHaveBeenCalledTimes {
 
         // The argument to expect() should end in `.calls.length` or `.length`
         // and contain `mock` somewhere in the chain.
-        let Some(expect_arg) = expect_call.arguments.first() else {
-            return;
-        };
-        let Some(expect_arg_expr) = expect_arg.as_expression() else {
+        let Some(&expect_arg_id) = expect_call.arguments.first() else {
             return;
         };
 
-        if is_mock_calls_length(expect_arg_expr) {
+        if is_mock_calls_length(expect_arg_id, ctx) {
             // Build fix: extract mock object and count argument
             let fix = {
-                let mock_obj = extract_mock_object(expect_arg_expr);
-                let count_arg = call.arguments.first();
-                match (mock_obj, count_arg) {
-                    (Some(obj_span), Some(count)) => {
+                let mock_obj_span = extract_mock_object(expect_arg_id, ctx);
+                let count_arg_id = call.arguments.first().copied();
+                match (mock_obj_span, count_arg_id) {
+                    (Some(obj_span), Some(count_id)) => {
                         let source = ctx.source_text();
-                        #[allow(clippy::as_conversions)]
                         let mock_name = source
                             .get(obj_span.start as usize..obj_span.end as usize)
                             .unwrap_or("");
-                        let count_span = count.span();
-                        #[allow(clippy::as_conversions)]
+                        let count_span = ctx.node(count_id).map_or(
+                            starlint_ast::types::Span::EMPTY,
+                            starlint_ast::AstNode::span,
+                        );
                         let count_text = source
                             .get(count_span.start as usize..count_span.end as usize)
                             .unwrap_or("");
@@ -117,68 +113,64 @@ impl NativeRule for PreferToHaveBeenCalledTimes {
 }
 
 /// Extract the root mock object span from a `x.mock.calls.length` or `x.calls.length` chain.
-fn extract_mock_object(expr: &Expression<'_>) -> Option<oxc_span::Span> {
-    let Expression::StaticMemberExpression(length_member) = expr else {
+fn extract_mock_object(
+    expr_id: NodeId,
+    ctx: &LintContext<'_>,
+) -> Option<starlint_ast::types::Span> {
+    let Some(AstNode::StaticMemberExpression(length_member)) = ctx.node(expr_id) else {
         return None;
     };
-    let Expression::StaticMemberExpression(calls_member) = &length_member.object else {
+    let Some(AstNode::StaticMemberExpression(calls_member)) = ctx.node(length_member.object) else {
         return None;
     };
-    match &calls_member.object {
-        Expression::StaticMemberExpression(mock_member) => Some(mock_member.object.span()),
-        Expression::Identifier(id) => Some(id.span),
+    match ctx.node(calls_member.object)? {
+        AstNode::StaticMemberExpression(mock_member) => ctx
+            .node(mock_member.object)
+            .map(starlint_ast::AstNode::span),
+        AstNode::IdentifierReference(id) => Some(id.span),
         _ => None,
     }
 }
 
 /// Check if an expression matches `x.mock.calls.length` or `x.calls.length`
 /// patterns commonly used to check mock call counts.
-fn is_mock_calls_length(expr: &Expression<'_>) -> bool {
+fn is_mock_calls_length(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
     // Must end in `.length`
-    let Expression::StaticMemberExpression(length_member) = expr else {
+    let Some(AstNode::StaticMemberExpression(length_member)) = ctx.node(expr_id) else {
         return false;
     };
-    if length_member.property.name.as_str() != "length" {
+    if length_member.property.as_str() != "length" {
         return false;
     }
 
     // Next level should be `.calls`
-    let Expression::StaticMemberExpression(calls_member) = &length_member.object else {
+    let Some(AstNode::StaticMemberExpression(calls_member)) = ctx.node(length_member.object) else {
         return false;
     };
-    if calls_member.property.name.as_str() != "calls" {
+    if calls_member.property.as_str() != "calls" {
         return false;
     }
 
     // Optionally `.mock` but at minimum there should be an object
-    match &calls_member.object {
-        Expression::StaticMemberExpression(mock_member) => {
-            mock_member.property.name.as_str() == "mock"
+    match ctx.node(calls_member.object) {
+        Some(AstNode::StaticMemberExpression(mock_member)) => {
+            mock_member.property.as_str() == "mock"
         }
         // Also match `mockFn.calls.length` directly
-        Expression::Identifier(_) => true,
+        Some(AstNode::IdentifierReference(_)) => true,
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferToHaveBeenCalledTimes)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferToHaveBeenCalledTimes)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

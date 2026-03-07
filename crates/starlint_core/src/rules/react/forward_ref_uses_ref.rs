@@ -2,14 +2,14 @@
 //!
 //! Warn when `React.forwardRef()` is used but the `ref` parameter is not used.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, FormalParameters};
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::indexing_slicing)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `React.forwardRef()` calls where the callback's second parameter
 /// (the `ref`) is missing or unused. If `forwardRef` is used but the ref
@@ -18,33 +18,34 @@ use crate::rule::{NativeLintContext, NativeRule};
 pub struct ForwardRefUsesRef;
 
 /// Check whether the callee is `React.forwardRef` or just `forwardRef`.
-fn is_forward_ref(callee: &Expression<'_>) -> bool {
-    match callee {
-        Expression::StaticMemberExpression(member) => {
-            member.property.name.as_str() == "forwardRef"
+fn is_forward_ref(callee_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(callee_id) {
+        Some(AstNode::StaticMemberExpression(member)) => {
+            member.property.as_str() == "forwardRef"
                 && matches!(
-                    &member.object,
-                    Expression::Identifier(id) if id.name.as_str() == "React"
+                    ctx.node(member.object),
+                    Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "React"
                 )
         }
-        Expression::Identifier(id) => id.name.as_str() == "forwardRef",
+        Some(AstNode::IdentifierReference(id)) => id.name.as_str() == "forwardRef",
         _ => false,
     }
 }
 
-/// Check if a formal parameter list has at least 2 parameters, and the second
+/// Check if a function's parameter list has at least 2 parameters, and the second
 /// one is actually named (not just `_` which is conventionally unused).
-fn ref_param_is_used(params: &FormalParameters<'_>, source: &str) -> bool {
-    if params.items.len() < 2 {
+fn ref_param_is_used(params: &[NodeId], source: &str, ctx: &LintContext<'_>) -> bool {
+    if params.len() < 2 {
         return false;
     }
-    let Some(ref_param) = params.items.get(1) else {
+    let Some(ref_param_node) = ctx.node(params[1]) else {
         return false;
     };
-    let Ok(start) = usize::try_from(ref_param.span.start) else {
+    let span = ref_param_node.span();
+    let Ok(start) = usize::try_from(span.start) else {
         return false;
     };
-    let Ok(end) = usize::try_from(ref_param.span.end) else {
+    let Ok(end) = usize::try_from(span.end) else {
         return false;
     };
     if end > source.len() {
@@ -56,7 +57,7 @@ fn ref_param_is_used(params: &FormalParameters<'_>, source: &str) -> bool {
     name != "_"
 }
 
-impl NativeRule for ForwardRefUsesRef {
+impl LintRule for ForwardRefUsesRef {
     fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
         source_text.contains("forwardRef")
     }
@@ -70,30 +71,31 @@ impl NativeRule for ForwardRefUsesRef {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::indexing_slicing)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        if !is_forward_ref(&call.callee) {
+        if !is_forward_ref(call.callee, ctx) {
             return;
         }
 
         // forwardRef takes one argument: a callback (props, ref) => ...
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(&first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        let params_missing_ref = match first_arg {
-            oxc_ast::ast::Argument::ArrowFunctionExpression(arrow) => {
-                !ref_param_is_used(&arrow.params, ctx.source_text())
+        let params_missing_ref = match ctx.node(first_arg_id) {
+            Some(AstNode::ArrowFunctionExpression(arrow)) => {
+                !ref_param_is_used(&arrow.params, ctx.source_text(), ctx)
             }
-            oxc_ast::ast::Argument::FunctionExpression(func) => {
-                !ref_param_is_used(&func.params, ctx.source_text())
+            Some(AstNode::Function(func)) => {
+                !ref_param_is_used(&func.params, ctx.source_text(), ctx)
             }
             _ => false,
         };
@@ -115,22 +117,13 @@ impl NativeRule for ForwardRefUsesRef {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ForwardRefUsesRef)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ForwardRefUsesRef)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

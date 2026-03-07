@@ -9,14 +9,13 @@
 //! This AST-based heuristic flags `.toString()` calls where the receiver is
 //! an object literal or array literal expression.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/no-base-to-string";
@@ -26,7 +25,7 @@ const RULE_NAME: &str = "typescript/no-base-to-string";
 #[derive(Debug)]
 pub struct NoBaseToString;
 
-impl NativeRule for NoBaseToString {
+impl LintRule for NoBaseToString {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -37,21 +36,21 @@ impl NativeRule for NoBaseToString {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // We're looking for `<expr>.toString()` with no arguments
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "toString" {
+        if member.property.as_str() != "toString" {
             return;
         }
 
@@ -62,10 +61,10 @@ impl NativeRule for NoBaseToString {
 
         // Check if the object (receiver) is an object literal or array literal,
         // unwrapping any parenthesized expressions first.
-        let receiver = unwrap_parens(&member.object);
+        let receiver = unwrap_parens(member.object, ctx);
         let receiver_kind = match receiver {
-            Expression::ObjectExpression(_) => Some("object literal"),
-            Expression::ArrayExpression(_) => Some("array literal"),
+            Some(AstNode::ObjectExpression(_)) => Some("object literal"),
+            Some(AstNode::ArrayExpression(_)) => Some("array literal"),
             _ => None,
         };
 
@@ -87,36 +86,22 @@ impl NativeRule for NoBaseToString {
     }
 }
 
-/// Unwrap parenthesized expressions to get the inner expression.
-///
-/// Handles nested parentheses like `((expr))`.
-fn unwrap_parens<'a>(expr: &'a Expression<'a>) -> &'a Expression<'a> {
-    let mut current = expr;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
+/// Get the receiver node, returning it directly since there is no
+/// `ParenthesizedExpression` in `starlint_ast` (parenthesized expressions
+/// are transparent in the AST).
+fn unwrap_parens<'a>(node_id: NodeId, ctx: &'a LintContext<'_>) -> Option<&'a AstNode> {
+    ctx.node(node_id)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoBaseToString)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoBaseToString)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

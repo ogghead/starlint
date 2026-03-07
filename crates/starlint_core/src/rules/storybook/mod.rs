@@ -23,5 +23,5 @@ use crate::rule::NativeRule;
 /// Return all Storybook rules.
 #[must_use]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![Box::new(no_stories_of::NoStoriesOf)]
+    vec![]
 }

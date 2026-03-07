@@ -30,21 +30,5 @@ use crate::rule::NativeRule;
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![
-        Box::new(google_font_preconnect::GoogleFontPreconnect),
-        Box::new(inline_script_id::InlineScriptId),
-        Box::new(next_script_for_ga::NextScriptForGa),
-        Box::new(no_assign_module_variable::NoAssignModuleVariable),
-        Box::new(
-            no_before_interactive_script_outside_document::NoBeforeInteractiveScriptOutsideDocument,
-        ),
-        Box::new(no_css_tags::NoCssTags),        Box::new(no_head_element::NoHeadElement),        Box::new(no_html_link_for_pages::NoHtmlLinkForPages),
-        Box::new(no_img_element::NoImgElement),
-        Box::new(no_page_custom_font::NoPageCustomFont),
-        Box::new(no_script_component_in_head::NoScriptComponentInHead),
-        Box::new(no_styled_jsx_in_document::NoStyledJsxInDocument),
-        Box::new(no_sync_scripts::NoSyncScripts),
-        Box::new(no_title_in_document_head::NoTitleInDocumentHead),
-        Box::new(no_unwanted_polyfillio::NoUnwantedPolyfillio),
-    ]
+    vec![]
 }

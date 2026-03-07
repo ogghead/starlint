@@ -3,62 +3,70 @@
 //! Prefer `.indexOf()` over `.findIndex()` for simple equality checks.
 //! `.findIndex(x => x === val)` can be simplified to `.indexOf(val)`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{ArrowFunctionExpression, Expression, FunctionBody, Statement};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
+#![allow(clippy::indexing_slicing)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags `.findIndex()` calls with simple equality callbacks.
 #[derive(Debug)]
 pub struct PreferArrayIndexOf;
 
 /// Check if an arrow function body is a simple binary equality expression.
-fn is_simple_equality_body(body: &FunctionBody<'_>) -> bool {
+fn is_simple_equality_body(body_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+        return false;
+    };
     // Expression body (single statement that is an expression statement)
     if body.statements.len() != 1 {
         return false;
     }
-    let Some(stmt) = body.statements.first() else {
-        return false;
-    };
-    let Statement::ExpressionStatement(expr_stmt) = stmt else {
+    let stmt_id = body.statements[0];
+    let Some(AstNode::ExpressionStatement(expr_stmt)) = ctx.node(stmt_id) else {
         return false;
     };
     matches!(
-        &expr_stmt.expression,
-        Expression::BinaryExpression(bin)
+        ctx.node(expr_stmt.expression),
+        Some(AstNode::BinaryExpression(bin))
             if matches!(
                 bin.operator,
-                oxc_ast::ast::BinaryOperator::StrictEquality | oxc_ast::ast::BinaryOperator::Equality
+                BinaryOperator::StrictEquality | BinaryOperator::Equality
             )
     )
 }
 
 /// Extract the value being compared in `x => x === val`, returning the source text of `val`.
 /// The parameter name must match one side of the equality.
-#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-fn extract_equality_value(arrow: &ArrowFunctionExpression<'_>, source: &str) -> Option<String> {
-    let stmt = arrow.body.statements.first()?;
-    let Statement::ExpressionStatement(expr_stmt) = stmt else {
+#[allow(clippy::as_conversions)] // u32->usize is lossless on 32/64-bit
+fn extract_equality_value(
+    arrow_params: &[NodeId],
+    arrow_body: NodeId,
+    source: &str,
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    let Some(AstNode::FunctionBody(body)) = ctx.node(arrow_body) else {
         return None;
     };
-    let Expression::BinaryExpression(bin) = &expr_stmt.expression else {
+    let stmt_id = *body.statements.first()?;
+    let Some(AstNode::ExpressionStatement(expr_stmt)) = ctx.node(stmt_id) else {
+        return None;
+    };
+    let Some(AstNode::BinaryExpression(bin)) = ctx.node(expr_stmt.expression) else {
         return None;
     };
 
     // Get the parameter name
-    let param = arrow.params.items.first()?;
-    let param_span = param.span();
+    let &param_id = arrow_params.first()?;
+    let param_span = ctx.node(param_id)?.span();
     let param_name = source.get(param_span.start as usize..param_span.end as usize)?;
 
-    let left_span = bin.left.span();
-    let right_span = bin.right.span();
+    let left_span = ctx.node(bin.left)?.span();
+    let right_span = ctx.node(bin.right)?.span();
     let left_text = source.get(left_span.start as usize..left_span.end as usize)?;
     let right_text = source.get(right_span.start as usize..right_span.end as usize)?;
 
@@ -72,7 +80,7 @@ fn extract_equality_value(arrow: &ArrowFunctionExpression<'_>, source: &str) -> 
     }
 }
 
-impl NativeRule for PreferArrayIndexOf {
+impl LintRule for PreferArrayIndexOf {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-array-index-of".to_owned(),
@@ -83,20 +91,21 @@ impl NativeRule for PreferArrayIndexOf {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::as_conversions)] // u32->usize is lossless on 32/64-bit
+    #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
-        if member.property.name.as_str() != "findIndex" {
+        if member.property.as_str() != "findIndex" {
             return;
         }
 
@@ -105,40 +114,53 @@ impl NativeRule for PreferArrayIndexOf {
             return;
         }
 
-        let Some(first_arg) = call.arguments.first() else {
-            return;
-        };
+        let first_arg_id = call.arguments[0];
 
         // Check for arrow function with simple equality body.
-        if let oxc_ast::ast::Argument::ArrowFunctionExpression(arrow) = first_arg {
-            if arrow.params.items.len() == 1 && is_simple_equality_body(&arrow.body) {
+        if let Some(AstNode::ArrowFunctionExpression(arrow)) = ctx.node(first_arg_id) {
+            let params: Vec<NodeId> = arrow.params.to_vec();
+            let body_id = arrow.body;
+            if params.len() == 1 && is_simple_equality_body(body_id, ctx) {
                 // Try to extract the value being compared against the parameter
-                let fix = extract_equality_value(arrow, ctx.source_text()).map(|val_text| {
-                    let prop_span = Span::new(member.property.span.start, member.property.span.end);
-                    let args_span = Span::new(
-                        call.arguments
-                            .first()
-                            .map_or(call.span.end, |a| a.span().start),
-                        call.arguments
-                            .last()
-                            .map_or(call.span.end, |a| a.span().end),
-                    );
-                    Fix {
-                        kind: FixKind::SuggestionFix,
-                        message: format!("Replace with `.indexOf({val_text})`"),
-                        edits: vec![
-                            Edit {
-                                span: prop_span,
-                                replacement: "indexOf".to_owned(),
-                            },
-                            Edit {
-                                span: args_span,
-                                replacement: val_text,
-                            },
-                        ],
-                        is_snippet: false,
-                    }
-                });
+                let fix = extract_equality_value(&params, body_id, ctx.source_text(), ctx).map(
+                    |val_text| {
+                        // We need the span of the property name "findIndex" for the method rename
+                        // Since StaticMemberExpressionNode doesn't have property.span, use source text
+                        // to find the property span from the member expression span
+                        let member_span = member.span;
+                        // Find "findIndex" in the source text within the member span
+                        let source = ctx.source_text();
+                        let member_text = source
+                            .get(member_span.start as usize..member_span.end as usize)
+                            .unwrap_or("");
+                        let prop_offset = member_text.rfind("findIndex").unwrap_or(0);
+                        let prop_start =
+                            member_span.start + u32::try_from(prop_offset).unwrap_or(0);
+                        let prop_end = prop_start + 9; // "findIndex".len()
+
+                        // Args span
+                        let first_arg_span = ctx.node(first_arg_id).map_or(
+                            starlint_ast::types::Span::EMPTY,
+                            starlint_ast::AstNode::span,
+                        );
+
+                        Fix {
+                            kind: FixKind::SuggestionFix,
+                            message: format!("Replace with `.indexOf({val_text})`"),
+                            edits: vec![
+                                Edit {
+                                    span: Span::new(prop_start, prop_end),
+                                    replacement: "indexOf".to_owned(),
+                                },
+                                Edit {
+                                    span: Span::new(first_arg_span.start, first_arg_span.end),
+                                    replacement: val_text,
+                                },
+                            ],
+                            is_snippet: false,
+                        }
+                    },
+                );
 
                 ctx.report(Diagnostic {
                     rule_name: "prefer-array-index-of".to_owned(),
@@ -157,22 +179,13 @@ impl NativeRule for PreferArrayIndexOf {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferArrayIndexOf)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferArrayIndexOf)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
@@ -200,7 +213,7 @@ mod tests {
         let diags = lint("arr.findIndex(x => x.id === 5);");
         // This is a member expression equality, not a simple `x === val`.
         // Our heuristic still flags it because the body is a binary equality.
-        // That is acceptable — it is a suggestion, not an error.
+        // That is acceptable -- it is a suggestion, not an error.
         assert_eq!(diags.len(), 1, "still flags member-based equality");
     }
 

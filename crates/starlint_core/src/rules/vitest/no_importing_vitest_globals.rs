@@ -5,14 +5,13 @@
 //! from the `vitest` package. When `globals: true` is set in Vitest config,
 //! these are available without import.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::ImportDeclarationSpecifier;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "vitest/no-importing-vitest-globals";
@@ -36,7 +35,7 @@ const VITEST_GLOBALS: &[&str] = &[
 #[derive(Debug)]
 pub struct NoImportingVitestGlobals;
 
-impl NativeRule for NoImportingVitestGlobals {
+impl LintRule for NoImportingVitestGlobals {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -48,65 +47,67 @@ impl NativeRule for NoImportingVitestGlobals {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let source_value = import.source.value.as_str();
+        let source_value = import.source.as_str();
 
         if source_value != "vitest" {
             return;
         }
 
         // Check if any imported specifier is a known Vitest global.
-        let Some(specifiers) = &import.specifiers else {
+        // specifiers is Box<[NodeId]> — resolve each through ctx.node()
+        if import.specifiers.is_empty() {
             return;
-        };
+        }
 
-        for specifier in specifiers {
-            if let ImportDeclarationSpecifier::ImportSpecifier(named) = specifier {
-                let imported_name = named.imported.name().as_str();
-                if VITEST_GLOBALS.contains(&imported_name) {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: format!(
-                            "Do not import `{imported_name}` from `vitest` — it is available as a global when `globals: true` is configured"
-                        ),
-                        span: Span::new(named.span.start, named.span.end),
-                        severity: Severity::Warning,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
-                }
-            }
+        // Collect diagnostics data first (to avoid borrow conflicts)
+        let diag_data: Vec<(String, starlint_ast::types::Span)> = import
+            .specifiers
+            .iter()
+            .filter_map(|&spec_id| {
+                let AstNode::ImportSpecifier(named) = ctx.node(spec_id)? else {
+                    return None;
+                };
+                let imported_name = named.imported.as_str();
+                VITEST_GLOBALS
+                    .contains(&imported_name)
+                    .then(|| (imported_name.to_owned(), named.span))
+            })
+            .collect();
+
+        for (imported_name, span) in diag_data {
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!(
+                    "Do not import `{imported_name}` from `vitest` — it is available as a global when `globals: true` is configured"
+                ),
+                span: Span::new(span.start, span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoImportingVitestGlobals)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoImportingVitestGlobals)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -154,6 +154,39 @@ impl AstTree {
         NodeId(self.nodes.len() as u32)
     }
 
+    /// Collect all [`BindingIdentifierNode`](crate::node::BindingIdentifierNode)
+    /// references in the subtree rooted at `id`.
+    ///
+    /// Walks children recursively (useful for destructuring patterns) and
+    /// returns `(NodeId, &BindingIdentifierNode)` pairs.
+    #[must_use]
+    pub fn get_binding_identifiers(
+        &self,
+        id: NodeId,
+    ) -> Vec<(NodeId, &crate::node::BindingIdentifierNode)> {
+        let mut result = Vec::new();
+        self.collect_binding_identifiers(id, &mut result);
+        result
+    }
+
+    /// Recursive helper for [`get_binding_identifiers`](Self::get_binding_identifiers).
+    fn collect_binding_identifiers<'a>(
+        &'a self,
+        id: NodeId,
+        out: &mut Vec<(NodeId, &'a crate::node::BindingIdentifierNode)>,
+    ) {
+        let Some(node) = self.get(id) else {
+            return;
+        };
+        if let Some(binding) = node.as_binding_identifier() {
+            out.push((id, binding));
+            return;
+        }
+        for child_id in node_children(node) {
+            self.collect_binding_identifiers(child_id, out);
+        }
+    }
+
     /// Borrow the underlying nodes slice.
     #[must_use]
     pub fn nodes(&self) -> &[AstNode] {

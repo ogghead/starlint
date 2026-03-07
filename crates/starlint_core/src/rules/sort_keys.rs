@@ -3,32 +3,36 @@
 //! Require object keys to be sorted alphabetically within each object literal.
 //! This promotes consistency and makes it easier to find keys in large objects.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::PropertyKey;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags object literals whose keys are not alphabetically sorted.
 #[derive(Debug)]
 pub struct SortKeys;
 
-/// Extract a comparable string from a property key.
-fn key_name(key: &PropertyKey<'_>) -> Option<String> {
-    match key {
-        PropertyKey::StaticIdentifier(id) => Some(id.name.to_string()),
-        PropertyKey::StringLiteral(s) => Some(s.value.to_string()),
-        PropertyKey::NumericLiteral(n) => Some(n.raw_str().to_string()),
+/// Extract a comparable string from a property key node.
+fn key_name(key_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let node = ctx.node(key_id)?;
+    match node {
+        AstNode::IdentifierReference(id) => Some(id.name.clone()),
+        AstNode::BindingIdentifier(id) => Some(id.name.clone()),
+        AstNode::StringLiteral(s) => Some(s.value.clone()),
+        AstNode::NumericLiteral(n) => {
+            let start = usize::try_from(n.span.start).unwrap_or(0);
+            let end = usize::try_from(n.span.end).unwrap_or(0);
+            ctx.source_text().get(start..end).map(String::from)
+        }
         // Computed keys can't be statically sorted
         _ => None,
     }
 }
 
-impl NativeRule for SortKeys {
+impl LintRule for SortKeys {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "sort-keys".to_owned(),
@@ -38,12 +42,12 @@ impl NativeRule for SortKeys {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ObjectExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ObjectExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ObjectExpression(obj) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ObjectExpression(obj) = node else {
             return;
         };
 
@@ -52,15 +56,20 @@ impl NativeRule for SortKeys {
         }
 
         // Extract static key names from properties (skip spread elements)
-        let keys: Vec<(String, oxc_span::Span)> = obj
+        let keys: Vec<(String, starlint_ast::types::Span)> = obj
             .properties
             .iter()
-            .filter_map(|prop| match prop {
-                oxc_ast::ast::ObjectPropertyKind::ObjectProperty(p) => {
-                    key_name(&p.key).map(|name| (name, p.key.span()))
+            .filter_map(|prop_id| {
+                if let Some(AstNode::ObjectProperty(p)) = ctx.node(*prop_id) {
+                    let key_span = ctx.node(p.key).map_or(
+                        starlint_ast::types::Span::EMPTY,
+                        starlint_ast::AstNode::span,
+                    );
+                    key_name(p.key, ctx).map(|name| (name, key_span))
+                } else {
+                    // SpreadProperty doesn't have a sortable key
+                    None
                 }
-                // SpreadProperty doesn't have a sortable key
-                oxc_ast::ast::ObjectPropertyKind::SpreadProperty(_) => None,
             })
             .collect();
 
@@ -99,22 +108,13 @@ impl NativeRule for SortKeys {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(SortKeys)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SortKeys)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,20 +3,19 @@
 //! Disallow catch clauses that only rethrow the caught error.
 //! `try { ... } catch (e) { throw e; }` is equivalent to just the try body.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BindingPattern, Expression, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags catch clauses that only rethrow without transformation.
 #[derive(Debug)]
 pub struct NoUselessCatch;
 
-impl NativeRule for NoUselessCatch {
+impl LintRule for NoUselessCatch {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-useless-catch".to_owned(),
@@ -26,68 +25,82 @@ impl NativeRule for NoUselessCatch {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TryStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TryStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TryStatement(stmt) = kind else {
+    #[allow(clippy::indexing_slicing)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TryStatement(stmt) = node else {
             return;
         };
 
-        let Some(handler) = &stmt.handler else {
+        let Some(handler_id) = stmt.handler else {
+            return;
+        };
+
+        let Some(AstNode::CatchClause(handler)) = ctx.node(handler_id) else {
             return;
         };
 
         // Must have a simple identifier parameter.
-        let Some(param) = &handler.param else {
+        let Some(param_id) = handler.param else {
             return;
         };
-        let BindingPattern::BindingIdentifier(param_id) = &param.pattern else {
+
+        let Some(AstNode::BindingIdentifier(param_ident)) = ctx.node(param_id) else {
             return;
         };
-        let param_name = param_id.name.as_str();
+        let param_name = param_ident.name.clone();
+
+        let handler_span = handler.span;
+        let handler_body_id = handler.body;
+
+        let Some(AstNode::BlockStatement(handler_body)) = ctx.node(handler_body_id) else {
+            return;
+        };
 
         // Body must have exactly one statement: `throw <same identifier>`.
-        if handler.body.body.len() != 1 {
+        if handler_body.body.len() != 1 {
             return;
         }
-        let Some(Statement::ThrowStatement(throw_stmt)) = handler.body.body.first() else {
+
+        let first_stmt_id = handler_body.body[0];
+        let Some(AstNode::ThrowStatement(throw_stmt)) = ctx.node(first_stmt_id) else {
             return;
         };
-        let Expression::Identifier(thrown_id) = &throw_stmt.argument else {
+
+        let throw_arg_id = throw_stmt.argument;
+        let Some(AstNode::IdentifierReference(thrown_id)) = ctx.node(throw_arg_id) else {
             return;
         };
-        if thrown_id.name.as_str() != param_name {
+        if thrown_id.name != param_name {
             return;
         }
 
         // This is a useless catch. Build the fix.
         let source = ctx.source_text();
 
-        let (replacement, fix_message) = if stmt.finalizer.is_some() {
-            // Has finally — remove the catch clause, keep try + finally.
-            // Replace from end of try block to start of finally block.
-            let catch_end = handler.span.end;
+        // Get the block span
+        let block_span = ctx.node(stmt.block).map_or(
+            starlint_ast::types::Span::EMPTY,
+            starlint_ast::AstNode::span,
+        );
 
-            // Find the span between try block end and finalizer start that
-            // covers the entire catch clause. We replace [catch_start..catch_end]
-            // with empty text, but need to remove leading whitespace too.
-            // Instead, replace the catch clause span with empty string.
-            return ctx.report(Diagnostic {
+        if stmt.finalizer.is_some() {
+            // Has finally -- remove the catch clause, keep try + finally.
+            let catch_end = handler_span.end;
+            ctx.report(Diagnostic {
                 rule_name: "no-useless-catch".to_owned(),
                 message: "Unnecessary catch clause — only rethrows the error".to_owned(),
-                span: Span::new(handler.span.start, handler.span.end),
+                span: Span::new(handler_span.start, handler_span.end),
                 severity: Severity::Warning,
                 help: Some("Remove the useless catch clause".to_owned()),
                 fix: Some(Fix {
                     kind: FixKind::SafeFix,
                     message: "Remove catch clause".to_owned(),
                     edits: vec![Edit {
-                        // Remove from end of try block to start of finally.
-                        // We trim catch + surrounding space by replacing
-                        // [try_block_end..finalizer_start] with a space.
-                        span: Span::new(stmt.block.span.end, catch_end),
+                        span: Span::new(block_span.end, catch_end),
                         replacement: String::new(),
                     }],
                     is_snippet: false,
@@ -95,61 +108,53 @@ impl NativeRule for NoUselessCatch {
                 labels: vec![],
             });
         } else {
-            // No finally — unwrap the try block entirely.
-            let block_start = usize::try_from(stmt.block.span.start).unwrap_or(0);
-            let block_end = usize::try_from(stmt.block.span.end).unwrap_or(0);
+            // No finally -- unwrap the try block entirely.
+            let block_start = usize::try_from(block_span.start).unwrap_or(0);
+            let block_end = usize::try_from(block_span.end).unwrap_or(0);
             let Some(block_text) = source.get(block_start..block_end) else {
                 return;
             };
 
-            // Strip the outer braces from the try block: `{ body }` → `body`.
-            // Trim leading `{` and trailing `}`, then dedent.
+            // Strip the outer braces from the try block: `{ body }` -> `body`.
             let inner = block_text
                 .strip_prefix('{')
                 .and_then(|s| s.strip_suffix('}'))
                 .unwrap_or(block_text)
                 .trim();
 
-            (inner.to_owned(), "Unwrap try block".to_owned())
-        };
+            let replacement = inner.to_owned();
+            let fix_message = "Unwrap try block".to_owned();
 
-        ctx.report(Diagnostic {
-            rule_name: "no-useless-catch".to_owned(),
-            message: "Unnecessary try/catch — catch clause only rethrows the error".to_owned(),
-            span: Span::new(stmt.span.start, stmt.span.end),
-            severity: Severity::Warning,
-            help: Some("Remove the try/catch wrapper".to_owned()),
-            fix: Some(Fix {
-                kind: FixKind::SafeFix,
-                message: fix_message,
-                edits: vec![Edit {
-                    span: Span::new(stmt.span.start, stmt.span.end),
-                    replacement,
-                }],
-                is_snippet: false,
-            }),
-            labels: vec![],
-        });
+            ctx.report(Diagnostic {
+                rule_name: "no-useless-catch".to_owned(),
+                message: "Unnecessary try/catch — catch clause only rethrows the error".to_owned(),
+                span: Span::new(stmt.span.start, stmt.span.end),
+                severity: Severity::Warning,
+                help: Some("Remove the try/catch wrapper".to_owned()),
+                fix: Some(Fix {
+                    kind: FixKind::SafeFix,
+                    message: fix_message,
+                    edits: vec![Edit {
+                        span: Span::new(stmt.span.start, stmt.span.end),
+                        replacement,
+                    }],
+                    is_snippet: false,
+                }),
+                labels: vec![],
+            });
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) else {
-            return vec![];
-        };
-        let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessCatch)];
-        traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessCatch)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

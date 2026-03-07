@@ -4,22 +4,19 @@
 //! where the bounds are inverted, making the clamping logic incorrect.
 //! For example, `Math.min(Math.max(x, 10), 5)` where min bound > max bound.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::{AstNode, CallExpressionNode};
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags nested `Math.min`/`Math.max` with inverted bounds.
 #[derive(Debug)]
 pub struct BadMinMaxFunc;
 
-impl NativeRule for BadMinMaxFunc {
+impl LintRule for BadMinMaxFunc {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "bad-min-max-func".to_owned(),
@@ -29,17 +26,17 @@ impl NativeRule for BadMinMaxFunc {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
     #[allow(clippy::too_many_lines)]
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let outer_fn = get_math_func_name(&call.callee);
+        let outer_fn = get_math_func_name(call.callee, ctx);
         let Some(outer_name) = outer_fn else {
             return;
         };
@@ -47,14 +44,11 @@ impl NativeRule for BadMinMaxFunc {
         // Look for the inner Math.min/Math.max call
         // Pattern: Math.min(Math.max(x, low), high) or Math.max(Math.min(x, high), low)
         for arg in &call.arguments {
-            let Some(expr) = arg.as_expression() else {
-                continue;
-            };
-            let Expression::CallExpression(inner_call) = expr else {
+            let Some(AstNode::CallExpression(inner_call)) = ctx.node(*arg) else {
                 continue;
             };
 
-            let inner_fn = get_math_func_name(&inner_call.callee);
+            let inner_fn = get_math_func_name(inner_call.callee, ctx);
             let Some(inner_name) = inner_fn else {
                 continue;
             };
@@ -62,8 +56,8 @@ impl NativeRule for BadMinMaxFunc {
             // Only flag when outer and inner are different (min wrapping max or vice versa)
             if outer_name != inner_name {
                 // Try to extract numeric bounds
-                let outer_bound = get_numeric_arg(call, inner_call);
-                let inner_bound = get_numeric_arg_from_inner(inner_call);
+                let outer_bound = get_numeric_arg(call, inner_call, ctx);
+                let inner_bound = get_numeric_arg_from_inner(inner_call, ctx);
 
                 if let (Some(outer_val), Some(inner_val)) = (outer_bound, inner_bound) {
                     // Math.min(Math.max(x, low), high): low should be < high
@@ -84,9 +78,9 @@ impl NativeRule for BadMinMaxFunc {
                         #[allow(clippy::as_conversions)]
                         let fix = {
                             let source = ctx.source_text();
-                            let inner_num_span = find_numeric_literal_span(inner_call);
+                            let inner_num_span = find_numeric_literal_span(inner_call, ctx);
                             let outer_num_span =
-                                find_numeric_literal_span_excluding(call, inner_call);
+                                find_numeric_literal_span_excluding(call, inner_call, ctx);
                             match (inner_num_span, outer_num_span) {
                                 (Some(i_span), Some(o_span)) => {
                                     let i_text =
@@ -97,7 +91,8 @@ impl NativeRule for BadMinMaxFunc {
                                         (Some(inner_t), Some(outer_t)) => {
                                             // Swap: replace inner num with outer num and vice versa
                                             // Build by replacing in the full expression
-                                            let call_span = call.span();
+                                            let call_span =
+                                                Span::new(call.span.start, call.span.end);
                                             let full_text = source.get(
                                                 call_span.start as usize..call_span.end as usize,
                                             );
@@ -174,34 +169,32 @@ impl NativeRule for BadMinMaxFunc {
 }
 
 /// Get the Math function name if the callee is `Math.min` or `Math.max`.
-fn get_math_func_name<'a>(callee: &'a Expression<'a>) -> Option<&'a str> {
-    match callee {
-        Expression::StaticMemberExpression(member) => {
-            let name = member.property.name.as_str();
-            ((name == "min" || name == "max")
-                && matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Math"))
-            .then_some(name)
-        }
-        _ => None,
-    }
+fn get_math_func_name(callee: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(callee) else {
+        return None;
+    };
+    let name = member.property.as_str();
+    let is_math = matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Math");
+    ((name == "min" || name == "max") && is_math).then(|| name.to_owned())
 }
 
 /// Get the numeric literal argument from the outer call that is NOT the inner call.
 fn get_numeric_arg(
-    outer: &oxc_ast::ast::CallExpression<'_>,
-    inner: &oxc_ast::ast::CallExpression<'_>,
+    outer: &CallExpressionNode,
+    inner: &CallExpressionNode,
+    ctx: &LintContext<'_>,
 ) -> Option<f64> {
     for arg in &outer.arguments {
-        let Some(expr) = arg.as_expression() else {
+        let Some(arg_node) = ctx.node(*arg) else {
             continue;
         };
         // Skip the inner call expression
-        if let Expression::CallExpression(c) = expr {
+        if let AstNode::CallExpression(c) = arg_node {
             if c.span == inner.span {
                 continue;
             }
         }
-        if let Expression::NumericLiteral(n) = expr {
+        if let AstNode::NumericLiteral(n) = arg_node {
             return Some(n.value);
         }
     }
@@ -209,12 +202,12 @@ fn get_numeric_arg(
 }
 
 /// Get the numeric literal argument from an inner Math.min/max call.
-fn get_numeric_arg_from_inner(inner: &oxc_ast::ast::CallExpression<'_>) -> Option<f64> {
+fn get_numeric_arg_from_inner(inner: &CallExpressionNode, ctx: &LintContext<'_>) -> Option<f64> {
     for arg in &inner.arguments {
-        let Some(expr) = arg.as_expression() else {
+        let Some(arg_node) = ctx.node(*arg) else {
             continue;
         };
-        if let Expression::NumericLiteral(n) = expr {
+        if let AstNode::NumericLiteral(n) = arg_node {
             return Some(n.value);
         }
     }
@@ -222,12 +215,9 @@ fn get_numeric_arg_from_inner(inner: &oxc_ast::ast::CallExpression<'_>) -> Optio
 }
 
 /// Find the span of the numeric literal argument in a call.
-fn find_numeric_literal_span(call: &oxc_ast::ast::CallExpression<'_>) -> Option<Span> {
+fn find_numeric_literal_span(call: &CallExpressionNode, ctx: &LintContext<'_>) -> Option<Span> {
     for arg in &call.arguments {
-        let Some(expr) = arg.as_expression() else {
-            continue;
-        };
-        if let Expression::NumericLiteral(n) = expr {
+        if let Some(AstNode::NumericLiteral(n)) = ctx.node(*arg) {
             return Some(Span::new(n.span.start, n.span.end));
         }
     }
@@ -236,19 +226,20 @@ fn find_numeric_literal_span(call: &oxc_ast::ast::CallExpression<'_>) -> Option<
 
 /// Find the span of the numeric literal in the outer call, excluding the inner call's args.
 fn find_numeric_literal_span_excluding(
-    outer: &oxc_ast::ast::CallExpression<'_>,
-    inner: &oxc_ast::ast::CallExpression<'_>,
+    outer: &CallExpressionNode,
+    inner: &CallExpressionNode,
+    ctx: &LintContext<'_>,
 ) -> Option<Span> {
     for arg in &outer.arguments {
-        let Some(expr) = arg.as_expression() else {
+        let Some(arg_node) = ctx.node(*arg) else {
             continue;
         };
-        if let Expression::CallExpression(c) = expr {
+        if let AstNode::CallExpression(c) = arg_node {
             if c.span == inner.span {
                 continue;
             }
         }
-        if let Expression::NumericLiteral(n) = expr {
+        if let AstNode::NumericLiteral(n) = arg_node {
             return Some(Span::new(n.span.start, n.span.end));
         }
     }
@@ -257,23 +248,13 @@ fn find_numeric_literal_span_excluding(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(BadMinMaxFunc)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BadMinMaxFunc)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

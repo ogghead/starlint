@@ -2,14 +2,13 @@
 //!
 //! Warn when array literals are passed as JSX props, causing unnecessary re-renders.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeValue, JSXExpression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "react-perf/jsx-no-new-array-as-prop";
@@ -21,7 +20,7 @@ const RULE_NAME: &str = "react-perf/jsx-no-new-array-as-prop";
 #[derive(Debug)]
 pub struct JsxNoNewArrayAsProp;
 
-impl NativeRule for JsxNoNewArrayAsProp {
+impl LintRule for JsxNoNewArrayAsProp {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -31,24 +30,34 @@ impl NativeRule for JsxNoNewArrayAsProp {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXAttribute])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXAttribute])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXAttribute(attr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXAttribute(attr) = node else {
             return;
         };
 
-        let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value else {
+        // attr.value is Option<NodeId>. Resolve it to check if it's an expression
+        // container containing an array expression.
+        let Some(val_id) = attr.value else {
             return;
         };
+        let Some(AstNode::JSXExpressionContainer(container)) = ctx.node(val_id) else {
+            return;
+        };
+        let container_span = container.span;
+        let is_array = container
+            .expression
+            .and_then(|e| ctx.node(e))
+            .is_some_and(|n| matches!(n, AstNode::ArrayExpression(_)));
 
-        if matches!(container.expression, JSXExpression::ArrayExpression(_)) {
+        if is_array {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Do not pass an array literal as a JSX prop — it creates a new reference on every render".to_owned(),
-                span: Span::new(container.span.start, container.span.end),
+                span: Span::new(container_span.start, container_span.end),
                 severity: Severity::Warning,
                 help: None,
                 fix: None,
@@ -60,22 +69,13 @@ impl NativeRule for JsxNoNewArrayAsProp {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(JsxNoNewArrayAsProp)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxNoNewArrayAsProp)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

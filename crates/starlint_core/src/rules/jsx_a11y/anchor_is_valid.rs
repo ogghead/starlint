@@ -2,16 +2,15 @@
 //!
 //! Enforce anchors are valid (have href, not `#` or `javascript:`).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/anchor-is-valid";
@@ -19,14 +18,11 @@ const RULE_NAME: &str = "jsx-a11y/anchor-is-valid";
 #[derive(Debug)]
 pub struct AnchorIsValid;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
+/// Check if an attribute exists on a JSX opening element.
+fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
+    attributes.iter().any(|&attr_id| {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            attr.name == name
         } else {
             false
         }
@@ -34,19 +30,18 @@ fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> b
 }
 
 /// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value<'a>(
-    opening: &'a oxc_ast::ast::JSXOpeningElement<'a>,
+fn get_attr_string_value(
+    attributes: &[NodeId],
     attr_name: &str,
-) -> Option<&'a str> {
-    for item in &opening.attributes {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            let matches = match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name,
-                JSXAttributeName::NamespacedName(_) => false,
-            };
-            if matches {
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    return Some(lit.value.as_str());
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    for &attr_id in attributes {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            if attr.name == attr_name {
+                if let Some(value_id) = attr.value {
+                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                        return Some(lit.value.clone());
+                    }
                 }
             }
         }
@@ -56,20 +51,18 @@ fn get_attr_string_value<'a>(
 
 /// Get the span of an attribute's value (including quotes) if it's a string literal.
 fn get_attr_value_span(
-    opening: &oxc_ast::ast::JSXOpeningElement<'_>,
+    attributes: &[NodeId],
     attr_name_str: &str,
+    ctx: &LintContext<'_>,
 ) -> Option<Span> {
-    use oxc_span::GetSpan;
-    for item in &opening.attributes {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            let matches = match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name_str,
-                JSXAttributeName::NamespacedName(_) => false,
-            };
-            if matches {
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    let s = lit.span();
-                    return Some(Span::new(s.start, s.end));
+    for &attr_id in attributes {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            if attr.name == attr_name_str {
+                if let Some(value_id) = attr.value {
+                    if let Some(node) = ctx.node(value_id) {
+                        let s = node.span();
+                        return Some(Span::new(s.start, s.end));
+                    }
                 }
             }
         }
@@ -77,7 +70,7 @@ fn get_attr_value_span(
     None
 }
 
-impl NativeRule for AnchorIsValid {
+impl LintRule for AnchorIsValid {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -88,28 +81,27 @@ impl NativeRule for AnchorIsValid {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let is_anchor = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str() == "a",
-            _ => false,
-        };
-        if !is_anchor {
+        if opening.name != "a" {
             return;
         }
 
+        let opening_span = opening.span;
+        let attrs: Vec<NodeId> = opening.attributes.to_vec();
+
         // Check if href exists
-        if !has_attribute(opening, "href") {
+        if !has_attribute(&attrs, "href", ctx) {
             let insert_pos = fix_utils::jsx_attr_insert_offset(
                 ctx.source_text(),
-                Span::new(opening.span.start, opening.span.end),
+                Span::new(opening_span.start, opening_span.end),
             );
             let fix = FixBuilder::new("Add `href` attribute", FixKind::SuggestionFix)
                 .insert_at(insert_pos, " href=\"${1:/path}\"")
@@ -118,7 +110,7 @@ impl NativeRule for AnchorIsValid {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Anchors must have an `href` attribute".to_owned(),
-                span: Span::new(opening.span.start, opening.span.end),
+                span: Span::new(opening_span.start, opening_span.end),
                 severity: Severity::Warning,
                 help: None,
                 fix,
@@ -128,9 +120,9 @@ impl NativeRule for AnchorIsValid {
         }
 
         // Check for invalid href values
-        if let Some(href) = get_attr_string_value(opening, "href") {
+        if let Some(href) = get_attr_string_value(&attrs, "href", ctx) {
             if href == "#" || href.starts_with("javascript:") {
-                let fix = get_attr_value_span(opening, "href").and_then(|val_span| {
+                let fix = get_attr_value_span(&attrs, "href", ctx).and_then(|val_span| {
                     FixBuilder::new("Replace with a valid URL", FixKind::SuggestionFix)
                         .replace(Span::new(val_span.start, val_span.end), "\"${1:/path}\"")
                         .build_snippet()
@@ -138,7 +130,7 @@ impl NativeRule for AnchorIsValid {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: "Anchors must have a valid `href` attribute. Avoid `#` or `javascript:` URLs".to_owned(),
-                    span: Span::new(opening.span.start, opening.span.end),
+                    span: Span::new(opening_span.start, opening_span.end),
                     severity: Severity::Warning,
                     help: Some("Replace with a valid URL".to_owned()),
                     fix,
@@ -151,22 +143,13 @@ impl NativeRule for AnchorIsValid {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(AnchorIsValid)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(AnchorIsValid)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

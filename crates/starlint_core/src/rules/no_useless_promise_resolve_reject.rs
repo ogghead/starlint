@@ -4,21 +4,19 @@
 //! unnecessarily within async functions, where you can simply return/throw
 //! the value directly.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags unnecessary `Promise.resolve()`/`Promise.reject()` in async functions.
 #[derive(Debug)]
 pub struct NoUselessPromiseResolveReject;
 
-impl NativeRule for NoUselessPromiseResolveReject {
+impl LintRule for NoUselessPromiseResolveReject {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-useless-promise-resolve-reject".to_owned(),
@@ -33,74 +31,70 @@ impl NativeRule for NoUselessPromiseResolveReject {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::Function,
-            AstType::ReturnStatement,
-        ])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ReturnStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Look for return statements
-        let AstKind::ReturnStatement(ret) = kind else {
+        let AstNode::ReturnStatement(ret) = node else {
             return;
         };
 
-        let Some(arg) = &ret.argument else {
+        let Some(arg_id) = ret.argument else {
             return;
         };
 
         // Check if the return value is Promise.resolve(...) or Promise.reject(...)
-        let Some(method_name) = is_promise_resolve_or_reject(arg) else {
+        let Some(method_name) = is_promise_resolve_or_reject(arg_id, ctx) else {
             return;
         };
 
         // Extract the inner argument text for the fix
-        let inner_arg_text = extract_promise_inner_arg(arg, ctx.source_text());
+        let inner_arg_text = extract_promise_inner_arg(arg_id, ctx);
 
         // Walk ancestors to check if we're inside an async function
-        let Some(semantic) = ctx.semantic() else {
-            return;
-        };
-
-        let Some(node_id) = find_node_id_by_span(semantic, ret.span) else {
-            return;
-        };
-
-        // Walk ancestors to find the nearest function
-        for ancestor in semantic.nodes().ancestors(node_id) {
-            match ancestor.kind() {
-                AstKind::Function(func) if func.r#async => {
-                    report_promise_fix(ctx, ret.span, method_name, &inner_arg_text);
+        let mut current = node_id;
+        loop {
+            let Some(parent_id) = ctx.parent(current) else {
+                break;
+            };
+            match ctx.node(parent_id) {
+                Some(AstNode::Function(func)) if func.is_async => {
+                    report_promise_fix(ctx, ret.span, &method_name, &inner_arg_text);
                     return;
                 }
-                AstKind::ArrowFunctionExpression(arrow) if arrow.r#async => {
-                    report_promise_fix(ctx, ret.span, method_name, &inner_arg_text);
+                Some(AstNode::ArrowFunctionExpression(arrow)) if arrow.is_async => {
+                    report_promise_fix(ctx, ret.span, &method_name, &inner_arg_text);
                     return;
                 }
                 // Hit a non-async function boundary, stop
-                AstKind::Function(_) | AstKind::ArrowFunctionExpression(_) => {
+                Some(AstNode::Function(_) | AstNode::ArrowFunctionExpression(_)) => {
                     return;
                 }
+                None => break,
                 _ => {}
             }
+            current = parent_id;
         }
     }
 }
 
 /// Extract the inner argument text from `Promise.resolve(x)` or `Promise.reject(x)`.
 /// Returns the argument source text, or an empty string if no arguments.
-fn extract_promise_inner_arg(expr: &Expression<'_>, source: &str) -> String {
-    let Expression::CallExpression(call) = expr else {
+fn extract_promise_inner_arg(expr_id: NodeId, ctx: &LintContext<'_>) -> String {
+    let Some(AstNode::CallExpression(call)) = ctx.node(expr_id) else {
         return String::new();
     };
 
-    if let Some(first_arg) = call.arguments.first() {
-        let arg_span = first_arg.span();
+    if let Some(&first_arg_id) = call.arguments.first() {
+        let arg_span = ctx.node(first_arg_id).map_or(
+            starlint_ast::types::Span::EMPTY,
+            starlint_ast::AstNode::span,
+        );
         let start = usize::try_from(arg_span.start).unwrap_or(0);
         let end = usize::try_from(arg_span.end).unwrap_or(0);
-        source.get(start..end).unwrap_or("").to_owned()
+        ctx.source_text().get(start..end).unwrap_or("").to_owned()
     } else {
         String::new()
     }
@@ -108,8 +102,8 @@ fn extract_promise_inner_arg(expr: &Expression<'_>, source: &str) -> String {
 
 /// Report the diagnostic with a fix for Promise.resolve/reject.
 fn report_promise_fix(
-    ctx: &mut NativeLintContext<'_>,
-    ret_span: oxc_span::Span,
+    ctx: &mut LintContext<'_>,
+    ret_span: starlint_ast::types::Span,
     method_name: &str,
     inner_arg_text: &str,
 ) {
@@ -151,16 +145,16 @@ fn report_promise_fix(
 
 /// Check if an expression is `Promise.resolve(...)` or `Promise.reject(...)`.
 /// Returns the method name if it matches.
-fn is_promise_resolve_or_reject<'a>(expr: &'a Expression<'_>) -> Option<&'a str> {
-    let Expression::CallExpression(call) = expr else {
+fn is_promise_resolve_or_reject(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let Some(AstNode::CallExpression(call)) = ctx.node(expr_id) else {
         return None;
     };
 
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
         return None;
     };
 
-    let Expression::Identifier(obj) = &member.object else {
+    let Some(AstNode::IdentifierReference(obj)) = ctx.node(member.object) else {
         return None;
     };
 
@@ -168,49 +162,19 @@ fn is_promise_resolve_or_reject<'a>(expr: &'a Expression<'_>) -> Option<&'a str>
         return None;
     }
 
-    let name = member.property.name.as_str();
+    let name = member.property.clone();
     (name == "resolve" || name == "reject").then_some(name)
-}
-
-/// Find the semantic [`NodeId`] for a node with the given span.
-fn find_node_id_by_span(
-    semantic: &oxc_semantic::Semantic<'_>,
-    span: oxc_span::Span,
-) -> Option<oxc_semantic::NodeId> {
-    for node in semantic.nodes() {
-        if node.kind().span() == span {
-            return Some(node.id());
-        }
-    }
-    None
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessPromiseResolveReject)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessPromiseResolveReject)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -42,17 +42,5 @@ use crate::rule::NativeRule;
 #[must_use]
 #[allow(clippy::too_many_lines)]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![
-        Box::new(consistent_type_specifier_style::ConsistentTypeSpecifierStyle),
-        Box::new(default::DefaultExport),
-        Box::new(export::ExportRule),        Box::new(group_exports::GroupExports),
-        Box::new(named::NamedExport),
-        Box::new(namespace::NamespaceImport),        Box::new(no_amd::NoAmd),
-        Box::new(no_anonymous_default_export::NoAnonymousDefaultExport),
-        Box::new(no_commonjs::NoCommonjs),        Box::new(no_default_export::NoDefaultExport),
-        Box::new(no_dynamic_require::NoDynamicRequire),
-        Box::new(no_empty_named_blocks::NoEmptyNamedBlocks),
-        Box::new(no_namespace::NoNamespace),
-        // no_self_import → migrated to LintRule
-        Box::new(no_unassigned_import::NoUnassignedImport),    ]
+    vec![]
 }

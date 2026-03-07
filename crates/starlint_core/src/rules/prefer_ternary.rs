@@ -4,22 +4,21 @@
 //! both assign to the same variable. Ternary expressions are more concise
 //! for these trivial patterns.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, Expression, Statement};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
+#![allow(clippy::indexing_slicing)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::AssignmentOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags simple `if`/`else` blocks that could be ternary expressions.
 #[derive(Debug)]
 pub struct PreferTernary;
 
-impl NativeRule for PreferTernary {
+impl LintRule for PreferTernary {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-ternary".to_owned(),
@@ -30,41 +29,43 @@ impl NativeRule for PreferTernary {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::IfStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::IfStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::IfStatement(if_stmt) = kind else {
+    #[allow(clippy::as_conversions)]
+    #[allow(clippy::indexing_slicing, clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::IfStatement(if_stmt) = node else {
             return;
         };
 
         // Must have an else branch
-        if if_stmt.alternate.is_none() {
-            return;
-        }
-
-        let consequent = unwrap_single_statement(&if_stmt.consequent);
-        let alternate = if_stmt
-            .alternate
-            .as_ref()
-            .and_then(|alt| unwrap_single_statement(alt));
-
-        let (Some(cons_stmt), Some(alt_stmt)) = (consequent, alternate) else {
+        let Some(alt_id) = if_stmt.alternate else {
             return;
         };
 
+        let consequent = unwrap_single_statement(if_stmt.consequent, ctx);
+        let alternate = unwrap_single_statement(alt_id, ctx);
+
+        let (Some(cons_id), Some(alt_id)) = (consequent, alternate) else {
+            return;
+        };
+
+        let cons_node = ctx.node(cons_id);
+        let alt_node = ctx.node(alt_id);
+
         // Case 1: both branches are single return statements with arguments
         let both_return = matches!(
-            (cons_stmt, alt_stmt),
-            (Statement::ReturnStatement(c), Statement::ReturnStatement(a))
+            (&cons_node, &alt_node),
+            (Some(AstNode::ReturnStatement(c)), Some(AstNode::ReturnStatement(a)))
             if c.argument.is_some() && a.argument.is_some()
         );
 
         // Case 2: both branches are single assignment expressions to the same
         // variable with the plain `=` operator
-        let both_assign_same = is_simple_assign(cons_stmt)
-            .zip(is_simple_assign(alt_stmt))
+        let both_assign_same = is_simple_assign(cons_id, ctx)
+            .zip(is_simple_assign(alt_id, ctx))
             .is_some_and(|(left, right)| left == right);
 
         if !both_return && !both_assign_same {
@@ -72,14 +73,17 @@ impl NativeRule for PreferTernary {
         }
 
         let source = ctx.source_text();
-        let cond_start = usize::try_from(if_stmt.test.span().start).unwrap_or(0);
-        let cond_end = usize::try_from(if_stmt.test.span().end).unwrap_or(0);
+        let test_span = ctx.node(if_stmt.test).map(starlint_ast::AstNode::span);
+        let (cond_start, cond_end) = match test_span {
+            Some(s) => (s.start as usize, s.end as usize),
+            None => return,
+        };
         let cond_text = source.get(cond_start..cond_end).unwrap_or("");
 
         let fix = if both_return {
-            build_return_ternary(source, cond_text, cons_stmt, alt_stmt)
+            build_return_ternary(source, cond_text, cons_id, alt_id, ctx)
         } else {
-            build_assign_ternary(source, cond_text, cons_stmt, alt_stmt)
+            build_assign_ternary(source, cond_text, cons_id, alt_id, ctx)
         };
 
         ctx.report(Diagnostic {
@@ -103,100 +107,94 @@ impl NativeRule for PreferTernary {
 }
 
 /// If the statement is a block with exactly one statement, return that
-/// statement. If it is already a non-block statement, return it directly.
+/// statement's `NodeId`. If it is already a non-block statement, return it directly.
 /// Returns `None` for blocks with zero or multiple statements.
-fn unwrap_single_statement<'a>(stmt: &'a Statement<'a>) -> Option<&'a Statement<'a>> {
-    match stmt {
-        Statement::BlockStatement(block) => {
-            if block.body.len() == 1 {
-                block.body.first()
-            } else {
-                None
-            }
-        }
-        other => Some(other),
+fn unwrap_single_statement(stmt_id: NodeId, ctx: &LintContext<'_>) -> Option<NodeId> {
+    match ctx.node(stmt_id)? {
+        AstNode::BlockStatement(block) => (block.body.len() == 1).then(|| block.body[0]),
+        _ => Some(stmt_id),
     }
 }
 
 /// If the statement is an expression statement containing a plain `=`
 /// assignment, return the assignment target name. Returns `None` otherwise.
-fn is_simple_assign<'a>(stmt: &'a Statement<'a>) -> Option<&'a str> {
-    let Statement::ExpressionStatement(expr_stmt) = stmt else {
+fn is_simple_assign(stmt_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let AstNode::ExpressionStatement(expr_stmt) = ctx.node(stmt_id)? else {
         return None;
     };
-    let Expression::AssignmentExpression(assign) = &expr_stmt.expression else {
+    let AstNode::AssignmentExpression(assign) = ctx.node(expr_stmt.expression)? else {
         return None;
     };
     if assign.operator != AssignmentOperator::Assign {
         return None;
     }
-    assignment_target_name(&assign.left)
+    assignment_target_name(assign.left, ctx)
 }
 
 /// Extract a simple identifier name from an assignment target.
-fn assignment_target_name<'a>(target: &'a AssignmentTarget<'a>) -> Option<&'a str> {
-    match target {
-        AssignmentTarget::AssignmentTargetIdentifier(ident) => Some(ident.name.as_str()),
+fn assignment_target_name(target_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    match ctx.node(target_id)? {
+        AstNode::IdentifierReference(ident) => Some(ident.name.clone()),
         _ => None,
     }
 }
 
 /// Build `return cond ? cons_val : alt_val;`
+#[allow(clippy::as_conversions)]
 fn build_return_ternary(
     source: &str,
     cond_text: &str,
-    cons_stmt: &Statement<'_>,
-    alt_stmt: &Statement<'_>,
+    cons_id: NodeId,
+    alt_id: NodeId,
+    ctx: &LintContext<'_>,
 ) -> Option<String> {
-    let Statement::ReturnStatement(cons_ret) = cons_stmt else {
+    let AstNode::ReturnStatement(cons_ret) = ctx.node(cons_id)? else {
         return None;
     };
-    let Statement::ReturnStatement(alt_ret) = alt_stmt else {
+    let AstNode::ReturnStatement(alt_ret) = ctx.node(alt_id)? else {
         return None;
     };
-    let cons_arg = cons_ret.argument.as_ref()?;
-    let alt_arg = alt_ret.argument.as_ref()?;
+    let cons_arg_id = cons_ret.argument?;
+    let alt_arg_id = alt_ret.argument?;
 
-    let if_start = usize::try_from(cons_arg.span().start).unwrap_or(0);
-    let if_end = usize::try_from(cons_arg.span().end).unwrap_or(0);
-    let else_start = usize::try_from(alt_arg.span().start).unwrap_or(0);
-    let else_end = usize::try_from(alt_arg.span().end).unwrap_or(0);
+    let cons_span = ctx.node(cons_arg_id)?.span();
+    let alt_span = ctx.node(alt_arg_id)?.span();
 
-    let if_val = source.get(if_start..if_end)?;
-    let else_val = source.get(else_start..else_end)?;
+    let if_val = source.get(cons_span.start as usize..cons_span.end as usize)?;
+    let else_val = source.get(alt_span.start as usize..alt_span.end as usize)?;
 
     Some(format!("return {cond_text} ? {if_val} : {else_val};"))
 }
 
 /// Build `target = cond ? cons_val : alt_val;`
+#[allow(clippy::as_conversions)]
 fn build_assign_ternary(
     source: &str,
     cond_text: &str,
-    if_stmt: &Statement<'_>,
-    else_stmt: &Statement<'_>,
+    if_stmt_id: NodeId,
+    else_stmt_id: NodeId,
+    ctx: &LintContext<'_>,
 ) -> Option<String> {
-    let Statement::ExpressionStatement(if_expr) = if_stmt else {
+    let AstNode::ExpressionStatement(if_expr) = ctx.node(if_stmt_id)? else {
         return None;
     };
-    let Expression::AssignmentExpression(if_assign) = &if_expr.expression else {
+    let AstNode::AssignmentExpression(if_assign) = ctx.node(if_expr.expression)? else {
         return None;
     };
-    let Statement::ExpressionStatement(else_expr) = else_stmt else {
+    let AstNode::ExpressionStatement(else_expr) = ctx.node(else_stmt_id)? else {
         return None;
     };
-    let Expression::AssignmentExpression(else_assign) = &else_expr.expression else {
+    let AstNode::AssignmentExpression(else_assign) = ctx.node(else_expr.expression)? else {
         return None;
     };
 
-    let target_name = assignment_target_name(&if_assign.left)?;
+    let target_name = assignment_target_name(if_assign.left, ctx)?;
 
-    let if_start = usize::try_from(if_assign.right.span().start).unwrap_or(0);
-    let if_end = usize::try_from(if_assign.right.span().end).unwrap_or(0);
-    let else_start = usize::try_from(else_assign.right.span().start).unwrap_or(0);
-    let else_end = usize::try_from(else_assign.right.span().end).unwrap_or(0);
+    let if_right_span = ctx.node(if_assign.right)?.span();
+    let else_right_span = ctx.node(else_assign.right)?.span();
 
-    let if_val = source.get(if_start..if_end)?;
-    let else_val = source.get(else_start..else_end)?;
+    let if_val = source.get(if_right_span.start as usize..if_right_span.end as usize)?;
+    let else_val = source.get(else_right_span.start as usize..else_right_span.end as usize)?;
 
     Some(format!(
         "{target_name} = {cond_text} ? {if_val} : {else_val};"
@@ -205,23 +203,13 @@ fn build_assign_ternary(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferTernary)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferTernary)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

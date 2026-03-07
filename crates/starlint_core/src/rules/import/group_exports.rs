@@ -4,19 +4,19 @@
 //! throughout the file. This makes it easier to see what a module provides
 //! at a glance.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags modules with multiple named export declarations that could be grouped.
 #[derive(Debug)]
 pub struct GroupExports;
 
-impl NativeRule for GroupExports {
+impl LintRule for GroupExports {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/group-exports".to_owned(),
@@ -27,24 +27,24 @@ impl NativeRule for GroupExports {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Program])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Program])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Program(program) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Program(program) = node else {
             return;
         };
 
-        // Collect all named export declarations (excluding re-exports)
-        let named_exports: Vec<&oxc_ast::ast::ExportNamedDeclaration<'_>> = program
+        // Collect spans of all named export declarations (excluding re-exports)
+        let named_export_spans: Vec<Span> = program
             .body
             .iter()
-            .filter_map(|stmt| {
-                if let oxc_ast::ast::Statement::ExportNamedDeclaration(export) = stmt {
+            .filter_map(|&stmt_id| {
+                if let Some(AstNode::ExportNamedDeclaration(export)) = ctx.node(stmt_id) {
                     // Only count local exports, not re-exports like `export { x } from 'y'`
                     if export.source.is_none() {
-                        return Some(export.as_ref());
+                        return Some(Span::new(export.span.start, export.span.end));
                     }
                 }
                 None
@@ -52,13 +52,13 @@ impl NativeRule for GroupExports {
             .collect();
 
         // If there are more than one named export declaration, flag all but the first
-        if named_exports.len() > 1 {
-            for export in named_exports.iter().skip(1) {
+        if named_export_spans.len() > 1 {
+            for &span in named_export_spans.iter().skip(1) {
                 ctx.report(Diagnostic {
                     rule_name: "import/group-exports".to_owned(),
                     message: "Multiple named export declarations; prefer a single export { ... }"
                         .to_owned(),
-                    span: Span::new(export.span.start, export.span.end),
+                    span,
                     severity: Severity::Warning,
                     help: None,
                     fix: None,
@@ -71,22 +71,13 @@ impl NativeRule for GroupExports {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(GroupExports)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(GroupExports)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,15 +3,13 @@
 //! Forbid `return` statements in `.finally()` callbacks. Returning from
 //! `.finally()` silently swallows the resolved/rejected value.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.finally()` callbacks that contain `return` statements.
 ///
@@ -20,7 +18,7 @@ use crate::rule::{NativeLintContext, NativeRule};
 #[derive(Debug)]
 pub struct NoReturnInFinally;
 
-impl NativeRule for NoReturnInFinally {
+impl LintRule for NoReturnInFinally {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/no-return-in-finally".to_owned(),
@@ -30,20 +28,20 @@ impl NativeRule for NoReturnInFinally {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "finally" {
+        if member.property.as_str() != "finally" {
             return;
         }
 
@@ -52,13 +50,16 @@ impl NativeRule for NoReturnInFinally {
             return;
         };
 
-        let arg_expr = match first_arg {
-            oxc_ast::ast::Argument::SpreadElement(_) => return,
-            _ => first_arg.to_expression(),
+        let Some(arg_expr) = ctx.node(*first_arg) else {
+            return;
         };
 
+        if matches!(arg_expr, AstNode::SpreadElement(_)) {
+            return;
+        }
+
         // Expression arrows don't have explicit return, skip
-        if let Expression::ArrowFunctionExpression(arrow) = arg_expr {
+        if let AstNode::ArrowFunctionExpression(arrow) = arg_expr {
             if arrow.expression {
                 return;
             }
@@ -86,22 +87,13 @@ impl NativeRule for NoReturnInFinally {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoReturnInFinally)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoReturnInFinally)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

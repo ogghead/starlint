@@ -4,21 +4,20 @@
 //! The loose equality operators perform type coercion which is a common
 //! source of bugs.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::BinaryOperator;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags `==` and `!=` operators, suggesting `===` and `!==` instead.
 #[derive(Debug)]
 pub struct Eqeqeq;
 
-impl NativeRule for Eqeqeq {
+impl LintRule for Eqeqeq {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "eqeqeq".to_owned(),
@@ -28,26 +27,29 @@ impl NativeRule for Eqeqeq {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        if let AstKind::BinaryExpression(expr) = kind {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        if let AstNode::BinaryExpression(expr) = node {
             let (replacement, label) = match expr.operator {
                 BinaryOperator::Equality => ("===", "=="),
                 BinaryOperator::Inequality => ("!==", "!="),
                 _ => return,
             };
 
+            // Resolve left/right NodeIds to get their spans
+            let left_end = ctx
+                .node(expr.left)
+                .map_or(expr.span.start, |n| n.span().end);
+            let right_start = ctx
+                .node(expr.right)
+                .map_or(expr.span.end, |n| n.span().start);
+
             // Search only between the operands to avoid matching operators
             // inside string literals (e.g., `"a == b" == x`).
-            let op_span = find_operator_span(
-                ctx.source_text(),
-                expr.left.span().end,
-                expr.right.span().start,
-                label,
-            );
+            let op_span = find_operator_span(ctx.source_text(), left_end, right_start, label);
 
             ctx.report(Diagnostic {
                 rule_name: "eqeqeq".to_owned(),
@@ -92,62 +94,49 @@ fn find_operator_span(source: &str, start: u32, end: u32, operator: &str) -> Spa
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
+
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(Eqeqeq)];
+        lint_source(source, "test.js", &rules)
+    }
 
     #[test]
     fn test_flags_loose_equality() {
-        let allocator = Allocator::default();
-        let source = "if (a == b) {}";
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(Eqeqeq)];
-            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
-            assert_eq!(diags.len(), 1, "should flag == operator");
-            let first = diags.first();
-            assert!(
-                first.is_some_and(|d| d.fix.is_some()),
-                "should provide a fix"
-            );
-        }
+        let diags = lint("if (a == b) {}");
+        assert_eq!(diags.len(), 1, "should flag == operator");
+        let first = diags.first();
+        assert!(
+            first.is_some_and(|d| d.fix.is_some()),
+            "should provide a fix"
+        );
     }
 
     #[test]
     fn test_flags_loose_inequality() {
-        let allocator = Allocator::default();
-        let source = "if (a != b) {}";
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(Eqeqeq)];
-            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
-            assert_eq!(diags.len(), 1, "should flag != operator");
-        }
+        let diags = lint("if (a != b) {}");
+        assert_eq!(diags.len(), 1, "should flag != operator");
     }
 
     #[test]
     fn test_fix_targets_operator_not_string_content() {
         // Regression: `"a == b" == x` must fix the operator between
         // the string literal and `x`, not the `==` inside the string.
-        let allocator = Allocator::default();
         let source = r#"if ("a == b" == x) {}"#;
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(Eqeqeq)];
-            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
-            assert_eq!(diags.len(), 1, "should flag == operator");
-            if let Some(diag) = diags.first() {
-                if let Some(fix) = &diag.fix {
-                    if let Some(edit) = fix.edits.first() {
-                        let start = usize::try_from(edit.span.start).unwrap_or(0);
-                        let end = usize::try_from(edit.span.end).unwrap_or(0);
-                        let fixed_slice = source.get(start..end).unwrap_or("");
-                        assert_eq!(
-                            fixed_slice, "==",
-                            "fix span should target the actual operator"
-                        );
-                    }
+        let diags = lint(source);
+        assert_eq!(diags.len(), 1, "should flag == operator");
+        if let Some(diag) = diags.first() {
+            if let Some(fix) = &diag.fix {
+                if let Some(edit) = fix.edits.first() {
+                    let start = usize::try_from(edit.span.start).unwrap_or(0);
+                    let end = usize::try_from(edit.span.end).unwrap_or(0);
+                    let fixed_slice = source.get(start..end).unwrap_or("");
+                    assert_eq!(
+                        fixed_slice, "==",
+                        "fix span should target the actual operator"
+                    );
                 }
             }
         }
@@ -155,12 +144,7 @@ mod tests {
 
     #[test]
     fn test_allows_strict_equality() {
-        let allocator = Allocator::default();
-        let source = "if (a === b && c !== d) {}";
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(Eqeqeq)];
-            let diags = traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"));
-            assert!(diags.is_empty(), "strict equality should not be flagged");
-        }
+        let diags = lint("if (a === b && c !== d) {}");
+        assert!(diags.is_empty(), "strict equality should not be flagged");
     }
 }

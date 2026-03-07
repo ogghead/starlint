@@ -2,40 +2,54 @@
 //!
 //! Warn when `<a target="_blank">` is used without `rel="noreferrer"`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "react/jsx-no-target-blank";
 
-/// Flags `<a target="_blank">` elements that are missing `rel="noreferrer"`,
-/// which is a security concern (the opened page gains access to `window.opener`).
+/// Flags `<a target="_blank">` elements that are missing `rel="noreferrer"`.
 #[derive(Debug)]
 pub struct JsxNoTargetBlank;
 
-/// Get string value from a JSX attribute value if it is a string literal.
-fn get_string_value<'a>(value: Option<&'a JSXAttributeValue<'a>>) -> Option<&'a str> {
-    match value {
-        Some(JSXAttributeValue::StringLiteral(lit)) => Some(lit.value.as_str()),
-        _ => None,
+/// Get string value of an attribute by name.
+fn get_attr_string_value(
+    attributes: &[NodeId],
+    attr_name: &str,
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    for &attr_id in attributes {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            if attr.name == attr_name {
+                if let Some(value_id) = attr.value {
+                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                        return Some(lit.value.clone());
+                    }
+                }
+            }
+        }
     }
+    None
 }
 
-/// Get the attribute name as a string.
-fn attr_name<'a>(name: &'a JSXAttributeName<'a>) -> &'a str {
-    match name {
-        JSXAttributeName::Identifier(ident) => ident.name.as_str(),
-        JSXAttributeName::NamespacedName(ns) => ns.name.name.as_str(),
+/// Get the span of a named attribute.
+fn get_attr_span(attributes: &[NodeId], attr_name: &str, ctx: &LintContext<'_>) -> Option<Span> {
+    for &attr_id in attributes {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            if attr.name == attr_name {
+                return Some(Span::new(attr.span.start, attr.span.end));
+            }
+        }
     }
+    None
 }
 
-impl NativeRule for JsxNoTargetBlank {
+impl LintRule for JsxNoTargetBlank {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -46,66 +60,45 @@ impl NativeRule for JsxNoTargetBlank {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
         // Only check `<a>` elements
-        let is_anchor = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str() == "a",
-            _ => false,
-        };
-        if !is_anchor {
+        if opening.name != "a" {
             return;
         }
 
+        let opening_span = opening.span;
+        let attrs: Vec<NodeId> = opening.attributes.to_vec();
+
         // Check for target="_blank"
-        let has_target_blank = opening.attributes.iter().any(|item| {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                if attr_name(&attr.name) == "target" {
-                    return get_string_value(attr.value.as_ref()) == Some("_blank");
-                }
-            }
-            false
-        });
+        let has_target_blank =
+            get_attr_string_value(&attrs, "target", ctx).as_deref() == Some("_blank");
 
         if !has_target_blank {
             return;
         }
 
         // Check for rel containing "noreferrer"
-        let has_noreferrer = opening.attributes.iter().any(|item| {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                if attr_name(&attr.name) == "rel" {
-                    if let Some(val) = get_string_value(attr.value.as_ref()) {
-                        return val.split_whitespace().any(|part| part == "noreferrer");
-                    }
-                }
-            }
-            false
-        });
+        let has_noreferrer = get_attr_string_value(&attrs, "rel", ctx)
+            .is_some_and(|val| val.split_whitespace().any(|part| part == "noreferrer"));
 
         if !has_noreferrer {
-            let opening_span = Span::new(opening.span.start, opening.span.end);
+            let span = Span::new(opening_span.start, opening_span.end);
 
             // Find existing rel attribute to determine fix strategy
-            let rel_attr = opening.attributes.iter().find_map(|item| {
-                if let JSXAttributeItem::Attribute(attr) = item {
-                    if attr_name(&attr.name) == "rel" {
-                        return Some(attr);
-                    }
-                }
-                None
-            });
+            let rel_span = get_attr_span(&attrs, "rel", ctx);
+            let existing_rel_val = get_attr_string_value(&attrs, "rel", ctx);
 
-            let fix = if let Some(rel) = rel_attr {
+            let fix = if let Some(rel_s) = rel_span {
                 // Existing rel attribute: replace its value to include "noreferrer"
-                let existing_value = get_string_value(rel.value.as_ref()).unwrap_or("");
+                let existing_value = existing_rel_val.as_deref().unwrap_or("");
                 let new_value = if existing_value.is_empty() {
                     "noreferrer".to_owned()
                 } else {
@@ -115,18 +108,16 @@ impl NativeRule for JsxNoTargetBlank {
                     kind: FixKind::SafeFix,
                     message: "Add `noreferrer` to the `rel` attribute".to_owned(),
                     edits: vec![Edit {
-                        span: Span::new(rel.span.start, rel.span.end),
+                        span: rel_s,
                         replacement: format!("rel=\"{new_value}\""),
                     }],
                     is_snippet: false,
                 })
             } else {
                 // No rel attribute: insert before the closing `>` or `/>` of the opening tag
-                // Insert at the end of the opening tag, just before the `>`
-                let open_end = opening.span.end;
+                let open_end = opening_span.end;
                 let source = ctx.source_text();
                 let end_idx = usize::try_from(open_end).unwrap_or(0);
-                // Check if self-closing (ends with "/>") or regular (ends with ">")
                 let before_end = source.get(end_idx.saturating_sub(2)..end_idx).unwrap_or("");
                 let insert_pos = if before_end.ends_with("/>") {
                     open_end.saturating_sub(2)
@@ -150,7 +141,7 @@ impl NativeRule for JsxNoTargetBlank {
                 message:
                     "Using `target=\"_blank\"` without `rel=\"noreferrer\"` is a security risk"
                         .to_owned(),
-                span: opening_span,
+                span,
                 severity: Severity::Warning,
                 help: Some("Add `rel=\"noreferrer\"` to the element".to_owned()),
                 fix,
@@ -162,22 +153,13 @@ impl NativeRule for JsxNoTargetBlank {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(JsxNoTargetBlank)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxNoTargetBlank)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

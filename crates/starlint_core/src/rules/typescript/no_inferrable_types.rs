@@ -3,21 +3,24 @@
 //! Disallow explicit type annotations on variables where the type can be
 //! trivially inferred from the initializer. For example, `let x: number = 5`
 //! is redundant because TypeScript already infers `number` from the literal `5`.
-
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BindingPattern, Expression, TSType};
-use oxc_ast::ast_kind::AstType;
+//!
+//! Note: Since `starlint_ast::VariableDeclaratorNode` does not have a
+//! `type_annotation` field, this rule uses a source-text heuristic to detect
+//! `: type` annotations between the binding identifier and the `=` sign.
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags explicit type annotations that match trivially inferred types.
 #[derive(Debug)]
 pub struct NoInferrableTypes;
 
-impl NativeRule for NoInferrableTypes {
+impl LintRule for NoInferrableTypes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-inferrable-types".to_owned(),
@@ -29,99 +32,103 @@ impl NativeRule for NoInferrableTypes {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclarator])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclarator])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclarator(decl) = kind else {
+    #[allow(clippy::as_conversions)]
+    #[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclarator(decl) = node else {
             return;
         };
 
-        // Must have both a type annotation and an initializer
-        let Some(type_ann) = &decl.type_annotation else {
-            return;
-        };
-        let Some(init) = &decl.init else {
+        // Must have an initializer
+        let Some(init_id) = decl.init else {
             return;
         };
 
         // Must be a simple binding identifier (not destructuring)
-        if !matches!(&decl.id, BindingPattern::BindingIdentifier(_)) {
+        let Some(AstNode::BindingIdentifier(binding)) = ctx.node(decl.id) else {
+            return;
+        };
+
+        // Get the initializer node to determine what type it infers
+        let Some(init_node) = ctx.node(init_id) else {
+            return;
+        };
+
+        // Determine the inferred type from the initializer literal
+        let inferred_type = match init_node {
+            AstNode::NumericLiteral(_) => "number",
+            AstNode::StringLiteral(_) => "string",
+            AstNode::BooleanLiteral(_) => "boolean",
+            _ => return,
+        };
+
+        // Use source text to detect if there's a type annotation between the
+        // binding identifier and the initializer.
+        // Pattern: `identifier: type = value`
+        let source = ctx.source_text();
+        let binding_end = binding.span.end as usize;
+        let init_start = init_node.span().start as usize;
+
+        // Get the text between binding end and init start
+        let between = source.get(binding_end..init_start).unwrap_or("");
+
+        // Look for `: type` pattern -- should contain `:` followed by the type keyword,
+        // then `=`
+        let colon_pos = between.find(':');
+        let Some(colon_offset) = colon_pos else {
+            return;
+        };
+
+        // Extract the type name from between colon and `=`
+        let after_colon = &between[colon_offset + 1..];
+        let eq_pos = after_colon.find('=').unwrap_or(after_colon.len());
+        let type_text = after_colon[..eq_pos].trim();
+
+        // Check if the annotated type matches the inferred type
+        if type_text != inferred_type {
             return;
         }
 
-        if is_inferrable_annotation(&type_ann.type_annotation, init) {
-            let type_name = annotation_type_name(&type_ann.type_annotation);
+        // Calculate the span of `: type` to remove it
+        let ann_start = binding_end + colon_offset;
+        let ann_end = binding_end + colon_offset + 1 + eq_pos;
+        // Trim trailing whitespace before `=`
+        let ann_text = source.get(ann_start..ann_end).unwrap_or("");
+        let trimmed_end = ann_start + ann_text.trim_end().len();
 
-            // Delete the type annotation span (`: type`).
-            // The TSTypeAnnotation span includes the colon and the type.
-            let ann_start = type_ann.span.start;
-            let ann_end = type_ann.span.end;
-
-            ctx.report(Diagnostic {
-                rule_name: "typescript/no-inferrable-types".to_owned(),
-                message: format!("Type `{type_name}` is trivially inferred from the initializer"),
-                span: Span::new(decl.span.start, decl.span.end),
-                severity: Severity::Warning,
-                help: Some(format!("Remove the `{type_name}` type annotation")),
-                fix: Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: format!("Remove the `{type_name}` type annotation"),
-                    edits: vec![Edit {
-                        span: Span::new(ann_start, ann_end),
-                        replacement: String::new(),
-                    }],
-                    is_snippet: false,
-                }),
-                labels: vec![],
-            });
-        }
-    }
-}
-
-/// Check if a type annotation is trivially inferrable from the initializer.
-///
-/// Returns `true` when the annotation is a keyword type (`number`, `string`,
-/// `boolean`) and the initializer is the corresponding literal type.
-const fn is_inferrable_annotation(ts_type: &TSType<'_>, init: &Expression<'_>) -> bool {
-    matches!(
-        (ts_type, init),
-        (TSType::TSNumberKeyword(_), Expression::NumericLiteral(_))
-            | (TSType::TSStringKeyword(_), Expression::StringLiteral(_))
-            | (TSType::TSBooleanKeyword(_), Expression::BooleanLiteral(_))
-    )
-}
-
-/// Get a human-readable name for a type annotation keyword.
-const fn annotation_type_name(ts_type: &TSType<'_>) -> &'static str {
-    match ts_type {
-        TSType::TSNumberKeyword(_) => "number",
-        TSType::TSStringKeyword(_) => "string",
-        TSType::TSBooleanKeyword(_) => "boolean",
-        _ => "unknown",
+        ctx.report(Diagnostic {
+            rule_name: "typescript/no-inferrable-types".to_owned(),
+            message: format!("Type `{inferred_type}` is trivially inferred from the initializer"),
+            span: Span::new(decl.span.start, decl.span.end),
+            severity: Severity::Warning,
+            help: Some(format!("Remove the `{inferred_type}` type annotation")),
+            fix: Some(Fix {
+                kind: FixKind::SafeFix,
+                message: format!("Remove the `{inferred_type}` type annotation"),
+                edits: vec![Edit {
+                    span: Span::new(ann_start as u32, trimmed_end as u32),
+                    replacement: String::new(),
+                }],
+                is_snippet: false,
+            }),
+            labels: vec![],
+        });
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoInferrableTypes)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInferrableTypes)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

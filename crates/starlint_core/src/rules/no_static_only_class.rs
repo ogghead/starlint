@@ -2,23 +2,22 @@
 //!
 //! Disallow classes that contain only static members. A class with exclusively
 //! static methods and properties is better expressed as a plain object or
-//! module-level exports — the `class` keyword adds no value when there is no
+//! module-level exports -- the `class` keyword adds no value when there is no
 //! instantiation or inheritance.
-
-use oxc_ast::AstKind;
-use oxc_ast::ast::ClassElement;
-use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags classes whose body consists entirely of static members.
 #[derive(Debug)]
 pub struct NoStaticOnlyClass;
 
-impl NativeRule for NoStaticOnlyClass {
+impl LintRule for NoStaticOnlyClass {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-static-only-class".to_owned(),
@@ -28,41 +27,41 @@ impl NativeRule for NoStaticOnlyClass {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Class])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Class])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Class(class) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Class(class) = node else {
             return;
         };
 
-        // Skip classes with a superclass — they may rely on inheritance.
+        // Skip classes with a superclass -- they may rely on inheritance.
         if class.super_class.is_some() {
             return;
         }
 
-        let elements = &class.body.body;
+        let elements = &class.body;
 
         // Empty classes are not flagged.
         if elements.is_empty() {
             return;
         }
 
-        let all_static = elements.iter().all(|element| match element {
-            ClassElement::MethodDefinition(method) => method.r#static,
-            ClassElement::PropertyDefinition(prop) => prop.r#static,
-            // Static blocks and accessor properties are inherently static.
-            ClassElement::StaticBlock(_) | ClassElement::AccessorProperty(_) => true,
-            // TSIndexSignature is a TypeScript-only construct; treat as non-static
-            // to avoid false positives.
-            ClassElement::TSIndexSignature(_) => false,
+        let all_static = elements.iter().all(|element_id| {
+            match ctx.node(*element_id) {
+                Some(AstNode::MethodDefinition(method)) => method.is_static,
+                Some(AstNode::PropertyDefinition(prop)) => prop.is_static,
+                // Static blocks are inherently static.
+                Some(AstNode::StaticBlock(_)) => true,
+                _ => false,
+            }
         });
 
         if all_static {
             ctx.report(Diagnostic {
                 rule_name: "no-static-only-class".to_owned(),
-                message: "Class contains only static members — use a plain object or module exports instead".to_owned(),
+                message: "Class contains only static members -- use a plain object or module exports instead".to_owned(),
                 span: Span::new(class.span.start, class.span.end),
                 severity: Severity::Warning,
                 help: None,
@@ -75,23 +74,13 @@ impl NativeRule for NoStaticOnlyClass {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoStaticOnlyClass)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoStaticOnlyClass)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

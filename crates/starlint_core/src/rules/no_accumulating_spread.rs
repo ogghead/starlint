@@ -4,20 +4,19 @@
 //! For example, `result = [...result, item]` inside a loop copies the entire
 //! array on each iteration. Use `push()` instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags spread in array expressions inside assignments (potential loop accumulation).
 #[derive(Debug)]
 pub struct NoAccumulatingSpread;
 
-impl NativeRule for NoAccumulatingSpread {
+impl LintRule for NoAccumulatingSpread {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-accumulating-spread".to_owned(),
@@ -27,27 +26,25 @@ impl NativeRule for NoAccumulatingSpread {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // We look for assignments like `x = [...x, item]` or `x = {...x, key: val}`
         // These are O(n^2) when inside loops, but we flag them regardless as a warning
         // since they're almost always better written with push() or Object.assign().
-        let AstKind::AssignmentExpression(assign) = kind else {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
-        let Expression::ArrayExpression(array) = &assign.right else {
+        let Some(AstNode::ArrayExpression(array)) = ctx.node(assign.right) else {
             return;
         };
 
         // Get the target name
-        let target_name = match &assign.left {
-            oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(id) => {
-                Some(id.name.as_str())
-            }
+        let target_name = match ctx.node(assign.left) {
+            Some(AstNode::IdentifierReference(id)) => Some(id.name.clone()),
             _ => None,
         };
 
@@ -56,12 +53,12 @@ impl NativeRule for NoAccumulatingSpread {
         };
 
         // Check if the array expression contains a spread of the same variable
-        for element in &array.elements {
-            let oxc_ast::ast::ArrayExpressionElement::SpreadElement(spread) = element else {
+        for &element_id in &*array.elements {
+            let Some(AstNode::SpreadElement(spread)) = ctx.node(element_id) else {
                 continue;
             };
-            if let Expression::Identifier(id) = &spread.argument {
-                if id.name.as_str() == target {
+            if let Some(AstNode::IdentifierReference(id)) = ctx.node(spread.argument) {
+                if id.name.as_str() == target.as_str() {
                     ctx.report(Diagnostic {
                         rule_name: "no-accumulating-spread".to_owned(),
                         message: format!(
@@ -83,23 +80,13 @@ impl NativeRule for NoAccumulatingSpread {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAccumulatingSpread)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAccumulatingSpread)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

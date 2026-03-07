@@ -3,14 +3,13 @@
 //! Prefer `Number` static methods over global equivalents.
 //! Flag `isNaN()`, `isFinite()`, `parseInt()`, `parseFloat()` as globals.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Global functions that should use `Number.*` equivalents.
 const GLOBAL_FUNCTIONS: &[(&str, &str)] = &[
@@ -24,7 +23,7 @@ const GLOBAL_FUNCTIONS: &[(&str, &str)] = &[
 #[derive(Debug)]
 pub struct PreferNumberProperties;
 
-impl NativeRule for PreferNumberProperties {
+impl LintRule for PreferNumberProperties {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-number-properties".to_owned(),
@@ -34,21 +33,26 @@ impl NativeRule for PreferNumberProperties {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::Identifier(id) = &call.callee else {
+        // Resolve callee NodeId and extract identifier info before mutable borrow
+        let Some(AstNode::IdentifierReference(id)) = ctx.node(call.callee) else {
             return;
         };
 
-        let name = id.name.as_str();
-        let Some((_, replacement)) = GLOBAL_FUNCTIONS.iter().find(|(global, _)| *global == name)
+        let name = id.name.clone();
+        let id_span = Span::new(id.span.start, id.span.end);
+
+        let Some((_, replacement)) = GLOBAL_FUNCTIONS
+            .iter()
+            .find(|(global, _)| *global == name.as_str())
         else {
             return;
         };
@@ -63,7 +67,7 @@ impl NativeRule for PreferNumberProperties {
                 kind: FixKind::SafeFix,
                 message: format!("Replace `{name}` with `{replacement}`"),
                 edits: vec![Edit {
-                    span: Span::new(id.span.start, id.span.end),
+                    span: id_span,
                     replacement: (*replacement).to_owned(),
                 }],
                 is_snippet: false,
@@ -75,22 +79,13 @@ impl NativeRule for PreferNumberProperties {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferNumberProperties)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferNumberProperties)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,24 +3,22 @@
 //! Flag `while`/`do-while` loops where the condition variable is never
 //! modified inside the loop body. This is a common source of infinite loops.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags while loops where the condition variable is not modified in the body.
 #[derive(Debug)]
 pub struct NoUnmodifiedLoopCondition;
 
-/// Extract a simple identifier name from an expression (only handles plain identifiers).
-fn extract_test_identifier<'a>(expr: &'a Expression<'a>) -> Option<&'a str> {
-    match expr {
-        Expression::Identifier(id) => Some(id.name.as_str()),
+/// Extract a simple identifier name from a test node id (only handles plain identifiers).
+fn extract_test_identifier<'a>(test_id: NodeId, ctx: &'a LintContext<'_>) -> Option<&'a str> {
+    match ctx.node(test_id)? {
+        AstNode::IdentifierReference(id) => Some(id.name.as_str()),
         _ => None,
     }
 }
@@ -55,7 +53,7 @@ fn body_modifies_identifier(source: &str, body_start: usize, body_end: usize, na
         || body_text.contains(&prefix_dec)
 }
 
-impl NativeRule for NoUnmodifiedLoopCondition {
+impl LintRule for NoUnmodifiedLoopCondition {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unmodified-loop-condition".to_owned(),
@@ -65,20 +63,23 @@ impl NativeRule for NoUnmodifiedLoopCondition {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::WhileStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::WhileStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::WhileStatement(stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::WhileStatement(stmt) = node else {
             return;
         };
 
-        let Some(ident_name) = extract_test_identifier(&stmt.test) else {
+        let Some(ident_name) = extract_test_identifier(stmt.test, ctx) else {
             return;
         };
 
-        let body_span = stmt.body.span();
+        let Some(body_node) = ctx.node(stmt.body) else {
+            return;
+        };
+        let body_span = body_node.span();
         let body_start = usize::try_from(body_span.start).unwrap_or(0);
         let body_end = usize::try_from(body_span.end).unwrap_or(0);
 
@@ -98,23 +99,13 @@ impl NativeRule for NoUnmodifiedLoopCondition {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnmodifiedLoopCondition)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnmodifiedLoopCondition)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

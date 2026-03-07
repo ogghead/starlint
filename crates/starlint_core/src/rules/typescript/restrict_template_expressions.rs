@@ -11,21 +11,19 @@
 //! are clearly not strings: object literals, array literals, `null` literals,
 //! and the `undefined` identifier.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags template literal expressions that are clearly non-string values.
 #[derive(Debug)]
 pub struct RestrictTemplateExpressions;
 
-impl NativeRule for RestrictTemplateExpressions {
+impl LintRule for RestrictTemplateExpressions {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/restrict-template-expressions".to_owned(),
@@ -35,12 +33,12 @@ impl NativeRule for RestrictTemplateExpressions {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TemplateLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TemplateLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TemplateLiteral(template) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TemplateLiteral(template) = node else {
             return;
         };
 
@@ -52,9 +50,11 @@ impl NativeRule for RestrictTemplateExpressions {
         let findings: Vec<(u32, u32, &str)> = template
             .expressions
             .iter()
-            .filter_map(|expr| {
-                let kind_name = non_string_expression_kind(expr)?;
-                Some((expr.span().start, expr.span().end, kind_name))
+            .filter_map(|expr_id| {
+                let expr_node = ctx.node(*expr_id)?;
+                let kind_name = non_string_expression_kind(expr_node)?;
+                let span = expr_node.span();
+                Some((span.start, span.end, kind_name))
             })
             .collect();
 
@@ -80,35 +80,27 @@ impl NativeRule for RestrictTemplateExpressions {
 ///
 /// Returns a description of the problematic type, or `None` if the expression
 /// is acceptable (or cannot be determined without type information).
-fn non_string_expression_kind(expr: &Expression<'_>) -> Option<&'static str> {
+fn non_string_expression_kind(expr: &AstNode) -> Option<&'static str> {
     match expr {
-        Expression::ObjectExpression(_) => Some("an object literal"),
-        Expression::ArrayExpression(_) => Some("an array literal"),
-        Expression::NullLiteral(_) => Some("`null`"),
-        Expression::Identifier(ident) if ident.name.as_str() == "undefined" => Some("`undefined`"),
+        AstNode::ObjectExpression(_) => Some("an object literal"),
+        AstNode::ArrayExpression(_) => Some("an array literal"),
+        AstNode::NullLiteral(_) => Some("`null`"),
+        AstNode::IdentifierReference(ident) if ident.name.as_str() == "undefined" => {
+            Some("`undefined`")
+        }
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RestrictTemplateExpressions)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RestrictTemplateExpressions)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

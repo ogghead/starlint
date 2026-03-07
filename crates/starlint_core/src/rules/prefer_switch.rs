@@ -4,14 +4,14 @@
 //! When 3+ conditions compare the same identifier with strict equality, a
 //! `switch` statement is clearer.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Minimum number of `===` branches on the same identifier before flagging.
 const MIN_CASES: u32 = 3;
@@ -20,7 +20,7 @@ const MIN_CASES: u32 = 3;
 #[derive(Debug)]
 pub struct PreferSwitch;
 
-impl NativeRule for PreferSwitch {
+impl LintRule for PreferSwitch {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-switch".to_owned(),
@@ -31,12 +31,12 @@ impl NativeRule for PreferSwitch {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::IfStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::IfStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::IfStatement(if_stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::IfStatement(if_stmt) = node else {
             return;
         };
 
@@ -49,19 +49,19 @@ impl NativeRule for PreferSwitch {
         }
 
         // Extract the identifier being compared in the first branch.
-        let Some(first_ident) = strict_eq_identifier(&if_stmt.test) else {
+        let Some(first_ident) = strict_eq_identifier(if_stmt.test, ctx) else {
             return;
         };
 
         // Walk the else-if chain, counting branches that compare the same identifier.
         let mut count: u32 = 1;
-        let mut current_alt = &if_stmt.alternate;
-        while let Some(alt) = current_alt {
-            if let Statement::IfStatement(else_if) = alt {
-                if let Some(ident) = strict_eq_identifier(&else_if.test) {
+        let mut current_alt = if_stmt.alternate;
+        while let Some(alt_id) = current_alt {
+            if let Some(AstNode::IfStatement(else_if)) = ctx.node(alt_id) {
+                if let Some(ident) = strict_eq_identifier(else_if.test, ctx) {
                     if ident == first_ident {
                         count = count.saturating_add(1);
-                        current_alt = &else_if.alternate;
+                        current_alt = else_if.alternate;
                         continue;
                     }
                 }
@@ -97,8 +97,8 @@ fn is_else_if_branch(if_start: u32, source: &str) -> bool {
 
 /// If the expression is a `BinaryExpression` with `===` and one side is an
 /// `Identifier`, return that identifier's name.
-fn strict_eq_identifier<'a>(expr: &'a Expression<'a>) -> Option<&'a str> {
-    let Expression::BinaryExpression(bin) = expr else {
+fn strict_eq_identifier(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let Some(AstNode::BinaryExpression(bin)) = ctx.node(expr_id) else {
         return None;
     };
 
@@ -107,11 +107,11 @@ fn strict_eq_identifier<'a>(expr: &'a Expression<'a>) -> Option<&'a str> {
     }
 
     // Check left side first, then right.
-    if let Expression::Identifier(id) = &bin.left {
-        return Some(id.name.as_str());
+    if let Some(AstNode::IdentifierReference(id)) = ctx.node(bin.left) {
+        return Some(id.name.clone());
     }
-    if let Expression::Identifier(id) = &bin.right {
-        return Some(id.name.as_str());
+    if let Some(AstNode::IdentifierReference(id)) = ctx.node(bin.right) {
+        return Some(id.name.clone());
     }
 
     None
@@ -119,23 +119,13 @@ fn strict_eq_identifier<'a>(expr: &'a Expression<'a>) -> Option<&'a str> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferSwitch)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferSwitch)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

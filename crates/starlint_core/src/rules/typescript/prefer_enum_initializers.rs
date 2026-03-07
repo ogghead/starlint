@@ -7,19 +7,19 @@
 //! Requiring explicit initializers makes the intent clear and prevents
 //! accidental value drift.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags enum members that lack an explicit initializer.
 #[derive(Debug)]
 pub struct PreferEnumInitializers;
 
-impl NativeRule for PreferEnumInitializers {
+impl LintRule for PreferEnumInitializers {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/prefer-enum-initializers".to_owned(),
@@ -29,26 +29,43 @@ impl NativeRule for PreferEnumInitializers {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSEnumDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSEnumDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSEnumDeclaration(decl) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSEnumDeclaration(decl) = node else {
             return;
         };
 
         let mut index: u32 = 0;
-        for member in &decl.body.members {
+        for member_id in &decl.members {
+            let Some(AstNode::TSEnumMember(member)) = ctx.node(*member_id) else {
+                index = index.saturating_add(1);
+                continue;
+            };
+
             if member.initializer.is_none() {
-                let member_name = member.id.static_name();
+                // Resolve the member name from the id NodeId
+                let member_name = ctx.node(member.id).map_or("<unknown>", |n| {
+                    let s = n.span();
+                    ctx.source_text()
+                        .get(s.start as usize..s.end as usize)
+                        .unwrap_or("<unknown>")
+                });
+
+                // Extract spans before calling ctx.report()
+                let member_span_start = member.span.start;
+                let member_span_end = member.span.end;
+                let member_name_owned = member_name.to_owned();
 
                 // Insert ` = <index>` right after the member identifier (at end of member span)
                 let fix = Some(Fix {
                     kind: FixKind::SafeFix,
                     message: format!("Add initializer `= {index}`"),
                     edits: vec![Edit {
-                        span: Span::new(member.span.end, member.span.end),
+                        span: Span::new(member_span_end, member_span_end),
                         replacement: format!(" = {index}"),
                     }],
                     is_snippet: false,
@@ -57,11 +74,11 @@ impl NativeRule for PreferEnumInitializers {
                 ctx.report(Diagnostic {
                     rule_name: "typescript/prefer-enum-initializers".to_owned(),
                     message: format!(
-                        "Enum member `{member_name}` should have an explicit initializer"
+                        "Enum member `{member_name_owned}` should have an explicit initializer"
                     ),
-                    span: Span::new(member.span.start, member.span.end),
+                    span: Span::new(member_span_start, member_span_end),
                     severity: Severity::Warning,
-                    help: Some(format!("Add `= {index}` to `{member_name}`")),
+                    help: Some(format!("Add `= {index}` to `{member_name_owned}`")),
                     fix,
                     labels: vec![],
                 });
@@ -73,23 +90,13 @@ impl NativeRule for PreferEnumInitializers {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferEnumInitializers)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferEnumInitializers)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -5,20 +5,19 @@
 //! imports from JSON modules (which only have a default export) as a
 //! heuristic without full module resolution.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::ImportDeclarationSpecifier;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags potentially invalid namespace imports.
 #[derive(Debug)]
 pub struct NamespaceImport;
 
-impl NativeRule for NamespaceImport {
+impl LintRule for NamespaceImport {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/namespace".to_owned(),
@@ -28,35 +27,33 @@ impl NativeRule for NamespaceImport {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
         // Type-only imports don't need runtime validation
-        if import.import_kind.is_type() {
+        if import.import_kind_is_type {
             return;
         }
 
-        let Some(specifiers) = &import.specifiers else {
-            return;
-        };
-        let has_namespace = specifiers.iter().any(|spec| {
-            matches!(
-                spec,
-                ImportDeclarationSpecifier::ImportNamespaceSpecifier(_)
-            )
+        let specifiers = &import.specifiers;
+        // In starlint_ast, namespace imports are represented as ImportSpecifier
+        // with imported == "*". Check if any specifier is a namespace import.
+        let has_namespace = specifiers.iter().any(|spec_id| {
+            ctx.node(*spec_id)
+                .is_some_and(|n| matches!(n, AstNode::ImportSpecifier(s) if s.imported == "*"))
         });
 
         if !has_namespace {
             return;
         }
 
-        let source_value = import.source.value.as_str();
+        let source_value = import.source.as_str();
 
         // Heuristic: namespace import from JSON makes no sense
         if std::path::Path::new(source_value)
@@ -78,22 +75,13 @@ impl NativeRule for NamespaceImport {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NamespaceImport)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NamespaceImport)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

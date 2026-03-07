@@ -4,22 +4,19 @@
 //! dates. The `getTime()` call is unnecessary when passing to the `Date`
 //! constructor.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new Date(d.getTime())` — prefer `new Date(d)`.
 #[derive(Debug)]
 pub struct ConsistentDateClone;
 
-impl NativeRule for ConsistentDateClone {
+impl LintRule for ConsistentDateClone {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "consistent-date-clone".to_owned(),
@@ -29,21 +26,22 @@ impl NativeRule for ConsistentDateClone {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
     #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
         // Check callee is `Date`
-        let Expression::Identifier(callee_id) = &new_expr.callee else {
-            return;
-        };
-        if callee_id.name.as_str() != "Date" {
+        let is_date = matches!(
+            ctx.node(new_expr.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Date"
+        );
+        if !is_date {
             return;
         }
 
@@ -52,21 +50,21 @@ impl NativeRule for ConsistentDateClone {
             return;
         }
 
-        let Some(first_arg) = new_expr.arguments.first() else {
+        let Some(&first_arg_id) = new_expr.arguments.first() else {
             return;
         };
 
         // The argument must be a call expression (not a spread)
-        let Argument::CallExpression(call) = first_arg else {
+        let Some(AstNode::CallExpression(call)) = ctx.node(first_arg_id) else {
             return;
         };
 
         // The call must be `.getTime()` with no arguments
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "getTime" {
+        if member.property.as_str() != "getTime" {
             return;
         }
 
@@ -76,13 +74,13 @@ impl NativeRule for ConsistentDateClone {
 
         // Fix: replace the argument `d.getTime()` with just `d`
         let source = ctx.source_text();
-        let obj_span = member.object.span();
-        let obj_start = obj_span.start as usize;
-        let obj_end = obj_span.end as usize;
+        let obj_ast_span = ctx.node(member.object).map(starlint_ast::AstNode::span);
+        let (obj_start, obj_end) =
+            obj_ast_span.map_or((0usize, 0usize), |s| (s.start as usize, s.end as usize));
         let obj_text = source.get(obj_start..obj_end).unwrap_or("").to_owned();
 
         // Replace the entire first argument (the call expression) with just the object
-        let arg_span = first_arg.span();
+        let arg_span = call.span;
         let fix = (!obj_text.is_empty()).then(|| Fix {
             kind: FixKind::SafeFix,
             message: format!("Replace `{obj_text}.getTime()` with `{obj_text}`"),
@@ -107,22 +105,13 @@ impl NativeRule for ConsistentDateClone {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentDateClone)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentDateClone)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

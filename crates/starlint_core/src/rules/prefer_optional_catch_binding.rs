@@ -3,14 +3,13 @@
 //! Flag catch clauses with unused parameters. If the caught error is never
 //! referenced in the catch body, the parameter can be omitted: `catch {}`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::BindingPattern;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags catch clauses whose parameter is never used in the body.
 #[derive(Debug)]
@@ -56,7 +55,7 @@ fn identifier_appears_in(text: &str, name: &str) -> bool {
     false
 }
 
-impl NativeRule for PreferOptionalCatchBinding {
+impl LintRule for PreferOptionalCatchBinding {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-optional-catch-binding".to_owned(),
@@ -66,30 +65,35 @@ impl NativeRule for PreferOptionalCatchBinding {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CatchClause])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CatchClause])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CatchClause(clause) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CatchClause(clause) = node else {
             return;
         };
 
         // Must have a parameter
-        let Some(param) = &clause.param else {
+        let Some(param_id) = clause.param else {
             return;
         };
 
         // Only check simple identifier params
-        let BindingPattern::BindingIdentifier(id) = &param.pattern else {
+        let Some(AstNode::BindingIdentifier(id)) = ctx.node(param_id) else {
             return;
         };
 
         let param_name = id.name.as_str();
+        let param_span = id.span;
 
         // Search the catch body source text for the parameter name
-        let body_start = usize::try_from(clause.body.span.start).unwrap_or(0);
-        let body_end = usize::try_from(clause.body.span.end).unwrap_or(0);
+        let body_span = ctx.node(clause.body).map_or(
+            starlint_ast::types::Span::EMPTY,
+            starlint_ast::AstNode::span,
+        );
+        let body_start = usize::try_from(body_span.start).unwrap_or(0);
+        let body_end = usize::try_from(body_span.end).unwrap_or(0);
         let Some(body_text) = ctx.source_text().get(body_start..body_end) else {
             return;
         };
@@ -103,14 +107,14 @@ impl NativeRule for PreferOptionalCatchBinding {
         ctx.report(Diagnostic {
             rule_name: "prefer-optional-catch-binding".to_owned(),
             message: format!("Catch binding `{param_name}` is unused"),
-            span: Span::new(id.span.start, id.span.end),
+            span: Span::new(param_span.start, param_span.end),
             severity: Severity::Warning,
             help: Some("Remove the unused catch binding".to_owned()),
             fix: Some(Fix {
                 kind: FixKind::SafeFix,
                 message: "Remove unused catch binding".to_owned(),
                 edits: vec![Edit {
-                    span: Span::new(clause.span.start, clause.body.span.start),
+                    span: Span::new(clause.span.start, body_span.start),
                     replacement: "catch ".to_owned(),
                 }],
                 is_snippet: false,
@@ -122,22 +126,13 @@ impl NativeRule for PreferOptionalCatchBinding {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferOptionalCatchBinding)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferOptionalCatchBinding)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -5,22 +5,20 @@
 //! readable than explicit calls like `Boolean(x)`, `Number(x)`, or
 //! `String(x)`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{BinaryOperator, UnaryOperator};
+use starlint_ast::types::NodeId;
 
 /// Flags implicit type coercions.
 #[derive(Debug)]
 pub struct NoImplicitCoercion;
 
-impl NativeRule for NoImplicitCoercion {
+impl LintRule for NoImplicitCoercion {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-implicit-coercion".to_owned(),
@@ -30,51 +28,58 @@ impl NativeRule for NoImplicitCoercion {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression, AstType::UnaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression, AstNodeType::UnaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
             // !!x → Boolean(x)
-            AstKind::UnaryExpression(outer) if outer.operator == UnaryOperator::LogicalNot => {
-                if let Expression::UnaryExpression(inner) = &outer.argument {
-                    if inner.operator == UnaryOperator::LogicalNot {
-                        let source = ctx.source_text();
-                        let arg_start = usize::try_from(inner.argument.span().start).unwrap_or(0);
-                        let arg_end = usize::try_from(inner.argument.span().end).unwrap_or(0);
-                        let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
+            AstNode::UnaryExpression(outer) if outer.operator == UnaryOperator::LogicalNot => {
+                let Some(AstNode::UnaryExpression(inner)) = ctx.node(outer.argument) else {
+                    return;
+                };
+                if inner.operator == UnaryOperator::LogicalNot {
+                    let inner_arg_span = ctx.node(inner.argument).map_or(
+                        starlint_ast::types::Span::new(0, 0),
+                        starlint_ast::AstNode::span,
+                    );
+                    let source = ctx.source_text();
+                    let arg_start = usize::try_from(inner_arg_span.start).unwrap_or(0);
+                    let arg_end = usize::try_from(inner_arg_span.end).unwrap_or(0);
+                    let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
 
-                        ctx.report(Diagnostic {
-                            rule_name: "no-implicit-coercion".to_owned(),
-                            message: "Use `Boolean(x)` instead of `!!x`".to_owned(),
-                            span: Span::new(outer.span.start, outer.span.end),
-                            severity: Severity::Warning,
-                            help: Some("Replace with `Boolean()`".to_owned()),
-                            fix: Some(Fix {
-                                kind: FixKind::SuggestionFix,
-                                message: "Replace with `Boolean()`".to_owned(),
-                                edits: vec![Edit {
-                                    span: Span::new(outer.span.start, outer.span.end),
-                                    replacement: format!("Boolean({arg_text})"),
-                                }],
-                                is_snippet: false,
-                            }),
-                            labels: vec![],
-                        });
-                    }
+                    ctx.report(Diagnostic {
+                        rule_name: "no-implicit-coercion".to_owned(),
+                        message: "Use `Boolean(x)` instead of `!!x`".to_owned(),
+                        span: Span::new(outer.span.start, outer.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace with `Boolean()`".to_owned()),
+                        fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
+                            message: "Replace with `Boolean()`".to_owned(),
+                            edits: vec![Edit {
+                                span: Span::new(outer.span.start, outer.span.end),
+                                replacement: format!("Boolean({arg_text})"),
+                            }],
+                            is_snippet: false,
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             // +x → Number(x) (unary plus on non-numeric)
-            AstKind::UnaryExpression(expr) if expr.operator == UnaryOperator::UnaryPlus => {
+            AstNode::UnaryExpression(expr) if expr.operator == UnaryOperator::UnaryPlus => {
                 // Only flag if the argument is not a numeric literal
-                if !matches!(
-                    &expr.argument,
-                    Expression::NumericLiteral(_) | Expression::BigIntLiteral(_)
-                ) {
+                let arg_node = ctx.node(expr.argument);
+                if !arg_node.is_some_and(|n| matches!(n, AstNode::NumericLiteral(_))) {
+                    let arg_span = arg_node.map_or(
+                        starlint_ast::types::Span::new(0, 0),
+                        starlint_ast::AstNode::span,
+                    );
                     let source = ctx.source_text();
-                    let arg_start = usize::try_from(expr.argument.span().start).unwrap_or(0);
-                    let arg_end = usize::try_from(expr.argument.span().end).unwrap_or(0);
+                    let arg_start = usize::try_from(arg_span.start).unwrap_or(0);
+                    let arg_end = usize::try_from(arg_span.end).unwrap_or(0);
                     let arg_text = source.get(arg_start..arg_end).unwrap_or("x");
 
                     ctx.report(Diagnostic {
@@ -97,15 +102,18 @@ impl NativeRule for NoImplicitCoercion {
                 }
             }
             // "" + x → String(x)
-            AstKind::BinaryExpression(expr) if expr.operator == BinaryOperator::Addition => {
-                let left_is_empty_string = matches!(
-                    &expr.left,
-                    Expression::StringLiteral(s) if s.value.is_empty()
-                );
+            AstNode::BinaryExpression(expr) if expr.operator == BinaryOperator::Addition => {
+                let left_is_empty_string = ctx
+                    .node(expr.left)
+                    .is_some_and(|n| matches!(n, AstNode::StringLiteral(s) if s.value.is_empty()));
                 if left_is_empty_string {
+                    let right_span = ctx.node(expr.right).map_or(
+                        starlint_ast::types::Span::new(0, 0),
+                        starlint_ast::AstNode::span,
+                    );
                     let source = ctx.source_text();
-                    let right_start = usize::try_from(expr.right.span().start).unwrap_or(0);
-                    let right_end = usize::try_from(expr.right.span().end).unwrap_or(0);
+                    let right_start = usize::try_from(right_span.start).unwrap_or(0);
+                    let right_end = usize::try_from(right_span.end).unwrap_or(0);
                     let right_text = source.get(right_start..right_end).unwrap_or("x");
 
                     ctx.report(Diagnostic {
@@ -134,23 +142,13 @@ impl NativeRule for NoImplicitCoercion {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoImplicitCoercion)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoImplicitCoercion)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

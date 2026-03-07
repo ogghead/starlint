@@ -5,20 +5,19 @@
 //! a new reference each time, so they can never match a previously added
 //! listener — making the `removeEventListener` call a no-op bug.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `removeEventListener` calls with inline function listeners.
 #[derive(Debug)]
 pub struct NoInvalidRemoveEventListener;
 
-impl NativeRule for NoInvalidRemoveEventListener {
+impl LintRule for NoInvalidRemoveEventListener {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-invalid-remove-event-listener".to_owned(),
@@ -29,27 +28,27 @@ impl NativeRule for NoInvalidRemoveEventListener {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for `.removeEventListener(...)` or `removeEventListener(...)`
-        if !is_remove_event_listener_call(&call.callee) {
+        if !is_remove_event_listener_call(call.callee, ctx) {
             return;
         }
 
         // The listener is the second argument
-        let Some(second_arg) = call.arguments.get(1) else {
+        let Some(&second_arg_id) = call.arguments.get(1) else {
             return;
         };
 
         // Flag if the listener is an inline function or arrow function
-        if is_inline_function(second_arg) {
+        if is_inline_function(second_arg_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: "no-invalid-remove-event-listener".to_owned(),
                 message: "Inline function passed to `removeEventListener` will never match a previously added listener".to_owned(),
@@ -65,43 +64,33 @@ impl NativeRule for NoInvalidRemoveEventListener {
 
 /// Check if a call expression's callee is `removeEventListener` (either
 /// as a member property or a direct identifier).
-fn is_remove_event_listener_call(callee: &Expression<'_>) -> bool {
-    match callee {
-        Expression::StaticMemberExpression(member) => {
-            member.property.name.as_str() == "removeEventListener"
+fn is_remove_event_listener_call(callee_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(callee_id) {
+        Some(AstNode::StaticMemberExpression(member)) => {
+            member.property.as_str() == "removeEventListener"
         }
-        Expression::Identifier(id) => id.name.as_str() == "removeEventListener",
+        Some(AstNode::IdentifierReference(id)) => id.name.as_str() == "removeEventListener",
         _ => false,
     }
 }
 
-/// Check if an argument is an inline function expression or arrow function.
-const fn is_inline_function(arg: &Argument<'_>) -> bool {
+/// Check if a node is an inline function expression or arrow function.
+fn is_inline_function(id: NodeId, ctx: &LintContext<'_>) -> bool {
     matches!(
-        arg,
-        Argument::FunctionExpression(_) | Argument::ArrowFunctionExpression(_)
+        ctx.node(id),
+        Some(AstNode::Function(_) | AstNode::ArrowFunctionExpression(_))
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoInvalidRemoveEventListener)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInvalidRemoveEventListener)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

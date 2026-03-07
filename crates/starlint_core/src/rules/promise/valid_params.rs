@@ -4,21 +4,20 @@
 //! `Promise.resolve()` takes 0-1 args, `Promise.reject()` takes 0-1 args,
 //! `Promise.all()` takes exactly 1 arg, etc.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `Promise.all()`, `Promise.race()`, `Promise.allSettled()`,
 /// and `Promise.any()` called with incorrect argument counts.
 #[derive(Debug)]
 pub struct ValidParams;
 
-impl NativeRule for ValidParams {
+impl LintRule for ValidParams {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/valid-params".to_owned(),
@@ -28,31 +27,28 @@ impl NativeRule for ValidParams {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
-            return;
+        let method = {
+            let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
+                return;
+            };
+            let is_promise = matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(ident)) if ident.name.as_str() == "Promise");
+            if !is_promise {
+                return;
+            }
+            member.property.clone()
         };
-
-        let Expression::Identifier(ident) = &member.object else {
-            return;
-        };
-
-        if ident.name.as_str() != "Promise" {
-            return;
-        }
-
-        let method = member.property.name.as_str();
         let arg_count = call.arguments.len();
 
-        let expected = match method {
+        let expected = match method.as_str() {
             // These require exactly 1 argument (an iterable)
             "all" | "allSettled" | "any" | "race" => Some((1, 1)),
             // These take 0 or 1 argument
@@ -85,22 +81,13 @@ impl NativeRule for ValidParams {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ValidParams)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ValidParams)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

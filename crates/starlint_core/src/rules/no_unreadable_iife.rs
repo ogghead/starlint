@@ -5,20 +5,19 @@
 //! arrow function IIFEs. Arrow IIFEs like `(() => ...)()` are excluded because
 //! they are considered more readable.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags non-arrow IIFEs.
 #[derive(Debug)]
 pub struct NoUnreadableIife;
 
-impl NativeRule for NoUnreadableIife {
+impl LintRule for NoUnreadableIife {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unreadable-iife".to_owned(),
@@ -28,19 +27,19 @@ impl NativeRule for NoUnreadableIife {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if the callee is a function expression (possibly wrapped in parens).
         // This covers `(function() {})()` — the outer call with a parenthesized
         // function expression as callee.
-        if is_function_iife_callee(&call.callee) {
+        if is_function_iife_callee(call.callee, ctx) {
             ctx.report(Diagnostic {
                 rule_name: "no-unreadable-iife".to_owned(),
                 message: "IIFE with `function` expression is hard to read; consider using an arrow function".to_owned(),
@@ -62,33 +61,24 @@ impl NativeRule for NoUnreadableIife {
 ///   `FunctionExpression` directly, and the outer paren wraps the `CallExpression`.
 ///   However, in oxc's AST the `(function() {}())` form also parses as a
 ///   `CallExpression` whose callee is a `FunctionExpression` inside parens.
-fn is_function_iife_callee(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::FunctionExpression(_) => true,
-        Expression::ParenthesizedExpression(paren) => is_function_iife_callee(&paren.expression),
+fn is_function_iife_callee(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(expr_id) {
+        Some(AstNode::Function(_)) => true,
+        // Note: starlint_ast does not have ParenthesizedExpression; the parser
+        // unwraps parentheses, so the callee points directly to the function.
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnreadableIife)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnreadableIife)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -2,14 +2,13 @@
 //!
 //! Warn when JSX elements in array `.map()` calls are missing a `key` prop.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression, JSXAttributeItem, JSXAttributeName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "react/jsx-key";
@@ -19,44 +18,54 @@ const RULE_NAME: &str = "react/jsx-key";
 pub struct JsxKey;
 
 /// Check whether a JSX opening element has a `key` attribute.
-fn has_key_prop(attrs: &[JSXAttributeItem<'_>]) -> bool {
-    attrs.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            if let JSXAttributeName::Identifier(ident) = &attr.name {
-                return ident.name.as_str() == "key";
-            }
-        }
-        false
+fn has_key_prop(ctx: &LintContext<'_>, opening_id: NodeId) -> bool {
+    let Some(AstNode::JSXOpeningElement(opening)) = ctx.node(opening_id) else {
+        return false;
+    };
+    opening.attributes.iter().any(|attr_id| {
+        let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
+            return false;
+        };
+        attr.name.as_str() == "key"
     })
 }
 
-/// Check whether an expression is a JSX element or fragment without a key.
-fn is_jsx_without_key(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::JSXElement(el) => !has_key_prop(&el.opening_element.attributes),
-        Expression::JSXFragment(_) => true,
-        Expression::ParenthesizedExpression(paren) => is_jsx_without_key(&paren.expression),
+/// Check whether a node (by ID) is a JSX element or fragment without a key.
+fn is_jsx_without_key(ctx: &LintContext<'_>, id: NodeId) -> bool {
+    let Some(node) = ctx.node(id) else {
+        return false;
+    };
+    match node {
+        AstNode::JSXElement(el) => !has_key_prop(ctx, el.opening_element),
+        AstNode::JSXFragment(_) => true,
         _ => false,
     }
 }
 
-/// Check if a callback argument returns JSX without a `key` prop.
-fn callback_returns_jsx_without_key(callback: &Argument<'_>) -> bool {
+/// Check if a callback argument (by ID) returns JSX without a `key` prop.
+fn callback_returns_jsx_without_key(ctx: &LintContext<'_>, callback_id: NodeId) -> bool {
+    let Some(callback) = ctx.node(callback_id) else {
+        return false;
+    };
     match callback {
-        Argument::ArrowFunctionExpression(arrow) => {
-            // Arrow with expression body: `items.map(x => <div />)`
+        AstNode::ArrowFunctionExpression(arrow) => {
+            let Some(AstNode::FunctionBody(body)) = ctx.node(arrow.body) else {
+                return false;
+            };
             if arrow.expression {
-                if let Some(oxc_ast::ast::Statement::ExpressionStatement(expr_stmt)) =
-                    arrow.body.statements.first()
-                {
-                    return is_jsx_without_key(&expr_stmt.expression);
+                // Arrow with expression body: `items.map(x => <div />)`
+                if let Some(first_stmt_id) = body.statements.first() {
+                    if let Some(AstNode::ExpressionStatement(expr_stmt)) = ctx.node(*first_stmt_id)
+                    {
+                        return is_jsx_without_key(ctx, expr_stmt.expression);
+                    }
                 }
             }
             // Arrow with block body: check return statements
-            for stmt in &arrow.body.statements {
-                if let oxc_ast::ast::Statement::ReturnStatement(ret) = stmt {
-                    if let Some(ret_val) = &ret.argument {
-                        if is_jsx_without_key(ret_val) {
+            for stmt_id in &*body.statements {
+                if let Some(AstNode::ReturnStatement(ret)) = ctx.node(*stmt_id) {
+                    if let Some(ret_val) = ret.argument {
+                        if is_jsx_without_key(ctx, ret_val) {
                             return true;
                         }
                     }
@@ -64,14 +73,17 @@ fn callback_returns_jsx_without_key(callback: &Argument<'_>) -> bool {
             }
             false
         }
-        Argument::FunctionExpression(func) => {
-            let Some(body) = &func.body else {
+        AstNode::Function(func) => {
+            let Some(body_id) = func.body else {
                 return false;
             };
-            for stmt in &body.statements {
-                if let oxc_ast::ast::Statement::ReturnStatement(ret) = stmt {
-                    if let Some(ret_val) = &ret.argument {
-                        if is_jsx_without_key(ret_val) {
+            let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+                return false;
+            };
+            for stmt_id in &*body.statements {
+                if let Some(AstNode::ReturnStatement(ret)) = ctx.node(*stmt_id) {
+                    if let Some(ret_val) = ret.argument {
+                        if is_jsx_without_key(ctx, ret_val) {
                             return true;
                         }
                     }
@@ -83,7 +95,7 @@ fn callback_returns_jsx_without_key(callback: &Argument<'_>) -> bool {
     }
 }
 
-impl NativeRule for JsxKey {
+impl LintRule for JsxKey {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -94,30 +106,30 @@ impl NativeRule for JsxKey {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if callee is `<expr>.map`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "map" {
+        if member.property.as_str() != "map" {
             return;
         }
 
         // Check the first argument (the callback)
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        if callback_returns_jsx_without_key(first_arg) {
+        if callback_returns_jsx_without_key(ctx, *first_arg_id) {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Missing `key` prop for JSX element in `.map()` iterator".to_owned(),
@@ -133,22 +145,13 @@ impl NativeRule for JsxKey {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(JsxKey)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxKey)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

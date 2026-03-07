@@ -3,14 +3,13 @@
 //! Warn when JSX references a component that looks undefined (heuristic:
 //! single `PascalCase` word with no dots, not an HTML intrinsic element).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::JSXElementName;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "react/jsx-no-undef";
@@ -24,7 +23,7 @@ const KNOWN_GLOBALS: &[&str] = &["React", "Fragment"];
 #[derive(Debug)]
 pub struct JsxNoUndef;
 
-impl NativeRule for JsxNoUndef {
+impl LintRule for JsxNoUndef {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -34,25 +33,23 @@ impl NativeRule for JsxNoUndef {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    #[allow(clippy::manual_let_else)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        // Only check simple identifier references (not member expressions like Foo.Bar)
-        let name = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str(),
-            JSXElementName::IdentifierReference(ident_ref) => ident_ref.name.as_str(),
-            _ => return,
-        };
+        // JSXOpeningElementNode.name is a String directly in starlint_ast
+        let name = opening.name.as_str();
 
         // Skip lowercase names (HTML intrinsic elements like div, span, etc.)
-        let Some(first_char) = name.chars().next() else {
-            return;
+        let first_char = match name.chars().next() {
+            Some(c) => c,
+            None => return,
         };
         if !first_char.is_ascii_uppercase() {
             return;
@@ -91,22 +88,13 @@ impl NativeRule for JsxNoUndef {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(JsxNoUndef)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxNoUndef)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

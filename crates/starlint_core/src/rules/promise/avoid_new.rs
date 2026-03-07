@@ -4,20 +4,19 @@
 //! like `Promise.resolve()`, `Promise.reject()`, or async functions
 //! instead of the Promise constructor.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new Promise(...)` constructor calls.
 #[derive(Debug)]
 pub struct AvoidNew;
 
-impl NativeRule for AvoidNew {
+impl LintRule for AvoidNew {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/avoid-new".to_owned(),
@@ -27,20 +26,21 @@ impl NativeRule for AvoidNew {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
-        let Expression::Identifier(ident) = &new_expr.callee else {
-            return;
-        };
+        let is_promise = matches!(
+            ctx.node(new_expr.callee),
+            Some(AstNode::IdentifierReference(ident)) if ident.name.as_str() == "Promise"
+        );
 
-        if ident.name.as_str() == "Promise" {
+        if is_promise {
             ctx.report(Diagnostic {
                 rule_name: "promise/avoid-new".to_owned(),
                 message: "Avoid creating `new Promise` — prefer async functions or `Promise.resolve()`/`Promise.reject()`".to_owned(),
@@ -56,22 +56,13 @@ impl NativeRule for AvoidNew {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(AvoidNew)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(AvoidNew)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

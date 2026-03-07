@@ -2,14 +2,13 @@
 //!
 //! Enforce elements with `aria-activedescendant` are tabbable.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/aria-activedescendant-has-tabindex";
@@ -20,14 +19,11 @@ const INTERACTIVE_ELEMENTS: &[&str] = &["input", "select", "textarea", "button",
 #[derive(Debug)]
 pub struct AriaActivedescendantHasTabindex;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
+/// Check if an attribute exists on a JSX opening element by examining its attribute `NodeIds`.
+fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
+    attributes.iter().any(|&attr_id| {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            attr.name == name
         } else {
             false
         }
@@ -35,19 +31,18 @@ fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> b
 }
 
 /// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value<'a>(
-    opening: &'a oxc_ast::ast::JSXOpeningElement<'a>,
+fn get_attr_string_value(
+    attributes: &[NodeId],
     attr_name: &str,
-) -> Option<&'a str> {
-    for item in &opening.attributes {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            let matches = match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name,
-                JSXAttributeName::NamespacedName(_) => false,
-            };
-            if matches {
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    return Some(lit.value.as_str());
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    for &attr_id in attributes {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            if attr.name == attr_name {
+                if let Some(value_id) = attr.value {
+                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                        return Some(lit.value.clone());
+                    }
                 }
             }
         }
@@ -55,7 +50,7 @@ fn get_attr_string_value<'a>(
     None
 }
 
-impl NativeRule for AriaActivedescendantHasTabindex {
+impl LintRule for AriaActivedescendantHasTabindex {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -65,34 +60,31 @@ impl NativeRule for AriaActivedescendantHasTabindex {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        if !has_attribute(opening, "aria-activedescendant") {
+        let attrs: Vec<NodeId> = opening.attributes.to_vec();
+
+        if !has_attribute(&attrs, "aria-activedescendant", ctx) {
             return;
         }
 
         // Check if it is an interactive element
-        let is_interactive = match &opening.name {
-            JSXElementName::Identifier(ident) => {
-                INTERACTIVE_ELEMENTS.contains(&ident.name.as_str())
-            }
-            _ => false,
-        };
+        let is_interactive = INTERACTIVE_ELEMENTS.contains(&opening.name.as_str());
 
         if is_interactive {
             return;
         }
 
         // Non-interactive: must have tabIndex
-        let has_tabindex = has_attribute(opening, "tabIndex");
-        let tabindex_val = get_attr_string_value(opening, "tabIndex");
+        let has_tabindex = has_attribute(&attrs, "tabIndex", ctx);
+        let tabindex_val = get_attr_string_value(&attrs, "tabIndex", ctx);
         let is_negative = tabindex_val
             .and_then(|v| v.parse::<i32>().ok())
             .is_some_and(|n| n < 0);
@@ -114,22 +106,13 @@ impl NativeRule for AriaActivedescendantHasTabindex {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(AriaActivedescendantHasTabindex)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(AriaActivedescendantHasTabindex)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

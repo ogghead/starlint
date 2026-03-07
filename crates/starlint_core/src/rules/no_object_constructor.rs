@@ -3,20 +3,19 @@
 //! Disallow calls to the `Object` constructor without arguments.
 //! Use `{}` instead of `new Object()` or `Object()`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new Object()` and `Object()` without arguments.
 #[derive(Debug)]
 pub struct NoObjectConstructor;
 
-impl NativeRule for NoObjectConstructor {
+impl LintRule for NoObjectConstructor {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-object-constructor".to_owned(),
@@ -26,14 +25,14 @@ impl NativeRule for NoObjectConstructor {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression, AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression, AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::NewExpression(new_expr) => {
-                if matches!(&new_expr.callee, Expression::Identifier(id) if id.name.as_str() == "Object")
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::NewExpression(new_expr) => {
+                if matches!(ctx.node(new_expr.callee), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Object")
                     && new_expr.arguments.is_empty()
                 {
                     ctx.report(Diagnostic {
@@ -55,8 +54,8 @@ impl NativeRule for NoObjectConstructor {
                     });
                 }
             }
-            AstKind::CallExpression(call) => {
-                if matches!(&call.callee, Expression::Identifier(id) if id.name.as_str() == "Object")
+            AstNode::CallExpression(call) => {
+                if matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Object")
                     && call.arguments.is_empty()
                 {
                     ctx.report(Diagnostic {
@@ -85,23 +84,13 @@ impl NativeRule for NoObjectConstructor {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoObjectConstructor)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoObjectConstructor)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

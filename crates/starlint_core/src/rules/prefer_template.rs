@@ -4,22 +4,20 @@
 //! Template literals are more readable when combining strings with
 //! variables.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags string concatenation that could use template literals.
 #[derive(Debug)]
 pub struct PreferTemplate;
 
-impl NativeRule for PreferTemplate {
+impl LintRule for PreferTemplate {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-template".to_owned(),
@@ -30,12 +28,12 @@ impl NativeRule for PreferTemplate {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
@@ -44,8 +42,8 @@ impl NativeRule for PreferTemplate {
         }
 
         // Check if this is string concatenation (at least one side is a string)
-        let left_is_string = is_string_expression(&expr.left);
-        let right_is_string = is_string_expression(&expr.right);
+        let left_is_string = is_string_node(expr.left, ctx);
+        let right_is_string = is_string_node(expr.right, ctx);
 
         if !left_is_string && !right_is_string {
             return;
@@ -58,7 +56,14 @@ impl NativeRule for PreferTemplate {
 
         // Build fix: convert to template literal
         let source = ctx.source_text();
-        let fix = build_template_fix(source, &expr.left, &expr.right);
+        let fix = build_template_fix(
+            source,
+            expr.left,
+            expr.right,
+            left_is_string,
+            right_is_string,
+            ctx,
+        );
 
         ctx.report(Diagnostic {
             rule_name: "prefer-template".to_owned(),
@@ -80,19 +85,27 @@ impl NativeRule for PreferTemplate {
     }
 }
 
-/// Check if an expression is a string literal or template literal.
-const fn is_string_expression(expr: &Expression<'_>) -> bool {
+/// Check if a node is a string literal or template literal.
+fn is_string_node(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
     matches!(
-        expr,
-        Expression::StringLiteral(_) | Expression::TemplateLiteral(_)
+        ctx.node(node_id),
+        Some(AstNode::StringLiteral(_) | AstNode::TemplateLiteral(_))
     )
 }
 
 /// Extract the raw content of a string literal (between quotes) from source,
 /// escaping backticks and `${` for template literal context.
-fn string_content_for_template(source: &str, expr: &Expression<'_>) -> Option<String> {
-    let start = usize::try_from(expr.span().start).unwrap_or(0);
-    let end = usize::try_from(expr.span().end).unwrap_or(0);
+fn string_content_for_template(
+    source: &str,
+    node_id: NodeId,
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    let span = ctx.node(node_id).map_or(
+        starlint_ast::types::Span::EMPTY,
+        starlint_ast::AstNode::span,
+    );
+    let start = usize::try_from(span.start).unwrap_or(0);
+    let end = usize::try_from(span.end).unwrap_or(0);
     let raw = source.get(start..end)?;
     // Strip surrounding quotes (single, double, or backtick)
     let inner = raw.get(1..raw.len().saturating_sub(1)).unwrap_or("");
@@ -100,21 +113,36 @@ fn string_content_for_template(source: &str, expr: &Expression<'_>) -> Option<St
 }
 
 /// Build the replacement template literal string.
-fn build_template_fix(source: &str, left: &Expression<'_>, right: &Expression<'_>) -> String {
-    let left_start = usize::try_from(left.span().start).unwrap_or(0);
-    let left_end = usize::try_from(left.span().end).unwrap_or(0);
-    let right_start = usize::try_from(right.span().start).unwrap_or(0);
-    let right_end = usize::try_from(right.span().end).unwrap_or(0);
+fn build_template_fix(
+    source: &str,
+    left: NodeId,
+    right: NodeId,
+    left_is_string: bool,
+    right_is_string: bool,
+    ctx: &LintContext<'_>,
+) -> String {
+    let left_span = ctx.node(left).map_or(
+        starlint_ast::types::Span::EMPTY,
+        starlint_ast::AstNode::span,
+    );
+    let right_span = ctx.node(right).map_or(
+        starlint_ast::types::Span::EMPTY,
+        starlint_ast::AstNode::span,
+    );
+    let left_start = usize::try_from(left_span.start).unwrap_or(0);
+    let left_end = usize::try_from(left_span.end).unwrap_or(0);
+    let right_start = usize::try_from(right_span.start).unwrap_or(0);
+    let right_end = usize::try_from(right_span.end).unwrap_or(0);
 
-    let left_str = if is_string_expression(left) {
-        string_content_for_template(source, left).unwrap_or_default()
+    let left_str = if left_is_string {
+        string_content_for_template(source, left, ctx).unwrap_or_default()
     } else {
         let text = source.get(left_start..left_end).unwrap_or("");
         format!("${{{text}}}")
     };
 
-    let right_str = if is_string_expression(right) {
-        string_content_for_template(source, right).unwrap_or_default()
+    let right_str = if right_is_string {
+        string_content_for_template(source, right, ctx).unwrap_or_default()
     } else {
         let text = source.get(right_start..right_end).unwrap_or("");
         format!("${{{text}}}")
@@ -125,23 +153,13 @@ fn build_template_fix(source: &str, left: &Expression<'_>, right: &Expression<'_
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferTemplate)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferTemplate)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -5,14 +5,13 @@
 //! Without explicit types, internal refactoring can accidentally change the
 //! public contract.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Declaration, ExportDefaultDeclarationKind};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/explicit-module-boundary-types";
@@ -22,7 +21,7 @@ const RULE_NAME: &str = "typescript/explicit-module-boundary-types";
 #[derive(Debug)]
 pub struct ExplicitModuleBoundaryTypes;
 
-impl NativeRule for ExplicitModuleBoundaryTypes {
+impl LintRule for ExplicitModuleBoundaryTypes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -33,22 +32,22 @@ impl NativeRule for ExplicitModuleBoundaryTypes {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ExportDefaultDeclaration,
-            AstType::ExportNamedDeclaration,
+            AstNodeType::ExportDefaultDeclaration,
+            AstNodeType::ExportNamedDeclaration,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::ExportNamedDeclaration(decl) => {
-                if let Some(declaration) = &decl.declaration {
-                    check_declaration(declaration, ctx);
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::ExportNamedDeclaration(decl) => {
+                if let Some(declaration_id) = decl.declaration {
+                    check_declaration(declaration_id, ctx);
                 }
             }
-            AstKind::ExportDefaultDeclaration(decl) => {
-                check_default_declaration(&decl.declaration, decl.span.start, decl.span.end, ctx);
+            AstNode::ExportDefaultDeclaration(decl) => {
+                check_default_declaration(decl.declaration, decl.span.start, decl.span.end, ctx);
             }
             _ => {}
         }
@@ -56,62 +55,93 @@ impl NativeRule for ExplicitModuleBoundaryTypes {
 }
 
 /// Check a named export declaration for missing type annotations.
-fn check_declaration(decl: &Declaration<'_>, ctx: &mut NativeLintContext<'_>) {
-    if let Declaration::FunctionDeclaration(func) = decl {
+/// Uses source text heuristic since `FunctionNode` has no `return_type` field.
+fn check_declaration(decl_id: NodeId, ctx: &mut LintContext<'_>) {
+    // Extract all needed data from the borrowed node before calling ctx.report()
+    let (func_span, func_body, func_params) = {
+        let Some(AstNode::Function(func)) = ctx.node(decl_id) else {
+            return;
+        };
         // Skip functions without a body (ambient declarations)
         if func.body.is_none() {
             return;
         }
+        (func.span, func.body, func.params.to_vec())
+    };
 
-        if func.return_type.is_none() {
-            ctx.report(Diagnostic {
-                rule_name: RULE_NAME.to_owned(),
-                message: "Exported function missing explicit return type".to_owned(),
-                span: Span::new(func.span.start, func.span.end),
-                severity: Severity::Warning,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
-        }
+    // Check for return type using source text heuristic
+    let has_return_type = has_return_type_annotation(func_span, func_body, ctx);
 
-        // Check each parameter for a type annotation
-        for param in &func.params.items {
-            if param.type_annotation.is_none() {
-                ctx.report(Diagnostic {
-                    rule_name: RULE_NAME.to_owned(),
-                    message: "Exported function parameter missing explicit type annotation"
-                        .to_owned(),
-                    span: Span::new(param.span.start, param.span.end),
-                    severity: Severity::Warning,
-                    help: None,
-                    fix: None,
-                    labels: vec![],
-                });
-            }
-        }
+    if !has_return_type {
+        ctx.report(Diagnostic {
+            rule_name: RULE_NAME.to_owned(),
+            message: "Exported function missing explicit return type".to_owned(),
+            span: Span::new(func_span.start, func_span.end),
+            severity: Severity::Warning,
+            help: None,
+            fix: None,
+            labels: vec![],
+        });
     }
+
+    // Check each parameter for a type annotation using source text
+    check_params_for_types(&func_params, ctx);
 }
 
 /// Check a default export declaration for missing type annotations.
 fn check_default_declaration(
-    decl: &ExportDefaultDeclarationKind<'_>,
+    decl_id: NodeId,
     span_start: u32,
     span_end: u32,
-    ctx: &mut NativeLintContext<'_>,
+    ctx: &mut LintContext<'_>,
 ) {
-    match decl {
-        ExportDefaultDeclarationKind::FunctionDeclaration(func) => {
-            // Skip functions without a body (ambient declarations)
+    // Extract data from the node before mutably borrowing ctx
+    enum DeclKind {
+        Function {
+            func_span: starlint_ast::types::Span,
+            func_body: Option<NodeId>,
+            func_params: Vec<NodeId>,
+        },
+        Arrow {
+            arrow_span: starlint_ast::types::Span,
+            arrow_body: NodeId,
+            arrow_params: Vec<NodeId>,
+        },
+        Other,
+    }
+
+    let kind = match ctx.node(decl_id) {
+        Some(AstNode::Function(func)) => {
             if func.body.is_none() {
                 return;
             }
+            DeclKind::Function {
+                func_span: func.span,
+                func_body: func.body,
+                func_params: func.params.to_vec(),
+            }
+        }
+        Some(AstNode::ArrowFunctionExpression(arrow)) => DeclKind::Arrow {
+            arrow_span: arrow.span,
+            arrow_body: arrow.body,
+            arrow_params: arrow.params.to_vec(),
+        },
+        _ => DeclKind::Other,
+    };
 
-            if func.return_type.is_none() {
+    match kind {
+        DeclKind::Function {
+            func_span,
+            func_body,
+            func_params,
+        } => {
+            let has_return_type = has_return_type_annotation(func_span, func_body, ctx);
+
+            if !has_return_type {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: "Exported function missing explicit return type".to_owned(),
-                    span: Span::new(func.span.start, func.span.end),
+                    span: Span::new(func_span.start, func_span.end),
                     severity: Severity::Warning,
                     help: None,
                     fix: None,
@@ -119,23 +149,34 @@ fn check_default_declaration(
                 });
             }
 
-            for param in &func.params.items {
-                if param.type_annotation.is_none() {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: "Exported function parameter missing explicit type annotation"
-                            .to_owned(),
-                        span: Span::new(param.span.start, param.span.end),
-                        severity: Severity::Warning,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
-                }
-            }
+            check_params_for_types(&func_params, ctx);
         }
-        ExportDefaultDeclarationKind::ArrowFunctionExpression(arrow) => {
-            if arrow.return_type.is_none() {
+        DeclKind::Arrow {
+            arrow_span,
+            arrow_body,
+            arrow_params,
+        } => {
+            let source = ctx.source_text();
+            // For arrows, check between params end and body start
+            let body_span = ctx.node(arrow_body).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
+            let params_end = arrow_params
+                .last()
+                .and_then(|&id| ctx.node(id))
+                .map_or(arrow_span.start, |n| n.span().end);
+            let region_start = usize::try_from(params_end).unwrap_or(0);
+            let region_end = usize::try_from(body_span.start).unwrap_or(0);
+            let between = source.get(region_start..region_end).unwrap_or("");
+            // Strip the `=>` and check for `:` before it
+            let has_return_type = if let Some(arrow_pos) = between.find("=>") {
+                between.get(..arrow_pos).is_some_and(|s| s.contains(':'))
+            } else {
+                between.contains(':')
+            };
+
+            if !has_return_type {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: "Exported arrow function missing explicit return type".to_owned(),
@@ -147,44 +188,77 @@ fn check_default_declaration(
                 });
             }
 
-            for param in &arrow.params.items {
-                if param.type_annotation.is_none() {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: "Exported function parameter missing explicit type annotation"
-                            .to_owned(),
-                        span: Span::new(param.span.start, param.span.end),
-                        severity: Severity::Warning,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
-                }
-            }
+            check_params_for_types(&arrow_params, ctx);
         }
-        _ => {}
+        DeclKind::Other => {}
+    }
+}
+
+/// Check if a function has a return type annotation using source text heuristic.
+fn has_return_type_annotation(
+    func_span: starlint_ast::types::Span,
+    body_id: Option<NodeId>,
+    ctx: &LintContext<'_>,
+) -> bool {
+    let Some(body_node_id) = body_id else {
+        return false;
+    };
+    let body_span = ctx.node(body_node_id).map_or(
+        starlint_ast::types::Span::EMPTY,
+        starlint_ast::AstNode::span,
+    );
+    let source = ctx.source_text();
+    // Look for `:` between the last `)` before body and `{` of body
+    let search_start = usize::try_from(func_span.start).unwrap_or(0);
+    let search_end = usize::try_from(body_span.start).unwrap_or(0);
+    let between = source.get(search_start..search_end).unwrap_or("");
+    // Find the last `)` and check if there's a `:` after it
+    if let Some(paren_pos) = between.rfind(')') {
+        between.get(paren_pos..).is_some_and(|s| s.contains(':'))
+    } else {
+        false
+    }
+}
+
+/// Check function parameters for type annotations using source text.
+fn check_params_for_types(params: &[NodeId], ctx: &mut LintContext<'_>) {
+    // Collect param info first to avoid borrow conflicts
+    let param_info: Vec<(starlint_ast::types::Span, bool)> = params
+        .iter()
+        .filter_map(|&param_id| {
+            let param_node = ctx.node(param_id)?;
+            let param_span = param_node.span();
+            let start = usize::try_from(param_span.start).unwrap_or(0);
+            let end = usize::try_from(param_span.end).unwrap_or(0);
+            let param_text = ctx.source_text().get(start..end).unwrap_or("");
+            Some((param_span, param_text.contains(':')))
+        })
+        .collect();
+
+    for (param_span, has_type) in param_info {
+        if !has_type {
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: "Exported function parameter missing explicit type annotation".to_owned(),
+                span: Span::new(param_span.start, param_span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ExplicitModuleBoundaryTypes)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ExplicitModuleBoundaryTypes)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

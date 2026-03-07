@@ -6,14 +6,14 @@
 
 use std::sync::RwLock;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::LogicalOperator;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::LogicalOperator;
+use starlint_ast::types::NodeId;
 
 /// Default maximum cyclomatic complexity allowed per function.
 const DEFAULT_THRESHOLD: u32 = 20;
@@ -68,7 +68,7 @@ impl MaxComplexity {
     }
 }
 
-impl NativeRule for MaxComplexity {
+impl LintRule for MaxComplexity {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "max-complexity".to_owned(),
@@ -87,47 +87,48 @@ impl NativeRule for MaxComplexity {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::CatchClause,
-            AstType::ConditionalExpression,
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::Function,
-            AstType::IfStatement,
-            AstType::LogicalExpression,
-            AstType::SwitchCase,
-            AstType::WhileStatement,
+            AstNodeType::ArrowFunctionExpression,
+            AstNodeType::CatchClause,
+            AstNodeType::ConditionalExpression,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForInStatement,
+            AstNodeType::ForOfStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::Function,
+            AstNodeType::IfStatement,
+            AstNodeType::LogicalExpression,
+            AstNodeType::SwitchCase,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::CatchClause,
-            AstType::ConditionalExpression,
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::Function,
-            AstType::IfStatement,
-            AstType::LogicalExpression,
-            AstType::SwitchCase,
-            AstType::WhileStatement,
+            AstNodeType::ArrowFunctionExpression,
+            AstNodeType::CatchClause,
+            AstNodeType::ConditionalExpression,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForInStatement,
+            AstNodeType::ForOfStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::Function,
+            AstNodeType::IfStatement,
+            AstNodeType::LogicalExpression,
+            AstNodeType::SwitchCase,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
-        match kind {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
             // Push a new scope for function boundaries.
-            AstKind::Function(f) => {
+            AstNode::Function(f) => {
                 let name =
-                    f.id.as_ref()
-                        .map_or_else(|| "<anonymous>".to_owned(), |id| id.name.to_string());
+                    f.id.and_then(|id| ctx.node(id))
+                        .and_then(|n| n.as_binding_identifier())
+                        .map_or_else(|| "<anonymous>".to_owned(), |id| id.name.clone());
                 if let Ok(mut guard) = self.scopes.write() {
                     guard.push(FunctionScope {
                         name,
@@ -136,7 +137,7 @@ impl NativeRule for MaxComplexity {
                     });
                 }
             }
-            AstKind::ArrowFunctionExpression(arrow) => {
+            AstNode::ArrowFunctionExpression(arrow) => {
                 if let Ok(mut guard) = self.scopes.write() {
                     guard.push(FunctionScope {
                         name: "<anonymous>".to_owned(),
@@ -147,26 +148,26 @@ impl NativeRule for MaxComplexity {
             }
 
             // Decision points: each adds +1 complexity.
-            AstKind::IfStatement(_)
-            | AstKind::ConditionalExpression(_)
-            | AstKind::ForStatement(_)
-            | AstKind::ForInStatement(_)
-            | AstKind::ForOfStatement(_)
-            | AstKind::WhileStatement(_)
-            | AstKind::DoWhileStatement(_)
-            | AstKind::CatchClause(_) => {
+            AstNode::IfStatement(_)
+            | AstNode::ConditionalExpression(_)
+            | AstNode::ForStatement(_)
+            | AstNode::ForInStatement(_)
+            | AstNode::ForOfStatement(_)
+            | AstNode::WhileStatement(_)
+            | AstNode::DoWhileStatement(_)
+            | AstNode::CatchClause(_) => {
                 self.increment_complexity();
             }
 
             // Switch case: only non-default cases add complexity.
-            AstKind::SwitchCase(case) => {
+            AstNode::SwitchCase(case) => {
                 if case.test.is_some() {
                     self.increment_complexity();
                 }
             }
 
             // Logical operators: && and || add complexity, ?? does not.
-            AstKind::LogicalExpression(expr) => {
+            AstNode::LogicalExpression(expr) => {
                 if matches!(expr.operator, LogicalOperator::And | LogicalOperator::Or) {
                     self.increment_complexity();
                 }
@@ -176,10 +177,10 @@ impl NativeRule for MaxComplexity {
         }
     }
 
-    fn leave(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn leave(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         let should_pop = matches!(
-            kind,
-            AstKind::Function(_) | AstKind::ArrowFunctionExpression(_)
+            node,
+            AstNode::Function(_) | AstNode::ArrowFunctionExpression(_)
         );
         if !should_pop {
             return;
@@ -213,35 +214,21 @@ impl NativeRule for MaxComplexity {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MaxComplexity::new())];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MaxComplexity::new())];
+        lint_source(source, "test.js", &rules)
     }
 
     fn lint_with_threshold(source: &str, threshold: u32) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MaxComplexity {
-                threshold,
-                scopes: RwLock::new(Vec::new()),
-            })];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MaxComplexity {
+            threshold,
+            scopes: RwLock::new(Vec::new()),
+        })];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

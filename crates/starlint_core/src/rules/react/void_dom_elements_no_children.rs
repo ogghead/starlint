@@ -4,17 +4,14 @@
 //! children or use `dangerouslySetInnerHTML`. These elements cannot contain
 //! content in HTML.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::JSXAttributeItem;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// HTML void elements that cannot have children.
 const VOID_ELEMENTS: &[&str] = &[
@@ -26,7 +23,7 @@ const VOID_ELEMENTS: &[&str] = &[
 #[derive(Debug)]
 pub struct VoidDomElementsNoChildren;
 
-impl NativeRule for VoidDomElementsNoChildren {
+impl LintRule for VoidDomElementsNoChildren {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/void-dom-elements-no-children".to_owned(),
@@ -36,23 +33,23 @@ impl NativeRule for VoidDomElementsNoChildren {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXElement(element) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXElement(element) = node else {
             return;
         };
 
-        // Get the element name; only check lowercase DOM elements
-        let Some(tag_name) = element.opening_element.name.get_identifier_name() else {
+        // Get the element name from the opening element
+        let Some(AstNode::JSXOpeningElement(opening)) = ctx.node(element.opening_element) else {
             return;
         };
 
-        let tag_str = tag_name.as_str();
+        let tag_str = opening.name.as_str();
 
-        // Only check known void elements
+        // Only check known void elements (lowercase DOM elements)
         if !VOID_ELEMENTS.contains(&tag_str) {
             return;
         }
@@ -62,11 +59,10 @@ impl NativeRule for VoidDomElementsNoChildren {
 
         // Check for children or dangerouslySetInnerHTML props — collect the
         // offending attribute span so we can offer a removal fix.
-        let bad_attr_span = element.opening_element.attributes.iter().find_map(|attr| {
-            if let JSXAttributeItem::Attribute(a) = attr {
-                if a.is_identifier("children") || a.is_identifier("dangerouslySetInnerHTML") {
-                    let s = a.span();
-                    return Some(Span::new(s.start, s.end));
+        let bad_attr_span = opening.attributes.iter().find_map(|attr_id| {
+            if let Some(AstNode::JSXAttribute(a)) = ctx.node(*attr_id) {
+                if a.name == "children" || a.name == "dangerouslySetInnerHTML" {
+                    return Some(Span::new(a.span.start, a.span.end));
                 }
             }
             None
@@ -105,22 +101,13 @@ impl NativeRule for VoidDomElementsNoChildren {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.jsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(VoidDomElementsNoChildren)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.jsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(VoidDomElementsNoChildren)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

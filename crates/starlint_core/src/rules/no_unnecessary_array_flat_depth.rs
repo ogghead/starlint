@@ -4,20 +4,19 @@
 //! `Array.prototype.flat()`. Calling `.flat()` without an argument is
 //! equivalent and more concise.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.flat(1)` calls where the depth argument is the default value.
 #[derive(Debug)]
 pub struct NoUnnecessaryArrayFlatDepth;
 
-impl NativeRule for NoUnnecessaryArrayFlatDepth {
+impl LintRule for NoUnnecessaryArrayFlatDepth {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unnecessary-array-flat-depth".to_owned(),
@@ -27,21 +26,21 @@ impl NativeRule for NoUnnecessaryArrayFlatDepth {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Must be a `.flat()` call
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "flat" {
+        if member.property.as_str() != "flat" {
             return;
         }
 
@@ -51,14 +50,14 @@ impl NativeRule for NoUnnecessaryArrayFlatDepth {
         }
 
         // The argument must be the numeric literal `1`
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(&first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        if is_numeric_one(first_arg) {
+        if is_numeric_one(first_arg_id, ctx) {
             let call_span = Span::new(call.span.start, call.span.end);
             // Get the span of the argument to remove it
-            let Argument::NumericLiteral(num_lit) = first_arg else {
+            let Some(AstNode::NumericLiteral(num_lit)) = ctx.node(first_arg_id) else {
                 return;
             };
             let arg_span = Span::new(num_lit.span.start, num_lit.span.end);
@@ -83,30 +82,20 @@ impl NativeRule for NoUnnecessaryArrayFlatDepth {
     }
 }
 
-/// Check if an argument is the numeric literal `1`.
-fn is_numeric_one(arg: &Argument<'_>) -> bool {
-    matches!(arg, Argument::NumericLiteral(n) if (n.value - 1.0).abs() < f64::EPSILON)
+/// Check if a node is the numeric literal `1`.
+fn is_numeric_one(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    matches!(ctx.node(id), Some(AstNode::NumericLiteral(n)) if (n.value - 1.0).abs() < f64::EPSILON)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnnecessaryArrayFlatDepth)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryArrayFlatDepth)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

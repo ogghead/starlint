@@ -5,14 +5,13 @@
 //! should match the function name for discoverability and organization.
 //! This rule flags `describe` calls where the title is an empty string.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "vitest/prefer-describe-function-title";
@@ -21,7 +20,7 @@ const RULE_NAME: &str = "vitest/prefer-describe-function-title";
 #[derive(Debug)]
 pub struct PreferDescribeFunctionTitle;
 
-impl NativeRule for PreferDescribeFunctionTitle {
+impl LintRule for PreferDescribeFunctionTitle {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -31,18 +30,18 @@ impl NativeRule for PreferDescribeFunctionTitle {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Match `describe(...)` calls.
-        let is_describe = match &call.callee {
-            Expression::Identifier(id) => id.name.as_str() == "describe",
+        let is_describe = match ctx.node(call.callee) {
+            Some(AstNode::IdentifierReference(id)) => id.name.as_str() == "describe",
             _ => false,
         };
 
@@ -56,7 +55,7 @@ impl NativeRule for PreferDescribeFunctionTitle {
         };
 
         // Flag empty string titles.
-        if let Argument::StringLiteral(lit) = first_arg {
+        if let Some(AstNode::StringLiteral(lit)) = ctx.node(*first_arg) {
             if lit.value.as_str().trim().is_empty() {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
@@ -71,12 +70,9 @@ impl NativeRule for PreferDescribeFunctionTitle {
         }
 
         // Flag template literals with no expressions that are empty.
-        if let Argument::TemplateLiteral(tpl) = first_arg {
+        if let Some(AstNode::TemplateLiteral(tpl)) = ctx.node(*first_arg) {
             if tpl.expressions.is_empty() {
-                let is_empty = tpl
-                    .quasis
-                    .iter()
-                    .all(|q| q.value.raw.as_str().trim().is_empty());
+                let is_empty = tpl.quasis.iter().all(|q| q.trim().is_empty());
                 if is_empty {
                     ctx.report(Diagnostic {
                         rule_name: RULE_NAME.to_owned(),
@@ -95,22 +91,13 @@ impl NativeRule for PreferDescribeFunctionTitle {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferDescribeFunctionTitle)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferDescribeFunctionTitle)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

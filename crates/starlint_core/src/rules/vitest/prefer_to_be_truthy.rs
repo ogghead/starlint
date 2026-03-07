@@ -4,14 +4,14 @@
 //! more idiomatic in Vitest for checking truthy values and provides clearer
 //! intent.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::or_fun_call)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "vitest/prefer-to-be-truthy";
@@ -20,7 +20,7 @@ const RULE_NAME: &str = "vitest/prefer-to-be-truthy";
 #[derive(Debug)]
 pub struct PreferToBeTruthy;
 
-impl NativeRule for PreferToBeTruthy {
+impl LintRule for PreferToBeTruthy {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -30,21 +30,26 @@ impl NativeRule for PreferToBeTruthy {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::map_unwrap_or
+    )]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Match `.toBe(true)`.
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "toBe" {
+        if member.property.as_str() != "toBe" {
             return;
         }
 
@@ -56,11 +61,21 @@ impl NativeRule for PreferToBeTruthy {
             return;
         };
 
-        let is_true = matches!(first_arg, Argument::BooleanLiteral(lit) if lit.value);
+        let is_true =
+            matches!(ctx.node(*first_arg), Some(AstNode::BooleanLiteral(lit)) if lit.value);
 
         if is_true {
             // Replace from the property name start to end of call: `toBe(true)` -> `toBeTruthy()`
-            let fix_span = Span::new(member.property.span.start, call.span.end);
+            // Compute property span from source text
+            let source = ctx.source_text();
+            let call_text = source
+                .get(call.span.start as usize..call.span.end as usize)
+                .unwrap_or("");
+            let fix_span = call_text
+                .find("toBe")
+                .map_or(Span::new(call.span.start, call.span.end), |offset| {
+                    Span::new(call.span.start.saturating_add(offset as u32), call.span.end)
+                });
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Prefer `toBeTruthy()` over `toBe(true)`".to_owned(),
@@ -84,22 +99,13 @@ impl NativeRule for PreferToBeTruthy {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferToBeTruthy)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferToBeTruthy)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,22 +4,19 @@
 //! `jest.fn().mockImplementation(() => Promise.resolve(x))`. The shorthand
 //! methods are more readable and clearly express intent.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.mockImplementation(() => Promise.resolve(x))` patterns.
 #[derive(Debug)]
 pub struct PreferMockPromiseShorthand;
 
-impl NativeRule for PreferMockPromiseShorthand {
+impl LintRule for PreferMockPromiseShorthand {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "jest/prefer-mock-promise-shorthand".to_owned(),
@@ -30,68 +27,66 @@ impl NativeRule for PreferMockPromiseShorthand {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Must be `.mockImplementation(...)` or `.mockReturnValue(...)`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
-        let method = member.property.name.as_str();
+        let method = member.property.clone();
         if method != "mockImplementation" && method != "mockReturnValue" {
             return;
         }
 
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(&first_arg_id) = call.arguments.first() else {
             return;
         };
-        let Some(arg_expr) = first_arg.as_expression() else {
-            return;
-        };
+
+        let member_object = member.object;
+        let call_span = call.span;
 
         // For mockImplementation: check if the argument is an arrow/function
         // that returns Promise.resolve or Promise.reject
         if method == "mockImplementation" {
-            let return_expr = match arg_expr {
-                Expression::ArrowFunctionExpression(arrow) => {
-                    // Check for expression body: `() => Promise.resolve(x)`
+            let return_expr_id = match ctx.node(first_arg_id) {
+                Some(AstNode::ArrowFunctionExpression(arrow)) => {
                     if arrow.expression {
-                        get_single_expression_body(&arrow.body)
+                        get_single_expression_body(arrow.body, ctx)
                     } else {
-                        // Check for `() => { return Promise.resolve(x); }`
-                        get_single_return_expression(&arrow.body)
+                        get_single_return_expression(arrow.body, ctx)
                     }
                 }
-                Expression::FunctionExpression(func) => func
-                    .body
-                    .as_ref()
-                    .and_then(|b| get_single_return_expression(b)),
+                Some(AstNode::Function(func)) => {
+                    func.body.and_then(|b| get_single_return_expression(b, ctx))
+                }
                 _ => None,
             };
 
-            let Some(ret) = return_expr else {
+            let Some(ret_id) = return_expr_id else {
                 return;
             };
-            if let Some(promise_method) = is_promise_call(ret) {
-                let suggestion = match promise_method {
+            if let Some(promise_method) = is_promise_call(ret_id, ctx) {
+                let suggestion = match promise_method.as_str() {
                     "resolve" => "mockResolvedValue",
                     "reject" => "mockRejectedValue",
                     _ => return,
                 };
                 let fix =
-                    build_mock_shorthand_fix(call, member, suggestion, ret, ctx.source_text());
+                    build_mock_shorthand_fix(call_span, member_object, suggestion, ret_id, ctx);
                 ctx.report(Diagnostic {
                     rule_name: "jest/prefer-mock-promise-shorthand".to_owned(),
                     message: format!(
                         "Use `.{suggestion}()` instead of `.mockImplementation(() => Promise.{promise_method}(...))`"
                     ),
-                    span: Span::new(call.span.start, call.span.end),
+                    span: Span::new(call_span.start, call_span.end),
                     severity: Severity::Warning,
                     help: Some(format!("Replace with `.{suggestion}()`")),
                     fix,
@@ -100,20 +95,25 @@ impl NativeRule for PreferMockPromiseShorthand {
             }
         } else if method == "mockReturnValue" {
             // Check if the argument is `Promise.resolve(x)` or `Promise.reject(x)`
-            if let Some(promise_method) = is_promise_call(arg_expr) {
-                let suggestion = match promise_method {
+            if let Some(promise_method) = is_promise_call(first_arg_id, ctx) {
+                let suggestion = match promise_method.as_str() {
                     "resolve" => "mockResolvedValue",
                     "reject" => "mockRejectedValue",
                     _ => return,
                 };
-                let fix =
-                    build_mock_shorthand_fix(call, member, suggestion, arg_expr, ctx.source_text());
+                let fix = build_mock_shorthand_fix(
+                    call_span,
+                    member_object,
+                    suggestion,
+                    first_arg_id,
+                    ctx,
+                );
                 ctx.report(Diagnostic {
                     rule_name: "jest/prefer-mock-promise-shorthand".to_owned(),
                     message: format!(
                         "Use `.{suggestion}()` instead of `.mockReturnValue(Promise.{promise_method}(...))`"
                     ),
-                    span: Span::new(call.span.start, call.span.end),
+                    span: Span::new(call_span.start, call_span.end),
                     severity: Severity::Warning,
                     help: Some(format!("Replace with `.{suggestion}()`")),
                     fix,
@@ -124,26 +124,27 @@ impl NativeRule for PreferMockPromiseShorthand {
     }
 }
 
-/// Build fix: replace `.mockImplementation(() => Promise.resolve(x))` with `.mockResolvedValue(x)`.
-#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
+/// Build fix: replace with `.mockResolvedValue(x)` or `.mockRejectedValue(x)`.
+#[allow(clippy::as_conversions)]
 fn build_mock_shorthand_fix(
-    call: &oxc_ast::ast::CallExpression<'_>,
-    member: &oxc_ast::ast::StaticMemberExpression<'_>,
+    call_span: starlint_ast::types::Span,
+    member_object: NodeId,
     suggestion: &str,
-    promise_expr: &Expression<'_>,
-    source: &str,
+    promise_expr_id: NodeId,
+    ctx: &LintContext<'_>,
 ) -> Option<Fix> {
+    let source = ctx.source_text();
     // Extract the object before `.mockImplementation(...)` / `.mockReturnValue(...)`
-    let obj_span = member.object.span();
+    let obj_span = ctx.node(member_object)?.span();
     let obj_text = source.get(obj_span.start as usize..obj_span.end as usize)?;
 
     // Extract the argument from Promise.resolve(x) / Promise.reject(x)
-    let Expression::CallExpression(promise_call) = promise_expr else {
+    let Some(AstNode::CallExpression(promise_call)) = ctx.node(promise_expr_id) else {
         return None;
     };
-    let inner_arg_text = promise_call.arguments.first().map(|a| {
-        let sp = a.span();
-        source.get(sp.start as usize..sp.end as usize).unwrap_or("")
+    let inner_arg_text = promise_call.arguments.first().and_then(|&a| {
+        let sp = ctx.node(a)?.span();
+        source.get(sp.start as usize..sp.end as usize)
     });
     let arg_text = inner_arg_text.unwrap_or("");
 
@@ -152,7 +153,7 @@ fn build_mock_shorthand_fix(
         kind: FixKind::SafeFix,
         message: format!("Replace with `.{suggestion}()`"),
         edits: vec![Edit {
-            span: Span::new(call.span.start, call.span.end),
+            span: Span::new(call_span.start, call_span.end),
             replacement,
         }],
         is_snippet: false,
@@ -161,71 +162,61 @@ fn build_mock_shorthand_fix(
 
 /// Check if an expression is `Promise.resolve(...)` or `Promise.reject(...)`.
 /// Returns the method name ("resolve" or "reject") if matched.
-fn is_promise_call<'a>(expr: &'a Expression<'a>) -> Option<&'a str> {
-    let Expression::CallExpression(call) = expr else {
+fn is_promise_call(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let Some(AstNode::CallExpression(call)) = ctx.node(expr_id) else {
         return None;
     };
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
         return None;
     };
-    let Expression::Identifier(obj) = &member.object else {
+    let Some(AstNode::IdentifierReference(obj)) = ctx.node(member.object) else {
         return None;
     };
     if obj.name.as_str() != "Promise" {
         return None;
     }
-    let method = member.property.name.as_str();
+    let method = member.property.clone();
     (method == "resolve" || method == "reject").then_some(method)
 }
 
 /// Get the single expression from an arrow function expression body.
-fn get_single_expression_body<'a>(
-    body: &'a oxc_ast::ast::FunctionBody<'a>,
-) -> Option<&'a Expression<'a>> {
-    // For expression arrows, the body has a single ExpressionStatement
-    body.statements.first().and_then(|stmt| {
-        if let oxc_ast::ast::Statement::ExpressionStatement(es) = stmt {
-            Some(&es.expression)
-        } else {
-            None
-        }
-    })
+fn get_single_expression_body(body_id: NodeId, ctx: &LintContext<'_>) -> Option<NodeId> {
+    let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+        return None;
+    };
+    let &stmt_id = body.statements.first()?;
+    if let Some(AstNode::ExpressionStatement(es)) = ctx.node(stmt_id) {
+        Some(es.expression)
+    } else {
+        None
+    }
 }
 
 /// Get the expression from a function body with a single return statement.
-fn get_single_return_expression<'a>(
-    body: &'a oxc_ast::ast::FunctionBody<'a>,
-) -> Option<&'a Expression<'a>> {
+fn get_single_return_expression(body_id: NodeId, ctx: &LintContext<'_>) -> Option<NodeId> {
+    let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+        return None;
+    };
     if body.statements.len() != 1 {
         return None;
     }
-    body.statements.first().and_then(|stmt| {
-        if let oxc_ast::ast::Statement::ReturnStatement(ret) = stmt {
-            ret.argument.as_ref()
-        } else {
-            None
-        }
-    })
+    let &stmt_id = body.statements.first()?;
+    if let Some(AstNode::ReturnStatement(ret)) = ctx.node(stmt_id) {
+        ret.argument
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferMockPromiseShorthand)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferMockPromiseShorthand)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

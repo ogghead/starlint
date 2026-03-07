@@ -8,20 +8,19 @@
 //! `// falls through` or `// no break` comments. A full implementation
 //! requires comment extraction infrastructure.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags switch case fallthrough (cases without `break`, `return`, or `throw`).
 #[derive(Debug)]
 pub struct NoFallthrough;
 
-impl NativeRule for NoFallthrough {
+impl LintRule for NoFallthrough {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-fallthrough".to_owned(),
@@ -31,12 +30,12 @@ impl NativeRule for NoFallthrough {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::SwitchStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::SwitchStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::SwitchStatement(switch) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::SwitchStatement(switch) = node else {
             return;
         };
 
@@ -46,12 +45,16 @@ impl NativeRule for NoFallthrough {
         // Collect fallthrough cases first to avoid borrow issues
         let mut fallthrough_spans: Vec<Span> = Vec::new();
 
-        for (i, case) in cases.iter().enumerate() {
+        for (i, case_id) in cases.iter().enumerate() {
             // Skip the last case — no fallthrough possible
             let is_last = i.saturating_add(1) >= case_count;
             if is_last {
                 continue;
             }
+
+            let Some(AstNode::SwitchCase(case)) = ctx.node(*case_id) else {
+                continue;
+            };
 
             // Empty cases are intentional fallthrough (grouping)
             if case.consequent.is_empty() {
@@ -59,7 +62,7 @@ impl NativeRule for NoFallthrough {
             }
 
             // Check if the case ends with a terminator
-            if !ends_with_terminator(&case.consequent) {
+            if !ends_with_terminator(&case.consequent, ctx) {
                 fallthrough_spans.push(Span::new(case.span.start, case.span.end));
             }
         }
@@ -80,24 +83,27 @@ impl NativeRule for NoFallthrough {
 }
 
 /// Check if a list of statements ends with a control flow terminator.
-fn ends_with_terminator(stmts: &[Statement<'_>]) -> bool {
-    let Some(last) = stmts.last() else {
+fn ends_with_terminator(stmts: &[NodeId], ctx: &LintContext<'_>) -> bool {
+    let Some(last_id) = stmts.last() else {
+        return false;
+    };
+
+    let Some(last) = ctx.node(*last_id) else {
         return false;
     };
 
     match last {
-        Statement::ReturnStatement(_)
-        | Statement::ThrowStatement(_)
-        | Statement::BreakStatement(_)
-        | Statement::ContinueStatement(_) => true,
-        Statement::BlockStatement(block) => ends_with_terminator(&block.body),
-        Statement::IfStatement(if_stmt) => {
+        AstNode::ReturnStatement(_)
+        | AstNode::ThrowStatement(_)
+        | AstNode::BreakStatement(_)
+        | AstNode::ContinueStatement(_) => true,
+        AstNode::BlockStatement(block) => ends_with_terminator(&block.body, ctx),
+        AstNode::IfStatement(if_stmt) => {
             // Both branches must terminate
-            let consequent_terminates = statement_terminates(&if_stmt.consequent);
+            let consequent_terminates = statement_terminates(if_stmt.consequent, ctx);
             let alternate_terminates = if_stmt
                 .alternate
-                .as_ref()
-                .is_some_and(|alt| statement_terminates(alt));
+                .is_some_and(|alt_id| statement_terminates(alt_id, ctx));
             consequent_terminates && alternate_terminates
         }
         _ => false,
@@ -105,36 +111,29 @@ fn ends_with_terminator(stmts: &[Statement<'_>]) -> bool {
 }
 
 /// Check if a single statement terminates control flow.
-fn statement_terminates(stmt: &Statement<'_>) -> bool {
+fn statement_terminates(stmt_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(stmt) = ctx.node(stmt_id) else {
+        return false;
+    };
     match stmt {
-        Statement::ReturnStatement(_)
-        | Statement::ThrowStatement(_)
-        | Statement::BreakStatement(_)
-        | Statement::ContinueStatement(_) => true,
-        Statement::BlockStatement(block) => ends_with_terminator(&block.body),
+        AstNode::ReturnStatement(_)
+        | AstNode::ThrowStatement(_)
+        | AstNode::BreakStatement(_)
+        | AstNode::ContinueStatement(_) => true,
+        AstNode::BlockStatement(block) => ends_with_terminator(&block.body, ctx),
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code with the `NoFallthrough` rule.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoFallthrough)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoFallthrough)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -11,7 +11,6 @@ use starlint_core::engine::LintSession;
 use starlint_core::fix::apply_fixes;
 use starlint_core::lint_rule::LintRule;
 use starlint_core::lint_rules;
-use starlint_core::rule::NativeRule;
 use starlint_core::rules;
 
 /// Maximum fix passes before giving up (matches CLI constant).
@@ -22,87 +21,7 @@ const MAX_FIX_PASSES: usize = 10;
 ///
 /// The multi-pass loop mirrors the CLI's `apply_fixes_to_files`: overlapping
 /// fixes that get skipped on one pass are picked up on the next.
-fn assert_fix_idempotent(rules: Vec<Box<dyn NativeRule>>, source: &str, label: &str) {
-    let session = LintSession::new(rules, OutputFormat::Pretty);
-    let file = Path::new("test.js");
-
-    // First pass: lint and collect diagnostics.
-    let result = session.lint_single_file(file, source);
-    let fixable_count = result
-        .diagnostics
-        .iter()
-        .filter(|d| d.fix.is_some())
-        .count();
-    assert!(
-        fixable_count > 0,
-        "{label}: source should trigger at least one fixable diagnostic, got 0"
-    );
-
-    // Multi-pass convergence loop: apply fixes, re-lint, repeat.
-    let mut current = source.to_owned();
-    let mut diagnostics = result.diagnostics;
-
-    for pass in 0..MAX_FIX_PASSES {
-        let fixed = apply_fixes(&current, &diagnostics);
-        if fixed == current {
-            break;
-        }
-        current = fixed;
-
-        let relint = session.lint_single_file(file, &current);
-        let fixable: Vec<_> = relint
-            .diagnostics
-            .iter()
-            .filter(|d| d.fix.is_some())
-            .collect();
-
-        if fixable.is_empty() {
-            break;
-        }
-
-        assert!(
-            pass < MAX_FIX_PASSES - 1,
-            "{label}: fixes did not converge after {MAX_FIX_PASSES} passes, \
-             still have {} fixable diagnostics from: {:?}",
-            fixable.len(),
-            fixable.iter().map(|d| &d.rule_name).collect::<Vec<_>>()
-        );
-
-        diagnostics = relint.diagnostics;
-    }
-
-    assert_ne!(
-        current, source,
-        "{label}: fixes should have modified the source"
-    );
-
-    // Final verification: one more lint should produce zero fixable diagnostics.
-    let final_result = session.lint_single_file(file, &current);
-    let final_fixable: Vec<_> = final_result
-        .diagnostics
-        .iter()
-        .filter(|d| d.fix.is_some())
-        .collect();
-    assert!(
-        final_fixable.is_empty(),
-        "{label}: after convergence, should have zero fixable diagnostics, found {} from: {:?}",
-        final_fixable.len(),
-        final_fixable
-            .iter()
-            .map(|d| &d.rule_name)
-            .collect::<Vec<_>>()
-    );
-
-    // apply_fixes on converged source should be a no-op.
-    let noop = apply_fixes(&current, &final_result.diagnostics);
-    assert_eq!(
-        noop, current,
-        "{label}: applying fixes to converged source should be a no-op"
-    );
-}
-
-/// Same as [`assert_fix_idempotent`] but for rules that implement [`LintRule`].
-fn assert_fix_idempotent_lint(rules: Vec<Box<dyn LintRule>>, source: &str, label: &str) {
+fn assert_fix_idempotent(rules: Vec<Box<dyn LintRule>>, source: &str, label: &str) {
     let session = LintSession::new_dual(vec![], rules, OutputFormat::Pretty);
     let file = Path::new("test.js");
 
@@ -183,7 +102,7 @@ fn assert_fix_idempotent_lint(rules: Vec<Box<dyn LintRule>>, source: &str, label
 
 #[test]
 fn fix_idempotent_no_debugger() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(lint_rules::no_debugger::NoDebugger)],
         "debugger;\nconst x = 1;\ndebugger;",
         "no_debugger",
@@ -192,7 +111,7 @@ fn fix_idempotent_no_debugger() {
 
 #[test]
 fn fix_idempotent_empty_brace_spaces() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::empty_brace_spaces::EmptyBraceSpaces)],
         "const a = { };\nconst b = {   };",
         "empty_brace_spaces",
@@ -210,7 +129,7 @@ fn fix_idempotent_no_console_spaces() {
 
 #[test]
 fn fix_idempotent_no_extra_semi() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_extra_semi::NoExtraSemi)],
         "const x = 1;;\nconst y = 2;;",
         "no_extra_semi",
@@ -219,7 +138,7 @@ fn fix_idempotent_no_extra_semi() {
 
 #[test]
 fn fix_idempotent_no_zero_fractions() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_zero_fractions::NoZeroFractions)],
         "const x = 1.0;\nconst y = 2.0;",
         "no_zero_fractions",
@@ -228,7 +147,7 @@ fn fix_idempotent_no_zero_fractions() {
 
 #[test]
 fn fix_idempotent_number_literal_case() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::number_literal_case::NumberLiteralCase)],
         "const x = 0XFF;\nconst y = 0B1010;",
         "number_literal_case",
@@ -237,7 +156,7 @@ fn fix_idempotent_number_literal_case() {
 
 #[test]
 fn fix_idempotent_no_useless_rename() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_useless_rename::NoUselessRename)],
         "import { foo as foo } from 'bar';",
         "no_useless_rename",
@@ -277,7 +196,7 @@ fn fix_idempotent_prefer_string_trim_start_end() {
 
 #[test]
 fn fix_idempotent_no_empty() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(lint_rules::no_empty::NoEmpty)],
         "try { doSomething(); } catch (e) {}",
         "no_empty",
@@ -337,7 +256,7 @@ fn fix_idempotent_new_for_builtins() {
 
 #[test]
 fn fix_idempotent_eqeqeq() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(lint_rules::eqeqeq::Eqeqeq)],
         "if (a == b && c != d) {}",
         "eqeqeq",
@@ -346,7 +265,7 @@ fn fix_idempotent_eqeqeq() {
 
 #[test]
 fn fix_idempotent_no_var() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(lint_rules::no_var::NoVar)],
         "var x = 1;\nvar y = 2;",
         "no_var",
@@ -395,7 +314,7 @@ fn fix_idempotent_prefer_const() {
 
 #[test]
 fn fix_idempotent_text_encoding_identifier_case() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(
             rules::text_encoding_identifier_case::TextEncodingIdentifierCase,
         )],
@@ -406,7 +325,7 @@ fn fix_idempotent_text_encoding_identifier_case() {
 
 #[test]
 fn fix_idempotent_unicode_bom() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::unicode_bom::UnicodeBom)],
         "\u{FEFF}const x = 1;",
         "unicode_bom",
@@ -464,7 +383,7 @@ fn fix_idempotent_no_extra_label() {
 
 #[test]
 fn fix_idempotent_no_irregular_whitespace() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(
             rules::no_irregular_whitespace::NoIrregularWhitespace,
         )],
@@ -493,7 +412,7 @@ fn fix_idempotent_no_instanceof_array() {
 
 #[test]
 fn fix_idempotent_no_extra_boolean_cast() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_extra_boolean_cast::NoExtraBooleanCast)],
         "if (!!x) {}",
         "no_extra_boolean_cast",
@@ -511,7 +430,7 @@ fn fix_idempotent_no_extra_bind() {
 
 #[test]
 fn fix_idempotent_escape_case() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::escape_case::EscapeCase)],
         r"var s = '\xff';",
         "escape_case",
@@ -520,7 +439,7 @@ fn fix_idempotent_escape_case() {
 
 #[test]
 fn fix_idempotent_no_hex_escape() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_hex_escape::NoHexEscape)],
         r"var s = '\x41';",
         "no_hex_escape",
@@ -540,7 +459,7 @@ fn fix_idempotent_no_useless_computed_key() {
 
 #[test]
 fn fix_idempotent_no_useless_escape() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_useless_escape::NoUselessEscape)],
         r#"var x = "hell\o";"#,
         "no_useless_escape",
@@ -549,7 +468,7 @@ fn fix_idempotent_no_useless_escape() {
 
 #[test]
 fn fix_idempotent_no_useless_concat() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_useless_concat::NoUselessConcat)],
         "var x = 'a' + 'b';",
         "no_useless_concat",
@@ -562,7 +481,7 @@ fn fix_idempotent_no_useless_concat() {
 
 #[test]
 fn fix_idempotent_bad_bitwise_operator() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::bad_bitwise_operator::BadBitwiseOperator)],
         "if (a > 1 | b > 2) {}",
         "bad_bitwise_operator",
@@ -571,7 +490,7 @@ fn fix_idempotent_bad_bitwise_operator() {
 
 #[test]
 fn fix_idempotent_double_comparisons() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::double_comparisons::DoubleComparisons)],
         "if (a >= b && a <= b) {}",
         "double_comparisons",
@@ -609,7 +528,7 @@ fn fix_idempotent_yoda() {
 
 #[test]
 fn fix_idempotent_no_eq_null() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_eq_null::NoEqNull)],
         "if (x == null) {}",
         "no_eq_null",
@@ -618,7 +537,7 @@ fn fix_idempotent_no_eq_null() {
 
 #[test]
 fn fix_idempotent_no_null() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_null::NoNull)],
         "var z = null;",
         "no_null",
@@ -636,7 +555,7 @@ fn fix_idempotent_no_object_constructor() {
 
 #[test]
 fn fix_idempotent_no_array_constructor() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_array_constructor::NoArrayConstructor)],
         "var arr = new Array(1, 2, 3);",
         "no_array_constructor",
@@ -716,7 +635,7 @@ fn fix_idempotent_no_implicit_coercion() {
 
 #[test]
 fn fix_idempotent_numeric_separators_style() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(
             rules::numeric_separators_style::NumericSeparatorsStyle,
         )],
@@ -740,7 +659,7 @@ fn fix_idempotent_prefer_string_raw() {
 
 #[test]
 fn fix_idempotent_no_regex_spaces() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_regex_spaces::NoRegexSpaces)],
         "var re = /foo  bar/;",
         "no_regex_spaces",
@@ -769,7 +688,7 @@ fn fix_idempotent_prefer_object_has_own() {
 
 #[test]
 fn fix_idempotent_no_div_regex() {
-    assert_fix_idempotent_lint(
+    assert_fix_idempotent(
         vec![Box::new(rules::no_div_regex::NoDivRegex)],
         "var r = /=foo/;",
         "no_div_regex",
@@ -809,7 +728,6 @@ fn fix_idempotent_no_new_buffer() {
 
 #[test]
 fn fix_idempotent_combined_multi_rule() {
-    let native_rules: Vec<Box<dyn NativeRule>> = vec![];
     let lint_rules: Vec<Box<dyn LintRule>> = vec![
         Box::new(lint_rules::no_debugger::NoDebugger),
         Box::new(rules::no_extra_semi::NoExtraSemi),
@@ -818,7 +736,7 @@ fn fix_idempotent_combined_multi_rule() {
         Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
         Box::new(rules::no_zero_fractions::NoZeroFractions),
     ];
-    let session = LintSession::new_dual(native_rules, lint_rules, OutputFormat::Pretty);
+    let session = LintSession::new_dual(vec![], lint_rules, OutputFormat::Pretty);
     let file = Path::new("test.js");
     let source = "\
 debugger;

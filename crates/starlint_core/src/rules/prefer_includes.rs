@@ -4,27 +4,26 @@
 //! `arr.indexOf(x) !== -1` should be `arr.includes(x)`.
 //! `arr.indexOf(x) === -1` should be `!arr.includes(x)`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{BinaryOperator, UnaryOperator};
+use starlint_ast::types::NodeId;
 
 /// Flags `.indexOf()` existence checks that can use `.includes()`.
 #[derive(Debug)]
 pub struct PreferIncludes;
 
-/// Check if an expression is the numeric literal `-1`.
+/// Check if an `AstNode` is the numeric literal `-1`.
 ///
-/// In oxc, `-1` parses as `UnaryExpression(UnaryNegation, NumericLiteral(1.0))`.
-fn is_negative_one(expr: &Expression<'_>) -> bool {
-    if let Expression::UnaryExpression(unary) = expr {
+/// In the flat AST, `-1` is `UnaryExpression(UnaryNegation, NumericLiteral(1.0))`.
+fn is_negative_one(ctx: &LintContext<'_>, node: &AstNode) -> bool {
+    if let AstNode::UnaryExpression(unary) = node {
         if unary.operator == UnaryOperator::UnaryNegation {
-            if let Expression::NumericLiteral(lit) = &unary.argument {
+            if let Some(AstNode::NumericLiteral(lit)) = ctx.node(unary.argument) {
                 return (lit.value - 1.0).abs() < f64::EPSILON;
             }
         }
@@ -32,9 +31,9 @@ fn is_negative_one(expr: &Expression<'_>) -> bool {
     false
 }
 
-/// Check if an expression is the numeric literal `0`.
-fn is_zero(expr: &Expression<'_>) -> bool {
-    if let Expression::NumericLiteral(lit) = expr {
+/// Check if an `AstNode` is the numeric literal `0`.
+fn is_zero(node: &AstNode) -> bool {
+    if let AstNode::NumericLiteral(lit) = node {
         return lit.value.abs() < f64::EPSILON;
     }
     false
@@ -48,19 +47,13 @@ const fn classify_includes(
     index_of_on_left: bool,
     comparand_is_negative_one: bool,
 ) -> Option<bool> {
-    // When indexOf is on the left: `indexOf(x) OP value`
-    // When indexOf is on the right: `value OP indexOf(x)` — flip the operator sense.
     match (index_of_on_left, operator, comparand_is_negative_one) {
-        // Positive: expression means "element exists"
-        // !== -1, != -1, indexOf > -1, indexOf >= 0, -1 < indexOf, 0 <= indexOf
         (_, BinaryOperator::StrictInequality | BinaryOperator::Inequality, true)
         | (true, BinaryOperator::GreaterThan, true)
         | (true, BinaryOperator::GreaterEqualThan, false)
         | (false, BinaryOperator::LessThan, true)
         | (false, BinaryOperator::LessEqualThan, false) => Some(true),
 
-        // Negative: expression means "element does not exist"
-        // === -1, == -1, indexOf < 0, 0 > indexOf
         (_, BinaryOperator::StrictEquality | BinaryOperator::Equality, true)
         | (true, BinaryOperator::LessThan, false)
         | (false, BinaryOperator::GreaterThan, false) => Some(false),
@@ -69,7 +62,7 @@ const fn classify_includes(
     }
 }
 
-impl NativeRule for PreferIncludes {
+impl LintRule for PreferIncludes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-includes".to_owned(),
@@ -80,27 +73,33 @@ impl NativeRule for PreferIncludes {
     }
 
     #[allow(clippy::too_many_lines)]
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
+            return;
+        };
+
+        let left_node = ctx.node(expr.left);
+        let right_node = ctx.node(expr.right);
+        let (Some(left), Some(right)) = (left_node, right_node) else {
             return;
         };
 
         // Try to find an indexOf call on either side of the binary expression.
-        let (index_of_on_left, call, comparand) = match (&expr.left, &expr.right) {
-            (Expression::CallExpression(call), comparand) => (true, call, comparand),
-            (comparand, Expression::CallExpression(call)) => (false, call, comparand),
+        let (index_of_on_left, call, comparand) = match (left, right) {
+            (AstNode::CallExpression(call), comparand) => (true, call, comparand),
+            (comparand, AstNode::CallExpression(call)) => (false, call, comparand),
             _ => return,
         };
 
         // Callee must be a .indexOf() member call.
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
-        if member.property.name.as_str() != "indexOf" {
+        if member.property.as_str() != "indexOf" {
             return;
         }
 
@@ -110,7 +109,7 @@ impl NativeRule for PreferIncludes {
         }
 
         // Comparand must be -1 or 0.
-        let comparand_is_neg_one = is_negative_one(comparand);
+        let comparand_is_neg_one = is_negative_one(ctx, comparand);
         let comparand_is_zero = is_zero(comparand);
         if !comparand_is_neg_one && !comparand_is_zero {
             return;
@@ -123,17 +122,23 @@ impl NativeRule for PreferIncludes {
         };
 
         // Build the replacement: `obj.includes(arg)` or `!obj.includes(arg)`
-        let obj_span = member.object.span();
+        let obj_span = ctx.node(member.object).map_or(
+            starlint_ast::types::Span::new(0, 0),
+            starlint_ast::AstNode::span,
+        );
         let obj_start = usize::try_from(obj_span.start).unwrap_or(0);
         let obj_end = usize::try_from(obj_span.end).unwrap_or(0);
         let Some(obj_text) = ctx.source_text().get(obj_start..obj_end) else {
             return;
         };
 
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(&first_arg_id) = call.arguments.first() else {
             return;
         };
-        let arg_span = first_arg.span();
+        let arg_span = ctx.node(first_arg_id).map_or(
+            starlint_ast::types::Span::new(0, 0),
+            starlint_ast::AstNode::span,
+        );
         let arg_start = usize::try_from(arg_span.start).unwrap_or(0);
         let arg_end = usize::try_from(arg_span.end).unwrap_or(0);
         let Some(arg_text) = ctx.source_text().get(arg_start..arg_end) else {
@@ -168,22 +173,13 @@ impl NativeRule for PreferIncludes {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferIncludes)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferIncludes)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

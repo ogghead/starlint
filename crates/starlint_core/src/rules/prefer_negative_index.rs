@@ -3,14 +3,14 @@
 //! Prefer negative index over `.length - index` for methods that support it.
 //! Methods like `.slice()`, `.at()`, `.splice()` accept negative indices.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags `.slice(arr.length - N)` and similar patterns.
 #[derive(Debug)]
@@ -19,7 +19,7 @@ pub struct PreferNegativeIndex;
 /// Methods that accept negative indices.
 const NEGATIVE_INDEX_METHODS: &[&str] = &["slice", "splice", "at", "with"];
 
-impl NativeRule for PreferNegativeIndex {
+impl LintRule for PreferNegativeIndex {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-negative-index".to_owned(),
@@ -29,56 +29,64 @@ impl NativeRule for PreferNegativeIndex {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::as_conversions)] // u32->usize is lossless on 32/64-bit
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for `something.method(something.length - N)`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method_name = member.property.name.as_str();
+        let method_name = member.property.as_str();
         if !NEGATIVE_INDEX_METHODS.contains(&method_name) {
             return;
         }
 
+        let member_object = member.object;
+
         // Check arguments for `.length - N` pattern
-        for arg in &call.arguments {
-            let oxc_ast::ast::Argument::BinaryExpression(bin) = arg else {
+        for arg_id in &call.arguments {
+            let Some(AstNode::BinaryExpression(bin)) = ctx.node(*arg_id) else {
                 continue;
             };
 
-            if !matches!(bin.operator, oxc_ast::ast::BinaryOperator::Subtraction) {
+            if !matches!(bin.operator, BinaryOperator::Subtraction) {
                 continue;
             }
 
             // Left side should be `something.length`
-            let Expression::StaticMemberExpression(len_member) = &bin.left else {
+            let Some(AstNode::StaticMemberExpression(len_member)) = ctx.node(bin.left) else {
                 continue;
             };
 
-            if len_member.property.name != "length" {
+            if len_member.property != "length" {
                 continue;
             }
 
             // Right side should be a numeric literal
-            let Expression::NumericLiteral(num_lit) = &bin.right else {
+            let Some(AstNode::NumericLiteral(num_lit)) = ctx.node(bin.right) else {
                 continue;
             };
 
+            let num_value = num_lit.value;
+            let bin_span = bin.span;
+            let len_member_object = len_member.object;
+
             // Check that the object and .length owner are the same identifier
-            if let (Expression::Identifier(obj_id), Expression::Identifier(len_obj_id)) =
-                (&member.object, &len_member.object)
+            if let (
+                Some(AstNode::IdentifierReference(obj_id)),
+                Some(AstNode::IdentifierReference(len_obj_id)),
+            ) = (ctx.node(member_object), ctx.node(len_member_object))
             {
                 if obj_id.name == len_obj_id.name {
-                    let n = num_lit.value;
+                    let n = num_value;
                     #[allow(clippy::cast_possible_truncation)]
                     let neg_val = if (n - n.round()).abs() < f64::EPSILON {
                         format!("-{}", n as i64)
@@ -98,7 +106,7 @@ impl NativeRule for PreferNegativeIndex {
                             kind: FixKind::SafeFix,
                             message: format!("Replace `{obj_id}.length - {n}` with `{neg_val}`", obj_id = obj_id.name),
                             edits: vec![Edit {
-                                span: Span::new(bin.span.start, bin.span.end),
+                                span: Span::new(bin_span.start, bin_span.end),
                                 replacement: neg_val,
                             }],
                             is_snippet: false,
@@ -114,22 +122,13 @@ impl NativeRule for PreferNegativeIndex {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferNegativeIndex)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferNegativeIndex)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

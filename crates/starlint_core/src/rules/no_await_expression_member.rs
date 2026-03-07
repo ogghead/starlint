@@ -3,29 +3,25 @@
 //! Disallow member access on `await` expressions like `(await foo()).bar`.
 //! This pattern is error-prone — prefer assigning to a variable first.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags member expressions on `await` expressions.
 #[derive(Debug)]
 pub struct NoAwaitExpressionMember;
 
-/// Unwrap parenthesized expressions to find the inner expression.
-fn unwrap_parens<'a>(expr: &'a Expression<'a>) -> &'a Expression<'a> {
-    let mut current = expr;
-    while let Expression::ParenthesizedExpression(paren) = current {
-        current = &paren.expression;
-    }
-    current
+/// Check if a node (possibly through parenthesized expressions) is an await expression.
+/// Since `starlint_ast` doesn't have `ParenthesizedExpression` nodes, we just check directly.
+fn is_await_expression(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    matches!(ctx.node(id), Some(AstNode::AwaitExpression(_)))
 }
 
-impl NativeRule for NoAwaitExpressionMember {
+impl LintRule for NoAwaitExpressionMember {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-await-expression-member".to_owned(),
@@ -35,20 +31,17 @@ impl NativeRule for NoAwaitExpressionMember {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ComputedMemberExpression,
-            AstType::StaticMemberExpression,
+            AstNodeType::ComputedMemberExpression,
+            AstNodeType::StaticMemberExpression,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::StaticMemberExpression(member) => {
-                if matches!(
-                    unwrap_parens(&member.object),
-                    Expression::AwaitExpression(_)
-                ) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::StaticMemberExpression(member) => {
+                if is_await_expression(member.object, ctx) {
                     ctx.report(Diagnostic {
                         rule_name: "no-await-expression-member".to_owned(),
                         message: "Do not access a member directly on an `await` expression — assign to a variable first".to_owned(),
@@ -60,11 +53,8 @@ impl NativeRule for NoAwaitExpressionMember {
                     });
                 }
             }
-            AstKind::ComputedMemberExpression(member) => {
-                if matches!(
-                    unwrap_parens(&member.object),
-                    Expression::AwaitExpression(_)
-                ) {
+            AstNode::ComputedMemberExpression(member) => {
+                if is_await_expression(member.object, ctx) {
                     ctx.report(Diagnostic {
                         rule_name: "no-await-expression-member".to_owned(),
                         message: "Do not access a member directly on an `await` expression — assign to a variable first".to_owned(),
@@ -83,23 +73,13 @@ impl NativeRule for NoAwaitExpressionMember {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAwaitExpressionMember)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAwaitExpressionMember)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

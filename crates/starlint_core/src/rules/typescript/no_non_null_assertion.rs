@@ -5,21 +5,19 @@
 //! without any runtime check, which can mask potential `null`/`undefined` bugs.
 //! Prefer optional chaining (`?.`) or explicit null checks instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags non-null assertion expressions (`!` postfix operator).
 #[derive(Debug)]
 pub struct NoNonNullAssertion;
 
-impl NativeRule for NoNonNullAssertion {
+impl LintRule for NoNonNullAssertion {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-non-null-assertion".to_owned(),
@@ -29,20 +27,20 @@ impl NativeRule for NoNonNullAssertion {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSNonNullExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSNonNullExpression])
     }
 
     #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSNonNullExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSNonNullExpression(expr) = node else {
             return;
         };
 
         // Fix: replace `x!` with `x`
-        let inner_span = expr.expression.span();
-        let inner_text =
-            ctx.source_text()[inner_span.start as usize..inner_span.end as usize].to_owned();
+        let inner_node_span = ctx.node(expr.expression).map(starlint_ast::AstNode::span);
+        let (inner_start, inner_end) = inner_node_span.map_or((0, 0), |s| (s.start, s.end));
+        let inner_text = ctx.source_text()[inner_start as usize..inner_end as usize].to_owned();
 
         ctx.report(Diagnostic {
             rule_name: "typescript/no-non-null-assertion".to_owned(),
@@ -68,22 +66,13 @@ impl NativeRule for NoNonNullAssertion {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoNonNullAssertion)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNonNullAssertion)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

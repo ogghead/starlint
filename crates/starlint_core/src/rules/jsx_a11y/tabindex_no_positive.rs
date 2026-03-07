@@ -2,14 +2,13 @@
 //!
 //! Forbid positive `tabIndex` values.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/tabindex-no-positive";
@@ -17,7 +16,7 @@ const RULE_NAME: &str = "jsx-a11y/tabindex-no-positive";
 #[derive(Debug)]
 pub struct TabindexNoPositive;
 
-impl NativeRule for TabindexNoPositive {
+impl LintRule for TabindexNoPositive {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -27,48 +26,48 @@ impl NativeRule for TabindexNoPositive {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        for item in &opening.attributes {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let is_tabindex = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "tabIndex",
-                    JSXAttributeName::NamespacedName(_) => false,
-                };
+        for &attr_id in &*opening.attributes {
+            let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) else {
+                continue;
+            };
 
-                if !is_tabindex {
-                    continue;
-                }
+            if attr.name.as_str() != "tabIndex" {
+                continue;
+            }
 
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    let val = lit.value.as_str();
-                    if let Ok(n) = val.parse::<i32>() {
-                        if n > 0 {
-                            ctx.report(Diagnostic {
-                                rule_name: RULE_NAME.to_owned(),
-                                message: "Avoid positive `tabIndex` values. They disrupt the natural tab order".to_owned(),
-                                span: Span::new(opening.span.start, opening.span.end),
-                                severity: Severity::Warning,
-                                help: None,
-                                fix: Some(Fix {
-                                    kind: FixKind::SuggestionFix,
-                                    message: "Replace with `tabIndex=\"0\"`".to_owned(),
-                                    edits: vec![Edit {
-                                        span: Span::new(lit.span.start, lit.span.end),
-                                        replacement: "\"0\"".to_owned(),
-                                    }],
-                                    is_snippet: false,
-                                }),
-                                labels: vec![],
-                            });
-                        }
+            let Some(value_id) = attr.value else {
+                continue;
+            };
+            if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                let val = lit.value.as_str();
+                if let Ok(n) = val.parse::<i32>() {
+                    if n > 0 {
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: "Avoid positive `tabIndex` values. They disrupt the natural tab order".to_owned(),
+                            span: Span::new(opening.span.start, opening.span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: Some(Fix {
+                                kind: FixKind::SuggestionFix,
+                                message: "Replace with `tabIndex=\"0\"`".to_owned(),
+                                edits: vec![Edit {
+                                    span: Span::new(lit.span.start, lit.span.end),
+                                    replacement: "\"0\"".to_owned(),
+                                }],
+                                is_snippet: false,
+                            }),
+                            labels: vec![],
+                        });
                     }
                 }
             }
@@ -78,22 +77,13 @@ impl NativeRule for TabindexNoPositive {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(TabindexNoPositive)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(TabindexNoPositive)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

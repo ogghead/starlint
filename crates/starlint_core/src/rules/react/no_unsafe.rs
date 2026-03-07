@@ -3,20 +3,19 @@
 //! Warn when using unsafe lifecycle methods: `UNSAFE_componentWillMount`,
 //! `UNSAFE_componentWillReceiveProps`, `UNSAFE_componentWillUpdate`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::PropertyKey;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags usage of `UNSAFE_` lifecycle methods.
 #[derive(Debug)]
 pub struct NoUnsafe;
 
-impl NativeRule for NoUnsafe {
+impl LintRule for NoUnsafe {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/no-unsafe".to_owned(),
@@ -26,19 +25,24 @@ impl NativeRule for NoUnsafe {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::MethodDefinition])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::MethodDefinition])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::MethodDefinition(method) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::MethodDefinition(method) = node else {
             return;
         };
 
-        let (method_name, id_span) = match &method.key {
-            PropertyKey::StaticIdentifier(id) => (id.name.as_str(), id.span),
-            _ => return,
+        let Some(key_node) = ctx.node(method.key) else {
+            return;
         };
+        let key_span = key_node.span();
+        let source = ctx.source_text();
+        let start = usize::try_from(key_span.start).unwrap_or(0);
+        let end = usize::try_from(key_span.end).unwrap_or(0);
+        let method_name = source.get(start..end).unwrap_or("");
+        let id_span = key_span;
 
         let safe_name = match method_name {
             "UNSAFE_componentWillMount" => Some("componentDidMount"),
@@ -73,22 +77,13 @@ impl NativeRule for NoUnsafe {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafe)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafe)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

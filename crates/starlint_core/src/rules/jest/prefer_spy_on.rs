@@ -4,21 +4,19 @@
 //! `spyOn` preserves the original implementation and can be easily restored,
 //! while direct assignment loses the original function reference.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `obj.method = jest.fn()` patterns.
 #[derive(Debug)]
 pub struct PreferSpyOn;
 
-impl NativeRule for PreferSpyOn {
+impl LintRule for PreferSpyOn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "jest/prefer-spy-on".to_owned(),
@@ -29,39 +27,43 @@ impl NativeRule for PreferSpyOn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::AssignmentExpression(assign) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
         // Left side must be a member expression (obj.method or obj['method'])
-        let is_member_target = matches!(
-            &assign.left,
-            oxc_ast::ast::AssignmentTarget::StaticMemberExpression(_)
-                | oxc_ast::ast::AssignmentTarget::ComputedMemberExpression(_)
-        );
+        let left_node = ctx.node(assign.left);
+        let is_member_target = left_node.is_some_and(|n| {
+            matches!(
+                n,
+                AstNode::StaticMemberExpression(_) | AstNode::ComputedMemberExpression(_)
+            )
+        });
         if !is_member_target {
             return;
         }
 
         // Right side must be `jest.fn()` call
-        if !is_jest_fn_call(&assign.right) {
+        let right_node = ctx.node(assign.right);
+        if !right_node.is_some_and(|n| is_jest_fn_call(ctx, n)) {
             return;
         }
 
-        // Build fix for StaticMemberExpression targets: `obj.method = jest.fn()` → `jest.spyOn(obj, 'method')`
-        let fix =
-            if let oxc_ast::ast::AssignmentTarget::StaticMemberExpression(member) = &assign.left {
+        // Build fix for StaticMemberExpression targets
+        let fix = left_node.and_then(|n| {
+            if let AstNode::StaticMemberExpression(member) = n {
                 let source = ctx.source_text();
+                let obj_span = ctx.node(member.object)?.span();
                 #[allow(clippy::as_conversions)]
                 let obj_text = source
-                    .get(member.object.span().start as usize..member.object.span().end as usize)
+                    .get(obj_span.start as usize..obj_span.end as usize)
                     .unwrap_or("");
-                let prop_name = member.property.name.as_str();
+                let prop_name = &member.property;
                 let replacement = format!("jest.spyOn({obj_text}, '{prop_name}')");
                 Some(Fix {
                     kind: FixKind::SuggestionFix,
@@ -74,7 +76,8 @@ impl NativeRule for PreferSpyOn {
                 })
             } else {
                 None
-            };
+            }
+        });
 
         ctx.report(Diagnostic {
             rule_name: "jest/prefer-spy-on".to_owned(),
@@ -90,38 +93,29 @@ impl NativeRule for PreferSpyOn {
     }
 }
 
-/// Check if an expression is a `jest.fn()` call.
-fn is_jest_fn_call(expr: &Expression<'_>) -> bool {
-    let Expression::CallExpression(call) = expr else {
+/// Check if an `AstNode` is a `jest.fn()` call.
+fn is_jest_fn_call(ctx: &LintContext<'_>, node: &AstNode) -> bool {
+    let AstNode::CallExpression(call) = node else {
         return false;
     };
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
         return false;
     };
-    let Expression::Identifier(obj) = &member.object else {
+    let Some(AstNode::IdentifierReference(obj)) = ctx.node(member.object) else {
         return false;
     };
-    obj.name.as_str() == "jest" && member.property.name.as_str() == "fn"
+    obj.name.as_str() == "jest" && member.property.as_str() == "fn"
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferSpyOn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferSpyOn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

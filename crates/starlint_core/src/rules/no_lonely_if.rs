@@ -3,20 +3,19 @@
 //! Disallow `if` as the only statement in an `else` block.
 //! `if (a) {} else { if (b) {} }` should be `if (a) {} else if (b) {}`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `else { if (...) {} }` that should be `else if (...) {}`.
 #[derive(Debug)]
 pub struct NoLonelyIf;
 
-impl NativeRule for NoLonelyIf {
+impl LintRule for NoLonelyIf {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-lonely-if".to_owned(),
@@ -26,17 +25,22 @@ impl NativeRule for NoLonelyIf {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::IfStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::IfStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::IfStatement(stmt) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::IfStatement(stmt) = node else {
             return;
         };
 
         // Check for `else { <single if statement> }`.
-        let Some(Statement::BlockStatement(block)) = &stmt.alternate else {
+        let Some(alt_id) = stmt.alternate else {
+            return;
+        };
+
+        let Some(AstNode::BlockStatement(block)) = ctx.node(alt_id) else {
             return;
         };
 
@@ -44,13 +48,18 @@ impl NativeRule for NoLonelyIf {
             return;
         }
 
-        let Some(Statement::IfStatement(inner_if)) = block.body.first() else {
+        let Some(first_stmt_id) = block.body.first() else {
+            return;
+        };
+
+        let Some(AstNode::IfStatement(inner_if)) = ctx.node(*first_stmt_id) else {
             return;
         };
 
         // Get the inner if-statement source text.
-        let inner_start = usize::try_from(inner_if.span.start).unwrap_or(0);
-        let inner_end = usize::try_from(inner_if.span.end).unwrap_or(0);
+        let inner_start = inner_if.span.start as usize;
+        let inner_end = inner_if.span.end as usize;
+        let block_span = Span::new(block.span.start, block.span.end);
         let Some(inner_text) = ctx.source_text().get(inner_start..inner_end) else {
             return;
         };
@@ -61,14 +70,14 @@ impl NativeRule for NoLonelyIf {
         ctx.report(Diagnostic {
             rule_name: "no-lonely-if".to_owned(),
             message: "Unexpected lonely `if` inside `else` block".to_owned(),
-            span: Span::new(block.span.start, block.span.end),
+            span: block_span,
             severity: Severity::Warning,
             help: Some("Combine into `else if`".to_owned()),
             fix: Some(Fix {
                 kind: FixKind::SafeFix,
                 message: "Combine into `else if`".to_owned(),
                 edits: vec![Edit {
-                    span: Span::new(block.span.start, block.span.end),
+                    span: block_span,
                     replacement,
                 }],
                 is_snippet: false,
@@ -80,21 +89,13 @@ impl NativeRule for NoLonelyIf {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) else {
-            return vec![];
-        };
-        let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoLonelyIf)];
-        traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLonelyIf)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

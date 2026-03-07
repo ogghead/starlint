@@ -4,20 +4,20 @@
 //! Flags `require()` calls with a string argument, `module.exports = ...`,
 //! and `exports.foo = ...` assignments.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{AssignmentTarget, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node::{AssignmentExpressionNode, CallExpressionNode};
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `CommonJS` patterns in favor of ESM `import`/`export`.
 #[derive(Debug)]
 pub struct PreferModule;
 
-impl NativeRule for PreferModule {
+impl LintRule for PreferModule {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-module".to_owned(),
@@ -28,22 +28,25 @@ impl NativeRule for PreferModule {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression, AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[
+            AstNodeType::AssignmentExpression,
+            AstNodeType::CallExpression,
+        ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::CallExpression(call) => check_require(call, ctx),
-            AstKind::AssignmentExpression(assign) => check_exports_assign(assign, ctx),
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::CallExpression(call) => check_require(call, ctx),
+            AstNode::AssignmentExpression(assign) => check_exports_assign(assign, ctx),
             _ => {}
         }
     }
 }
 
 /// Check for `require('...')` calls with a string literal argument.
-fn check_require(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLintContext<'_>) {
-    let Expression::Identifier(callee_id) = &call.callee else {
+fn check_require(call: &CallExpressionNode, ctx: &mut LintContext<'_>) {
+    let Some(AstNode::IdentifierReference(callee_id)) = ctx.node(call.callee) else {
         return;
     };
 
@@ -55,7 +58,7 @@ fn check_require(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLintCo
     let has_string_arg = call
         .arguments
         .first()
-        .is_some_and(|arg| matches!(arg, oxc_ast::ast::Argument::StringLiteral(_)));
+        .is_some_and(|arg_id| matches!(ctx.node(*arg_id), Some(AstNode::StringLiteral(_))));
 
     if has_string_arg {
         ctx.report(Diagnostic {
@@ -71,14 +74,12 @@ fn check_require(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLintCo
 }
 
 /// Check for `module.exports = ...` and `exports.foo = ...` assignments.
-fn check_exports_assign(
-    assign: &oxc_ast::ast::AssignmentExpression<'_>,
-    ctx: &mut NativeLintContext<'_>,
-) {
-    let is_commonjs_export = match &assign.left {
-        // `module.exports = ...`
-        AssignmentTarget::StaticMemberExpression(member) => {
-            is_module_exports_target(member) || is_exports_property_target(member)
+fn check_exports_assign(assign: &AssignmentExpressionNode, ctx: &mut LintContext<'_>) {
+    // assign.left is NodeId — resolve to check for StaticMemberExpression
+    let is_commonjs_export = match ctx.node(assign.left) {
+        // `module.exports = ...` or `exports.foo = ...`
+        Some(AstNode::StaticMemberExpression(member)) => {
+            is_module_exports_target(member, ctx) || is_exports_property_target(member, ctx)
         }
         _ => false,
     };
@@ -98,41 +99,37 @@ fn check_exports_assign(
 }
 
 /// Check if a static member expression target is `module.exports`.
-fn is_module_exports_target(member: &oxc_ast::ast::StaticMemberExpression<'_>) -> bool {
-    member.property.name.as_str() == "exports"
+fn is_module_exports_target(
+    member: &starlint_ast::node::StaticMemberExpressionNode,
+    ctx: &LintContext<'_>,
+) -> bool {
+    member.property.as_str() == "exports"
         && matches!(
-            &member.object,
-            Expression::Identifier(id) if id.name.as_str() == "module"
+            ctx.node(member.object),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "module"
         )
 }
 
 /// Check if a static member expression target is `exports.foo`.
-fn is_exports_property_target(member: &oxc_ast::ast::StaticMemberExpression<'_>) -> bool {
+fn is_exports_property_target(
+    member: &starlint_ast::node::StaticMemberExpressionNode,
+    ctx: &LintContext<'_>,
+) -> bool {
     matches!(
-        &member.object,
-        Expression::Identifier(id) if id.name.as_str() == "exports"
+        ctx.node(member.object),
+        Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "exports"
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferModule)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferModule)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

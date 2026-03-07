@@ -3,14 +3,13 @@
 //! Forbid non-standard Promise methods. Flags usage of methods that are
 //! not part of the ECMAScript specification (e.g. Bluebird extensions).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Standard ECMAScript `Promise` static methods.
 const SPEC_STATIC_METHODS: &[&str] = &[
@@ -31,7 +30,7 @@ const SPEC_INSTANCE_METHODS: &[&str] = &["then", "catch", "finally"];
 #[derive(Debug)]
 pub struct SpecOnly;
 
-impl NativeRule for SpecOnly {
+impl LintRule for SpecOnly {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/spec-only".to_owned(),
@@ -41,34 +40,35 @@ impl NativeRule for SpecOnly {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
-            return;
+        let (method, is_promise) = {
+            let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
+                return;
+            };
+            let method = member.property.clone();
+            let is_promise = matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(ident)) if ident.name.as_str() == "Promise");
+            (method, is_promise)
         };
-
-        let method = member.property.name.as_str();
 
         // Check for non-standard static methods: Promise.xxx()
-        if let Expression::Identifier(ident) = &member.object {
-            if ident.name.as_str() == "Promise" && !SPEC_STATIC_METHODS.contains(&method) {
-                ctx.report(Diagnostic {
-                    rule_name: "promise/spec-only".to_owned(),
-                    message: format!("`Promise.{method}` is not a standard ECMAScript method"),
-                    span: Span::new(call.span.start, call.span.end),
-                    severity: Severity::Error,
-                    help: None,
-                    fix: None,
-                    labels: vec![],
-                });
-            }
+        if is_promise && !SPEC_STATIC_METHODS.contains(&method.as_str()) {
+            ctx.report(Diagnostic {
+                rule_name: "promise/spec-only".to_owned(),
+                message: format!("`Promise.{method}` is not a standard ECMAScript method"),
+                span: Span::new(call.span.start, call.span.end),
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
 
         // We do not flag instance methods here since we cannot statically
@@ -80,22 +80,13 @@ impl NativeRule for SpecOnly {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(SpecOnly)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SpecOnly)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

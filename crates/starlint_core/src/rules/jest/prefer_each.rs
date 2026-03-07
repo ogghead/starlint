@@ -4,14 +4,13 @@
 //! contains 3 or more `it`/`test` calls with titles sharing a common prefix,
 //! the test suite would benefit from parameterization via `test.each`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `describe` blocks with 3+ similarly-titled test cases.
 #[derive(Debug)]
@@ -23,7 +22,7 @@ const MIN_SIMILAR_TESTS: usize = 3;
 /// Minimum prefix length (in chars) to consider titles "similar".
 const MIN_PREFIX_LEN: usize = 5;
 
-impl NativeRule for PreferEach {
+impl LintRule for PreferEach {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "jest/prefer-each".to_owned(),
@@ -33,37 +32,34 @@ impl NativeRule for PreferEach {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Must be `describe(...)` call
         let is_describe = matches!(
-            &call.callee,
-            Expression::Identifier(id) if id.name.as_str() == "describe"
+            ctx.node(call.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "describe"
         );
         if !is_describe {
             return;
         }
 
         // Second argument should be the callback
-        let Some(second_arg) = call.arguments.get(1) else {
-            return;
-        };
-        let Some(callback_expr) = second_arg.as_expression() else {
+        let Some(second_arg_id) = call.arguments.get(1) else {
             return;
         };
 
-        // Get the function body
-        let body = match callback_expr {
-            Expression::ArrowFunctionExpression(arrow) => &arrow.body,
-            Expression::FunctionExpression(func) => {
-                let Some(ref body) = func.body else {
+        // Get the function body NodeId
+        let body_id = match ctx.node(*second_arg_id) {
+            Some(AstNode::ArrowFunctionExpression(arrow)) => arrow.body,
+            Some(AstNode::Function(func)) => {
+                let Some(body) = func.body else {
                     return;
                 };
                 body
@@ -71,24 +67,33 @@ impl NativeRule for PreferEach {
             _ => return,
         };
 
+        // Get the body node (BlockStatement or FunctionBody)
+        let body_stmts: Box<[NodeId]> = match ctx.node(body_id) {
+            Some(AstNode::FunctionBody(fb)) => fb.statements.clone(),
+            Some(AstNode::BlockStatement(block)) => block.body.clone(),
+            _ => return,
+        };
+
         // Collect test titles from top-level `it`/`test` calls in the body
-        let mut titles: Vec<&str> = Vec::new();
-        for stmt in &body.statements {
-            let Statement::ExpressionStatement(expr_stmt) = stmt else {
+        let mut titles: Vec<String> = Vec::new();
+        for stmt_id in &body_stmts {
+            let Some(AstNode::ExpressionStatement(expr_stmt)) = ctx.node(*stmt_id) else {
                 continue;
             };
-            let Expression::CallExpression(inner_call) = &expr_stmt.expression else {
+            let Some(AstNode::CallExpression(inner_call)) = ctx.node(expr_stmt.expression) else {
                 continue;
             };
             let is_test = matches!(
-                &inner_call.callee,
-                Expression::Identifier(id) if id.name.as_str() == "it" || id.name.as_str() == "test"
+                ctx.node(inner_call.callee),
+                Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "it" || id.name.as_str() == "test"
             );
             if !is_test {
                 continue;
             }
-            if let Some(Argument::StringLiteral(s)) = inner_call.arguments.first() {
-                titles.push(s.value.as_str());
+            if let Some(first_arg_id) = inner_call.arguments.first() {
+                if let Some(AstNode::StringLiteral(s)) = ctx.node(*first_arg_id) {
+                    titles.push(s.value.clone());
+                }
             }
         }
 
@@ -125,22 +130,13 @@ impl NativeRule for PreferEach {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferEach)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferEach)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

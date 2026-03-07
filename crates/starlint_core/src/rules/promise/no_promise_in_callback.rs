@@ -3,14 +3,13 @@
 //! Forbid creating promises inside callback-style functions. Mixing
 //! callback patterns with promise patterns leads to confusing control flow.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new Promise` or `Promise.resolve`/`Promise.reject` inside
 /// functions whose parameter names suggest they are callbacks.
@@ -23,7 +22,7 @@ pub struct NoPromiseInCallback;
 /// Common callback parameter names.
 const CALLBACK_PARAMS: &[&str] = &["cb", "callback", "done", "next"];
 
-impl NativeRule for NoPromiseInCallback {
+impl LintRule for NoPromiseInCallback {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/no-promise-in-callback".to_owned(),
@@ -33,21 +32,22 @@ impl NativeRule for NoPromiseInCallback {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Look for new Promise(...) inside function bodies
-        let AstKind::NewExpression(new_expr) = kind else {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
-        let Expression::Identifier(ident) = &new_expr.callee else {
-            return;
-        };
+        let is_promise = matches!(
+            ctx.node(new_expr.callee),
+            Some(AstNode::IdentifierReference(ident)) if ident.name.as_str() == "Promise"
+        );
 
-        if ident.name.as_str() != "Promise" {
+        if !is_promise {
             return;
         }
 
@@ -84,22 +84,13 @@ impl NativeRule for NoPromiseInCallback {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoPromiseInCallback)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoPromiseInCallback)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,14 +3,13 @@
 //! Flag files with too many class declarations. Having multiple classes
 //! in one file often indicates that the file should be split.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Default maximum number of classes per file.
 const DEFAULT_MAX: u32 = 1;
@@ -37,33 +36,34 @@ impl Default for MaxClassesPerFile {
 }
 
 /// Count class declarations in a list of statements (non-recursive, top-level only).
-fn count_classes(body: &[Statement<'_>]) -> u32 {
+fn count_classes(body: &[NodeId], ctx: &LintContext<'_>) -> u32 {
     let mut count: u32 = 0;
-    for stmt in body {
-        if matches!(stmt, Statement::ClassDeclaration(_)) {
+    for &stmt_id in body {
+        let Some(stmt) = ctx.node(stmt_id) else {
+            continue;
+        };
+        if matches!(stmt, AstNode::Class(_)) {
             count = count.saturating_add(1);
         }
-        // Also check export default class
-        if let Statement::ExportDefaultDeclaration(export) = stmt {
-            if matches!(
-                &export.declaration,
-                oxc_ast::ast::ExportDefaultDeclarationKind::ClassDeclaration(_)
-                    | oxc_ast::ast::ExportDefaultDeclarationKind::ClassExpression(_)
-            ) {
+        // Also check export default class — the declaration child may be a Class node
+        if let AstNode::ExportDefaultDeclaration(export) = stmt {
+            if matches!(ctx.node(export.declaration), Some(AstNode::Class(_))) {
                 count = count.saturating_add(1);
             }
         }
         // Check exported class declarations
-        if let Statement::ExportNamedDeclaration(export) = stmt {
-            if let Some(oxc_ast::ast::Declaration::ClassDeclaration(_)) = &export.declaration {
-                count = count.saturating_add(1);
+        if let AstNode::ExportNamedDeclaration(export) = stmt {
+            if let Some(decl_id) = export.declaration {
+                if matches!(ctx.node(decl_id), Some(AstNode::Class(_))) {
+                    count = count.saturating_add(1);
+                }
             }
         }
     }
     count
 }
 
-impl NativeRule for MaxClassesPerFile {
+impl LintRule for MaxClassesPerFile {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "max-classes-per-file".to_owned(),
@@ -74,7 +74,7 @@ impl NativeRule for MaxClassesPerFile {
     }
 
     fn needs_traversal(&self) -> bool {
-        // We use run() with AstKind::Program to access the program body
+        // We use run() with AstNode::Program to access the program body
         true
     }
 
@@ -85,16 +85,16 @@ impl NativeRule for MaxClassesPerFile {
         Ok(())
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Program])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Program])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Program(program) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Program(program) = node else {
             return;
         };
 
-        let class_count = count_classes(&program.body);
+        let class_count = count_classes(&program.body, ctx);
 
         if class_count > self.max {
             let source_len = u32::try_from(ctx.source_text().len()).unwrap_or(0);
@@ -116,22 +116,13 @@ impl NativeRule for MaxClassesPerFile {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint_with_max(source: &str, max: u32) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MaxClassesPerFile { max })];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MaxClassesPerFile { max })];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

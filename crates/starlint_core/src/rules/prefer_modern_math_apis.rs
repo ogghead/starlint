@@ -1,25 +1,24 @@
 //! Rule: `prefer-modern-math-apis` (unicorn)
 //!
 //! Prefer modern `Math` APIs over legacy patterns. For example:
-//! - `Math.log(x) / Math.log(2)` → `Math.log2(x)`
-//! - `Math.log(x) / Math.log(10)` → `Math.log10(x)`
-//! - `Math.pow(x, 0.5)` → `Math.sqrt(x)` / `Math.cbrt(x)`
-
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
+//! - `Math.log(x) / Math.log(2)` -> `Math.log2(x)`
+//! - `Math.log(x) / Math.log(10)` -> `Math.log10(x)`
+//! - `Math.pow(x, 0.5)` -> `Math.sqrt(x)` / `Math.cbrt(x)`
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags legacy Math patterns that have modern equivalents.
 #[derive(Debug)]
 pub struct PreferModernMathApis;
 
-impl NativeRule for PreferModernMathApis {
+impl LintRule for PreferModernMathApis {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-modern-math-apis".to_owned(),
@@ -29,23 +28,28 @@ impl NativeRule for PreferModernMathApis {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression, AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression, AstNodeType::CallExpression])
     }
 
     #[allow(clippy::as_conversions)]
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
+    #[allow(clippy::indexing_slicing)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
             // Check for Math.log(x) / Math.log(base)
-            AstKind::BinaryExpression(bin) => {
-                if !matches!(bin.operator, oxc_ast::ast::BinaryOperator::Division) {
+            AstNode::BinaryExpression(bin) => {
+                if bin.operator != BinaryOperator::Division {
                     return;
                 }
 
-                if is_math_method_call(&bin.left, "log") && is_math_method_call(&bin.right, "log") {
-                    if let Some((method, suggestion)) = get_log_suggestion_with_method(&bin.right) {
+                if is_math_method_call(bin.left, "log", ctx)
+                    && is_math_method_call(bin.right, "log", ctx)
+                {
+                    if let Some((method, suggestion)) =
+                        get_log_suggestion_with_method(bin.right, ctx)
+                    {
                         // Extract the argument from the numerator Math.log(x)
-                        let fix = extract_math_log_arg_text(ctx.source_text(), &bin.left).map(
+                        let fix = extract_math_log_arg_text(ctx.source_text(), bin.left, ctx).map(
                             |arg_text| Fix {
                                 kind: FixKind::SafeFix,
                                 message: format!("Replace with `Math.{method}({arg_text})`"),
@@ -72,8 +76,8 @@ impl NativeRule for PreferModernMathApis {
                 }
             }
             // Check for Math.pow(x, 0.5)
-            AstKind::CallExpression(call) => {
-                if !is_math_member_callee(&call.callee, "pow") {
+            AstNode::CallExpression(call) => {
+                if !is_math_member_callee(call.callee, "pow", ctx) {
                     return;
                 }
 
@@ -81,30 +85,31 @@ impl NativeRule for PreferModernMathApis {
                     return;
                 }
 
-                let Some(second_arg) = call.arguments.get(1) else {
-                    return;
-                };
+                let second_arg_id = call.arguments[1];
 
-                if let oxc_ast::ast::Argument::NumericLiteral(num) = second_arg {
+                if let Some(AstNode::NumericLiteral(num)) = ctx.node(second_arg_id) {
                     #[allow(clippy::float_cmp)]
                     if num.value == 0.5 {
                         // Extract the first argument source text
-                        let fix = call.arguments.first().and_then(|first_arg| {
-                            let arg_span = first_arg.span();
-                            let arg_text = ctx
-                                .source_text()
-                                .get(arg_span.start as usize..arg_span.end as usize)?
-                                .to_owned();
-                            (!arg_text.is_empty()).then(|| Fix {
-                                kind: FixKind::SafeFix,
-                                message: format!("Replace with `Math.sqrt({arg_text})`"),
-                                edits: vec![Edit {
-                                    span: Span::new(call.span.start, call.span.end),
-                                    replacement: format!("Math.sqrt({arg_text})"),
-                                }],
-                                is_snippet: false,
-                            })
-                        });
+                        let first_arg_id = call.arguments[0];
+                        let first_arg_span = ctx.node(first_arg_id).map_or(
+                            starlint_ast::types::Span::EMPTY,
+                            starlint_ast::AstNode::span,
+                        );
+                        let fix = ctx
+                            .source_text()
+                            .get(first_arg_span.start as usize..first_arg_span.end as usize)
+                            .and_then(|arg_text| {
+                                (!arg_text.is_empty()).then(|| Fix {
+                                    kind: FixKind::SafeFix,
+                                    message: format!("Replace with `Math.sqrt({arg_text})`"),
+                                    edits: vec![Edit {
+                                        span: Span::new(call.span.start, call.span.end),
+                                        replacement: format!("Math.sqrt({arg_text})"),
+                                    }],
+                                    is_snippet: false,
+                                })
+                            });
 
                         ctx.report(Diagnostic {
                             rule_name: "prefer-modern-math-apis".to_owned(),
@@ -123,48 +128,41 @@ impl NativeRule for PreferModernMathApis {
     }
 }
 
-/// Check if an expression is `Math.method(...)`.
-fn is_math_method_call(expr: &Expression<'_>, method: &str) -> bool {
-    let Expression::CallExpression(call) = expr else {
+/// Check if an expression `NodeId` is `Math.method(...)`.
+fn is_math_method_call(expr_id: NodeId, method: &str, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::CallExpression(call)) = ctx.node(expr_id) else {
         return false;
     };
 
-    let Expression::StaticMemberExpression(member) = &call.callee else {
-        return false;
-    };
-
-    let Expression::Identifier(obj) = &member.object else {
-        return false;
-    };
-
-    obj.name == "Math" && member.property.name == method
+    is_math_member_callee(call.callee, method, ctx)
 }
 
-/// Check if an expression is `Math.method` (as a callee, not wrapped in a call).
-fn is_math_member_callee(expr: &Expression<'_>, method: &str) -> bool {
-    let Expression::StaticMemberExpression(member) = expr else {
+/// Check if an expression `NodeId` is `Math.method` (as a callee).
+fn is_math_member_callee(expr_id: NodeId, method: &str, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(expr_id) else {
         return false;
     };
 
-    let Expression::Identifier(obj) = &member.object else {
+    let Some(AstNode::IdentifierReference(obj)) = ctx.node(member.object) else {
         return false;
     };
 
-    obj.name == "Math" && member.property.name == method
+    obj.name == "Math" && member.property == method
 }
 
 /// Get the method name and suggestion for `Math.log(x) / Math.log(base)` patterns.
 /// Returns `(method_name, full_suggestion)`.
 fn get_log_suggestion_with_method(
-    divisor: &Expression<'_>,
+    divisor_id: NodeId,
+    ctx: &LintContext<'_>,
 ) -> Option<(&'static str, &'static str)> {
-    let Expression::CallExpression(call) = divisor else {
+    let Some(AstNode::CallExpression(call)) = ctx.node(divisor_id) else {
         return None;
     };
 
-    let first_arg = call.arguments.first()?;
+    let first_arg_id = *call.arguments.first()?;
 
-    let oxc_ast::ast::Argument::NumericLiteral(num) = first_arg else {
+    let Some(AstNode::NumericLiteral(num)) = ctx.node(first_arg_id) else {
         return None;
     };
 
@@ -180,34 +178,29 @@ fn get_log_suggestion_with_method(
 
 /// Extract the argument source text from a `Math.log(x)` call expression.
 #[allow(clippy::as_conversions)]
-fn extract_math_log_arg_text(source: &str, expr: &Expression<'_>) -> Option<String> {
-    let Expression::CallExpression(call) = expr else {
+fn extract_math_log_arg_text(
+    source: &str,
+    expr_id: NodeId,
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    let Some(AstNode::CallExpression(call)) = ctx.node(expr_id) else {
         return None;
     };
-    let arg = call.arguments.first()?;
-    let arg_span = arg.span();
+    let arg_id = *call.arguments.first()?;
+    let arg_span = ctx.node(arg_id)?.span();
     let text = source.get(arg_span.start as usize..arg_span.end as usize)?;
     (!text.is_empty()).then(|| text.to_owned())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferModernMathApis)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferModernMathApis)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

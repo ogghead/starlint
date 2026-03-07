@@ -3,20 +3,20 @@
 //! Prefer `.trimStart()` / `.trimEnd()` over the deprecated
 //! `.trimLeft()` / `.trimRight()` aliases.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::or_fun_call)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.trimLeft()` and `.trimRight()` — use `.trimStart()` / `.trimEnd()`.
 #[derive(Debug)]
 pub struct PreferStringTrimStartEnd;
 
-impl NativeRule for PreferStringTrimStartEnd {
+impl LintRule for PreferStringTrimStartEnd {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-string-trim-start-end".to_owned(),
@@ -27,20 +27,25 @@ impl NativeRule for PreferStringTrimStartEnd {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::map_unwrap_or
+    )]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method = member.property.name.as_str();
+        let method = member.property.as_str();
         let replacement_method = match method {
             "trimLeft" => "trimStart",
             "trimRight" => "trimEnd",
@@ -64,7 +69,19 @@ impl NativeRule for PreferStringTrimStartEnd {
                 kind: FixKind::SafeFix,
                 message: format!("Replace `.{method}` with `.{replacement_method}`"),
                 edits: vec![Edit {
-                    span: Span::new(member.property.span.start, member.property.span.end),
+                    span: {
+                        let source = ctx.source_text();
+                        let call_text = source
+                            .get(call.span.start as usize..call.span.end as usize)
+                            .unwrap_or("");
+                        call_text.find(method).map_or(
+                            Span::new(call.span.start, call.span.end),
+                            |offset| {
+                                let start = call.span.start.saturating_add(offset as u32);
+                                Span::new(start, start.saturating_add(method.len() as u32))
+                            },
+                        )
+                    },
                     replacement: replacement_method.to_owned(),
                 }],
                 is_snippet: false,
@@ -76,22 +93,13 @@ impl NativeRule for PreferStringTrimStartEnd {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferStringTrimStartEnd)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStringTrimStartEnd)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

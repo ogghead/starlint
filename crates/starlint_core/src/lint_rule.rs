@@ -8,7 +8,7 @@
 use std::fmt::Debug;
 use std::path::Path;
 
-use oxc_semantic::Semantic;
+use oxc_semantic::{Semantic, SymbolId};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
@@ -176,6 +176,57 @@ impl<'a> LintContext<'a> {
     /// Report a diagnostic.
     pub fn report(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
+    }
+
+    /// Resolve a [`SymbolId`] for a binding at the given span.
+    ///
+    /// Iterates over all symbols in the semantic model and returns the first
+    /// whose declaration span matches. Returns `None` when semantic analysis
+    /// is unavailable or no matching symbol is found.
+    #[must_use]
+    pub fn resolve_symbol_id(&self, span: starlint_ast::types::Span) -> Option<SymbolId> {
+        let semantic = self.semantic?;
+        let scoping = semantic.scoping();
+        let target = oxc_span::Span::new(span.start, span.end);
+        scoping
+            .symbol_ids()
+            .find(|&sid| scoping.symbol_span(sid) == target)
+    }
+
+    /// Check whether a reference at the given span is resolved to a local
+    /// symbol (i.e. not an unresolved/global reference).
+    ///
+    /// Looks up all unresolved references for `name` and checks whether any
+    /// of them has a span matching `span`. If a matching unresolved reference
+    /// is found the reference is NOT resolved; otherwise it IS resolved.
+    ///
+    /// Returns `true` (conservatively assumes resolved) when semantic analysis
+    /// is unavailable.
+    #[must_use]
+    pub fn is_reference_resolved_at(&self, name: &str, span: starlint_ast::types::Span) -> bool {
+        let Some(semantic) = self.semantic else {
+            return true;
+        };
+        let scoping = semantic.scoping();
+        let ident = oxc_span::Ident::from(name);
+        let target = oxc_span::Span::new(span.start, span.end);
+
+        let Some(ref_ids) = scoping.root_unresolved_references().get(&ident) else {
+            // Name has no unresolved references at all — it is resolved.
+            return true;
+        };
+
+        // Check whether any of the unresolved reference IDs match this span.
+        for &ref_id in ref_ids {
+            let reference = scoping.get_reference(ref_id);
+            if semantic.reference_span(reference) == target {
+                // Found an unresolved reference at this exact span.
+                return false;
+            }
+        }
+
+        // No unresolved reference at this span — it is resolved.
+        true
     }
 
     /// Report a simple error diagnostic.

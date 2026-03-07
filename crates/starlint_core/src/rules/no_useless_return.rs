@@ -3,20 +3,19 @@
 //! Disallow redundant `return` statements at the end of a function body.
 //! A bare `return;` at the end of a function is unnecessary.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags redundant `return;` statements at the end of function bodies.
 #[derive(Debug)]
 pub struct NoUselessReturn;
 
-impl NativeRule for NoUselessReturn {
+impl LintRule for NoUselessReturn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-useless-return".to_owned(),
@@ -26,65 +25,57 @@ impl NativeRule for NoUselessReturn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::FunctionBody])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::FunctionBody])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::FunctionBody(body) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::FunctionBody(body) = node else {
             return;
         };
 
         // Check if the last statement is a bare return (no argument)
-        let Some(last) = body.statements.last() else {
+        let Some(&last_id) = body.statements.last() else {
             return;
         };
 
-        if let Statement::ReturnStatement(ret) = last {
-            if ret.argument.is_none() {
-                let ret_span = Span::new(ret.span.start, ret.span.end);
-
-                ctx.report(Diagnostic {
-                    rule_name: "no-useless-return".to_owned(),
-                    message: "Unnecessary return statement".to_owned(),
-                    span: ret_span,
-                    severity: Severity::Warning,
-                    help: Some("Remove the unnecessary `return`".to_owned()),
-                    fix: Some(Fix {
-                        kind: FixKind::SafeFix,
-                        message: "Remove unnecessary `return`".to_owned(),
-                        edits: vec![Edit {
-                            span: ret_span,
-                            replacement: String::new(),
-                        }],
-                        is_snippet: false,
-                    }),
-                    labels: vec![],
-                });
+        // Extract span from the resolved node before mutably borrowing ctx
+        let ret_span = match ctx.node(last_id) {
+            Some(AstNode::ReturnStatement(ret)) if ret.argument.is_none() => {
+                Span::new(ret.span.start, ret.span.end)
             }
-        }
+            _ => return,
+        };
+
+        ctx.report(Diagnostic {
+            rule_name: "no-useless-return".to_owned(),
+            message: "Unnecessary return statement".to_owned(),
+            span: ret_span,
+            severity: Severity::Warning,
+            help: Some("Remove the unnecessary `return`".to_owned()),
+            fix: Some(Fix {
+                kind: FixKind::SafeFix,
+                message: "Remove unnecessary `return`".to_owned(),
+                edits: vec![Edit {
+                    span: ret_span,
+                    replacement: String::new(),
+                }],
+                is_snippet: false,
+            }),
+            labels: vec![],
+        });
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessReturn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessReturn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,21 +4,22 @@
 //! the same module. Having two exports with the same name is a syntax error
 //! in some environments and always a logical error.
 
+#![allow(clippy::collapsible_if, clippy::collapsible_match)]
 use std::collections::HashSet;
-
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags duplicate named export declarations within the same module.
 #[derive(Debug)]
 pub struct ExportRule;
 
-impl NativeRule for ExportRule {
+impl LintRule for ExportRule {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/export".to_owned(),
@@ -28,54 +29,31 @@ impl NativeRule for ExportRule {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Program])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Program])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Program(program) = kind else {
+    #[allow(clippy::collapsible_if)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Program(program) = node else {
             return;
         };
 
         let mut seen_names: HashSet<String> = HashSet::new();
 
-        for stmt in &program.body {
-            match stmt {
-                oxc_ast::ast::Statement::ExportNamedDeclaration(export) => {
-                    // Collect names from specifiers
-                    for spec in &export.specifiers {
-                        let exported_name = spec.exported.name().as_str();
-                        if !seen_names.insert(exported_name.to_owned()) {
-                            ctx.report(Diagnostic {
-                                rule_name: "import/export".to_owned(),
-                                message: format!("Multiple exports of name '{exported_name}'"),
-                                span: Span::new(spec.span.start, spec.span.end),
-                                severity: Severity::Error,
-                                help: None,
-                                fix: None,
-                                labels: vec![],
-                            });
-                        }
-                    }
-
-                    // Collect names from declaration
-                    if let Some(decl) = &export.declaration {
-                        for name in collect_declaration_names(decl) {
-                            if !seen_names.insert(name.clone()) {
-                                ctx.report(Diagnostic {
-                                    rule_name: "import/export".to_owned(),
-                                    message: format!("Multiple exports of name '{name}'"),
-                                    span: Span::new(export.span.start, export.span.end),
-                                    severity: Severity::Error,
-                                    help: None,
-                                    fix: None,
-                                    labels: vec![],
-                                });
-                            }
-                        }
-                    }
+        for &stmt_id in &*program.body {
+            let Some(stmt) = ctx.node(stmt_id) else {
+                continue;
+            };
+            // Extract data from the immutable borrow before calling ctx.report()
+            let stmt_info = match stmt {
+                AstNode::ExportNamedDeclaration(export) => {
+                    let specifiers = export.specifiers.clone();
+                    let export_span = export.span;
+                    let declaration = export.declaration;
+                    Some((specifiers, export_span, declaration))
                 }
-                oxc_ast::ast::Statement::ExportDefaultDeclaration(export) => {
+                AstNode::ExportDefaultDeclaration(export) => {
                     if !seen_names.insert("default".to_owned()) {
                         ctx.report(Diagnostic {
                             rule_name: "import/export".to_owned(),
@@ -87,42 +65,103 @@ impl NativeRule for ExportRule {
                             labels: vec![],
                         });
                     }
+                    None
                 }
-                _ => {}
+                _ => None,
+            };
+
+            if let Some((specifiers, export_span, declaration)) = stmt_info {
+                // Collect specifier data first, then report
+                let spec_data: Vec<(String, starlint_ast::types::Span)> = specifiers
+                    .iter()
+                    .filter_map(|&spec_id| {
+                        let AstNode::ExportSpecifier(spec) = ctx.node(spec_id)? else {
+                            return None;
+                        };
+                        Some((spec.exported.clone(), spec.span))
+                    })
+                    .collect();
+
+                for (exported_name, spec_span) in spec_data {
+                    if !seen_names.insert(exported_name.clone()) {
+                        ctx.report(Diagnostic {
+                            rule_name: "import/export".to_owned(),
+                            message: format!("Multiple exports of name '{exported_name}'"),
+                            span: Span::new(spec_span.start, spec_span.end),
+                            severity: Severity::Error,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
+                    }
+                }
+
+                // Collect names from declaration
+                if let Some(decl_id) = declaration {
+                    let decl_names = collect_declaration_names(decl_id, ctx);
+                    for name in decl_names {
+                        if !seen_names.insert(name.clone()) {
+                            ctx.report(Diagnostic {
+                                rule_name: "import/export".to_owned(),
+                                message: format!("Multiple exports of name '{name}'"),
+                                span: Span::new(export_span.start, export_span.end),
+                                severity: Severity::Error,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
+                        }
+                    }
+                }
             }
         }
     }
 }
 
-/// Extract binding names from a declaration.
-fn collect_declaration_names(decl: &oxc_ast::ast::Declaration<'_>) -> Vec<String> {
+/// Extract binding names from a declaration node.
+fn collect_declaration_names(decl_id: NodeId, ctx: &LintContext<'_>) -> Vec<String> {
     let mut names = Vec::new();
+    let Some(decl) = ctx.node(decl_id) else {
+        return names;
+    };
     match decl {
-        oxc_ast::ast::Declaration::VariableDeclaration(var_decl) => {
-            for declarator in &var_decl.declarations {
-                if let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = &declarator.id {
-                    names.push(id.name.as_str().to_owned());
+        AstNode::VariableDeclaration(var_decl) => {
+            for &declarator_id in &*var_decl.declarations {
+                if let Some(AstNode::VariableDeclarator(declarator)) = ctx.node(declarator_id) {
+                    if let Some(AstNode::BindingIdentifier(id)) = ctx.node(declarator.id) {
+                        names.push(id.name.clone());
+                    }
                 }
             }
         }
-        oxc_ast::ast::Declaration::FunctionDeclaration(func) => {
-            if let Some(id) = &func.id {
-                names.push(id.name.as_str().to_owned());
+        AstNode::Function(func) => {
+            if let Some(id_node) = func.id.and_then(|id| ctx.node(id)) {
+                if let AstNode::BindingIdentifier(id) = id_node {
+                    names.push(id.name.clone());
+                }
             }
         }
-        oxc_ast::ast::Declaration::ClassDeclaration(class) => {
-            if let Some(id) = &class.id {
-                names.push(id.name.as_str().to_owned());
+        AstNode::Class(class) => {
+            if let Some(id_node) = class.id.and_then(|id| ctx.node(id)) {
+                if let AstNode::BindingIdentifier(id) = id_node {
+                    names.push(id.name.clone());
+                }
             }
         }
-        oxc_ast::ast::Declaration::TSEnumDeclaration(e) => {
-            names.push(e.id.name.as_str().to_owned());
+        AstNode::TSEnumDeclaration(e) => {
+            if let Some(AstNode::BindingIdentifier(id)) = ctx.node(e.id) {
+                names.push(id.name.clone());
+            }
         }
-        oxc_ast::ast::Declaration::TSInterfaceDeclaration(i) => {
-            names.push(i.id.name.as_str().to_owned());
+        AstNode::TSInterfaceDeclaration(i) => {
+            if let Some(AstNode::BindingIdentifier(id)) = ctx.node(i.id) {
+                names.push(id.name.clone());
+            }
         }
-        oxc_ast::ast::Declaration::TSTypeAliasDeclaration(t) => {
-            names.push(t.id.name.as_str().to_owned());
+        AstNode::TSTypeAliasDeclaration(t) => {
+            if let Some(AstNode::BindingIdentifier(id)) = ctx.node(t.id) {
+                names.push(id.name.clone());
+            }
         }
         _ => {}
     }
@@ -131,22 +170,13 @@ fn collect_declaration_names(decl: &oxc_ast::ast::Declaration<'_>) -> Vec<String
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ExportRule)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ExportRule)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -7,20 +7,19 @@
 //! Simplified syntax-only version — full checking requires type information.
 //! This rule detects explicit `return expr as any` patterns.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, TSType};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags return statements whose argument is an `as any` assertion.
 #[derive(Debug)]
 pub struct NoUnsafeReturn;
 
-impl NativeRule for NoUnsafeReturn {
+impl LintRule for NoUnsafeReturn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-unsafe-return".to_owned(),
@@ -30,20 +29,20 @@ impl NativeRule for NoUnsafeReturn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ReturnStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ReturnStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ReturnStatement(ret) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ReturnStatement(ret) = node else {
             return;
         };
 
-        let Some(arg) = &ret.argument else {
+        let Some(arg_id) = ret.argument else {
             return;
         };
 
-        if is_as_any_return(arg) {
+        if is_as_any_return(arg_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-unsafe-return".to_owned(),
                 message: "Unsafe return — returning an `as any` value defeats the function's return type safety".to_owned(),
@@ -57,37 +56,30 @@ impl NativeRule for NoUnsafeReturn {
     }
 }
 
-/// Check whether a return argument is an `as any` cast, unwrapping
-/// parenthesized expressions.
-fn is_as_any_return(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::TSAsExpression(as_expr) => {
-            matches!(&as_expr.type_annotation, TSType::TSAnyKeyword(_))
-        }
-        Expression::ParenthesizedExpression(paren) => is_as_any_return(&paren.expression),
-        _ => false,
-    }
+/// Check whether a return argument is an `as any` cast.
+/// Uses source text heuristic. No `ParenthesizedExpression` exists in
+/// `starlint_ast` (parens are transparent in the AST).
+fn is_as_any_return(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::TSAsExpression(as_expr)) = ctx.node(node_id) else {
+        return false;
+    };
+    let source = ctx.source_text();
+    let start = usize::try_from(as_expr.span.start).unwrap_or(0);
+    let end = usize::try_from(as_expr.span.end).unwrap_or(0);
+    source
+        .get(start..end)
+        .is_some_and(|text| text.trim_end().ends_with("as any"))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafeReturn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeReturn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

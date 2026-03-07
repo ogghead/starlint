@@ -3,20 +3,19 @@
 //! Prefer `BigInt` literals (`123n`) over `BigInt(123)` constructor calls
 //! for literal arguments. The literal syntax is shorter and clearer.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `BigInt(literal)` calls — prefer `BigInt` literal syntax instead.
 #[derive(Debug)]
 pub struct PreferBigintLiterals;
 
-impl NativeRule for PreferBigintLiterals {
+impl LintRule for PreferBigintLiterals {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-bigint-literals".to_owned(),
@@ -26,17 +25,17 @@ impl NativeRule for PreferBigintLiterals {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Must be a call to `BigInt`
-        let Expression::Identifier(id) = &call.callee else {
+        let Some(AstNode::IdentifierReference(id)) = ctx.node(call.callee) else {
             return;
         };
 
@@ -45,7 +44,7 @@ impl NativeRule for PreferBigintLiterals {
         }
 
         // Must have exactly one argument
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(&first_arg_id) = call.arguments.first() else {
             return;
         };
 
@@ -53,7 +52,7 @@ impl NativeRule for PreferBigintLiterals {
             return;
         }
 
-        if let Some(literal_value) = get_bigint_literal_value(first_arg) {
+        if let Some(literal_value) = get_bigint_literal_value(first_arg_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: "prefer-bigint-literals".to_owned(),
                 message:
@@ -79,14 +78,18 @@ impl NativeRule for PreferBigintLiterals {
 
 /// Extract the literal value from a `BigInt()` argument, if it is a numeric or
 /// pure-digit string literal suitable for `BigInt` literal syntax.
-fn get_bigint_literal_value<'a>(arg: &'a Argument<'a>) -> Option<String> {
-    match arg {
-        Argument::NumericLiteral(num) => {
-            // Format without trailing `.0` for integers
-            let raw = num.raw.as_ref()?.as_str();
-            Some(raw.to_owned())
+fn get_bigint_literal_value(arg_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    match ctx.node(arg_id)? {
+        AstNode::NumericLiteral(num) => {
+            // Use raw source text for numeric literal
+            let raw = &num.raw;
+            if raw.is_empty() {
+                None
+            } else {
+                Some(raw.clone())
+            }
         }
-        Argument::StringLiteral(lit) => {
+        AstNode::StringLiteral(lit) => {
             let val = lit.value.as_str();
             (!val.is_empty() && val.chars().all(|c| c.is_ascii_digit())).then(|| val.to_owned())
         }
@@ -96,23 +99,13 @@ fn get_bigint_literal_value<'a>(arg: &'a Argument<'a>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferBigintLiterals)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferBigintLiterals)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,31 +4,29 @@
 //! Building file paths with `+` is fragile and platform-dependent.
 //! Use `path.join()` or `path.resolve()` instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags string concatenation (`+`) involving `__dirname` or `__filename`.
 #[derive(Debug)]
 pub struct NoPathConcat;
 
-/// Check whether an expression is an identifier named `__dirname` or `__filename`.
-fn is_path_global(expr: &Expression<'_>) -> bool {
+/// Check whether a node is an identifier named `__dirname` or `__filename`.
+fn is_path_global(node: &AstNode) -> bool {
     matches!(
-        expr,
-        Expression::Identifier(id)
+        node,
+        AstNode::IdentifierReference(id)
             if id.name.as_str() == "__dirname" || id.name.as_str() == "__filename"
     )
 }
 
-impl NativeRule for NoPathConcat {
+impl LintRule for NoPathConcat {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "node/no-path-concat".to_owned(),
@@ -39,13 +37,13 @@ impl NativeRule for NoPathConcat {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
     #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
@@ -53,14 +51,24 @@ impl NativeRule for NoPathConcat {
             return;
         }
 
-        if !is_path_global(&expr.left) && !is_path_global(&expr.right) {
+        let left_node = ctx.node(expr.left);
+        let right_node = ctx.node(expr.right);
+        let is_left_path = left_node.is_some_and(is_path_global);
+        let is_right_path = right_node.is_some_and(is_path_global);
+        if !is_left_path && !is_right_path {
             return;
         }
 
         // Build suggestion fix: __dirname + '/foo' → path.join(__dirname, '/foo')
         let source = ctx.source_text();
-        let left_span = expr.left.span();
-        let right_span = expr.right.span();
+        let left_span = left_node.map_or(Span::new(0, 0), |n| {
+            let s = n.span();
+            Span::new(s.start, s.end)
+        });
+        let right_span = right_node.map_or(Span::new(0, 0), |n| {
+            let s = n.span();
+            Span::new(s.start, s.end)
+        });
         let left_text = source
             .get(left_span.start as usize..left_span.end as usize)
             .unwrap_or("")
@@ -93,22 +101,13 @@ impl NativeRule for NoPathConcat {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoPathConcat)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoPathConcat)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -2,22 +2,19 @@
 //!
 //! Disallow the use of `Math.pow()` in favor of the `**` operator.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `Math.pow()` calls.
 #[derive(Debug)]
 pub struct PreferExponentiationOperator;
 
-impl NativeRule for PreferExponentiationOperator {
+impl LintRule for PreferExponentiationOperator {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-exponentiation-operator".to_owned(),
@@ -27,37 +24,37 @@ impl NativeRule for PreferExponentiationOperator {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "pow" {
+        if member.property.as_str() != "pow" {
             return;
         }
 
-        if matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Math") {
-            let fix = call
-                .arguments
-                .first()
-                .zip(call.arguments.get(1))
-                .map(|(first, second)| {
+        if matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Math")
+        {
+            let fix = call.arguments.first().zip(call.arguments.get(1)).and_then(
+                |(first_id, second_id)| {
+                    let first_node = ctx.node(*first_id)?;
+                    let second_node = ctx.node(*second_id)?;
                     let source = ctx.source_text();
-                    let f_start = usize::try_from(first.span().start).unwrap_or(0);
-                    let f_end = usize::try_from(first.span().end).unwrap_or(0);
-                    let s_start = usize::try_from(second.span().start).unwrap_or(0);
-                    let s_end = usize::try_from(second.span().end).unwrap_or(0);
+                    let f_start = usize::try_from(first_node.span().start).unwrap_or(0);
+                    let f_end = usize::try_from(first_node.span().end).unwrap_or(0);
+                    let s_start = usize::try_from(second_node.span().start).unwrap_or(0);
+                    let s_end = usize::try_from(second_node.span().end).unwrap_or(0);
                     let first_text = source.get(f_start..f_end).unwrap_or("");
                     let second_text = source.get(s_start..s_end).unwrap_or("");
-                    Fix {
+                    Some(Fix {
                         kind: FixKind::SafeFix,
                         message: "Use `**` operator".to_owned(),
                         edits: vec![Edit {
@@ -65,8 +62,9 @@ impl NativeRule for PreferExponentiationOperator {
                             replacement: format!("{first_text} ** {second_text}"),
                         }],
                         is_snippet: false,
-                    }
-                });
+                    })
+                },
+            );
 
             ctx.report(Diagnostic {
                 rule_name: "prefer-exponentiation-operator".to_owned(),
@@ -83,23 +81,13 @@ impl NativeRule for PreferExponentiationOperator {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferExponentiationOperator)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferExponentiationOperator)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

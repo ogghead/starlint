@@ -5,22 +5,20 @@
 //! `str.startsWith('foo')` and `str.indexOf('x') === 0` should be
 //! `str.startsWith('x')`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags patterns that can use `startsWith`/`endsWith`.
 #[derive(Debug)]
 pub struct PreferStringStartsEndsWith;
 
-impl NativeRule for PreferStringStartsEndsWith {
+impl LintRule for PreferStringStartsEndsWith {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-string-starts-ends-with".to_owned(),
@@ -30,32 +28,40 @@ impl NativeRule for PreferStringStartsEndsWith {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression, AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression, AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::BinaryExpression(expr) => check_index_of_comparison(expr, ctx),
-            AstKind::CallExpression(call) => check_regex_test(call, ctx),
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::BinaryExpression(expr) => check_index_of_comparison(expr, ctx),
+            AstNode::CallExpression(call) => check_regex_test(call, ctx),
             _ => {}
         }
     }
 }
 
 /// Check for `.indexOf(x) === 0` pattern.
+#[allow(clippy::as_conversions)]
 fn check_index_of_comparison(
-    expr: &oxc_ast::ast::BinaryExpression<'_>,
-    ctx: &mut NativeLintContext<'_>,
+    expr: &starlint_ast::node::BinaryExpressionNode,
+    ctx: &mut LintContext<'_>,
 ) {
     // Match: str.indexOf(x) === 0 or 0 === str.indexOf(x)
-    let call = match (&expr.left, &expr.right) {
-        (Expression::CallExpression(c), other) | (other, Expression::CallExpression(c))
-            if is_zero_literal(other) =>
-        {
-            c
+    // We need to find which side is the call expression and which is the zero literal.
+    let (call_id, _zero_id) = {
+        let left_is_call = matches!(ctx.node(expr.left), Some(AstNode::CallExpression(_)));
+        let right_is_call = matches!(ctx.node(expr.right), Some(AstNode::CallExpression(_)));
+        let left_is_zero = is_zero_literal(expr.left, ctx);
+        let right_is_zero = is_zero_literal(expr.right, ctx);
+
+        if left_is_call && right_is_zero {
+            (expr.left, expr.right)
+        } else if right_is_call && left_is_zero {
+            (expr.right, expr.left)
+        } else {
+            return;
         }
-        _ => return,
     };
 
     if !matches!(
@@ -65,11 +71,15 @@ fn check_index_of_comparison(
         return;
     }
 
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+    let Some(AstNode::CallExpression(call)) = ctx.node(call_id) else {
         return;
     };
 
-    if member.property.name.as_str() != "indexOf" {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
+        return;
+    };
+
+    if member.property.as_str() != "indexOf" {
         return;
     }
 
@@ -79,13 +89,17 @@ fn check_index_of_comparison(
 
     // Build fix: `obj.startsWith(arg)`
     let source = ctx.source_text();
-    let obj_start = usize::try_from(member.object.span().start).unwrap_or(0);
-    let obj_end = usize::try_from(member.object.span().end).unwrap_or(0);
+    let obj_span = ctx.node(member.object).map(starlint_ast::AstNode::span);
+    let (obj_start, obj_end) = match obj_span {
+        Some(s) => (s.start as usize, s.end as usize),
+        None => return,
+    };
     let obj_text = source.get(obj_start..obj_end).unwrap_or("");
-    let arg_span = call.arguments.first().map(oxc_span::GetSpan::span);
-    let fix = arg_span.and_then(|a| {
-        let a_start = usize::try_from(a.start).unwrap_or(0);
-        let a_end = usize::try_from(a.end).unwrap_or(0);
+
+    let fix = call.arguments.first().and_then(|&arg_id| {
+        let arg_span = ctx.node(arg_id)?.span();
+        let a_start = arg_span.start as usize;
+        let a_end = arg_span.end as usize;
         let arg_text = source.get(a_start..a_end)?;
         Some(Fix {
             kind: FixKind::SuggestionFix,
@@ -110,20 +124,21 @@ fn check_index_of_comparison(
 }
 
 /// Check for `/^foo/.test(str)` or `/foo$/.test(str)` pattern.
-fn check_regex_test(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLintContext<'_>) {
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+#[allow(clippy::as_conversions)]
+fn check_regex_test(call: &starlint_ast::node::CallExpressionNode, ctx: &mut LintContext<'_>) {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
         return;
     };
 
-    if member.property.name.as_str() != "test" {
+    if member.property.as_str() != "test" {
         return;
     }
 
-    let Expression::RegExpLiteral(regex) = &member.object else {
+    let Some(AstNode::RegExpLiteral(regex)) = ctx.node(member.object) else {
         return;
     };
 
-    let pattern = regex.regex.pattern.text.as_str();
+    let pattern = regex.pattern.as_str();
 
     let (kind, literal_part) = if let Some(rest) = pattern.strip_prefix('^') {
         ("startsWith", rest)
@@ -149,19 +164,20 @@ fn check_regex_test(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLin
 
     // Build fix: `str.startsWith('literal')` or `str.endsWith('literal')`
     let source = ctx.source_text();
-    let fix = call.arguments.first().map(|arg| {
-        let a_start = usize::try_from(arg.span().start).unwrap_or(0);
-        let a_end = usize::try_from(arg.span().end).unwrap_or(0);
-        let arg_text = source.get(a_start..a_end).unwrap_or("");
-        Fix {
+    let fix = call.arguments.first().and_then(|&arg_id| {
+        let arg_span = ctx.node(arg_id)?.span();
+        let a_start = arg_span.start as usize;
+        let a_end = arg_span.end as usize;
+        let arg_text = source.get(a_start..a_end)?;
+        Some(Fix {
             kind: FixKind::SuggestionFix,
-            message: format!("Replace with `.{kind}('{literal_part}')`"),
+            message: format!("Replace with `.{kind}('{literal_part}')` "),
             edits: vec![Edit {
                 span: Span::new(call.span.start, call.span.end),
                 replacement: format!("{arg_text}.{kind}('{literal_part}')"),
             }],
             is_snippet: false,
-        }
+        })
     });
 
     ctx.report(Diagnostic {
@@ -175,9 +191,9 @@ fn check_regex_test(call: &oxc_ast::ast::CallExpression<'_>, ctx: &mut NativeLin
     });
 }
 
-/// Check if an expression is the numeric literal `0`.
-fn is_zero_literal(expr: &Expression<'_>) -> bool {
-    if let Expression::NumericLiteral(lit) = expr {
+/// Check if a node is the numeric literal `0`.
+fn is_zero_literal(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    if let Some(AstNode::NumericLiteral(lit)) = ctx.node(node_id) {
         return lit.value.abs() < f64::EPSILON;
     }
     false
@@ -185,22 +201,13 @@ fn is_zero_literal(expr: &Expression<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferStringStartsEndsWith)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStringStartsEndsWith)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

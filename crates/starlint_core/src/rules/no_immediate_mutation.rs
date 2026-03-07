@@ -5,14 +5,13 @@
 //! the new array returned by `.filter()`, which mutates it in place and
 //! discards readability. Prefer `toSorted()` or assign to a variable first.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Methods that mutate an array in place.
 const MUTATING_METHODS: &[&str] = &[
@@ -47,7 +46,7 @@ const NEW_ARRAY_METHODS: &[&str] = &[
 #[derive(Debug)]
 pub struct NoImmediateMutation;
 
-impl NativeRule for NoImmediateMutation {
+impl LintRule for NoImmediateMutation {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-immediate-mutation".to_owned(),
@@ -59,36 +58,37 @@ impl NativeRule for NoImmediateMutation {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Outer call must be `<expr>.<mutatingMethod>(...)`
-        let Expression::StaticMemberExpression(outer_member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(outer_member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let mutating_method = outer_member.property.name.as_str();
+        let mutating_method = outer_member.property.as_str();
         if !MUTATING_METHODS.contains(&mutating_method) {
             return;
         }
 
         // The object of the outer member must be a call expression:
         // `<expr>.<newArrayMethod>(...)`
-        let Expression::CallExpression(inner_call) = &outer_member.object else {
+        let Some(AstNode::CallExpression(inner_call)) = ctx.node(outer_member.object) else {
             return;
         };
 
-        let Expression::StaticMemberExpression(inner_member) = &inner_call.callee else {
+        let Some(AstNode::StaticMemberExpression(inner_member)) = ctx.node(inner_call.callee)
+        else {
             return;
         };
 
-        let inner_method = inner_member.property.name.as_str();
+        let inner_method = inner_member.property.as_str();
         if !NEW_ARRAY_METHODS.contains(&inner_method) {
             return;
         }
@@ -109,23 +109,13 @@ impl NativeRule for NoImmediateMutation {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoImmediateMutation)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoImmediateMutation)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

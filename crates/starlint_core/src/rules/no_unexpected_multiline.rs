@@ -12,20 +12,19 @@
 //! This rule flags cases where `(`, `[`, or a template literal follows a
 //! newline after an expression statement.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags confusing multiline expressions that look like separate statements.
 #[derive(Debug)]
 pub struct NoUnexpectedMultiline;
 
-impl NativeRule for NoUnexpectedMultiline {
+impl LintRule for NoUnexpectedMultiline {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unexpected-multiline".to_owned(),
@@ -35,14 +34,17 @@ impl NativeRule for NoUnexpectedMultiline {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression, AstType::TaggedTemplateExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[
+            AstNodeType::CallExpression,
+            AstNodeType::TaggedTemplateExpression,
+        ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::CallExpression(call) => {
-                let callee_end = callee_end_offset(&call.callee);
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::CallExpression(call) => {
+                let callee_end = ctx.node(call.callee).map_or(0, |n| n.span().end);
                 if callee_end > 0 {
                     let has_newline =
                         check_newline_before_paren(ctx.source_text(), callee_end, call.span.end);
@@ -61,10 +63,10 @@ impl NativeRule for NoUnexpectedMultiline {
                     }
                 }
             }
-            AstKind::TaggedTemplateExpression(tagged) => {
-                let tag_end = callee_end_offset(&tagged.tag);
+            AstNode::TaggedTemplateExpression(tagged) => {
+                let tag_end = ctx.node(tagged.tag).map_or(0, |n| n.span().end);
                 if tag_end > 0 {
-                    let template_start = tagged.quasi.span.start;
+                    let template_start = ctx.node(tagged.quasi).map_or(0, |n| n.span().start);
                     let has_newline =
                         check_newline_between(ctx.source_text(), tag_end, template_start);
                     if has_newline {
@@ -84,12 +86,6 @@ impl NativeRule for NoUnexpectedMultiline {
             _ => {}
         }
     }
-}
-
-/// Get the end offset of an expression.
-fn callee_end_offset(expr: &Expression<'_>) -> u32 {
-    use oxc_span::GetSpan;
-    expr.span().end
 }
 
 /// Check if there is a newline before a `(` between two byte offsets.
@@ -119,23 +115,13 @@ fn check_newline_between(source: &str, start: u32, end: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code with the `NoUnexpectedMultiline` rule.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnexpectedMultiline)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnexpectedMultiline)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

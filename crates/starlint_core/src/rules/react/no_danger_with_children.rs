@@ -4,20 +4,19 @@
 //! Using both at the same time is invalid because `dangerouslySetInnerHTML`
 //! replaces children, so having both is contradictory and causes runtime errors.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::JSXAttributeItem;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags elements that use both `dangerouslySetInnerHTML` and children.
 #[derive(Debug)]
 pub struct NoDangerWithChildren;
 
-impl NativeRule for NoDangerWithChildren {
+impl LintRule for NoDangerWithChildren {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/no-danger-with-children".to_owned(),
@@ -28,25 +27,27 @@ impl NativeRule for NoDangerWithChildren {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXElement(element) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXElement(element) = node else {
             return;
         };
 
-        let opening = &element.opening_element;
+        let Some(AstNode::JSXOpeningElement(opening)) = ctx.node(element.opening_element) else {
+            return;
+        };
 
         let mut has_danger = false;
         let mut has_children_prop = false;
 
-        for attr in &opening.attributes {
-            if let JSXAttributeItem::Attribute(a) = attr {
-                if a.is_identifier("dangerouslySetInnerHTML") {
+        for &attr_id in &*opening.attributes {
+            if let Some(AstNode::JSXAttribute(a)) = ctx.node(attr_id) {
+                if a.name == "dangerouslySetInnerHTML" {
                     has_danger = true;
-                } else if a.is_identifier("children") {
+                } else if a.name == "children" {
                     has_children_prop = true;
                 }
             }
@@ -75,22 +76,13 @@ impl NativeRule for NoDangerWithChildren {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.jsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDangerWithChildren)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.jsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDangerWithChildren)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

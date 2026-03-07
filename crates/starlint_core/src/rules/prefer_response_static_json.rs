@@ -4,22 +4,19 @@
 //! The static `Response.json()` method is cleaner and automatically
 //! sets the `Content-Type` header to `application/json`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new Response(JSON.stringify(...))` patterns.
 #[derive(Debug)]
 pub struct PreferResponseStaticJson;
 
-impl NativeRule for PreferResponseStaticJson {
+impl LintRule for PreferResponseStaticJson {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-response-static-json".to_owned(),
@@ -30,17 +27,17 @@ impl NativeRule for PreferResponseStaticJson {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
         // Check that the constructor is `Response`.
-        let Expression::Identifier(callee_id) = &new_expr.callee else {
+        let Some(AstNode::IdentifierReference(callee_id)) = ctx.node(new_expr.callee) else {
             return;
         };
 
@@ -49,28 +46,29 @@ impl NativeRule for PreferResponseStaticJson {
         }
 
         // Check the first argument is a call to `JSON.stringify()`.
-        let Some(first_arg) = new_expr.arguments.first() else {
+        let Some(first_arg_id) = new_expr.arguments.first() else {
             return;
         };
 
-        let is_json_stringify = match first_arg {
-            oxc_ast::ast::Argument::CallExpression(call) => is_json_stringify_call(&call.callee),
+        let is_json_stringify = match ctx.node(*first_arg_id) {
+            Some(AstNode::CallExpression(call)) => is_json_stringify_call(call.callee, ctx),
             _ => false,
         };
 
         if is_json_stringify {
             // Extract the argument to JSON.stringify to build the fix
             #[allow(clippy::as_conversions)]
-            let fix = if let oxc_ast::ast::Argument::CallExpression(stringify_call) = first_arg {
-                stringify_call.arguments.first().and_then(|inner_arg| {
-                    let inner_span = inner_arg.span();
+            let fix = if let Some(AstNode::CallExpression(stringify_call)) = ctx.node(*first_arg_id)
+            {
+                stringify_call.arguments.first().and_then(|inner_arg_id| {
+                    let inner_span = ctx.node(*inner_arg_id)?.span();
                     let source = ctx.source_text();
                     let arg_text = source
                         .get(inner_span.start as usize..inner_span.end as usize)?
                         .to_owned();
                     // Check for second argument (options) to new Response
-                    let options_text = new_expr.arguments.get(1).and_then(|opts| {
-                        let opts_span = opts.span();
+                    let options_text = new_expr.arguments.get(1).and_then(|opts_id| {
+                        let opts_span = ctx.node(*opts_id)?.span();
                         source
                             .get(opts_span.start as usize..opts_span.end as usize)
                             .map(ToOwned::to_owned)
@@ -112,37 +110,27 @@ impl NativeRule for PreferResponseStaticJson {
 }
 
 /// Check if an expression is `JSON.stringify`.
-fn is_json_stringify_call(callee: &Expression<'_>) -> bool {
+fn is_json_stringify_call(callee_id: NodeId, ctx: &LintContext<'_>) -> bool {
     matches!(
-        callee,
-        Expression::StaticMemberExpression(member)
-            if member.property.name.as_str() == "stringify"
+        ctx.node(callee_id),
+        Some(AstNode::StaticMemberExpression(member))
+            if member.property.as_str() == "stringify"
             && matches!(
-                &member.object,
-                Expression::Identifier(id) if id.name.as_str() == "JSON"
+                ctx.node(member.object),
+                Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "JSON"
             )
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferResponseStaticJson)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferResponseStaticJson)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

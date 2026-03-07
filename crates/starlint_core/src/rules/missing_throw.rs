@@ -3,14 +3,13 @@
 //! Detect `new Error()` (or subclasses) used as an expression statement without
 //! `throw`. Creating an error without throwing it is almost always a mistake.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Known error constructor names.
 const ERROR_CONSTRUCTORS: &[&str] = &[
@@ -28,7 +27,7 @@ const ERROR_CONSTRUCTORS: &[&str] = &[
 #[derive(Debug)]
 pub struct MissingThrow;
 
-impl NativeRule for MissingThrow {
+impl LintRule for MissingThrow {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "missing-throw".to_owned(),
@@ -38,38 +37,42 @@ impl NativeRule for MissingThrow {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ExpressionStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ExpressionStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // We look for ExpressionStatement where the expression is a NewExpression
         // with an error constructor callee.
-        let AstKind::ExpressionStatement(stmt) = kind else {
+        let AstNode::ExpressionStatement(stmt) = node else {
             return;
         };
 
-        let Expression::NewExpression(new_expr) = &stmt.expression else {
+        let Some(AstNode::NewExpression(new_expr)) = ctx.node(stmt.expression) else {
             return;
         };
 
-        let is_error_ctor = match &new_expr.callee {
-            Expression::Identifier(id) => ERROR_CONSTRUCTORS.contains(&id.name.as_str()),
+        let is_error_ctor = match ctx.node(new_expr.callee) {
+            Some(AstNode::IdentifierReference(id)) => {
+                ERROR_CONSTRUCTORS.contains(&id.name.as_str())
+            }
             _ => false,
         };
 
         if is_error_ctor {
+            let stmt_span = Span::new(stmt.span.start, stmt.span.end);
+            let new_expr_start = new_expr.span.start;
             ctx.report(Diagnostic {
                 rule_name: "missing-throw".to_owned(),
                 message: "`new Error()` is not thrown — did you forget `throw`?".to_owned(),
-                span: Span::new(stmt.span.start, stmt.span.end),
+                span: stmt_span,
                 severity: Severity::Warning,
                 help: Some("Add `throw` before the expression".to_owned()),
                 fix: Some(Fix {
                     kind: FixKind::SafeFix,
                     message: "Add `throw`".to_owned(),
                     edits: vec![Edit {
-                        span: Span::new(new_expr.span.start, new_expr.span.start),
+                        span: Span::new(new_expr_start, new_expr_start),
                         replacement: "throw ".to_owned(),
                     }],
                     is_snippet: false,
@@ -82,23 +85,13 @@ impl NativeRule for MissingThrow {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MissingThrow)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MissingThrow)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

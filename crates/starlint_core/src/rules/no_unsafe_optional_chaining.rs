@@ -4,21 +4,20 @@
 //! allowed. Using `?.` in arithmetic, `new`, destructuring, or template
 //! tags can cause runtime errors because the result might be `undefined`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags unsafe uses of optional chaining that could produce undefined
 /// in contexts where it causes errors.
 #[derive(Debug)]
 pub struct NoUnsafeOptionalChaining;
 
-impl NativeRule for NoUnsafeOptionalChaining {
+impl LintRule for NoUnsafeOptionalChaining {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unsafe-optional-chaining".to_owned(),
@@ -30,19 +29,19 @@ impl NativeRule for NoUnsafeOptionalChaining {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::BinaryExpression,
-            AstType::NewExpression,
-            AstType::SpreadElement,
+            AstNodeType::BinaryExpression,
+            AstNodeType::NewExpression,
+            AstNodeType::SpreadElement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
             // `new foo?.bar()` — undefined is not a constructor
-            AstKind::NewExpression(new_expr) => {
-                if contains_optional_chain(&new_expr.callee) {
+            AstNode::NewExpression(new_expr) => {
+                if contains_optional_chain(new_expr.callee, ctx) {
                     ctx.report(Diagnostic {
                         rule_name: "no-unsafe-optional-chaining".to_owned(),
                         message: "Unsafe use of optional chaining in `new` expression".to_owned(),
@@ -55,19 +54,33 @@ impl NativeRule for NoUnsafeOptionalChaining {
                 }
             }
             // Arithmetic operations on optional chain: `foo?.bar + 1`
-            AstKind::BinaryExpression(bin) => {
-                if bin.operator.is_arithmetic() || bin.operator.is_bitwise() {
-                    if contains_optional_chain(&bin.left) {
+            AstNode::BinaryExpression(bin) => {
+                if matches!(
+                    bin.operator,
+                    starlint_ast::operator::BinaryOperator::Addition
+                        | starlint_ast::operator::BinaryOperator::Subtraction
+                        | starlint_ast::operator::BinaryOperator::Multiplication
+                        | starlint_ast::operator::BinaryOperator::Division
+                        | starlint_ast::operator::BinaryOperator::Remainder
+                        | starlint_ast::operator::BinaryOperator::Exponential
+                        | starlint_ast::operator::BinaryOperator::ShiftLeft
+                        | starlint_ast::operator::BinaryOperator::ShiftRight
+                        | starlint_ast::operator::BinaryOperator::ShiftRightZeroFill
+                        | starlint_ast::operator::BinaryOperator::BitwiseOR
+                        | starlint_ast::operator::BinaryOperator::BitwiseXOR
+                        | starlint_ast::operator::BinaryOperator::BitwiseAnd
+                ) {
+                    if contains_optional_chain(bin.left, ctx) {
                         report_arithmetic(bin.span, ctx);
                     }
-                    if contains_optional_chain(&bin.right) {
+                    if contains_optional_chain(bin.right, ctx) {
                         report_arithmetic(bin.span, ctx);
                     }
                 }
             }
             // Spread: `[...foo?.bar]` — undefined is not iterable
-            AstKind::SpreadElement(spread) => {
-                if contains_optional_chain(&spread.argument) {
+            AstNode::SpreadElement(spread) => {
+                if contains_optional_chain(spread.argument, ctx) {
                     ctx.report(Diagnostic {
                         rule_name: "no-unsafe-optional-chaining".to_owned(),
                         message: "Unsafe use of optional chaining in spread element".to_owned(),
@@ -85,16 +98,15 @@ impl NativeRule for NoUnsafeOptionalChaining {
 }
 
 /// Check if an expression directly contains optional chaining.
-fn contains_optional_chain(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::ChainExpression(_) => true,
-        Expression::ParenthesizedExpression(paren) => contains_optional_chain(&paren.expression),
-        _ => false,
-    }
+fn contains_optional_chain(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(node) = ctx.node(id) else {
+        return false;
+    };
+    matches!(node, AstNode::ChainExpression(_))
 }
 
 /// Report unsafe optional chaining in arithmetic context.
-fn report_arithmetic(span: oxc_span::Span, ctx: &mut NativeLintContext<'_>) {
+fn report_arithmetic(span: starlint_ast::types::Span, ctx: &mut LintContext<'_>) {
     ctx.report(Diagnostic {
         rule_name: "no-unsafe-optional-chaining".to_owned(),
         message: "Unsafe use of optional chaining in arithmetic operation".to_owned(),
@@ -108,22 +120,13 @@ fn report_arithmetic(span: oxc_span::Span, ctx: &mut NativeLintContext<'_>) {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafeOptionalChaining)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeOptionalChaining)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

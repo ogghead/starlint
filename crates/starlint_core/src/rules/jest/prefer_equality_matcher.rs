@@ -4,22 +4,20 @@
 //! The dedicated equality matchers produce clearer failure messages with
 //! expected vs received values.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags `expect(a === b).toBe(true)` patterns.
 #[derive(Debug)]
 pub struct PreferEqualityMatcher;
 
-impl NativeRule for PreferEqualityMatcher {
+impl LintRule for PreferEqualityMatcher {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "jest/prefer-equality-matcher".to_owned(),
@@ -30,55 +28,54 @@ impl NativeRule for PreferEqualityMatcher {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Must be `.toBe(true)` or `.toBe(false)`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
-        let method = member.property.name.as_str();
+        let method = member.property.as_str();
         if method != "toBe" && method != "toEqual" {
             return;
         }
 
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
             return;
         };
-        let Some(arg_expr) = first_arg.as_expression() else {
+        let Some(arg_node) = ctx.node(*first_arg_id) else {
             return;
         };
-        let is_bool = matches!(arg_expr, Expression::BooleanLiteral(_));
+        let is_bool = matches!(arg_node, AstNode::BooleanLiteral(_));
         if !is_bool {
             return;
         }
+        let is_true = matches!(arg_node, AstNode::BooleanLiteral(b) if b.value);
 
         // Object must be `expect(...)` call
-        let Expression::CallExpression(expect_call) = &member.object else {
+        let expect_callee_id = member.object;
+        let Some(AstNode::CallExpression(expect_call)) = ctx.node(expect_callee_id) else {
             return;
         };
         let is_expect = matches!(
-            &expect_call.callee,
-            Expression::Identifier(id) if id.name.as_str() == "expect"
+            ctx.node(expect_call.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "expect"
         );
         if !is_expect {
             return;
         }
 
         // First arg of expect() must be `a === b` or `a == b` or `a !== b` or `a != b`
-        let Some(expect_arg) = expect_call.arguments.first() else {
+        let Some(expect_arg_id) = expect_call.arguments.first() else {
             return;
         };
-        let Some(expect_arg_expr) = expect_arg.as_expression() else {
-            return;
-        };
-        let Expression::BinaryExpression(binary) = expect_arg_expr else {
+        let Some(AstNode::BinaryExpression(binary)) = ctx.node(*expect_arg_id) else {
             return;
         };
 
@@ -97,15 +94,20 @@ impl NativeRule for PreferEqualityMatcher {
         #[allow(clippy::as_conversions)]
         let fix = {
             let source = ctx.source_text();
-            let left_span = binary.left.span();
-            let right_span = binary.right.span();
+            let left_span = ctx.node(binary.left).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
+            let right_span = ctx.node(binary.right).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
             let left_text = source
                 .get(left_span.start as usize..left_span.end as usize)
                 .unwrap_or("");
             let right_text = source
                 .get(right_span.start as usize..right_span.end as usize)
                 .unwrap_or("");
-            let is_true = matches!(arg_expr, Expression::BooleanLiteral(b) if b.value);
             // Determine matcher and negation
             let (matcher, negated) = match (binary.operator, is_true) {
                 (BinaryOperator::StrictEquality, false)
@@ -146,22 +148,13 @@ impl NativeRule for PreferEqualityMatcher {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferEqualityMatcher)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferEqualityMatcher)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

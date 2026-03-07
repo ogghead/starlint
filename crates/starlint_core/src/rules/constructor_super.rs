@@ -4,20 +4,20 @@
 //! `super()` in constructors of non-derived classes. A derived class (one
 //! that `extends` another) must call `super()` before using `this`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{ClassElement, Expression, MethodDefinitionKind, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::MethodDefinitionKind;
+use starlint_ast::types::NodeId;
 
 /// Flags missing or unnecessary `super()` calls in constructors.
 #[derive(Debug)]
 pub struct ConstructorSuper;
 
-impl NativeRule for ConstructorSuper {
+impl LintRule for ConstructorSuper {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "constructor-super".to_owned(),
@@ -27,20 +27,20 @@ impl NativeRule for ConstructorSuper {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Class])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Class])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Class(class) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Class(class) = node else {
             return;
         };
 
         let has_super_class = class.super_class.is_some();
 
         // Find the constructor
-        for element in &class.body.body {
-            let ClassElement::MethodDefinition(method) = element else {
+        for element_id in &*class.body {
+            let Some(AstNode::MethodDefinition(method)) = ctx.node(*element_id) else {
                 continue;
             };
 
@@ -48,11 +48,20 @@ impl NativeRule for ConstructorSuper {
                 continue;
             }
 
-            let Some(body) = &method.value.body else {
+            // method.value is a NodeId pointing to a Function node
+            let Some(AstNode::Function(func)) = ctx.node(method.value) else {
                 continue;
             };
 
-            let has_super_call = statements_contain_super_call(&body.statements);
+            let Some(body_id) = func.body else {
+                continue;
+            };
+
+            let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+                continue;
+            };
+
+            let has_super_call = statements_contain_super_call(&body.statements, ctx);
 
             if has_super_class && !has_super_call {
                 // Insert `super();` right after the opening `{` of the body
@@ -66,10 +75,11 @@ impl NativeRule for ConstructorSuper {
                     }],
                     is_snippet: false,
                 });
+                let method_span = Span::new(method.span.start, method.span.end);
                 ctx.report(Diagnostic {
                     rule_name: "constructor-super".to_owned(),
                     message: "Derived class constructor must call `super()`".to_owned(),
-                    span: Span::new(method.span.start, method.span.end),
+                    span: method_span,
                     severity: Severity::Error,
                     help: None,
                     fix,
@@ -81,58 +91,58 @@ impl NativeRule for ConstructorSuper {
 }
 
 /// Check if any statement contains a `super()` call expression.
-fn statements_contain_super_call(stmts: &[Statement<'_>]) -> bool {
-    stmts.iter().any(|s| statement_contains_super_call(s))
+fn statements_contain_super_call(stmts: &[NodeId], ctx: &LintContext<'_>) -> bool {
+    stmts.iter().any(|s| statement_contains_super_call(*s, ctx))
 }
 
 /// Recursively check a single statement for a `super()` call.
-fn statement_contains_super_call(stmt: &Statement<'_>) -> bool {
+fn statement_contains_super_call(stmt_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(stmt) = ctx.node(stmt_id) else {
+        return false;
+    };
     match stmt {
-        Statement::ExpressionStatement(expr_stmt) => {
-            expression_contains_super_call(&expr_stmt.expression)
+        AstNode::ExpressionStatement(expr_stmt) => {
+            expression_contains_super_call(expr_stmt.expression, ctx)
         }
-        Statement::BlockStatement(block) => statements_contain_super_call(&block.body),
-        Statement::IfStatement(if_stmt) => {
-            statement_contains_super_call(&if_stmt.consequent)
+        AstNode::BlockStatement(block) => statements_contain_super_call(&block.body, ctx),
+        AstNode::IfStatement(if_stmt) => {
+            statement_contains_super_call(if_stmt.consequent, ctx)
                 || if_stmt
                     .alternate
-                    .as_ref()
-                    .is_some_and(|alt| statement_contains_super_call(alt))
+                    .is_some_and(|alt| statement_contains_super_call(alt, ctx))
         }
         _ => false,
     }
 }
 
 /// Check if an expression is or contains a `super()` call.
-fn expression_contains_super_call(expr: &Expression<'_>) -> bool {
+fn expression_contains_super_call(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(expr) = ctx.node(expr_id) else {
+        return false;
+    };
     match expr {
-        Expression::CallExpression(call) => matches!(&call.callee, Expression::Super(_)),
-        Expression::SequenceExpression(seq) => seq
+        AstNode::CallExpression(call) => {
+            // Check if callee is an identifier "super" (super calls are represented
+            // as IdentifierReference with name "super" in starlint_ast)
+            matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name == "super")
+        }
+        AstNode::SequenceExpression(seq) => seq
             .expressions
             .iter()
-            .any(|e| expression_contains_super_call(e)),
+            .any(|e| expression_contains_super_call(*e, ctx)),
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConstructorSuper)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConstructorSuper)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

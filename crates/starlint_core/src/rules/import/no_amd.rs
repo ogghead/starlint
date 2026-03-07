@@ -3,20 +3,19 @@
 //! Disallow AMD `require` and `define` calls. AMD module syntax is legacy
 //! and should not be used in modern ES module or `CommonJS` codebases.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags AMD-style `define()` and `require()` calls with array dependencies.
 #[derive(Debug)]
 pub struct NoAmd;
 
-impl NativeRule for NoAmd {
+impl LintRule for NoAmd {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/no-amd".to_owned(),
@@ -26,18 +25,18 @@ impl NativeRule for NoAmd {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if the callee is `define` or `require`
-        let callee_name = match &call.callee {
-            Expression::Identifier(id) => id.name.as_str(),
+        let callee_name = match ctx.node(call.callee) {
+            Some(AstNode::IdentifierReference(id)) => id.name.as_str(),
             _ => return,
         };
 
@@ -49,16 +48,18 @@ impl NativeRule for NoAmd {
         // e.g. define(['dep1', 'dep2'], function(dep1, dep2) { ... })
         // or   require(['dep1'], function(dep1) { ... })
         let first_arg = call.arguments.first();
-        let has_array_arg =
-            first_arg.is_some_and(|arg| matches!(arg, oxc_ast::ast::Argument::ArrayExpression(_)));
+        let has_array_arg = first_arg
+            .is_some_and(|arg_id| matches!(ctx.node(*arg_id), Some(AstNode::ArrayExpression(_))));
 
         if has_array_arg {
+            let callee_name_owned = callee_name.to_owned();
+            let call_span = Span::new(call.span.start, call.span.end);
             ctx.report(Diagnostic {
                 rule_name: "import/no-amd".to_owned(),
                 message: format!(
-                    "Expected imports instead of AMD '{callee_name}' with dependency array"
+                    "Expected imports instead of AMD '{callee_name_owned}' with dependency array"
                 ),
-                span: Span::new(call.span.start, call.span.end),
+                span: call_span,
                 severity: Severity::Warning,
                 help: None,
                 fix: None,
@@ -70,22 +71,13 @@ impl NativeRule for NoAmd {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAmd)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAmd)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

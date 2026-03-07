@@ -5,20 +5,19 @@
 //! object, which is almost certainly a bug. Array spread (`[...new Map()]`)
 //! is fine because it yields the Map's entries as `[key, value]` pairs.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, ObjectPropertyKind};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `{...new Map()}` in object literals.
 #[derive(Debug)]
 pub struct NoMapSpread;
 
-impl NativeRule for NoMapSpread {
+impl LintRule for NoMapSpread {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-map-spread".to_owned(),
@@ -28,31 +27,32 @@ impl NativeRule for NoMapSpread {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ObjectExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ObjectExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ObjectExpression(obj) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ObjectExpression(obj) = node else {
             return;
         };
 
-        for property in &obj.properties {
-            let ObjectPropertyKind::SpreadProperty(spread) = property else {
+        for &prop_id in &*obj.properties {
+            let Some(AstNode::SpreadElement(spread)) = ctx.node(prop_id) else {
                 continue;
             };
 
             // Check if the spread argument is `new Map(...)`.
-            let Expression::NewExpression(new_expr) = &spread.argument else {
+            let spread_span = spread.span;
+            let Some(AstNode::NewExpression(new_expr)) = ctx.node(spread.argument) else {
                 continue;
             };
 
-            if let Expression::Identifier(id) = &new_expr.callee {
+            if let Some(AstNode::IdentifierReference(id)) = ctx.node(new_expr.callee) {
                 if id.name.as_str() == "Map" {
                     ctx.report(Diagnostic {
                         rule_name: "no-map-spread".to_owned(),
                         message: "Spreading a Map into an object literal produces an empty object — Map entries are not object properties".to_owned(),
-                        span: Span::new(spread.span.start, spread.span.end),
+                        span: Span::new(spread_span.start, spread_span.end),
                         severity: Severity::Error,
                         help: None,
                         fix: None,
@@ -66,22 +66,13 @@ impl NativeRule for NoMapSpread {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoMapSpread)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoMapSpread)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

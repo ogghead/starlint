@@ -5,16 +5,13 @@
 //! operate on multiple promises — passing a single-element array is likely a
 //! mistake and should be replaced with the promise itself or `Promise.resolve()`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Promise methods that expect multiple promises.
 const PROMISE_AGGREGATE_METHODS: &[&str] = &["all", "race", "allSettled", "any"];
@@ -23,7 +20,7 @@ const PROMISE_AGGREGATE_METHODS: &[&str] = &["all", "race", "allSettled", "any"]
 #[derive(Debug)]
 pub struct NoSinglePromiseInPromiseMethods;
 
-impl NativeRule for NoSinglePromiseInPromiseMethods {
+impl LintRule for NoSinglePromiseInPromiseMethods {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-single-promise-in-promise-methods".to_owned(),
@@ -34,36 +31,37 @@ impl NativeRule for NoSinglePromiseInPromiseMethods {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for `Promise.<method>(...)` pattern via static member access.
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
         // Object must be `Promise`.
-        if !matches!(&member.object, Expression::Identifier(ident) if ident.name == "Promise") {
+        if !matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(ident)) if ident.name == "Promise")
+        {
             return;
         }
 
-        let method_name = member.property.name.as_str();
+        let method_name = member.property.as_str();
         if !PROMISE_AGGREGATE_METHODS.contains(&method_name) {
             return;
         }
 
         // Must have exactly one argument, and it must be an array expression.
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(&first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        let Argument::ArrayExpression(array) = first_arg else {
+        let Some(AstNode::ArrayExpression(array)) = ctx.node(first_arg_id) else {
             return;
         };
 
@@ -71,8 +69,8 @@ impl NativeRule for NoSinglePromiseInPromiseMethods {
         #[allow(clippy::as_conversions)] // u32→usize is lossless
         if array.elements.len() == 1 {
             // Extract the single element text for the fix
-            let fix = array.elements.first().and_then(|elem| {
-                let elem_span = elem.span();
+            let fix = array.elements.first().and_then(|&elem_id| {
+                let elem_span = ctx.node(elem_id)?.span();
                 let source = ctx.source_text();
                 let elem_text = source
                     .get(elem_span.start as usize..elem_span.end as usize)
@@ -106,23 +104,13 @@ impl NativeRule for NoSinglePromiseInPromiseMethods {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoSinglePromiseInPromiseMethods)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSinglePromiseInPromiseMethods)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

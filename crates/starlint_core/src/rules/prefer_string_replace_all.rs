@@ -4,20 +4,19 @@
 //! regex. Using `replaceAll` is more readable and clearly communicates
 //! the intent to replace all occurrences.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `str.replace(/regex/g, ...)` that could use `str.replaceAll(...)`.
 #[derive(Debug)]
 pub struct PreferStringReplaceAll;
 
-impl NativeRule for PreferStringReplaceAll {
+impl LintRule for PreferStringReplaceAll {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-string-replace-all".to_owned(),
@@ -28,21 +27,22 @@ impl NativeRule for PreferStringReplaceAll {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for `something.replace(regex, replacement)`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name != "replace" {
+        if member.property != "replace" {
             return;
         }
 
@@ -52,28 +52,33 @@ impl NativeRule for PreferStringReplaceAll {
         }
 
         // First argument must be a regex with global flag
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        let oxc_ast::ast::Argument::RegExpLiteral(regex) = first_arg else {
+        let Some(AstNode::RegExpLiteral(regex)) = ctx.node(*first_arg_id) else {
             return;
         };
 
         // Check if the regex has the global flag
-        let flags = &regex.regex.flags;
-        if flags.contains(oxc_ast::ast::RegExpFlags::G) {
+        if regex.flags.contains('g') {
             let call_span = Span::new(call.span.start, call.span.end);
-            // Fix: rename `replace` to `replaceAll` in the method name
-            let prop_span = Span::new(member.property.span.start, member.property.span.end);
-            ctx.report(Diagnostic {
-                rule_name: "prefer-string-replace-all".to_owned(),
-                message: "Prefer `String#replaceAll()` over `String#replace()` with a global regex"
-                    .to_owned(),
-                span: call_span,
-                severity: Severity::Warning,
-                help: Some("Use `replaceAll` with a string pattern instead".to_owned()),
-                fix: Some(Fix {
+            // Fix: rename `replace` to `replaceAll` in the method name.
+            // Since property is a String (no span), use source text to locate it.
+            let source = ctx.source_text();
+            let call_text = source
+                .get(call.span.start as usize..call.span.end as usize)
+                .unwrap_or("");
+            // Find ".replace(" in the call text to get the property span
+            let fix = call_text.find(".replace(").map(|offset| {
+                let prop_start = call
+                    .span
+                    .start
+                    .saturating_add(offset as u32)
+                    .saturating_add(1);
+                let prop_end = prop_start.saturating_add(7); // "replace" is 7 chars
+                let prop_span = Span::new(prop_start, prop_end);
+                Fix {
                     kind: FixKind::SuggestionFix,
                     message: "Replace `replace` with `replaceAll`".to_owned(),
                     edits: vec![Edit {
@@ -81,7 +86,16 @@ impl NativeRule for PreferStringReplaceAll {
                         replacement: "replaceAll".to_owned(),
                     }],
                     is_snippet: false,
-                }),
+                }
+            });
+            ctx.report(Diagnostic {
+                rule_name: "prefer-string-replace-all".to_owned(),
+                message: "Prefer `String#replaceAll()` over `String#replace()` with a global regex"
+                    .to_owned(),
+                span: call_span,
+                severity: Severity::Warning,
+                help: Some("Use `replaceAll` with a string pattern instead".to_owned()),
+                fix,
                 labels: vec![],
             });
         }
@@ -90,22 +104,13 @@ impl NativeRule for PreferStringReplaceAll {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferStringReplaceAll)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStringReplaceAll)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

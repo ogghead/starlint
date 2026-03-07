@@ -4,20 +4,19 @@
 //! objects have the same type and structure, unlike `toEqual` which performs
 //! a more lenient recursive comparison that ignores `undefined` properties.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.toEqual()` calls that could use `.toStrictEqual()`.
 #[derive(Debug)]
 pub struct PreferStrictEqual;
 
-impl NativeRule for PreferStrictEqual {
+impl LintRule for PreferStrictEqual {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "jest/prefer-strict-equal".to_owned(),
@@ -27,27 +26,39 @@ impl NativeRule for PreferStrictEqual {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
-        if member.property.name.as_str() != "toEqual" {
+        if member.property.as_str() != "toEqual" {
             return;
         }
 
-        if !is_expect_chain(&member.object) {
+        if !is_expect_chain(member.object, ctx) {
             return;
         }
 
-        let prop_span = Span::new(member.property.span.start, member.property.span.end);
+        // Property is a String, compute span from source text
+        let source = ctx.source_text();
+        let member_start = usize::try_from(member.span.start).unwrap_or(0);
+        let member_end = usize::try_from(member.span.end).unwrap_or(0);
+        let member_text = source.get(member_start..member_end).unwrap_or("");
+        let prop_offset = member_text.rfind('.').map_or(0, |i| i + 1);
+        #[allow(clippy::as_conversions)]
+        let prop_start = member.span.start + prop_offset as u32;
+        #[allow(clippy::as_conversions)]
+        let prop_end = prop_start + "toEqual".len() as u32;
+        let prop_span = Span::new(prop_start, prop_end);
+
         ctx.report(Diagnostic {
             rule_name: "jest/prefer-strict-equal".to_owned(),
             message: "Use `toStrictEqual()` instead of `toEqual()` for stricter equality checking"
@@ -71,34 +82,25 @@ impl NativeRule for PreferStrictEqual {
 
 /// Check if an expression is an `expect(...)` call or a chain like
 /// `expect(...).not`.
-fn is_expect_chain(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::CallExpression(call) => {
-            matches!(&call.callee, Expression::Identifier(id) if id.name.as_str() == "expect")
+fn is_expect_chain(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(expr_id) {
+        Some(AstNode::CallExpression(call)) => {
+            matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "expect")
         }
-        Expression::StaticMemberExpression(member) => is_expect_chain(&member.object),
+        Some(AstNode::StaticMemberExpression(member)) => is_expect_chain(member.object, ctx),
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferStrictEqual)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStrictEqual)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

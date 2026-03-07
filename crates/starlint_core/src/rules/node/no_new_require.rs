@@ -4,22 +4,19 @@
 //! constructor. Using `new` with it is almost always a mistake \u{2014}
 //! typically the intent is `new (require('module'))()`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new require(...)` expressions.
 #[derive(Debug)]
 pub struct NoNewRequire;
 
-impl NativeRule for NoNewRequire {
+impl LintRule for NoNewRequire {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "node/no-new-require".to_owned(),
@@ -29,18 +26,18 @@ impl NativeRule for NoNewRequire {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
         let is_require = matches!(
-            &new_expr.callee,
-            Expression::Identifier(id) if id.name.as_str() == "require"
+            ctx.node(new_expr.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "require"
         );
 
         if is_require {
@@ -48,9 +45,9 @@ impl NativeRule for NoNewRequire {
             #[allow(clippy::as_conversions)]
             let fix = {
                 let source = ctx.source_text();
-                let callee_span = new_expr.callee.span();
+                let callee_start = ctx.node(new_expr.callee).map_or(0, |n| n.span().start);
                 let args_end = new_expr.span.end;
-                let require_text = source.get(callee_span.start as usize..args_end as usize);
+                let require_text = source.get(callee_start as usize..args_end as usize);
                 require_text.map(|text| {
                     let replacement = format!("new ({text})()");
                     Fix {
@@ -80,22 +77,13 @@ impl NativeRule for NoNewRequire {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoNewRequire)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNewRequire)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,20 +4,20 @@
 //! leaves the variable as `undefined` and is often a sign of incomplete
 //! code. Prefer `let x = <value>;` or use `const` when possible.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BindingPattern, VariableDeclarationKind};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::VariableDeclarationKind;
+use starlint_ast::types::NodeId;
 
 /// Flags `let` declarators that have no initializer.
 #[derive(Debug)]
 pub struct NoUnassignedVars;
 
-impl NativeRule for NoUnassignedVars {
+impl LintRule for NoUnassignedVars {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unassigned-vars".to_owned(),
@@ -27,28 +27,32 @@ impl NativeRule for NoUnassignedVars {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclaration(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclaration(decl) = node else {
             return;
         };
 
-        // Only flag `let` declarations — `var` is legacy, `const` requires an init.
+        // Only flag `let` declarations -- `var` is legacy, `const` requires an init.
         if decl.kind != VariableDeclarationKind::Let {
             return;
         }
 
-        for declarator in &decl.declarations {
+        for declarator_id in &*decl.declarations {
+            let Some(AstNode::VariableDeclarator(declarator)) = ctx.node(*declarator_id) else {
+                continue;
+            };
+
             // Skip if there is an initializer
             if declarator.init.is_some() {
                 continue;
             }
 
             // Only flag simple binding identifiers (not destructured patterns)
-            let BindingPattern::BindingIdentifier(ident) = &declarator.id else {
+            let Some(AstNode::BindingIdentifier(ident)) = ctx.node(declarator.id) else {
                 continue;
             };
 
@@ -69,23 +73,13 @@ impl NativeRule for NoUnassignedVars {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnassignedVars)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnassignedVars)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
@@ -144,7 +138,7 @@ mod tests {
     #[test]
     fn test_allows_destructured_without_init() {
         // Destructured patterns without init are a syntax error in practice,
-        // but the rule only flags simple identifiers — skip destructured.
+        // but the rule only flags simple identifiers -- skip destructured.
         let diags = lint("let [a, b] = [1, 2];");
         assert!(
             diags.is_empty(),

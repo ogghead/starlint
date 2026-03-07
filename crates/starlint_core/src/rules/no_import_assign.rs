@@ -3,21 +3,22 @@
 //! Disallow reassignment of imported bindings. Import bindings are
 //! read-only; attempting to reassign them throws a runtime error.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::ImportDeclarationSpecifier;
-use oxc_ast::ast_kind::AstType;
 use oxc_semantic::SymbolFlags;
+use oxc_span::Ident;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags reassignment of imported bindings.
 #[derive(Debug)]
 pub struct NoImportAssign;
 
-impl NativeRule for NoImportAssign {
+impl LintRule for NoImportAssign {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-import-assign".to_owned(),
@@ -31,18 +32,18 @@ impl NativeRule for NoImportAssign {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let Some(specifiers) = &import.specifiers else {
+        if import.specifiers.is_empty() {
             return;
-        };
+        }
 
         let Some(semantic) = ctx.semantic() else {
             return;
@@ -50,14 +51,22 @@ impl NativeRule for NoImportAssign {
 
         let scoping = semantic.scoping();
 
-        for specifier in specifiers {
-            let local = match specifier {
-                ImportDeclarationSpecifier::ImportSpecifier(s) => &s.local,
-                ImportDeclarationSpecifier::ImportDefaultSpecifier(s) => &s.local,
-                ImportDeclarationSpecifier::ImportNamespaceSpecifier(s) => &s.local,
+        for &spec_id in &*import.specifiers {
+            // Resolve the specifier node to get the local binding name
+            let local_info = match ctx.node(spec_id) {
+                Some(AstNode::ImportSpecifier(s)) => Some((s.local.clone(), s.span)),
+                Some(AstNode::BindingIdentifier(id)) => Some((id.name.clone(), id.span)),
+                _ => None,
             };
 
-            let Some(symbol_id) = local.symbol_id.get() else {
+            let Some((local_name, local_span)) = local_info else {
+                continue;
+            };
+
+            // Find the symbol by name in the root scope
+            let root_scope = scoping.root_scope_id();
+            let ident = Ident::from(local_name.as_str());
+            let Some(symbol_id) = scoping.get_binding(root_scope, ident) else {
                 continue;
             };
 
@@ -75,10 +84,9 @@ impl NativeRule for NoImportAssign {
                 ctx.report(Diagnostic {
                     rule_name: "no-import-assign".to_owned(),
                     message: format!(
-                        "'{}' is an imported binding and cannot be reassigned",
-                        local.name
+                        "'{local_name}' is an imported binding and cannot be reassigned"
                     ),
-                    span: Span::new(local.span.start, local.span.end),
+                    span: Span::new(local_span.start, local_span.end),
                     severity: Severity::Error,
                     help: None,
                     fix: None,
@@ -91,30 +99,13 @@ impl NativeRule for NoImportAssign {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoImportAssign)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoImportAssign)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

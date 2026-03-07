@@ -2,14 +2,13 @@
 //!
 //! Enforce aria-* props are supported by the element's role.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/role-supports-aria-props";
@@ -46,7 +45,20 @@ const GLOBAL_ARIA_PROPS: &[&str] = &[
 #[derive(Debug)]
 pub struct RoleSupportAriaProps;
 
-impl NativeRule for RoleSupportAriaProps {
+/// Get the string value of a JSX attribute's value (if it's a string literal).
+fn get_attr_string_value(
+    attr: &starlint_ast::node::JSXAttributeNode,
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    let value_id = attr.value?;
+    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+        Some(lit.value.clone())
+    } else {
+        None
+    }
+}
+
+impl LintRule for RoleSupportAriaProps {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -56,28 +68,21 @@ impl NativeRule for RoleSupportAriaProps {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
         // Find the role attribute value
-        let mut role_value: Option<&str> = None;
-        for item in &opening.attributes {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let is_role = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "role",
-                    JSXAttributeName::NamespacedName(_) => false,
-                };
-
-                if is_role {
-                    if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                        role_value = Some(lit.value.as_str());
-                    }
+        let mut role_value: Option<String> = None;
+        for attr_id in &opening.attributes {
+            if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
+                if attr.name.as_str() == "role" {
+                    role_value = get_attr_string_value(attr, ctx);
                     break;
                 }
             }
@@ -94,47 +99,47 @@ impl NativeRule for RoleSupportAriaProps {
             return;
         }
 
-        for item in &opening.attributes {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let name_str = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str(),
-                    JSXAttributeName::NamespacedName(_) => continue,
-                };
-
-                if name_str.starts_with("aria-") && !GLOBAL_ARIA_PROPS.contains(&name_str) {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: format!("`{name_str}` is not supported by `role=\"{role}\"`"),
-                        span: Span::new(opening.span.start, opening.span.end),
-                        severity: Severity::Warning,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
+        // Collect aria attribute names and report (avoid borrow conflict with ctx)
+        let violations: Vec<(String, Span)> = opening
+            .attributes
+            .iter()
+            .filter_map(|attr_id| {
+                if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
+                    let name_str = attr.name.as_str();
+                    if name_str.starts_with("aria-") && !GLOBAL_ARIA_PROPS.contains(&name_str) {
+                        return Some((
+                            name_str.to_owned(),
+                            Span::new(opening.span.start, opening.span.end),
+                        ));
+                    }
                 }
-            }
+                None
+            })
+            .collect();
+
+        for (name_str, span) in violations {
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!("`{name_str}` is not supported by `role=\"{role}\"`"),
+                span,
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RoleSupportAriaProps)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RoleSupportAriaProps)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

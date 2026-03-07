@@ -4,21 +4,19 @@
 //! properties. Using `addEventListener` allows multiple handlers and
 //! provides more control over event handling.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::AssignmentTarget;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `on*` event-handler property assignments.
 #[derive(Debug)]
 pub struct PreferAddEventListener;
 
-impl NativeRule for PreferAddEventListener {
+impl LintRule for PreferAddEventListener {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-add-event-listener".to_owned(),
@@ -28,20 +26,22 @@ impl NativeRule for PreferAddEventListener {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::AssignmentExpression(assign) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
-        let AssignmentTarget::StaticMemberExpression(member) = &assign.left else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(assign.left) else {
             return;
         };
 
-        let prop_name = member.property.name.as_str();
+        let prop_name = member.property.as_str();
+        let obj_id = member.object;
+        let rhs_id = assign.right;
 
         if is_event_handler_property(prop_name) {
             // Extract event name: "onclick" -> "click"
@@ -51,8 +51,12 @@ impl NativeRule for PreferAddEventListener {
             #[allow(clippy::as_conversions)]
             let fix = {
                 let source = ctx.source_text();
-                let obj_span = member.object.span();
-                let rhs_span = assign.right.span();
+                let obj_span = ctx
+                    .node(obj_id)
+                    .map_or(starlint_ast::types::Span::new(0, 0), AstNode::span);
+                let rhs_span = ctx
+                    .node(rhs_id)
+                    .map_or(starlint_ast::types::Span::new(0, 0), AstNode::span);
                 let obj_text = source
                     .get(obj_span.start as usize..obj_span.end as usize)
                     .unwrap_or("");
@@ -104,23 +108,13 @@ fn is_event_handler_property(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferAddEventListener)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferAddEventListener)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

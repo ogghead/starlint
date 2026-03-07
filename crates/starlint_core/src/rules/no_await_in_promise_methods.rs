@@ -7,16 +7,13 @@
 //! are resolved sequentially instead of in parallel, defeating the purpose
 //! of using `Promise.all` and friends.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{ArrayExpressionElement, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Promise methods that accept an iterable of promises for parallel resolution.
 const PROMISE_METHODS: &[&str] = &["all", "race", "allSettled", "any"];
@@ -26,7 +23,7 @@ const PROMISE_METHODS: &[&str] = &["all", "race", "allSettled", "any"];
 #[derive(Debug)]
 pub struct NoAwaitInPromiseMethods;
 
-impl NativeRule for NoAwaitInPromiseMethods {
+impl LintRule for NoAwaitInPromiseMethods {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-await-in-promise-methods".to_owned(),
@@ -37,64 +34,64 @@ impl NativeRule for NoAwaitInPromiseMethods {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if callee is `Promise.<method>`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let Expression::Identifier(obj) = &member.object else {
-            return;
-        };
+        let is_promise = matches!(
+            ctx.node(member.object),
+            Some(AstNode::IdentifierReference(obj)) if obj.name.as_str() == "Promise"
+        );
 
-        if obj.name.as_str() != "Promise" {
+        if !is_promise {
             return;
         }
 
-        let method_name = member.property.name.as_str();
+        let method_name = member.property.as_str();
         if !PROMISE_METHODS.contains(&method_name) {
             return;
         }
 
         // Check the first argument — should be an array expression
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(&first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        let Some(first_expr) = first_arg.as_expression() else {
-            return;
-        };
-
-        let Expression::ArrayExpression(array) = first_expr else {
+        let Some(AstNode::ArrayExpression(array)) = ctx.node(first_arg_id) else {
             return;
         };
 
         // Check if any element in the array is an `await` expression
         // Collect fix edits: for each `await expr`, remove the `await ` prefix
-        let source = ctx.source_text();
         let mut has_await = false;
         let mut edits: Vec<Edit> = Vec::new();
-        for element in &array.elements {
-            if let ArrayExpressionElement::AwaitExpression(await_expr) = element {
+        for &element_id in &*array.elements {
+            if let Some(AstNode::AwaitExpression(await_expr)) = ctx.node(element_id) {
                 has_await = true;
                 // Remove the `await ` keyword — replace await_expr span with just the argument
-                let arg_span = await_expr.argument.span();
+                let arg_ast_span = ctx
+                    .node(await_expr.argument)
+                    .map(starlint_ast::AstNode::span);
+                let Some(arg_span_val) = arg_ast_span else {
+                    continue;
+                };
+                let arg_span = Span::new(arg_span_val.start, arg_span_val.end);
                 edits.push(Edit {
                     span: Span::new(await_expr.span.start, arg_span.start),
                     replacement: String::new(),
                 });
             }
         }
-        // Use `source` to prevent "unused variable" warnings
-        let _ = source;
 
         if has_await {
             let fix = (!edits.is_empty()).then(|| Fix {
@@ -121,22 +118,13 @@ impl NativeRule for NoAwaitInPromiseMethods {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAwaitInPromiseMethods)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAwaitInPromiseMethods)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

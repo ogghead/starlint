@@ -4,20 +4,19 @@
 //! `require()` calls bypass the type system. Prefer `import` declarations
 //! which are statically analyzed and type-checked.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags variable declarations whose initializer is a `require()` call.
 #[derive(Debug)]
 pub struct NoVarRequires;
 
-impl NativeRule for NoVarRequires {
+impl LintRule for NoVarRequires {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-var-requires".to_owned(),
@@ -27,27 +26,26 @@ impl NativeRule for NoVarRequires {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclarator])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclarator])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclarator(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclarator(decl) = node else {
             return;
         };
 
-        let Some(init) = &decl.init else {
+        let Some(init_id) = decl.init else {
             return;
         };
 
-        if is_require_call(init) {
-            // Fix: const x = require("foo") → import x from "foo" (simple identifier case)
+        if is_require_call(init_id, ctx) {
+            // Fix: const x = require("foo") -> import x from "foo" (simple identifier case)
             #[allow(clippy::as_conversions)]
-            let fix = if let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = &decl.id {
-                if let Expression::CallExpression(call) = init {
-                    call.arguments.first().and_then(|arg| {
-                        let arg_expr = arg.as_expression()?;
-                        if let Expression::StringLiteral(lit) = arg_expr {
+            let fix = if let Some(AstNode::BindingIdentifier(id)) = ctx.node(decl.id) {
+                if let Some(AstNode::CallExpression(call)) = ctx.node(init_id) {
+                    call.arguments.first().and_then(|&arg_id| {
+                        if let Some(AstNode::StringLiteral(lit)) = ctx.node(arg_id) {
                             let name = id.name.as_str();
                             let module = lit.value.as_str();
                             let replacement = format!("import {name} from \"{module}\"");
@@ -85,33 +83,23 @@ impl NativeRule for NoVarRequires {
 }
 
 /// Check if an expression is a call to `require`.
-fn is_require_call(expr: &Expression<'_>) -> bool {
-    let Expression::CallExpression(call) = expr else {
+fn is_require_call(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::CallExpression(call)) = ctx.node(expr_id) else {
         return false;
     };
 
-    matches!(&call.callee, Expression::Identifier(ident) if ident.name.as_str() == "require")
+    matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(ident)) if ident.name.as_str() == "require")
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoVarRequires)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoVarRequires)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

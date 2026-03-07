@@ -6,21 +6,19 @@
 
 use std::collections::HashSet;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags duplicate conditions in if-else-if chains.
 #[derive(Debug)]
 pub struct NoDupeElseIf;
 
-impl NativeRule for NoDupeElseIf {
+impl LintRule for NoDupeElseIf {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-dupe-else-if".to_owned(),
@@ -30,12 +28,12 @@ impl NativeRule for NoDupeElseIf {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::IfStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::IfStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::IfStatement(if_stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::IfStatement(if_stmt) = node else {
             return;
         };
 
@@ -46,7 +44,10 @@ impl NativeRule for NoDupeElseIf {
             let mut dupes: Vec<Span> = Vec::new();
 
             // Add the first condition
-            let first_span = if_stmt.test.span();
+            let first_span = ctx.node(if_stmt.test).map_or(
+                starlint_ast::types::Span::new(0, 0),
+                starlint_ast::AstNode::span,
+            );
             let first_start = usize::try_from(first_span.start).unwrap_or(0);
             let first_end = usize::try_from(first_span.end).unwrap_or(0);
             if let Some(text) = source.get(first_start..first_end) {
@@ -54,10 +55,13 @@ impl NativeRule for NoDupeElseIf {
             }
 
             // Walk the else-if chain
-            let mut current_alt = &if_stmt.alternate;
-            while let Some(alt) = current_alt {
-                if let Statement::IfStatement(else_if) = alt {
-                    let test_span = else_if.test.span();
+            let mut current_alt = if_stmt.alternate;
+            while let Some(alt_id) = current_alt {
+                if let Some(AstNode::IfStatement(else_if)) = ctx.node(alt_id) {
+                    let test_span = ctx.node(else_if.test).map_or(
+                        starlint_ast::types::Span::new(0, 0),
+                        starlint_ast::AstNode::span,
+                    );
                     let test_start = usize::try_from(test_span.start).unwrap_or(0);
                     let test_end = usize::try_from(test_span.end).unwrap_or(0);
                     if let Some(text) = source.get(test_start..test_end) {
@@ -66,7 +70,7 @@ impl NativeRule for NoDupeElseIf {
                             dupes.push(Span::new(test_span.start, test_span.end));
                         }
                     }
-                    current_alt = &else_if.alternate;
+                    current_alt = else_if.alternate;
                 } else {
                     break;
                 }
@@ -91,22 +95,13 @@ impl NativeRule for NoDupeElseIf {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDupeElseIf)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDupeElseIf)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

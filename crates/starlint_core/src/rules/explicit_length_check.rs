@@ -4,15 +4,14 @@
 //! Truthy/falsy checks on `.length` are confusing because `0` is falsy
 //! but is a valid length. Prefer `arr.length > 0` or `arr.length === 0`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::UnaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Property names that should be compared explicitly.
 const LENGTH_PROPERTIES: &[&str] = &["length", "size"];
@@ -21,7 +20,7 @@ const LENGTH_PROPERTIES: &[&str] = &["length", "size"];
 #[derive(Debug)]
 pub struct ExplicitLengthCheck;
 
-impl NativeRule for ExplicitLengthCheck {
+impl LintRule for ExplicitLengthCheck {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "explicit-length-check".to_owned(),
@@ -32,33 +31,37 @@ impl NativeRule for ExplicitLengthCheck {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ConditionalExpression,
-            AstType::IfStatement,
-            AstType::WhileStatement,
+            AstNodeType::ConditionalExpression,
+            AstNodeType::IfStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let (test_expr, container_span) = match kind {
-            AstKind::IfStatement(stmt) => (&stmt.test, stmt.span),
-            AstKind::WhileStatement(stmt) => (&stmt.test, stmt.span),
-            AstKind::ConditionalExpression(expr) => (&expr.test, expr.span),
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let (test_id, container_span) = match node {
+            AstNode::IfStatement(stmt) => (stmt.test, stmt.span),
+            AstNode::WhileStatement(stmt) => (stmt.test, stmt.span),
+            AstNode::ConditionalExpression(expr) => (expr.test, expr.span),
             _ => return,
         };
 
-        check_condition(test_expr, container_span, ctx);
+        check_condition(test_id, container_span, ctx);
     }
 }
 
 /// Check a condition expression for implicit `.length`/`.size` usage.
 fn check_condition(
-    expr: &Expression<'_>,
-    container_span: oxc_span::Span,
-    ctx: &mut NativeLintContext<'_>,
+    test_id: NodeId,
+    container_span: starlint_ast::types::Span,
+    ctx: &mut LintContext<'_>,
 ) {
     let report_span = Span::new(container_span.start, container_span.end);
+
+    let Some(expr) = ctx.node(test_id) else {
+        return;
+    };
 
     // Case 1: `if (foo.length)` — direct member expression as condition
     if is_length_or_size_member(expr) {
@@ -94,11 +97,13 @@ fn check_condition(
     }
 
     // Case 2: `if (!foo.length)` — negated member expression
-    if let Expression::UnaryExpression(unary) = expr {
-        if unary.operator == UnaryOperator::LogicalNot && is_length_or_size_member(&unary.argument)
+    if let AstNode::UnaryExpression(unary) = expr {
+        if unary.operator == UnaryOperator::LogicalNot
+            && is_length_or_size_member_id(unary.argument, ctx)
         {
             // Fix: replace `!foo.length` with `foo.length === 0`
-            let inner_span = unary.argument.span();
+            let inner_ast_span = ctx.node(unary.argument).map(starlint_ast::AstNode::span);
+            let inner_span = inner_ast_span.map_or(Span::new(0, 0), |s| Span::new(s.start, s.end));
             let member_text = ctx
                 .source_text()
                 .get(
@@ -130,34 +135,29 @@ fn check_condition(
     }
 }
 
-/// Check if an expression is a static member access to `.length` or `.size`.
-fn is_length_or_size_member(expr: &Expression<'_>) -> bool {
-    let Expression::StaticMemberExpression(member) = expr else {
+/// Check if an `AstNode` is a static member access to `.length` or `.size`.
+fn is_length_or_size_member(expr: &AstNode) -> bool {
+    let AstNode::StaticMemberExpression(member) = expr else {
         return false;
     };
-    let name = member.property.name.as_str();
+    let name = member.property.as_str();
     LENGTH_PROPERTIES.contains(&name)
+}
+
+/// Check if a `NodeId` resolves to a `.length` or `.size` member expression.
+fn is_length_or_size_member_id(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    ctx.node(id).is_some_and(is_length_or_size_member)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ExplicitLengthCheck)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ExplicitLengthCheck)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -5,22 +5,25 @@
 //! This is a simplified version that flags any labeled statement
 //! where the label is only used once in a direct child break/continue.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
+#![allow(
+    clippy::arithmetic_side_effects,
+    clippy::as_conversions,
+    clippy::cast_possible_truncation
+)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags labels that are unnecessary because the break/continue targets
 /// the immediately enclosing loop.
 #[derive(Debug)]
 pub struct NoExtraLabel;
 
-impl NativeRule for NoExtraLabel {
+impl LintRule for NoExtraLabel {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-extra-label".to_owned(),
@@ -30,30 +33,38 @@ impl NativeRule for NoExtraLabel {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::LabeledStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::LabeledStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::LabeledStatement(labeled) = kind else {
+    #[allow(
+        clippy::arithmetic_side_effects,
+        clippy::as_conversions,
+        clippy::cast_possible_truncation
+    )]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::LabeledStatement(labeled) = node else {
             return;
         };
 
-        let label_name = labeled.label.name.as_str();
+        let label_name = labeled.label.as_str();
 
         // If the labeled statement is a loop or switch, and the only
         // break/continue in its direct body references this label,
         // then the label is unnecessary.
+        let body_node = ctx.node(labeled.body);
         let is_simple_loop = matches!(
-            &labeled.body,
-            Statement::ForStatement(_)
-                | Statement::ForInStatement(_)
-                | Statement::ForOfStatement(_)
-                | Statement::WhileStatement(_)
-                | Statement::DoWhileStatement(_)
+            body_node,
+            Some(
+                AstNode::ForStatement(_)
+                    | AstNode::ForInStatement(_)
+                    | AstNode::ForOfStatement(_)
+                    | AstNode::WhileStatement(_)
+                    | AstNode::DoWhileStatement(_)
+            )
         );
 
-        let is_switch = matches!(&labeled.body, Statement::SwitchStatement(_));
+        let is_switch = matches!(body_node, Some(AstNode::SwitchStatement(_)));
 
         if !is_simple_loop && !is_switch {
             return;
@@ -62,17 +73,29 @@ impl NativeRule for NoExtraLabel {
         // For a simple single-level loop/switch, any break/continue with
         // this label is redundant since it's the immediately enclosing one.
         let span_start = labeled.span.start;
-        let label_end = labeled.label.span.end;
 
         // Build edits: delete the label prefix, and remove label from break/continue.
-        let body_start = labeled.body.span().start;
+        let body_span = body_node.map_or(Span::new(0, 0), |n| {
+            let s = n.span();
+            Span::new(s.start, s.end)
+        });
         let mut edits = vec![Edit {
-            span: Span::new(span_start, body_start),
+            span: Span::new(span_start, body_span.start),
             replacement: String::new(),
         }];
 
         // Also remove label references from break/continue statements.
-        collect_label_ref_edits(&labeled.body, label_name, &mut edits);
+        collect_label_ref_edits(labeled.body, label_name, &mut edits, ctx);
+
+        // Compute label span end from source text: "label_name:"
+        let source = ctx.source_text();
+        let label_prefix_text = source
+            .get(span_start as usize..body_span.start as usize)
+            .unwrap_or("");
+        let label_end = span_start
+            + label_prefix_text
+                .find(':')
+                .map_or(label_name.len() as u32, |p| p as u32 + 1);
 
         ctx.report(Diagnostic {
             rule_name: "no-extra-label".to_owned(),
@@ -93,49 +116,77 @@ impl NativeRule for NoExtraLabel {
 
 /// Walk the body of a loop/switch to find break/continue statements referencing
 /// `label`, and add edits to remove the label (including the preceding space).
-fn collect_label_ref_edits(stmt: &Statement<'_>, label: &str, edits: &mut Vec<Edit>) {
+fn collect_label_ref_edits(
+    stmt_id: NodeId,
+    label: &str,
+    edits: &mut Vec<Edit>,
+    ctx: &LintContext<'_>,
+) {
+    let Some(stmt) = ctx.node(stmt_id) else {
+        return;
+    };
     match stmt {
-        Statement::BreakStatement(brk) => {
+        AstNode::BreakStatement(brk) => {
             if let Some(l) = &brk.label {
-                if l.name.as_str() == label {
+                if l.as_str() == label {
                     // Delete " label" (space + label name) from break statement.
-                    edits.push(Edit {
-                        span: Span::new(l.span.start.saturating_sub(1), l.span.end),
-                        replacement: String::new(),
-                    });
+                    // The label text is after "break " in the source; compute span from source text.
+                    let source = ctx.source_text();
+                    let brk_text = source
+                        .get(brk.span.start as usize..brk.span.end as usize)
+                        .unwrap_or("");
+                    if let Some(pos) = brk_text.find(label) {
+                        let label_start = brk.span.start + pos as u32;
+                        let label_end = label_start + label.len() as u32;
+                        // Include the preceding space
+                        edits.push(Edit {
+                            span: Span::new(label_start.saturating_sub(1), label_end),
+                            replacement: String::new(),
+                        });
+                    }
                 }
             }
         }
-        Statement::ContinueStatement(cont) => {
+        AstNode::ContinueStatement(cont) => {
             if let Some(l) = &cont.label {
-                if l.name.as_str() == label {
-                    edits.push(Edit {
-                        span: Span::new(l.span.start.saturating_sub(1), l.span.end),
-                        replacement: String::new(),
-                    });
+                if l.as_str() == label {
+                    let source = ctx.source_text();
+                    let cont_text = source
+                        .get(cont.span.start as usize..cont.span.end as usize)
+                        .unwrap_or("");
+                    if let Some(pos) = cont_text.find(label) {
+                        let label_start = cont.span.start + pos as u32;
+                        let label_end = label_start + label.len() as u32;
+                        edits.push(Edit {
+                            span: Span::new(label_start.saturating_sub(1), label_end),
+                            replacement: String::new(),
+                        });
+                    }
                 }
             }
         }
-        Statement::BlockStatement(block) => {
+        AstNode::BlockStatement(block) => {
             for s in &block.body {
-                collect_label_ref_edits(s, label, edits);
+                collect_label_ref_edits(*s, label, edits, ctx);
             }
         }
-        Statement::IfStatement(if_stmt) => {
-            collect_label_ref_edits(&if_stmt.consequent, label, edits);
-            if let Some(alt) = &if_stmt.alternate {
-                collect_label_ref_edits(alt, label, edits);
+        AstNode::IfStatement(if_stmt) => {
+            collect_label_ref_edits(if_stmt.consequent, label, edits, ctx);
+            if let Some(alt) = if_stmt.alternate {
+                collect_label_ref_edits(alt, label, edits, ctx);
             }
         }
-        Statement::ForStatement(f) => collect_label_ref_edits(&f.body, label, edits),
-        Statement::ForInStatement(f) => collect_label_ref_edits(&f.body, label, edits),
-        Statement::ForOfStatement(f) => collect_label_ref_edits(&f.body, label, edits),
-        Statement::WhileStatement(w) => collect_label_ref_edits(&w.body, label, edits),
-        Statement::DoWhileStatement(d) => collect_label_ref_edits(&d.body, label, edits),
-        Statement::SwitchStatement(sw) => {
-            for case in &sw.cases {
-                for s in &case.consequent {
-                    collect_label_ref_edits(s, label, edits);
+        AstNode::ForStatement(f) => collect_label_ref_edits(f.body, label, edits, ctx),
+        AstNode::ForInStatement(f) => collect_label_ref_edits(f.body, label, edits, ctx),
+        AstNode::ForOfStatement(f) => collect_label_ref_edits(f.body, label, edits, ctx),
+        AstNode::WhileStatement(w) => collect_label_ref_edits(w.body, label, edits, ctx),
+        AstNode::DoWhileStatement(d) => collect_label_ref_edits(d.body, label, edits, ctx),
+        AstNode::SwitchStatement(sw) => {
+            for case_id in &sw.cases {
+                if let Some(AstNode::SwitchCase(case)) = ctx.node(*case_id) {
+                    for s in &case.consequent {
+                        collect_label_ref_edits(*s, label, edits, ctx);
+                    }
                 }
             }
         }
@@ -145,23 +196,13 @@ fn collect_label_ref_edits(stmt: &Statement<'_>, label: &str, edits: &mut Vec<Ed
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoExtraLabel)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExtraLabel)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

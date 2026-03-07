@@ -4,21 +4,20 @@
 //! contains only a single `return` statement, the block body can be replaced
 //! with an expression body.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
+#![allow(clippy::shadow_reuse, clippy::shadow_unrelated)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags arrow functions with block bodies that could use expression bodies.
 #[derive(Debug)]
 pub struct ArrowBodyStyle;
 
-impl NativeRule for ArrowBodyStyle {
+impl LintRule for ArrowBodyStyle {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "arrow-body-style".to_owned(),
@@ -28,12 +27,13 @@ impl NativeRule for ArrowBodyStyle {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ArrowFunctionExpression(arrow) = kind else {
+    #[allow(clippy::indexing_slicing, clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ArrowFunctionExpression(arrow) = node else {
             return;
         };
 
@@ -42,77 +42,83 @@ impl NativeRule for ArrowBodyStyle {
             return;
         }
 
-        // Check if body has exactly one statement that is a return with an argument
-        if arrow.body.statements.len() != 1 {
-            return;
-        }
+        let arrow_span = Span::new(arrow.span.start, arrow.span.end);
 
-        let Some(stmt) = arrow.body.statements.first() else {
+        // Resolve the body via ctx.node() and copy needed values to release borrow.
+        let Some(AstNode::FunctionBody(body)) = ctx.node(arrow.body) else {
             return;
         };
 
-        if let Statement::ReturnStatement(ret) = stmt {
-            if let Some(arg) = &ret.argument {
-                let arrow_span = Span::new(arrow.span.start, arrow.span.end);
-                let body_span = Span::new(arrow.body.span.start, arrow.body.span.end);
-                // Extract the return value source text
-                let arg_span = arg.span();
-                let arg_text = ctx
-                    .source_text()
-                    .get(
-                        usize::try_from(arg_span.start).unwrap_or(0)
-                            ..usize::try_from(arg_span.end).unwrap_or(0),
-                    )
-                    .unwrap_or("")
-                    .to_owned();
-                // If the return value is an object literal, wrap in parens to avoid
-                // ambiguity with block body: `() => ({})` not `() => {}`
-                let replacement = if arg_text.starts_with('{') {
-                    format!("({arg_text})")
-                } else {
-                    arg_text
-                };
-                ctx.report(Diagnostic {
-                    rule_name: "arrow-body-style".to_owned(),
-                    message: "Unexpected block statement surrounding arrow body; move the returned value immediately after `=>`".to_owned(),
-                    span: arrow_span,
-                    severity: Severity::Warning,
-                    help: Some("Replace block body with expression body".to_owned()),
-                    fix: Some(Fix {
-                        kind: FixKind::SafeFix,
-                        message: "Convert to expression body".to_owned(),
-                        edits: vec![Edit {
-                            span: body_span,
-                            replacement,
-                        }],
-                        is_snippet: false,
-                    }),
-                    labels: vec![],
-                });
-            }
+        if body.statements.len() != 1 {
+            return;
         }
+
+        let body_span = Span::new(body.span.start, body.span.end);
+        let first_stmt_id = body.statements[0];
+        // body borrow is no longer needed after this point
+
+        // Check if the single statement is a return with an argument
+        let arg_id = match ctx.node(first_stmt_id) {
+            Some(AstNode::ReturnStatement(ret)) => ret.argument,
+            _ => None,
+        };
+
+        let Some(arg_id) = arg_id else {
+            return;
+        };
+
+        let (arg_start, arg_end) = match ctx.node(arg_id) {
+            Some(n) => {
+                let s = n.span();
+                (s.start, s.end)
+            }
+            None => return,
+        };
+
+        // Extract the return value source text
+        let arg_text = ctx
+            .source_text()
+            .get(usize::try_from(arg_start).unwrap_or(0)..usize::try_from(arg_end).unwrap_or(0))
+            .unwrap_or("")
+            .to_owned();
+
+        // If the return value is an object literal, wrap in parens to avoid
+        // ambiguity with block body: `() => ({})` not `() => {}`
+        let replacement = if arg_text.starts_with('{') {
+            format!("({arg_text})")
+        } else {
+            arg_text
+        };
+
+        ctx.report(Diagnostic {
+            rule_name: "arrow-body-style".to_owned(),
+            message: "Unexpected block statement surrounding arrow body; move the returned value immediately after `=>`".to_owned(),
+            span: arrow_span,
+            severity: Severity::Warning,
+            help: Some("Replace block body with expression body".to_owned()),
+            fix: Some(Fix {
+                kind: FixKind::SafeFix,
+                message: "Convert to expression body".to_owned(),
+                edits: vec![Edit {
+                    span: body_span,
+                    replacement,
+                }],
+                is_snippet: false,
+            }),
+            labels: vec![],
+        });
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ArrowBodyStyle)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ArrowBodyStyle)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

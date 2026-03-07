@@ -3,14 +3,13 @@
 //! Forbid `new Promise.resolve()`, `new Promise.reject()`, `new Promise.all()`,
 //! etc. These are static methods and should not be called with `new`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Promise static methods that should never be called with `new`.
 const PROMISE_STATICS: &[&str] = &[
@@ -27,7 +26,7 @@ const PROMISE_STATICS: &[&str] = &[
 #[derive(Debug)]
 pub struct NoNewStatics;
 
-impl NativeRule for NoNewStatics {
+impl LintRule for NoNewStatics {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/no-new-statics".to_owned(),
@@ -37,35 +36,34 @@ impl NativeRule for NoNewStatics {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &new_expr.callee else {
-            return;
+        let info = {
+            let Some(AstNode::StaticMemberExpression(member)) = ctx.node(new_expr.callee) else {
+                return;
+            };
+            let is_promise = matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(ident)) if ident.name.as_str() == "Promise");
+            if !is_promise {
+                return;
+            }
+            (member.property.clone(), member.span)
         };
+        let (method, member_span) = info;
 
-        let Expression::Identifier(ident) = &member.object else {
-            return;
-        };
-
-        if ident.name.as_str() != "Promise" {
-            return;
-        }
-
-        let method = member.property.name.as_str();
-        if PROMISE_STATICS.contains(&method) {
+        if PROMISE_STATICS.contains(&method.as_str()) {
             // Remove `new ` prefix: from new_expr start to callee (member expr) start
             let fix = Some(Fix {
                 kind: FixKind::SafeFix,
                 message: "Remove `new` keyword".to_owned(),
                 edits: vec![Edit {
-                    span: Span::new(new_expr.span.start, member.span.start),
+                    span: Span::new(new_expr.span.start, member_span.start),
                     replacement: String::new(),
                 }],
                 is_snippet: false,
@@ -85,22 +83,13 @@ impl NativeRule for NoNewStatics {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoNewStatics)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNewStatics)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

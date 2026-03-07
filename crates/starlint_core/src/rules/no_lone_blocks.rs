@@ -4,20 +4,20 @@
 //! contain `let`, `const`, `class`, or `function` declarations serve no
 //! purpose and may indicate a structural error.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::VariableDeclarationKind;
+use starlint_ast::types::NodeId;
 
 /// Flags standalone block statements that serve no purpose.
 #[derive(Debug)]
 pub struct NoLoneBlocks;
 
-impl NativeRule for NoLoneBlocks {
+impl LintRule for NoLoneBlocks {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-lone-blocks".to_owned(),
@@ -27,24 +27,24 @@ impl NativeRule for NoLoneBlocks {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::BlockStatement,
-            AstType::FunctionBody,
-            AstType::Program,
+            AstNodeType::BlockStatement,
+            AstNodeType::FunctionBody,
+            AstNodeType::Program,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // We look for BlockStatement nodes that appear as direct children of
         // another block (FunctionBody, BlockStatement, or Program body).
         // Since we don't have parent access, we check from the parent side:
         // scan FunctionBody/Program/BlockStatement for child BlockStatements
         // that don't contain block-scoped declarations.
-        let maybe_stmts: Option<&[Statement<'_>]> = match kind {
-            AstKind::FunctionBody(body) => Some(&body.statements),
-            AstKind::Program(program) => Some(&program.body),
-            AstKind::BlockStatement(block) => Some(&block.body),
+        let maybe_stmts: Option<&[NodeId]> = match node {
+            AstNode::FunctionBody(body) => Some(&body.statements),
+            AstNode::Program(program) => Some(&program.body),
+            AstNode::BlockStatement(block) => Some(&block.body),
             _ => None,
         };
 
@@ -56,12 +56,12 @@ impl NativeRule for NoLoneBlocks {
         let source = ctx.source_text().to_owned();
         let mut lone_blocks: Vec<(Span, Option<Fix>)> = Vec::new();
 
-        for stmt in stmts {
-            if let Statement::BlockStatement(block) = stmt {
+        for stmt_id in stmts {
+            if let Some(AstNode::BlockStatement(block)) = ctx.node(*stmt_id) {
                 // If the block contains no block-scoped declarations, it's unnecessary
-                if !has_block_scoped_declaration(&block.body) {
+                if !has_block_scoped_declaration(&block.body, ctx) {
                     let span = Span::new(block.span.start, block.span.end);
-                    // Fix: unwrap the block — replace `{ body }` with just `body`
+                    // Fix: unwrap the block -- replace `{ body }` with just `body`
                     #[allow(clippy::as_conversions)]
                     let fix = source
                         .get(block.span.start as usize..block.span.end as usize)
@@ -103,36 +103,29 @@ impl NativeRule for NoLoneBlocks {
 
 /// Check if any statement in the block is a block-scoped declaration
 /// (let, const, class, or function).
-fn has_block_scoped_declaration(stmts: &[Statement<'_>]) -> bool {
-    stmts.iter().any(|stmt| {
+fn has_block_scoped_declaration(stmts: &[NodeId], ctx: &LintContext<'_>) -> bool {
+    stmts.iter().any(|stmt_id| {
+        let Some(stmt) = ctx.node(*stmt_id) else {
+            return false;
+        };
         matches!(
             stmt,
-            Statement::VariableDeclaration(decl)
-                if decl.kind == oxc_ast::ast::VariableDeclarationKind::Let
-                    || decl.kind == oxc_ast::ast::VariableDeclarationKind::Const
-        ) || matches!(stmt, Statement::ClassDeclaration(_))
+            AstNode::VariableDeclaration(decl)
+                if decl.kind == VariableDeclarationKind::Let
+                    || decl.kind == VariableDeclarationKind::Const
+        ) || matches!(stmt, AstNode::Class(_))
     })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoLoneBlocks)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLoneBlocks)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

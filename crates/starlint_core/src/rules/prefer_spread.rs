@@ -3,22 +3,19 @@
 //! Require spread operator instead of `.apply()`. `foo.apply(null, args)`
 //! should be written as `foo(...args)`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.apply()` calls that could use spread syntax.
 #[derive(Debug)]
 pub struct PreferSpread;
 
-impl NativeRule for PreferSpread {
+impl LintRule for PreferSpread {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-spread".to_owned(),
@@ -28,43 +25,59 @@ impl NativeRule for PreferSpread {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
     #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "apply" {
+        if member.property.as_str() != "apply" {
             return;
         }
 
         // Only autofix `fn.apply(null, args)` or `fn.apply(undefined, args)` patterns
         let source = ctx.source_text();
-        let obj_span = member.object.span();
-        let fn_text = &source[obj_span.start as usize..obj_span.end as usize];
+        let Some(obj_node) = ctx.node(member.object) else {
+            return;
+        };
+        let obj_span = obj_node.span();
+        #[allow(clippy::as_conversions)]
+        let fn_text = source
+            .get(obj_span.start as usize..obj_span.end as usize)
+            .unwrap_or("");
 
         // Try to extract autofix for the 2-arg pattern: fn.apply(null/undefined, args)
         let fix = if call.arguments.len() == 2 {
-            let first_arg = call.arguments.first();
-            let second_arg = call.arguments.get(1);
-            let is_null_or_undefined = first_arg.is_some_and(|a| {
-                let text = &source[a.span().start as usize..a.span().end as usize];
-                text == "null" || text == "undefined"
+            let first_arg_id = call.arguments.first();
+            let second_arg_id = call.arguments.get(1);
+            #[allow(clippy::as_conversions)]
+            let is_null_or_undefined = first_arg_id.is_some_and(|a_id| {
+                if let Some(a_node) = ctx.node(*a_id) {
+                    let a_span = a_node.span();
+                    let text = source
+                        .get(a_span.start as usize..a_span.end as usize)
+                        .unwrap_or("");
+                    text == "null" || text == "undefined"
+                } else {
+                    false
+                }
             });
             if is_null_or_undefined {
-                second_arg.map(|args_arg| {
-                    let args_text =
-                        &source[args_arg.span().start as usize..args_arg.span().end as usize];
+                #[allow(clippy::as_conversions)]
+                second_arg_id.and_then(|args_id| {
+                    let args_node = ctx.node(*args_id)?;
+                    let args_span = args_node.span();
+                    let args_text = source.get(args_span.start as usize..args_span.end as usize)?;
                     let replacement = format!("{fn_text}(...{args_text})");
-                    Fix {
+                    Some(Fix {
                         kind: FixKind::SuggestionFix,
                         message: format!("Replace with `{replacement}`"),
                         edits: vec![Edit {
@@ -72,7 +85,7 @@ impl NativeRule for PreferSpread {
                             replacement,
                         }],
                         is_snippet: false,
-                    }
+                    })
                 })
             } else {
                 None
@@ -96,23 +109,13 @@ impl NativeRule for PreferSpread {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferSpread)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferSpread)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

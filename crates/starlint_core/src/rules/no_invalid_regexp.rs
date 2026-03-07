@@ -3,20 +3,19 @@
 //! Disallow invalid regular expression strings in `RegExp` constructors.
 //! An invalid regex will throw at runtime and is almost always a bug.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new RegExp(...)` calls with invalid regex patterns.
 #[derive(Debug)]
 pub struct NoInvalidRegexp;
 
-impl NativeRule for NoInvalidRegexp {
+impl LintRule for NoInvalidRegexp {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-invalid-regexp".to_owned(),
@@ -27,17 +26,17 @@ impl NativeRule for NoInvalidRegexp {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
         // Check if it's `new RegExp(...)`
-        let Expression::Identifier(ident) = &new_expr.callee else {
+        let Some(AstNode::IdentifierReference(ident)) = ctx.node(new_expr.callee) else {
             return;
         };
 
@@ -46,11 +45,11 @@ impl NativeRule for NoInvalidRegexp {
         }
 
         // Get the first argument (the pattern)
-        let Some(first_arg) = new_expr.arguments.first() else {
+        let Some(first_arg_id) = new_expr.arguments.first() else {
             return;
         };
 
-        let oxc_ast::ast::Argument::StringLiteral(pattern_lit) = first_arg else {
+        let Some(AstNode::StringLiteral(pattern_lit)) = ctx.node(*first_arg_id) else {
             return;
         };
 
@@ -60,8 +59,8 @@ impl NativeRule for NoInvalidRegexp {
         let flags = new_expr
             .arguments
             .get(1)
-            .and_then(|arg| {
-                if let oxc_ast::ast::Argument::StringLiteral(s) = arg {
+            .and_then(|arg_id| {
+                if let Some(AstNode::StringLiteral(s)) = ctx.node(*arg_id) {
                     Some(s.value.as_str())
                 } else {
                     None
@@ -154,22 +153,13 @@ fn validate_regex_pattern(pattern: &str, flags: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoInvalidRegexp)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInvalidRegexp)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

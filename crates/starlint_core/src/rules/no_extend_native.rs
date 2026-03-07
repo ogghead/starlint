@@ -4,13 +4,13 @@
 //! `Object.prototype`, `Array.prototype`, etc. is dangerous as it
 //! can break third-party code and create unexpected behavior.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags assignments to native type prototypes.
 #[derive(Debug)]
@@ -48,7 +48,7 @@ const NATIVE_TYPES: &[&str] = &[
     "BigUint64Array",
 ];
 
-impl NativeRule for NoExtendNative {
+impl LintRule for NoExtendNative {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-extend-native".to_owned(),
@@ -58,19 +58,22 @@ impl NativeRule for NoExtendNative {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Match: NativeType.prototype.foo = ... or NativeType.prototype = ...
-        let AstKind::AssignmentExpression(assign) = kind else {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
         // Check the source text of the left side for "NativeType.prototype"
         let source = ctx.source_text();
-        let target_span = assign.left.span();
+        let Some(left_node) = ctx.node(assign.left) else {
+            return;
+        };
+        let target_span = left_node.span();
         let start = usize::try_from(target_span.start).unwrap_or(0);
         let end = usize::try_from(target_span.end).unwrap_or(0);
         let target_text = source.get(start..end).unwrap_or("");
@@ -97,27 +100,15 @@ impl NativeRule for NoExtendNative {
     }
 }
 
-use oxc_span::GetSpan;
-
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoExtendNative)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExtendNative)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

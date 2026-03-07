@@ -5,14 +5,14 @@
 //! requests do not accept a body — including one is a bug that most
 //! runtimes will either silently ignore or reject.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression, ObjectPropertyKind, PropertyKey, PropertyKind};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::PropertyKind;
+use starlint_ast::types::NodeId;
 
 /// Flags `fetch()` calls with `body` on GET/HEAD requests.
 #[derive(Debug)]
@@ -21,7 +21,7 @@ pub struct NoInvalidFetchOptions;
 /// HTTP methods that do not accept a request body.
 const BODYLESS_METHODS: &[&str] = &["GET", "HEAD"];
 
-impl NativeRule for NoInvalidFetchOptions {
+impl LintRule for NoInvalidFetchOptions {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-invalid-fetch-options".to_owned(),
@@ -31,35 +31,35 @@ impl NativeRule for NoInvalidFetchOptions {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for `fetch(...)` call
-        if !is_fetch_call(&call.callee) {
+        if !is_fetch_call(call.callee, ctx) {
             return;
         }
 
         // Need at least two arguments: url and options
-        let Some(second_arg) = call.arguments.get(1) else {
+        let Some(second_arg_id) = call.arguments.get(1) else {
             return;
         };
 
         // Options must be an object literal
-        let Argument::ObjectExpression(options) = second_arg else {
+        let Some(AstNode::ObjectExpression(options)) = ctx.node(*second_arg_id) else {
             return;
         };
 
         let mut has_body = false;
         let mut method_value: Option<String> = None;
 
-        for prop_kind in &options.properties {
-            let ObjectPropertyKind::ObjectProperty(prop) = prop_kind else {
+        for prop_id in &options.properties {
+            let Some(AstNode::ObjectProperty(prop)) = ctx.node(*prop_id) else {
                 continue;
             };
 
@@ -68,14 +68,14 @@ impl NativeRule for NoInvalidFetchOptions {
                 continue;
             }
 
-            let Some(key_name) = static_key_name(&prop.key) else {
+            let Some(key_name) = static_key_name(prop.key, ctx) else {
                 continue;
             };
 
             if key_name == "body" {
                 has_body = true;
             } else if key_name == "method" {
-                method_value = string_literal_value(&prop.value);
+                method_value = string_literal_value(prop.value, ctx);
             }
         }
 
@@ -101,26 +101,28 @@ impl NativeRule for NoInvalidFetchOptions {
 }
 
 /// Check if a call expression's callee is `fetch`.
-fn is_fetch_call(callee: &Expression<'_>) -> bool {
+fn is_fetch_call(callee_id: NodeId, ctx: &LintContext<'_>) -> bool {
     matches!(
-        callee,
-        Expression::Identifier(id) if id.name.as_str() == "fetch"
+        ctx.node(callee_id),
+        Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "fetch"
     )
 }
 
-/// Extract a static key name from a property key (identifier or string literal).
-fn static_key_name<'a>(key: &'a PropertyKey<'a>) -> Option<&'a str> {
-    match key {
-        PropertyKey::StaticIdentifier(ident) => Some(ident.name.as_str()),
-        PropertyKey::StringLiteral(lit) => Some(lit.value.as_str()),
+/// Extract a static key name from a property key node (identifier or string literal).
+fn static_key_name(key_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let node = ctx.node(key_id)?;
+    match node {
+        AstNode::IdentifierReference(ident) => Some(ident.name.clone()),
+        AstNode::BindingIdentifier(ident) => Some(ident.name.clone()),
+        AstNode::StringLiteral(lit) => Some(lit.value.clone()),
         _ => None,
     }
 }
 
 /// Extract the value of a string literal expression.
-fn string_literal_value(expr: &Expression<'_>) -> Option<String> {
-    if let Expression::StringLiteral(lit) = expr {
-        Some(lit.value.to_string())
+fn string_literal_value(id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    if let Some(AstNode::StringLiteral(lit)) = ctx.node(id) {
+        Some(lit.value.clone())
     } else {
         None
     }
@@ -128,23 +130,13 @@ fn string_literal_value(expr: &Expression<'_>) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoInvalidFetchOptions)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInvalidFetchOptions)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

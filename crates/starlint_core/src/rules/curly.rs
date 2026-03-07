@@ -4,39 +4,33 @@
 //! (`if`, `else`, `for`, `while`, `do`). Omitting braces can lead
 //! to bugs when adding statements to the body later.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags control flow statements whose body is not a block statement.
 #[derive(Debug)]
 pub struct Curly;
 
-/// Check if a statement is a block statement (has curly braces).
-const fn is_block(stmt: &Statement<'_>) -> bool {
-    matches!(stmt, Statement::BlockStatement(_))
+/// Check if a node is a block statement (has curly braces).
+fn is_block(ctx: &LintContext<'_>, id: NodeId) -> bool {
+    ctx.node(id)
+        .is_some_and(|n| matches!(n, AstNode::BlockStatement(_)))
 }
 
-/// Get the span of a statement.
-fn stmt_span(stmt: &Statement<'_>) -> oxc_span::Span {
-    match stmt {
-        Statement::ExpressionStatement(s) => s.span,
-        Statement::ReturnStatement(s) => s.span,
-        Statement::BreakStatement(s) => s.span,
-        Statement::ContinueStatement(s) => s.span,
-        Statement::ThrowStatement(s) => s.span,
-        Statement::VariableDeclaration(s) => s.span,
-        _ => stmt.span(),
-    }
+/// Get the span of a node by ID.
+fn node_span(ctx: &LintContext<'_>, id: NodeId) -> starlint_ast::types::Span {
+    ctx.node(id).map_or(
+        starlint_ast::types::Span::new(0, 0),
+        starlint_ast::AstNode::span,
+    )
 }
 
-impl NativeRule for Curly {
+impl LintRule for Curly {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "curly".to_owned(),
@@ -46,59 +40,62 @@ impl NativeRule for Curly {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::IfStatement,
-            AstType::WhileStatement,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForInStatement,
+            AstNodeType::ForOfStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::IfStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::IfStatement(stmt) => {
-                if !is_block(&stmt.consequent) {
-                    let body = stmt_span(&stmt.consequent);
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::IfStatement(stmt) => {
+                if !is_block(ctx, stmt.consequent) {
+                    let body = node_span(ctx, stmt.consequent);
                     report_curly_fix(ctx, "Expected { after 'if' condition", stmt.span, body);
                 }
-                if let Some(alternate) = &stmt.alternate {
+                if let Some(alt_id) = stmt.alternate {
                     // Don't flag `else if` — only flag `else` without braces
-                    if !is_block(alternate) && !matches!(alternate, Statement::IfStatement(_)) {
-                        let body = stmt_span(alternate);
+                    let is_block_or_if = ctx.node(alt_id).is_some_and(|n| {
+                        matches!(n, AstNode::BlockStatement(_) | AstNode::IfStatement(_))
+                    });
+                    if !is_block_or_if {
+                        let body = node_span(ctx, alt_id);
                         report_curly_fix(ctx, "Expected { after 'else'", stmt.span, body);
                     }
                 }
             }
-            AstKind::ForStatement(stmt) => {
-                if !is_block(&stmt.body) {
-                    let body = stmt_span(&stmt.body);
+            AstNode::ForStatement(stmt) => {
+                if !is_block(ctx, stmt.body) {
+                    let body = node_span(ctx, stmt.body);
                     report_curly_fix(ctx, "Expected { after 'for'", stmt.span, body);
                 }
             }
-            AstKind::ForInStatement(stmt) => {
-                if !is_block(&stmt.body) {
-                    let body = stmt_span(&stmt.body);
+            AstNode::ForInStatement(stmt) => {
+                if !is_block(ctx, stmt.body) {
+                    let body = node_span(ctx, stmt.body);
                     report_curly_fix(ctx, "Expected { after 'for-in'", stmt.span, body);
                 }
             }
-            AstKind::ForOfStatement(stmt) => {
-                if !is_block(&stmt.body) {
-                    let body = stmt_span(&stmt.body);
+            AstNode::ForOfStatement(stmt) => {
+                if !is_block(ctx, stmt.body) {
+                    let body = node_span(ctx, stmt.body);
                     report_curly_fix(ctx, "Expected { after 'for-of'", stmt.span, body);
                 }
             }
-            AstKind::WhileStatement(stmt) => {
-                if !is_block(&stmt.body) {
-                    let body = stmt_span(&stmt.body);
+            AstNode::WhileStatement(stmt) => {
+                if !is_block(ctx, stmt.body) {
+                    let body = node_span(ctx, stmt.body);
                     report_curly_fix(ctx, "Expected { after 'while' condition", stmt.span, body);
                 }
             }
-            AstKind::DoWhileStatement(stmt) => {
-                if !is_block(&stmt.body) {
-                    let body = stmt_span(&stmt.body);
+            AstNode::DoWhileStatement(stmt) => {
+                if !is_block(ctx, stmt.body) {
+                    let body = node_span(ctx, stmt.body);
                     report_curly_fix(ctx, "Expected { after 'do'", stmt.span, body);
                 }
             }
@@ -109,10 +106,10 @@ impl NativeRule for Curly {
 
 /// Report a curly-brace fix by wrapping the body statement in `{ ... }`.
 fn report_curly_fix(
-    ctx: &mut NativeLintContext<'_>,
+    ctx: &mut LintContext<'_>,
     message: &str,
-    stmt_span: oxc_span::Span,
-    body_span: oxc_span::Span,
+    stmt_span: starlint_ast::types::Span,
+    body_span: starlint_ast::types::Span,
 ) {
     let source = ctx.source_text();
     let start = usize::try_from(body_span.start).unwrap_or(0);
@@ -140,22 +137,13 @@ fn report_curly_fix(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(Curly)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(Curly)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

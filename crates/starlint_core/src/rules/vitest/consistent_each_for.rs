@@ -6,14 +6,13 @@
 //! the pattern is used consistently (flags raw `test.each`/`it.each` calls
 //! that pass an empty array or are called without a template literal or array).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "vitest/consistent-each-for";
@@ -22,7 +21,7 @@ const RULE_NAME: &str = "vitest/consistent-each-for";
 #[derive(Debug)]
 pub struct ConsistentEachFor;
 
-impl NativeRule for ConsistentEachFor {
+impl LintRule for ConsistentEachFor {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -32,12 +31,12 @@ impl NativeRule for ConsistentEachFor {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
@@ -50,18 +49,18 @@ impl NativeRule for ConsistentEachFor {
         // invocation. But we want to detect `test.each([])` — the data call.
         // Actually, let's match `test.each` / `it.each` as a member expression
         // callee, where the call receives an empty array argument.
-        let Expression::StaticMemberExpression(member) = callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(*callee) else {
             return;
         };
 
-        let prop_name = member.property.name.as_str();
+        let prop_name = member.property.as_str();
         if prop_name != "each" {
             return;
         }
 
         // The object must be `test`, `it`, or `describe`.
-        let obj_name = match &member.object {
-            Expression::Identifier(id) => id.name.as_str(),
+        let obj_name = match ctx.node(member.object) {
+            Some(AstNode::IdentifierReference(id)) => id.name.as_str(),
             _ => return,
         };
 
@@ -70,7 +69,9 @@ impl NativeRule for ConsistentEachFor {
         }
 
         // Flag if the `.each()` call receives an empty array `[]`.
-        if let Some(oxc_ast::ast::Argument::ArrayExpression(arr)) = call.arguments.first() {
+        if let Some(AstNode::ArrayExpression(arr)) =
+            call.arguments.first().and_then(|id| ctx.node(*id))
+        {
             if arr.elements.is_empty() {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
@@ -90,22 +91,13 @@ impl NativeRule for ConsistentEachFor {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentEachFor)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentEachFor)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

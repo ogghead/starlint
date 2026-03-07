@@ -2,16 +2,16 @@
 //!
 //! Warn when `checked` prop is used without `onChange` or `readOnly`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::match_same_arms)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags JSX elements that have a `checked` prop but lack both `onChange`
 /// and `readOnly` props. This causes the component to be a read-only
@@ -19,18 +19,16 @@ use crate::rule::{NativeLintContext, NativeRule};
 #[derive(Debug)]
 pub struct CheckedRequiresOnchangeOrReadonly;
 
-/// Extract the plain attribute name from a JSX attribute item, if any.
-fn attr_name<'a>(item: &'a JSXAttributeItem<'a>) -> Option<&'a str> {
-    match item {
-        JSXAttributeItem::Attribute(a) => match &a.name {
-            JSXAttributeName::Identifier(id) => Some(id.name.as_str()),
-            JSXAttributeName::NamespacedName(_) => None,
-        },
-        JSXAttributeItem::SpreadAttribute(_) => None,
+/// Extract the plain attribute name from a JSX attribute `NodeId`, if any.
+fn attr_name<'a>(item_id: NodeId, ctx: &'a LintContext<'_>) -> Option<&'a str> {
+    match ctx.node(item_id)? {
+        AstNode::JSXAttribute(a) => Some(a.name.as_str()),
+        AstNode::JSXSpreadAttribute(_) => None,
+        _ => None,
     }
 }
 
-impl NativeRule for CheckedRequiresOnchangeOrReadonly {
+impl LintRule for CheckedRequiresOnchangeOrReadonly {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/checked-requires-onchange-or-readonly".to_owned(),
@@ -40,12 +38,13 @@ impl NativeRule for CheckedRequiresOnchangeOrReadonly {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    #[allow(clippy::match_same_arms)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
@@ -53,8 +52,8 @@ impl NativeRule for CheckedRequiresOnchangeOrReadonly {
         let mut has_on_change = false;
         let mut has_read_only = false;
 
-        for attr in &opening.attributes {
-            if let Some(name) = attr_name(attr) {
+        for &attr_id in &*opening.attributes {
+            if let Some(name) = attr_name(attr_id, ctx) {
                 match name {
                     "checked" => has_checked = true,
                     "onChange" => has_on_change = true,
@@ -87,22 +86,13 @@ impl NativeRule for CheckedRequiresOnchangeOrReadonly {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(CheckedRequiresOnchangeOrReadonly)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(CheckedRequiresOnchangeOrReadonly)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

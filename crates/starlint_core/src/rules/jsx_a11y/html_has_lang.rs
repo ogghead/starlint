@@ -2,16 +2,15 @@
 //!
 //! Enforce `<html>` element has a `lang` attribute.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/html-has-lang";
@@ -19,7 +18,7 @@ const RULE_NAME: &str = "jsx-a11y/html-has-lang";
 #[derive(Debug)]
 pub struct HtmlHasLang;
 
-impl NativeRule for HtmlHasLang {
+impl LintRule for HtmlHasLang {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -29,33 +28,24 @@ impl NativeRule for HtmlHasLang {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let is_html = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str() == "html",
-            _ => false,
-        };
-
-        if !is_html {
+        if opening.name.as_str() != "html" {
             return;
         }
 
-        let has_lang = opening.attributes.iter().any(|item| {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "lang",
-                    JSXAttributeName::NamespacedName(_) => false,
-                }
-            } else {
-                false
-            }
+        let has_lang = opening.attributes.iter().any(|&attr_id| {
+            matches!(
+                ctx.node(attr_id),
+                Some(AstNode::JSXAttribute(attr)) if attr.name.as_str() == "lang"
+            )
         });
 
         if !has_lang {
@@ -85,22 +75,13 @@ impl NativeRule for HtmlHasLang {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(HtmlHasLang)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(HtmlHasLang)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

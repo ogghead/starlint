@@ -2,16 +2,13 @@
 //!
 //! Error when deprecated Jest functions are used.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/no-deprecated-functions";
@@ -28,7 +25,7 @@ const DEPRECATED: &[(&str, &str)] = &[
 #[derive(Debug)]
 pub struct NoDeprecatedFunctions;
 
-impl NativeRule for NoDeprecatedFunctions {
+impl LintRule for NoDeprecatedFunctions {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -38,40 +35,39 @@ impl NativeRule for NoDeprecatedFunctions {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Match `jest.<method>(...)` pattern
-        let method_name = match &call.callee {
-            Expression::StaticMemberExpression(member) => {
-                if matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "jest")
-                {
-                    member.property.name.as_str()
-                } else {
-                    return;
-                }
-            }
-            _ => return,
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
+            return;
         };
+
+        let is_jest = matches!(
+            ctx.node(member.object),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "jest"
+        );
+        if !is_jest {
+            return;
+        }
+
+        let method_name = member.property.as_str();
 
         for &(deprecated_name, replacement) in DEPRECATED {
             if method_name == deprecated_name {
                 // replacement is like "jest.resetModules" or "expect.extend"
                 // Replace the entire callee (e.g. `jest.addMatchers` -> `expect.extend`)
-                let Expression::StaticMemberExpression(callee_member) = &call.callee else {
-                    return;
-                };
-                let callee_span = Span::new(callee_member.span().start, callee_member.span().end);
+                let callee_span = Span::new(member.span.start, member.span.end);
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: format!(
-                        "`jest.{deprecated_name}` is deprecated — use `{replacement}` instead"
+                        "`jest.{deprecated_name}` is deprecated -- use `{replacement}` instead"
                     ),
                     span: Span::new(call.span.start, call.span.end),
                     severity: Severity::Error,
@@ -95,22 +91,13 @@ impl NativeRule for NoDeprecatedFunctions {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDeprecatedFunctions)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDeprecatedFunctions)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

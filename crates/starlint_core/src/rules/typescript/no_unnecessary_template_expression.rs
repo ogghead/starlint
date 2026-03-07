@@ -6,22 +6,20 @@
 //! Similarly, a template literal with no expressions and only static text
 //! should be a regular string literal.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags template literals that are unnecessary wrappers around a single
 /// expression or that contain no expressions at all.
 #[derive(Debug)]
 pub struct NoUnnecessaryTemplateExpression;
 
-impl NativeRule for NoUnnecessaryTemplateExpression {
+impl LintRule for NoUnnecessaryTemplateExpression {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-unnecessary-template-expression".to_owned(),
@@ -31,12 +29,12 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TemplateLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TemplateLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TemplateLiteral(template) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TemplateLiteral(template) = node else {
             return;
         };
 
@@ -48,11 +46,15 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
 
             // Extract the expression text from source
             let source = ctx.source_text();
-            let Some(expr) = template.expressions.first() else {
+            let Some(&expr_id) = template.expressions.first() else {
                 return;
             };
-            let expr_start = usize::try_from(expr.span().start).unwrap_or(0);
-            let expr_end = usize::try_from(expr.span().end).unwrap_or(0);
+            let Some(expr_node) = ctx.node(expr_id) else {
+                return;
+            };
+            let expr_span = expr_node.span();
+            let expr_start = usize::try_from(expr_span.start).unwrap_or(0);
+            let expr_end = usize::try_from(expr_span.end).unwrap_or(0);
             let expr_text = source.get(expr_start..expr_end).unwrap_or("");
 
             ctx.report(Diagnostic {
@@ -80,17 +82,14 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
         if template.expressions.is_empty() && template.quasis.len() == 1 {
             // Only flag single-line static templates (multi-line templates may
             // be intentional for readability).
-            let is_multiline = template
-                .quasis
-                .first()
-                .is_some_and(|q| q.value.raw.as_str().contains('\n'));
+            let is_multiline = template.quasis.first().is_some_and(|q| q.contains('\n'));
 
             if !is_multiline {
                 let template_span = Span::new(template.span.start, template.span.end);
                 let message = "Unnecessary template literal with no expressions — use a regular string literal instead";
 
                 // Extract the static text content and wrap in quotes
-                let raw_text = template.quasis.first().map_or("", |q| q.value.raw.as_str());
+                let raw_text = template.quasis.first().map_or("", |q| q.as_str());
                 // Escape any single quotes in the content for the replacement
                 let escaped = raw_text.replace('\'', "\\'");
                 let replacement = format!("'{escaped}'");
@@ -118,29 +117,19 @@ impl NativeRule for NoUnnecessaryTemplateExpression {
 }
 
 /// Check whether all quasis (static template parts) contain only empty strings.
-fn all_quasis_empty(quasis: &[oxc_ast::ast::TemplateElement<'_>]) -> bool {
-    quasis.iter().all(|q| q.value.raw.is_empty())
+fn all_quasis_empty(quasis: &[String]) -> bool {
+    quasis.iter().all(std::string::String::is_empty)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnnecessaryTemplateExpression)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryTemplateExpression)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

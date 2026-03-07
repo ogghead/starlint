@@ -4,15 +4,13 @@
 //! executor. The second call is silently ignored but usually indicates
 //! a logic error.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new Promise` executors that call `resolve`/`reject` without
 /// guarding against multiple invocations.
@@ -22,7 +20,7 @@ use crate::rule::{NativeLintContext, NativeRule};
 #[derive(Debug)]
 pub struct NoMultipleResolved;
 
-impl NativeRule for NoMultipleResolved {
+impl LintRule for NoMultipleResolved {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/no-multiple-resolved".to_owned(),
@@ -32,16 +30,16 @@ impl NativeRule for NoMultipleResolved {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
-        let Expression::Identifier(ident) = &new_expr.callee else {
+        let Some(AstNode::IdentifierReference(ident)) = ctx.node(new_expr.callee) else {
             return;
         };
 
@@ -54,10 +52,13 @@ impl NativeRule for NoMultipleResolved {
             return;
         };
 
-        let arg_expr = match first_arg {
-            oxc_ast::ast::Argument::SpreadElement(_) => return,
-            _ => first_arg.to_expression(),
+        let Some(arg_expr) = ctx.node(*first_arg) else {
+            return;
         };
+
+        if matches!(arg_expr, AstNode::SpreadElement(_)) {
+            return;
+        }
 
         // Check the source text for multiple resolve/reject calls
         // This is a heuristic: count occurrences in the executor body
@@ -85,22 +86,13 @@ impl NativeRule for NoMultipleResolved {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoMultipleResolved)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoMultipleResolved)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

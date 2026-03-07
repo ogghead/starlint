@@ -2,14 +2,13 @@
 //!
 //! Enforce `<label>` elements have an associated control via `htmlFor` or nesting.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/label-has-associated-control";
@@ -17,21 +16,17 @@ const RULE_NAME: &str = "jsx-a11y/label-has-associated-control";
 #[derive(Debug)]
 pub struct LabelHasAssociatedControl;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
-        } else {
-            false
-        }
+/// Check if an attribute with the given name exists on a JSX opening element's attributes.
+fn has_attribute(ctx: &LintContext<'_>, attributes: &[NodeId], name: &str) -> bool {
+    attributes.iter().any(|attr_id| {
+        let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
+            return false;
+        };
+        attr.name.as_str() == name
     })
 }
 
-impl NativeRule for LabelHasAssociatedControl {
+impl LintRule for LabelHasAssociatedControl {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -43,28 +38,28 @@ impl NativeRule for LabelHasAssociatedControl {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXElement(element) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXElement(element) = node else {
             return;
         };
 
-        let opening = &element.opening_element;
-
-        let is_label = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str() == "label",
-            _ => false,
+        let Some(AstNode::JSXOpeningElement(opening)) = ctx.node(element.opening_element) else {
+            return;
         };
 
-        if !is_label {
+        if opening.name.as_str() != "label" {
             return;
         }
 
         // Check for htmlFor attribute
-        let has_html_for = has_attribute(opening, "htmlFor");
+        let has_html_for = has_attribute(ctx, &opening.attributes, "htmlFor");
+
+        let opening_span_start = opening.span.start;
+        let opening_span_end = opening.span.end;
 
         // If no children and no htmlFor, the label has no associated control
         if element.children.is_empty() && !has_html_for {
@@ -73,7 +68,7 @@ impl NativeRule for LabelHasAssociatedControl {
                 message:
                     "`<label>` must have an associated control via `htmlFor` or by nesting an input"
                         .to_owned(),
-                span: Span::new(opening.span.start, opening.span.end),
+                span: Span::new(opening_span_start, opening_span_end),
                 severity: Severity::Warning,
                 help: None,
                 fix: None,
@@ -85,22 +80,13 @@ impl NativeRule for LabelHasAssociatedControl {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(LabelHasAssociatedControl)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(LabelHasAssociatedControl)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

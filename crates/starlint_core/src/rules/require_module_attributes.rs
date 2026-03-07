@@ -4,13 +4,13 @@
 //! import attributes (also known as import assertions). Non-JS modules
 //! should use `with { type: '...' }` to declare their type.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// File extensions that require import attributes.
 const EXTENSIONS_NEEDING_ATTRIBUTES: &[&str] = &[".json", ".css", ".wasm"];
@@ -19,7 +19,7 @@ const EXTENSIONS_NEEDING_ATTRIBUTES: &[&str] = &[".json", ".css", ".wasm"];
 #[derive(Debug)]
 pub struct RequireModuleAttributes;
 
-impl NativeRule for RequireModuleAttributes {
+impl LintRule for RequireModuleAttributes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "require-module-attributes".to_owned(),
@@ -29,36 +29,39 @@ impl NativeRule for RequireModuleAttributes {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let source = import.source.value.as_str();
+        let source_str = import.source.as_str();
 
         // Check if the import source ends with a non-JS extension
         let needs_attributes = EXTENSIONS_NEEDING_ATTRIBUTES
             .iter()
-            .any(|ext| source.ends_with(ext));
+            .any(|ext| source_str.ends_with(ext));
 
         if !needs_attributes {
             return;
         }
 
-        // Check if import has a `with` clause with at least one attribute
-        let has_attributes = import
-            .with_clause
-            .as_ref()
-            .is_some_and(|clause| !clause.with_entries.is_empty());
+        // Check if import has a `with` clause by inspecting the source text.
+        // The flat AST does not preserve the `with` clause, so we check
+        // the source text for `with {` or `assert {` after the source string.
+        let src = ctx.source_text();
+        let import_start = usize::try_from(import.span.start).unwrap_or(0);
+        let import_end = usize::try_from(import.span.end).unwrap_or(0);
+        let import_text = src.get(import_start..import_end).unwrap_or("");
+        let has_attributes = import_text.contains(" with ") || import_text.contains(" assert ");
 
         if !has_attributes {
             ctx.report(Diagnostic {
                 rule_name: "require-module-attributes".to_owned(),
-                message: format!("Import from '{source}' is missing import attributes"),
+                message: format!("Import from '{source_str}' is missing import attributes"),
                 span: Span::new(import.span.start, import.span.end),
                 severity: Severity::Warning,
                 help: None,
@@ -71,23 +74,13 @@ impl NativeRule for RequireModuleAttributes {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as an ES module.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.mjs")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RequireModuleAttributes)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.mjs"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RequireModuleAttributes)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

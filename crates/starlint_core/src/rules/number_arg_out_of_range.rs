@@ -3,20 +3,19 @@
 //! Detect calls to functions like `parseInt(x, radix)` or `Number.toFixed(n)`
 //! where the numeric argument is outside the valid range.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags numeric arguments outside valid ranges.
 #[derive(Debug)]
 pub struct NumberArgOutOfRange;
 
-impl NativeRule for NumberArgOutOfRange {
+impl LintRule for NumberArgOutOfRange {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "number-arg-out-of-range".to_owned(),
@@ -26,19 +25,19 @@ impl NativeRule for NumberArgOutOfRange {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let findings = check_parse_int(call)
-            .or_else(|| check_method_range(call, "toFixed", 0, 100))
-            .or_else(|| check_method_range(call, "toPrecision", 1, 100))
-            .or_else(|| check_method_range(call, "toExponential", 0, 100));
+        let findings = check_parse_int(ctx, call)
+            .or_else(|| check_method_range(ctx, call, "toFixed", 0, 100))
+            .or_else(|| check_method_range(ctx, call, "toPrecision", 1, 100))
+            .or_else(|| check_method_range(ctx, call, "toExponential", 0, 100));
 
         if let Some(message) = findings {
             ctx.report(Diagnostic {
@@ -55,13 +54,17 @@ impl NativeRule for NumberArgOutOfRange {
 }
 
 /// Check parseInt radix (must be 2-36).
-fn check_parse_int(call: &oxc_ast::ast::CallExpression<'_>) -> Option<String> {
-    let is_parse_int = match &call.callee {
-        Expression::Identifier(id) => id.name.as_str() == "parseInt",
-        Expression::StaticMemberExpression(member) => {
-            member.property.name.as_str() == "parseInt"
-                && matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Number")
-        }
+fn check_parse_int(
+    ctx: &LintContext<'_>,
+    call: &starlint_ast::node::CallExpressionNode,
+) -> Option<String> {
+    let callee_node = ctx.node(call.callee)?;
+    let is_parse_int = match callee_node {
+        AstNode::IdentifierReference(id) => id.name.as_str() == "parseInt",
+        AstNode::StaticMemberExpression(member) => member.property.as_str() == "parseInt"
+            && ctx.node(member.object).is_some_and(
+                |n| matches!(n, AstNode::IdentifierReference(id) if id.name.as_str() == "Number"),
+            ),
         _ => false,
     };
 
@@ -69,8 +72,9 @@ fn check_parse_int(call: &oxc_ast::ast::CallExpression<'_>) -> Option<String> {
         return None;
     }
 
-    let radix_arg = call.arguments.get(1)?;
-    let radix = get_integer_value(radix_arg.as_expression()?)?;
+    let radix_arg_id = *call.arguments.get(1)?;
+    let radix_node = ctx.node(radix_arg_id)?;
+    let radix = get_integer_value(radix_node)?;
 
     if !(2..=36).contains(&radix) {
         return Some(format!(
@@ -83,22 +87,25 @@ fn check_parse_int(call: &oxc_ast::ast::CallExpression<'_>) -> Option<String> {
 
 /// Check a method call's first argument against a valid range.
 fn check_method_range(
-    call: &oxc_ast::ast::CallExpression<'_>,
+    ctx: &LintContext<'_>,
+    call: &starlint_ast::node::CallExpressionNode,
     method_name: &str,
     min: i64,
     max: i64,
 ) -> Option<String> {
+    let callee_node = ctx.node(call.callee)?;
     let is_method = matches!(
-        &call.callee,
-        Expression::StaticMemberExpression(member) if member.property.name.as_str() == method_name
+        callee_node,
+        AstNode::StaticMemberExpression(member) if member.property.as_str() == method_name
     );
 
     if !is_method {
         return None;
     }
 
-    let arg = call.arguments.first()?;
-    let value = get_integer_value(arg.as_expression()?)?;
+    let arg_id = *call.arguments.first()?;
+    let arg_node = ctx.node(arg_id)?;
+    let value = get_integer_value(arg_node)?;
 
     if !(min..=max).contains(&value) {
         return Some(format!(
@@ -109,18 +116,18 @@ fn check_method_range(
     None
 }
 
-/// Get integer value from a numeric literal expression.
+/// Get integer value from a numeric literal `AstNode`.
 ///
-/// Returns `None` if the expression is not a numeric literal or if the value
+/// Returns `None` if the node is not a numeric literal or if the value
 /// cannot be safely converted to i64.
 #[allow(
     clippy::as_conversions,
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss
 )]
-fn get_integer_value(expr: &Expression<'_>) -> Option<i64> {
-    match expr {
-        Expression::NumericLiteral(n) => {
+fn get_integer_value(node: &AstNode) -> Option<i64> {
+    match node {
+        AstNode::NumericLiteral(n) => {
             let val = n.value;
             // Only consider integer values (no fractional part) within i64 range
             #[allow(clippy::float_cmp)]
@@ -133,23 +140,13 @@ fn get_integer_value(expr: &Expression<'_>) -> Option<i64> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NumberArgOutOfRange)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NumberArgOutOfRange)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

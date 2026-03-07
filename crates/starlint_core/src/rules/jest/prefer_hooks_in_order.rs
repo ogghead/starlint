@@ -4,14 +4,14 @@
 //! `afterEach`, `afterAll`. Consistent ordering improves readability and
 //! makes the lifecycle flow explicit.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, Statement};
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::shadow_reuse, clippy::shadow_unrelated)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags hooks that are not in the standard lifecycle order.
 #[derive(Debug)]
@@ -20,7 +20,7 @@ pub struct PreferHooksInOrder;
 /// Expected hook order (lower index = should come first).
 const HOOK_ORDER: &[&str] = &["beforeAll", "beforeEach", "afterEach", "afterAll"];
 
-impl NativeRule for PreferHooksInOrder {
+impl LintRule for PreferHooksInOrder {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "jest/prefer-hooks-in-order".to_owned(),
@@ -30,54 +30,57 @@ impl NativeRule for PreferHooksInOrder {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Must be `describe(...)` call
         let is_describe = matches!(
-            &call.callee,
-            Expression::Identifier(id) if id.name.as_str() == "describe"
+            ctx.node(call.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "describe"
         );
         if !is_describe {
             return;
         }
 
         // Get the callback body
-        let Some(second_arg) = call.arguments.get(1) else {
-            return;
-        };
-        let Some(callback_expr) = second_arg.as_expression() else {
+        let Some(second_arg_id) = call.arguments.get(1) else {
             return;
         };
 
-        let body = match callback_expr {
-            Expression::ArrowFunctionExpression(arrow) => &arrow.body,
-            Expression::FunctionExpression(func) => {
-                let Some(ref body) = func.body else {
-                    return;
-                };
-                body
-            }
+        // Resolve the body_id first, then clone statements to release the borrow on ctx.
+        let func_body_id = match ctx.node(*second_arg_id) {
+            Some(AstNode::ArrowFunctionExpression(arrow)) => Some(arrow.body),
+            Some(AstNode::Function(func)) => func.body,
+            _ => return,
+        };
+
+        let Some(func_body_id) = func_body_id else {
+            return;
+        };
+
+        let body_stmts = match ctx.node(func_body_id) {
+            Some(AstNode::FunctionBody(body)) => body.statements.clone(),
             _ => return,
         };
 
         // Collect hooks with their order index and span
         let mut last_order: Option<usize> = None;
-        for stmt in &body.statements {
-            let Statement::ExpressionStatement(expr_stmt) = stmt else {
+        for stmt_id in &*body_stmts {
+            let Some(AstNode::ExpressionStatement(expr_stmt)) = ctx.node(*stmt_id) else {
                 continue;
             };
-            let Expression::CallExpression(inner_call) = &expr_stmt.expression else {
+            let Some(AstNode::CallExpression(inner_call)) = ctx.node(expr_stmt.expression) else {
                 continue;
             };
-            let callee_name = match &inner_call.callee {
-                Expression::Identifier(id) => id.name.as_str(),
+            let callee_name = match ctx.node(inner_call.callee) {
+                Some(AstNode::IdentifierReference(id)) => id.name.as_str(),
                 _ => continue,
             };
 
@@ -108,22 +111,13 @@ impl NativeRule for PreferHooksInOrder {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferHooksInOrder)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferHooksInOrder)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

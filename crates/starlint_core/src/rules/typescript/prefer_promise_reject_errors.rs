@@ -4,7 +4,7 @@
 //! values (string literals, numbers, booleans, `null`, `undefined`) makes
 //! debugging harder because stack traces are lost.
 //!
-//! Simplified syntax-only version — full checking requires type information.
+//! Simplified syntax-only version -- full checking requires type information.
 //!
 //! Flagged patterns:
 //! - `Promise.reject("message")`
@@ -13,14 +13,13 @@
 //! - `Promise.reject(null)`
 //! - `Promise.reject(undefined)`
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/prefer-promise-reject-errors";
@@ -29,7 +28,7 @@ const RULE_NAME: &str = "typescript/prefer-promise-reject-errors";
 #[derive(Debug)]
 pub struct PreferPromiseRejectErrors;
 
-impl NativeRule for PreferPromiseRejectErrors {
+impl LintRule for PreferPromiseRejectErrors {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -39,25 +38,25 @@ impl NativeRule for PreferPromiseRejectErrors {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if callee is `Promise.reject`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "reject" {
+        if member.property.as_str() != "reject" {
             return;
         }
 
-        let Expression::Identifier(obj_id) = &member.object else {
+        let Some(AstNode::IdentifierReference(obj_id)) = ctx.node(member.object) else {
             return;
         };
 
@@ -65,12 +64,12 @@ impl NativeRule for PreferPromiseRejectErrors {
             return;
         }
 
-        // Check the first argument — flag if it is a non-Error literal value
-        let Some(first_arg) = call.arguments.first() else {
+        // Check the first argument -- flag if it is a non-Error literal value
+        let Some(&first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        if is_non_error_argument(first_arg) {
+        if is_non_error_argument(first_arg_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Expected an `Error` object in `Promise.reject()` — do not reject with a literal value".to_owned(),
@@ -85,46 +84,30 @@ impl NativeRule for PreferPromiseRejectErrors {
 }
 
 /// Returns `true` if the argument is a literal value that is not an Error:
-/// string, number, boolean, null, undefined, bigint, or template literal.
-fn is_non_error_argument(arg: &Argument<'_>) -> bool {
-    matches!(
-        arg,
-        Argument::StringLiteral(_)
-            | Argument::NumericLiteral(_)
-            | Argument::BooleanLiteral(_)
-            | Argument::NullLiteral(_)
-            | Argument::BigIntLiteral(_)
-            | Argument::TemplateLiteral(_)
-    ) || is_undefined_argument(arg)
-}
-
-/// Returns `true` if the argument is the identifier `undefined`.
-fn is_undefined_argument(arg: &Argument<'_>) -> bool {
-    let Argument::Identifier(ident) = arg else {
-        return false;
-    };
-    ident.name == "undefined"
+/// string, number, boolean, null, undefined, or template literal.
+fn is_non_error_argument(arg_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(arg_id) {
+        Some(
+            AstNode::StringLiteral(_)
+            | AstNode::NumericLiteral(_)
+            | AstNode::BooleanLiteral(_)
+            | AstNode::NullLiteral(_)
+            | AstNode::TemplateLiteral(_),
+        ) => true,
+        Some(AstNode::IdentifierReference(ident)) => ident.name == "undefined",
+        _ => false,
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferPromiseRejectErrors)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferPromiseRejectErrors)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

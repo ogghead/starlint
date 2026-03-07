@@ -2,16 +2,15 @@
 //!
 //! Forbid `accessKey` attribute on elements.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/no-access-key";
@@ -19,7 +18,7 @@ const RULE_NAME: &str = "jsx-a11y/no-access-key";
 #[derive(Debug)]
 pub struct NoAccessKey;
 
-impl NativeRule for NoAccessKey {
+impl LintRule for NoAccessKey {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -29,37 +28,35 @@ impl NativeRule for NoAccessKey {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let access_key_span = opening.attributes.iter().find_map(|item| {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                match &attr.name {
-                    JSXAttributeName::Identifier(ident) if ident.name.as_str() == "accessKey" => {
-                        Some(Span::new(attr.span.start, attr.span.end))
-                    }
-                    _ => None,
-                }
+        let access_key_span = opening.attributes.iter().find_map(|attr_id| {
+            if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
+                (attr.name.as_str() == "accessKey")
+                    .then(|| Span::new(attr.span.start, attr.span.end))
             } else {
                 None
             }
         });
 
         if let Some(attr_span) = access_key_span {
+            let opening_span = Span::new(opening.span.start, opening.span.end);
+            let source = ctx.source_text();
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Do not use the `accessKey` attribute. Access keys create inconsistent keyboard shortcuts across browsers".to_owned(),
-                span: Span::new(opening.span.start, opening.span.end),
+                span: opening_span,
                 severity: Severity::Warning,
                 help: None,
                 fix: FixBuilder::new("Remove `accessKey` attribute", FixKind::SuggestionFix)
-                    .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                    .edit(fix_utils::remove_jsx_attr(source, attr_span))
                     .build(),
                 labels: vec![],
             });
@@ -69,22 +66,13 @@ impl NativeRule for NoAccessKey {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAccessKey)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAccessKey)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

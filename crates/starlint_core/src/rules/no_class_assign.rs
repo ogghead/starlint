@@ -3,21 +3,22 @@
 //! Disallow reassignment of class declarations. Reassigning a class
 //! name is almost always a mistake.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
 use oxc_semantic::SymbolFlags;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags reassignment of class declarations.
 #[derive(Debug)]
 pub struct NoClassAssign;
 
-impl NativeRule for NoClassAssign {
+impl LintRule for NoClassAssign {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-class-assign".to_owned(),
@@ -31,25 +32,30 @@ impl NativeRule for NoClassAssign {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Class])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Class])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Class(class) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Class(class) = node else {
             return;
         };
 
         // Only check class declarations (not expressions)
-        if !class.is_declaration() {
-            return;
-        }
-
-        let Some(id) = &class.id else {
+        // A class is a declaration if it appears as a top-level statement
+        // We check by resolving the id and verifying it has the Class symbol flag
+        let Some(id_node_id) = class.id else {
             return;
         };
 
-        let Some(symbol_id) = id.symbol_id.get() else {
+        let Some(AstNode::BindingIdentifier(id)) = ctx.node(id_node_id) else {
+            return;
+        };
+
+        let id_name = id.name.clone();
+        let id_span = id.span;
+
+        let Some(symbol_id) = ctx.resolve_symbol_id(id_span) else {
             return;
         };
 
@@ -74,13 +80,12 @@ impl NativeRule for NoClassAssign {
             // Suggest converting class declaration to a `let` variable
             // with a class expression, making reassignment valid.
             let fix = {
-                let name = &id.name;
-                let prefix_span = Span::new(class.span.start, id.span.end);
+                let prefix_span = Span::new(class.span.start, id_span.end);
                 let mut builder = FixBuilder::new(
-                    format!("Convert to `let {name} = class`"),
+                    format!("Convert to `let {id_name} = class`"),
                     FixKind::SuggestionFix,
                 )
-                .replace(prefix_span, format!("let {name} = class"));
+                .replace(prefix_span, format!("let {id_name} = class"));
                 // Add trailing semicolon if not already present.
                 let source = ctx.source_text();
                 let class_end = usize::try_from(class.span.end).unwrap_or(0);
@@ -92,11 +97,8 @@ impl NativeRule for NoClassAssign {
 
             ctx.report(Diagnostic {
                 rule_name: "no-class-assign".to_owned(),
-                message: format!(
-                    "'{}' is a class declaration and should not be reassigned",
-                    id.name
-                ),
-                span: Span::new(id.span.start, id.span.end),
+                message: format!("'{id_name}' is a class declaration and should not be reassigned"),
+                span: Span::new(id_span.start, id_span.end),
                 severity: Severity::Error,
                 help: Some(
                     "Use a variable declaration instead if reassignment is intended".to_owned(),
@@ -110,30 +112,13 @@ impl NativeRule for NoClassAssign {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoClassAssign)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoClassAssign)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

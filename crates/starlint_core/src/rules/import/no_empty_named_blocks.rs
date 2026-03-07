@@ -3,21 +3,21 @@
 //! Forbid empty named import blocks (`import {} from 'mod'`).
 //! An empty import block is likely a mistake or leftover from refactoring.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags import declarations with empty named import blocks.
 #[derive(Debug)]
 pub struct NoEmptyNamedBlocks;
 
-impl NativeRule for NoEmptyNamedBlocks {
+impl LintRule for NoEmptyNamedBlocks {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/no-empty-named-blocks".to_owned(),
@@ -27,23 +27,31 @@ impl NativeRule for NoEmptyNamedBlocks {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
-            return;
-        };
-
-        // Side-effect imports (`import 'mod'`) have no specifiers — that's valid
-        let Some(specifiers) = &import.specifiers else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
         // Empty named block: the specifiers list exists but is empty
         // This catches `import {} from 'mod'`
-        if specifiers.is_empty() {
+        // Side-effect imports (`import 'mod'`) also have an empty specifiers
+        // list, so we need to check the source text to distinguish.
+        if import.specifiers.is_empty() {
+            // Side-effect imports don't have `{` in the source text before `from`
+            let src = ctx.source_text();
+            let start = usize::try_from(import.span.start).unwrap_or(0);
+            let end = usize::try_from(import.span.end).unwrap_or(0);
+            let import_text = src.get(start..end).unwrap_or("");
+            if !import_text.contains('{') {
+                return;
+            }
+        }
+
+        if import.specifiers.is_empty() {
             let import_span = Span::new(import.span.start, import.span.end);
             let fix = FixBuilder::new("Remove the empty import statement", FixKind::SafeFix)
                 .edit(fix_utils::delete_statement(ctx.source_text(), import_span))
@@ -63,22 +71,13 @@ impl NativeRule for NoEmptyNamedBlocks {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoEmptyNamedBlocks)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoEmptyNamedBlocks)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

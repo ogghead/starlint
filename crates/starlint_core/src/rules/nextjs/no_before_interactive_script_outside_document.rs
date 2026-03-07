@@ -3,14 +3,13 @@
 //! Forbid `strategy="beforeInteractive"` on `<Script>` outside of `_document`.
 //! The `beforeInteractive` strategy only works in `pages/_document`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "nextjs/no-before-interactive-script-outside-document";
@@ -19,33 +18,18 @@ const RULE_NAME: &str = "nextjs/no-before-interactive-script-outside-document";
 #[derive(Debug)]
 pub struct NoBeforeInteractiveScriptOutsideDocument;
 
-/// Get the element name string from a JSX element name, handling both
-/// `Identifier` (lowercase HTML) and `IdentifierReference` (`PascalCase` components).
-fn element_name<'a>(name: &'a JSXElementName<'a>) -> Option<&'a str> {
-    match name {
-        JSXElementName::Identifier(ident) => Some(ident.name.as_str()),
-        JSXElementName::IdentifierReference(ident) => Some(ident.name.as_str()),
-        _ => None,
+/// Get string value from a JSX attribute's value node.
+fn get_string_value(ctx: &LintContext<'_>, value: Option<NodeId>) -> Option<String> {
+    let id = value?;
+    let node = ctx.node(id)?;
+    if let AstNode::StringLiteral(lit) = node {
+        Some(lit.value.clone())
+    } else {
+        None
     }
 }
 
-/// Get string value from a JSX attribute value.
-fn get_string_value<'a>(value: Option<&'a JSXAttributeValue<'a>>) -> Option<&'a str> {
-    match value {
-        Some(JSXAttributeValue::StringLiteral(lit)) => Some(lit.value.as_str()),
-        _ => None,
-    }
-}
-
-/// Get the attribute name as a string.
-fn attr_name<'a>(name: &'a JSXAttributeName<'a>) -> &'a str {
-    match name {
-        JSXAttributeName::Identifier(ident) => ident.name.as_str(),
-        JSXAttributeName::NamespacedName(ns) => ns.name.name.as_str(),
-    }
-}
-
-impl NativeRule for NoBeforeInteractiveScriptOutsideDocument {
+impl LintRule for NoBeforeInteractiveScriptOutsideDocument {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -55,26 +39,27 @@ impl NativeRule for NoBeforeInteractiveScriptOutsideDocument {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
         // Only check `<Script>` (PascalCase component)
-        if element_name(&opening.name) != Some("Script") {
+        if opening.name.as_str() != "Script" {
             return;
         }
 
         // Check for strategy="beforeInteractive"
-        let has_before_interactive = opening.attributes.iter().any(|item| {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                if attr_name(&attr.name) == "strategy" {
-                    return get_string_value(attr.value.as_ref()) == Some("beforeInteractive");
-                }
+        let has_before_interactive = opening.attributes.iter().any(|attr_id| {
+            let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
+                return false;
+            };
+            if attr.name.as_str() == "strategy" {
+                return get_string_value(ctx, attr.value).as_deref() == Some("beforeInteractive");
             }
             false
         });
@@ -103,26 +88,15 @@ impl NativeRule for NoBeforeInteractiveScriptOutsideDocument {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
+    use std::path::Path;
 
-    fn lint_with_path(
-        source: &str,
-        path: &Path,
-    ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> =
-                vec![Box::new(NoBeforeInteractiveScriptOutsideDocument)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+    fn lint_with_path(source: &str, path: &Path) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> =
+            vec![Box::new(NoBeforeInteractiveScriptOutsideDocument)];
+        lint_source(source, path.to_str().unwrap_or("test.js"), &rules)
     }
 
     #[test]

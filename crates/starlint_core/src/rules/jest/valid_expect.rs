@@ -2,14 +2,13 @@
 //!
 //! Error when `expect()` is called without a matcher (e.g., missing `.toBe()`).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/valid-expect";
@@ -18,7 +17,7 @@ const RULE_NAME: &str = "jest/valid-expect";
 #[derive(Debug)]
 pub struct ValidExpect;
 
-impl NativeRule for ValidExpect {
+impl LintRule for ValidExpect {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -28,19 +27,19 @@ impl NativeRule for ValidExpect {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if this is a direct `expect(...)` call (not `expect(...).toBe(...)`)
         let is_expect = matches!(
-            &call.callee,
-            Expression::Identifier(id) if id.name.as_str() == "expect"
+            ctx.node(call.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "expect"
         );
 
         if !is_expect {
@@ -75,22 +74,13 @@ impl NativeRule for ValidExpect {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ValidExpect)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ValidExpect)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

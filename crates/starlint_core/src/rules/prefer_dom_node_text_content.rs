@@ -4,19 +4,19 @@
 //! a reflow and has quirky whitespace behavior. `textContent` is faster and
 //! more predictable.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags access to `innerText`, suggesting `textContent` instead.
 #[derive(Debug)]
 pub struct PreferDomNodeTextContent;
 
-impl NativeRule for PreferDomNodeTextContent {
+impl LintRule for PreferDomNodeTextContent {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-dom-node-text-content".to_owned(),
@@ -26,20 +26,24 @@ impl NativeRule for PreferDomNodeTextContent {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::StaticMemberExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::StaticMemberExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::StaticMemberExpression(member) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::StaticMemberExpression(member) = node else {
             return;
         };
 
-        if member.property.name.as_str() != "innerText" {
+        if member.property.as_str() != "innerText" {
             return;
         }
 
-        let prop_span = Span::new(member.property.span.start, member.property.span.end);
+        // property is a String, not a node. Compute the property span from the
+        // member span: the property occupies the last `property.len()` bytes.
+        #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
+        let prop_start = member.span.end.saturating_sub(member.property.len() as u32);
+        let prop_span = Span::new(prop_start, member.span.end);
         ctx.report(Diagnostic {
             rule_name: "prefer-dom-node-text-content".to_owned(),
             message: "Prefer `textContent` over `innerText` — `innerText` triggers a reflow"
@@ -63,23 +67,13 @@ impl NativeRule for PreferDomNodeTextContent {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferDomNodeTextContent)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferDomNodeTextContent)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

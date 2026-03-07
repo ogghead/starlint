@@ -4,20 +4,21 @@
 //! property or a setter that assigns to its own property causes infinite
 //! recursion.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, MethodDefinitionKind, PropertyKey, Statement};
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::shadow_reuse, clippy::shadow_unrelated)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::MethodDefinitionKind;
+use starlint_ast::types::NodeId;
 
 /// Flags getters/setters that recursively access/assign their own property.
 #[derive(Debug)]
 pub struct NoAccessorRecursion;
 
-impl NativeRule for NoAccessorRecursion {
+impl LintRule for NoAccessorRecursion {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-accessor-recursion".to_owned(),
@@ -27,35 +28,55 @@ impl NativeRule for NoAccessorRecursion {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::MethodDefinition])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::MethodDefinition])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::MethodDefinition(method) = kind else {
+    #[allow(clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::MethodDefinition(method) = node else {
             return;
         };
 
-        let prop_name = match &method.key {
-            PropertyKey::StaticIdentifier(id) => id.name.as_str(),
-            _ => return,
+        // Get property name from the key
+        let prop_name = ctx.node(method.key).and_then(|n| {
+            if let AstNode::IdentifierReference(id) = n {
+                Some(id.name.clone())
+            } else if let AstNode::BindingIdentifier(id) = n {
+                Some(id.name.clone())
+            } else {
+                None
+            }
+        });
+
+        let Some(prop_name) = prop_name else {
+            return;
         };
+
+        let method_span = method.span;
 
         match method.kind {
             MethodDefinitionKind::Get => {
                 // Check if the getter body accesses `this.propName`
-                let Some(func) = &method.value.body else {
+                let Some(AstNode::Function(func)) = ctx.node(method.value) else {
                     return;
                 };
+                let Some(body_id) = func.body else {
+                    return;
+                };
+                let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+                    return;
+                };
+                let stmt_ids: Vec<NodeId> = body.statements.to_vec();
 
-                for stmt in &func.statements {
-                    if statement_accesses_this_property(stmt, prop_name) {
+                for stmt_id in stmt_ids {
+                    if statement_accesses_this_property(ctx, stmt_id, &prop_name) {
                         ctx.report(Diagnostic {
                             rule_name: "no-accessor-recursion".to_owned(),
                             message: format!(
                                 "Getter for '{prop_name}' recursively accesses `this.{prop_name}`"
                             ),
-                            span: Span::new(method.span.start, method.span.end),
+                            span: Span::new(method_span.start, method_span.end),
                             severity: Severity::Error,
                             help: None,
                             fix: None,
@@ -67,18 +88,25 @@ impl NativeRule for NoAccessorRecursion {
             }
             MethodDefinitionKind::Set => {
                 // Check if the setter body assigns to `this.propName`
-                let Some(func) = &method.value.body else {
+                let Some(AstNode::Function(func)) = ctx.node(method.value) else {
                     return;
                 };
+                let Some(body_id) = func.body else {
+                    return;
+                };
+                let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+                    return;
+                };
+                let stmt_ids: Vec<NodeId> = body.statements.to_vec();
 
-                for stmt in &func.statements {
-                    if statement_assigns_this_property(stmt, prop_name) {
+                for stmt_id in stmt_ids {
+                    if statement_assigns_this_property(ctx, stmt_id, &prop_name) {
                         ctx.report(Diagnostic {
                             rule_name: "no-accessor-recursion".to_owned(),
                             message: format!(
                                 "Setter for '{prop_name}' recursively assigns to `this.{prop_name}`"
                             ),
-                            span: Span::new(method.span.start, method.span.end),
+                            span: Span::new(method_span.start, method_span.end),
                             severity: Severity::Error,
                             help: None,
                             fix: None,
@@ -94,61 +122,72 @@ impl NativeRule for NoAccessorRecursion {
 }
 
 /// Check if a statement reads `this.propName`.
-fn statement_accesses_this_property(stmt: &Statement<'_>, prop_name: &str) -> bool {
+fn statement_accesses_this_property(
+    ctx: &LintContext<'_>,
+    stmt_id: NodeId,
+    prop_name: &str,
+) -> bool {
+    let Some(stmt) = ctx.node(stmt_id) else {
+        return false;
+    };
     match stmt {
-        Statement::ReturnStatement(ret) => ret
+        AstNode::ReturnStatement(ret) => ret
             .argument
-            .as_ref()
-            .is_some_and(|expr| expression_accesses_this_property(expr, prop_name)),
-        Statement::ExpressionStatement(expr_stmt) => {
-            expression_accesses_this_property(&expr_stmt.expression, prop_name)
-        }
+            .and_then(|id| ctx.node(id))
+            .is_some_and(|n| expression_accesses_this_property(ctx, n, prop_name)),
+        AstNode::ExpressionStatement(expr_stmt) => ctx
+            .node(expr_stmt.expression)
+            .is_some_and(|n| expression_accesses_this_property(ctx, n, prop_name)),
         _ => false,
     }
 }
 
 /// Check if an expression reads `this.propName`.
-fn expression_accesses_this_property(expr: &Expression<'_>, prop_name: &str) -> bool {
-    match expr {
-        Expression::StaticMemberExpression(member) => {
-            matches!(&member.object, Expression::ThisExpression(_))
-                && member.property.name == prop_name
-        }
-        _ => false,
+fn expression_accesses_this_property(
+    ctx: &LintContext<'_>,
+    node: &AstNode,
+    prop_name: &str,
+) -> bool {
+    if let AstNode::StaticMemberExpression(member) = node {
+        let is_this = ctx
+            .node(member.object)
+            .is_some_and(|n| matches!(n, AstNode::ThisExpression(_)));
+        is_this && member.property == prop_name
+    } else {
+        false
     }
 }
 
 /// Check if a statement assigns to `this.propName`.
-fn statement_assigns_this_property(stmt: &Statement<'_>, prop_name: &str) -> bool {
-    if let Statement::ExpressionStatement(expr_stmt) = stmt {
-        if let Expression::AssignmentExpression(assign) = &expr_stmt.expression {
-            if let oxc_ast::ast::AssignmentTarget::StaticMemberExpression(member) = &assign.left {
-                return matches!(&member.object, Expression::ThisExpression(_))
-                    && member.property.name == prop_name;
-            }
-        }
-    }
-    false
+fn statement_assigns_this_property(
+    ctx: &LintContext<'_>,
+    stmt_id: NodeId,
+    prop_name: &str,
+) -> bool {
+    let Some(AstNode::ExpressionStatement(expr_stmt)) = ctx.node(stmt_id) else {
+        return false;
+    };
+    let Some(AstNode::AssignmentExpression(assign)) = ctx.node(expr_stmt.expression) else {
+        return false;
+    };
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(assign.left) else {
+        return false;
+    };
+    let is_this = ctx
+        .node(member.object)
+        .is_some_and(|n| matches!(n, AstNode::ThisExpression(_)));
+    is_this && member.property == prop_name
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAccessorRecursion)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAccessorRecursion)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

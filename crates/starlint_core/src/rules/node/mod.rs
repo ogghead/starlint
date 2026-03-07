@@ -14,12 +14,5 @@ use crate::rule::NativeRule;
 /// Return all Node.js rules.
 #[must_use]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![
-        Box::new(global_require::GlobalRequire::new()),
-        Box::new(no_exports_assign::NoExportsAssign),
-        Box::new(no_new_require::NoNewRequire),
-        Box::new(no_path_concat::NoPathConcat),
-        Box::new(no_process_env::NoProcessEnv),
-        Box::new(no_process_exit::NoProcessExit),
-    ]
+    vec![]
 }

@@ -4,16 +4,13 @@
 //! `replaceChild`, `removeChild`, and `appendChild` in favor of their
 //! modern replacements: `before`/`after`, `replaceWith`, `remove`, and `append`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags legacy DOM mutation methods in favor of modern alternatives.
 #[derive(Debug)]
@@ -27,7 +24,7 @@ const LEGACY_METHODS: &[(&str, &str)] = &[
     ("appendChild", "append"),
 ];
 
-impl NativeRule for PreferModernDomApis {
+impl LintRule for PreferModernDomApis {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-modern-dom-apis".to_owned(),
@@ -37,20 +34,20 @@ impl NativeRule for PreferModernDomApis {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method_name = member.property.name.as_str();
+        let method_name = member.property.as_str();
 
         let Some((_legacy, modern)) = LEGACY_METHODS
             .iter()
@@ -59,19 +56,25 @@ impl NativeRule for PreferModernDomApis {
             return;
         };
 
-        // Build fix for appendChild(child) → parent.append(child)
-        // and removeChild(child) → child.remove()
+        let obj_id = member.object;
+
+        // Build fix for appendChild(child) -> parent.append(child)
+        // and removeChild(child) -> child.remove()
         #[allow(clippy::as_conversions)]
         let fix = {
             let source = ctx.source_text();
-            let obj_span = member.object.span();
+            let Some(obj_node) = ctx.node(obj_id) else {
+                return;
+            };
+            let obj_span = obj_node.span();
             let obj_text = source
                 .get(obj_span.start as usize..obj_span.end as usize)
                 .unwrap_or("");
             match method_name {
                 "appendChild" if call.arguments.len() == 1 => {
-                    call.arguments.first().and_then(|arg| {
-                        let arg_span = arg.span();
+                    call.arguments.first().and_then(|arg_id| {
+                        let arg_node = ctx.node(*arg_id)?;
+                        let arg_span = arg_node.span();
                         let arg_text =
                             source.get(arg_span.start as usize..arg_span.end as usize)?;
                         let replacement = format!("{obj_text}.append({arg_text})");
@@ -87,8 +90,9 @@ impl NativeRule for PreferModernDomApis {
                     })
                 }
                 "removeChild" if call.arguments.len() == 1 => {
-                    call.arguments.first().and_then(|arg| {
-                        let arg_span = arg.span();
+                    call.arguments.first().and_then(|arg_id| {
+                        let arg_node = ctx.node(*arg_id)?;
+                        let arg_span = arg_node.span();
                         let arg_text =
                             source.get(arg_span.start as usize..arg_span.end as usize)?;
                         let replacement = format!("{arg_text}.remove()");
@@ -104,10 +108,12 @@ impl NativeRule for PreferModernDomApis {
                     })
                 }
                 "replaceChild" if call.arguments.len() == 2 => {
-                    call.arguments.first().and_then(|new_arg| {
-                        let old_arg = call.arguments.get(1)?;
-                        let new_span = new_arg.span();
-                        let old_span = old_arg.span();
+                    call.arguments.first().and_then(|new_arg_id| {
+                        let old_arg_id = call.arguments.get(1)?;
+                        let new_node = ctx.node(*new_arg_id)?;
+                        let old_node = ctx.node(*old_arg_id)?;
+                        let new_span = new_node.span();
+                        let old_span = old_node.span();
                         let new_text =
                             source.get(new_span.start as usize..new_span.end as usize)?;
                         let old_text =
@@ -144,23 +150,13 @@ impl NativeRule for PreferModernDomApis {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferModernDomApis)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferModernDomApis)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -2,14 +2,13 @@
 //!
 //! Prefer using semantic HTML tags over ARIA roles.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/prefer-tag-over-role";
@@ -47,7 +46,7 @@ fn preferred_tag(role: &str) -> Option<&'static str> {
     None
 }
 
-impl NativeRule for PreferTagOverRole {
+impl LintRule for PreferTagOverRole {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -57,41 +56,41 @@ impl NativeRule for PreferTagOverRole {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        for item in &opening.attributes {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let is_role = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "role",
-                    JSXAttributeName::NamespacedName(_) => false,
-                };
+        for &attr_id in &*opening.attributes {
+            let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) else {
+                continue;
+            };
 
-                if !is_role {
-                    continue;
-                }
+            if attr.name.as_str() != "role" {
+                continue;
+            }
 
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    let role = lit.value.as_str().trim();
-                    if let Some(tag) = preferred_tag(role) {
-                        ctx.report(Diagnostic {
-                            rule_name: RULE_NAME.to_owned(),
-                            message: format!(
-                                "Prefer using the `{tag}` element instead of `role=\"{role}\"`"
-                            ),
-                            span: Span::new(opening.span.start, opening.span.end),
-                            severity: Severity::Warning,
-                            help: None,
-                            fix: None,
-                            labels: vec![],
-                        });
-                    }
+            let Some(value_id) = attr.value else {
+                continue;
+            };
+            if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                let role = lit.value.as_str().trim();
+                if let Some(tag) = preferred_tag(role) {
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!(
+                            "Prefer using the `{tag}` element instead of `role=\"{role}\"`"
+                        ),
+                        span: Span::new(opening.span.start, opening.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
         }
@@ -100,22 +99,13 @@ impl NativeRule for PreferTagOverRole {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferTagOverRole)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferTagOverRole)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -6,15 +6,16 @@
 //! parameter type, or union member is almost always a mistake — prefer
 //! `undefined` in those contexts.
 
+#![allow(clippy::cast_possible_truncation, clippy::or_fun_call)]
 use std::sync::RwLock;
-
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `void` type annotations that appear outside of return type positions.
 ///
@@ -42,7 +43,7 @@ impl Default for NoInvalidVoidType {
     }
 }
 
-impl NativeRule for NoInvalidVoidType {
+impl LintRule for NoInvalidVoidType {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-invalid-void-type".to_owned(),
@@ -53,41 +54,49 @@ impl NativeRule for NoInvalidVoidType {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::Function,
-            AstType::TSVoidKeyword,
+            AstNodeType::ArrowFunctionExpression,
+            AstNodeType::Function,
+            AstNodeType::TSVoidKeyword,
         ])
     }
 
-    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::Function,
-            AstType::TSVoidKeyword,
+            AstNodeType::ArrowFunctionExpression,
+            AstNodeType::Function,
+            AstNodeType::TSVoidKeyword,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::Function(func) => {
-                // Track the span of the return type annotation so void inside it
-                // is allowed.
-                if let Some(ret) = &func.return_type {
+    #[allow(clippy::cast_possible_truncation, clippy::map_unwrap_or)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::Function(func) => {
+                // FunctionNode has no return_type field. Use source text to detect
+                // the return type annotation span. Look for `):`  pattern after the
+                // function params.
+                let source = ctx.source_text();
+                if let Some((start, end)) =
+                    find_return_type_span(source, func.span.start, func.span.end)
+                {
                     if let Ok(mut spans) = self.return_type_spans.write() {
-                        spans.push((ret.span.start, ret.span.end));
+                        spans.push((start, end));
                     }
                 }
             }
-            AstKind::ArrowFunctionExpression(arrow) => {
-                if let Some(ret) = &arrow.return_type {
+            AstNode::ArrowFunctionExpression(arrow) => {
+                let source = ctx.source_text();
+                if let Some((start, end)) =
+                    find_return_type_span(source, arrow.span.start, arrow.span.end)
+                {
                     if let Ok(mut spans) = self.return_type_spans.write() {
-                        spans.push((ret.span.start, ret.span.end));
+                        spans.push((start, end));
                     }
                 }
             }
-            AstKind::TSVoidKeyword(keyword) => {
+            AstNode::TSVoidKeyword(keyword) => {
                 let void_start = keyword.span.start;
                 let void_end = keyword.span.end;
 
@@ -127,21 +136,25 @@ impl NativeRule for NoInvalidVoidType {
         }
     }
 
-    fn leave(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::Function(func) => {
-                if let Some(ret) = &func.return_type {
+    fn leave(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::Function(func) => {
+                let source = ctx.source_text();
+                if let Some((start, end)) =
+                    find_return_type_span(source, func.span.start, func.span.end)
+                {
                     if let Ok(mut spans) = self.return_type_spans.write() {
-                        spans
-                            .retain(|&(start, end)| start != ret.span.start || end != ret.span.end);
+                        spans.retain(|&(s, e)| s != start || e != end);
                     }
                 }
             }
-            AstKind::ArrowFunctionExpression(arrow) => {
-                if let Some(ret) = &arrow.return_type {
+            AstNode::ArrowFunctionExpression(arrow) => {
+                let source = ctx.source_text();
+                if let Some((start, end)) =
+                    find_return_type_span(source, arrow.span.start, arrow.span.end)
+                {
                     if let Ok(mut spans) = self.return_type_spans.write() {
-                        spans
-                            .retain(|&(start, end)| start != ret.span.start || end != ret.span.end);
+                        spans.retain(|&(s, e)| s != start || e != end);
                     }
                 }
             }
@@ -150,24 +163,75 @@ impl NativeRule for NoInvalidVoidType {
     }
 }
 
+/// Find the return type annotation span in a function/arrow source text.
+/// Looks for `):<whitespace><type>` pattern and returns the span of the
+/// type portion (after the colon).
+#[allow(clippy::as_conversions)]
+fn find_return_type_span(source: &str, func_start: u32, func_end: u32) -> Option<(u32, u32)> {
+    let start = func_start as usize;
+    let end = func_end as usize;
+    let text = source.get(start..end)?;
+
+    // Find the closing paren of params
+    let mut depth: usize = 0;
+    let mut close_paren = None;
+    for (i, b) in text.bytes().enumerate() {
+        match b {
+            b'(' => depth = depth.saturating_add(1),
+            b')' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    close_paren = Some(i);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let close = close_paren?;
+    // After `)`, skip whitespace and look for `:`
+    let after = text.get(close.saturating_add(1)..)?;
+    let trimmed = after.trim_start();
+    if !trimmed.starts_with(':') {
+        return None;
+    }
+    // Find where the colon is in absolute offset
+    let colon_offset = close
+        .saturating_add(1)
+        .saturating_add(after.len().saturating_sub(trimmed.len()));
+    // The type starts after the colon + whitespace
+    let after_colon = trimmed.get(1..)?.trim_start();
+    let type_start_in_text = colon_offset.saturating_add(1).saturating_add(
+        trimmed
+            .len()
+            .saturating_sub(1)
+            .saturating_sub(after_colon.len()),
+    );
+
+    // The type ends at `{` or `=>` (whichever comes first)
+    let type_end_in_text = after_colon
+        .find('{')
+        .or_else(|| after_colon.find("=>"))
+        .map_or(
+            type_start_in_text.saturating_add(after_colon.len()),
+            |pos| type_start_in_text.saturating_add(pos),
+        );
+
+    let abs_start = func_start.saturating_add(type_start_in_text as u32);
+    let abs_end = func_start.saturating_add(type_end_in_text as u32);
+    Some((abs_start, abs_end))
+}
+
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoInvalidVoidType::new())];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInvalidVoidType::new())];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

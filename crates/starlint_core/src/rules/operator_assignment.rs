@@ -3,22 +3,20 @@
 //! Require or disallow assignment operator shorthand where possible.
 //! `x = x + 1` should be written as `x += 1`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{AssignmentOperator, BinaryOperator};
+use starlint_ast::types::NodeId;
 
 /// Flags assignments that could use shorthand operators.
 #[derive(Debug)]
 pub struct OperatorAssignment;
 
-impl NativeRule for OperatorAssignment {
+impl LintRule for OperatorAssignment {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "operator-assignment".to_owned(),
@@ -28,12 +26,12 @@ impl NativeRule for OperatorAssignment {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::AssignmentExpression(assign) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
@@ -43,7 +41,7 @@ impl NativeRule for OperatorAssignment {
         }
 
         // Right side must be a binary expression
-        let Expression::BinaryExpression(binary) = &assign.right else {
+        let Some(AstNode::BinaryExpression(binary)) = ctx.node(assign.right) else {
             return;
         };
 
@@ -54,12 +52,20 @@ impl NativeRule for OperatorAssignment {
 
         // Check if the left side of the binary matches the assignment target
         let source = ctx.source_text();
-        if targets_match(&assign.left, &binary.left, source) {
-            let target_start = usize::try_from(assign.left.span().start).unwrap_or(0);
-            let target_end = usize::try_from(assign.left.span().end).unwrap_or(0);
+        if targets_match(assign.left, binary.left, source, ctx) {
+            let target_span = ctx.node(assign.left).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
+            let target_start = usize::try_from(target_span.start).unwrap_or(0);
+            let target_end = usize::try_from(target_span.end).unwrap_or(0);
             let target_text = source.get(target_start..target_end).unwrap_or("");
-            let right_start = usize::try_from(binary.right.span().start).unwrap_or(0);
-            let right_end = usize::try_from(binary.right.span().end).unwrap_or(0);
+            let right_span = ctx.node(binary.right).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
+            let right_start = usize::try_from(right_span.start).unwrap_or(0);
+            let right_end = usize::try_from(right_span.end).unwrap_or(0);
             let right_text = source.get(right_start..right_end).unwrap_or("");
             let op_str = shorthand_op_str(binary.operator);
 
@@ -123,11 +129,15 @@ const fn shorthand_op_str(op: BinaryOperator) -> &'static str {
 }
 
 /// Compare assignment target and expression by source text.
-fn targets_match(target: &AssignmentTarget<'_>, expr: &Expression<'_>, source: &str) -> bool {
-    use oxc_span::GetSpan;
-
-    let target_span = target.span();
-    let expr_span = expr.span();
+fn targets_match(target_id: NodeId, expr_id: NodeId, source: &str, ctx: &LintContext<'_>) -> bool {
+    let target_span = ctx.node(target_id).map_or(
+        starlint_ast::types::Span::EMPTY,
+        starlint_ast::AstNode::span,
+    );
+    let expr_span = ctx.node(expr_id).map_or(
+        starlint_ast::types::Span::EMPTY,
+        starlint_ast::AstNode::span,
+    );
 
     let target_start = usize::try_from(target_span.start).unwrap_or(0);
     let target_end = usize::try_from(target_span.end).unwrap_or(0);
@@ -145,23 +155,13 @@ fn targets_match(target: &AssignmentTarget<'_>, expr: &Expression<'_>, source: &
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(OperatorAssignment)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(OperatorAssignment)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

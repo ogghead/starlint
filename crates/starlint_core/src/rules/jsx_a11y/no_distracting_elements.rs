@@ -2,16 +2,13 @@
 //!
 //! Forbid `<marquee>` and `<blink>` elements.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::JSXElementName;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/no-distracting-elements";
@@ -22,7 +19,7 @@ const DISTRACTING_ELEMENTS: &[&str] = &["marquee", "blink"];
 #[derive(Debug)]
 pub struct NoDistractingElements;
 
-impl NativeRule for NoDistractingElements {
+impl LintRule for NoDistractingElements {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -32,19 +29,16 @@ impl NativeRule for NoDistractingElements {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let element_name = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+        let element_name = opening.name.as_str();
 
         if DISTRACTING_ELEMENTS.contains(&element_name) {
             let fix = build_replace_fix(ctx.source_text(), opening, element_name);
@@ -65,16 +59,16 @@ impl NativeRule for NoDistractingElements {
 #[allow(clippy::as_conversions)] // u32↔usize lossless on 32/64-bit
 fn build_replace_fix(
     source: &str,
-    opening: &oxc_ast::ast::JSXOpeningElement<'_>,
+    opening: &starlint_ast::node::JSXOpeningElementNode,
     element_name: &str,
 ) -> Option<Fix> {
-    let ident_span = match &opening.name {
-        JSXElementName::Identifier(ident) => ident.span(),
-        _ => return None,
-    };
+    // The element name starts after `<` in the opening tag
+    // opening.span.start points to `<`, so name starts at +1
+    let name_start = opening.span.start.saturating_add(1);
+    let name_end = name_start.saturating_add(u32::try_from(element_name.len()).unwrap_or(0));
 
     let mut edits = vec![Edit {
-        span: Span::new(ident_span.start, ident_span.end),
+        span: Span::new(name_start, name_end),
         replacement: "span".to_owned(),
     }];
 
@@ -103,22 +97,13 @@ fn build_replace_fix(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDistractingElements)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDistractingElements)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

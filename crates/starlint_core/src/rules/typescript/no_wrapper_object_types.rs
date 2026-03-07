@@ -6,14 +6,13 @@
 //! use the lowercase primitive forms (`string`, `number`, `boolean`, `bigint`,
 //! `symbol`) instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::TSTypeName;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/no-wrapper-object-types";
@@ -32,7 +31,7 @@ const WRAPPER_TYPES: &[(&str, &str)] = &[
 #[derive(Debug)]
 pub struct NoWrapperObjectTypes;
 
-impl NativeRule for NoWrapperObjectTypes {
+impl LintRule for NoWrapperObjectTypes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -42,37 +41,32 @@ impl NativeRule for NoWrapperObjectTypes {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSTypeReference])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSTypeReference])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSTypeReference(type_ref) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSTypeReference(type_ref) = node else {
             return;
         };
 
-        // Only check simple identifier references (not qualified names like `Foo.Bar`)
-        let TSTypeName::IdentifierReference(ident) = &type_ref.type_name else {
-            return;
-        };
-
-        let name = ident.name.as_str();
+        let name = type_ref.type_name.as_str();
 
         for &(wrapper, primitive) in WRAPPER_TYPES {
             if name == wrapper {
                 let message = format!("Use lowercase `{primitive}` instead of `{wrapper}`");
-                let ident_span = Span::new(ident.span.start, ident.span.end);
+                let type_span = Span::new(type_ref.span.start, type_ref.span.end);
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: message.clone(),
-                    span: Span::new(type_ref.span.start, type_ref.span.end),
+                    span: type_span,
                     severity: Severity::Error,
                     help: Some(message),
                     fix: Some(Fix {
                         kind: FixKind::SafeFix,
                         message: format!("Replace `{wrapper}` with `{primitive}`"),
                         edits: vec![Edit {
-                            span: ident_span,
+                            span: type_span,
                             replacement: primitive.to_owned(),
                         }],
                         is_snippet: false,
@@ -87,22 +81,13 @@ impl NativeRule for NoWrapperObjectTypes {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoWrapperObjectTypes)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoWrapperObjectTypes)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

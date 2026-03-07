@@ -4,8 +4,6 @@
 //! outer scope. Shadowing can lead to confusion about which variable is
 //! being referenced.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
 use oxc_span::Ident;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
@@ -13,13 +11,16 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags variable declarations that shadow a variable from an outer scope.
 #[derive(Debug)]
 pub struct NoShadow;
 
-impl NativeRule for NoShadow {
+impl LintRule for NoShadow {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-shadow".to_owned(),
@@ -34,12 +35,12 @@ impl NativeRule for NoShadow {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclaration(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclaration(decl) = node else {
             return;
         };
 
@@ -49,12 +50,22 @@ impl NativeRule for NoShadow {
 
         let scoping = semantic.scoping();
 
-        for declarator in &decl.declarations {
-            let binding_ids = declarator.id.get_binding_identifiers();
+        for &declarator_id in &*decl.declarations {
+            let pattern_id = match ctx.node(declarator_id) {
+                Some(AstNode::VariableDeclarator(d)) => d.id,
+                _ => continue,
+            };
 
-            for binding in &binding_ids {
-                let name = binding.name.as_str();
-                let Some(symbol_id) = binding.symbol_id.get() else {
+            // Collect owned binding data to avoid borrow conflicts with ctx.report().
+            let binding_data: Vec<(String, starlint_ast::types::Span)> = ctx
+                .tree()
+                .get_binding_identifiers(pattern_id)
+                .iter()
+                .map(|(_, b)| (b.name.clone(), b.span))
+                .collect();
+
+            for (name, span) in &binding_data {
+                let Some(symbol_id) = ctx.resolve_symbol_id(*span) else {
                     continue;
                 };
 
@@ -62,12 +73,12 @@ impl NativeRule for NoShadow {
                 let binding_scope = scoping.symbol_scope_id(symbol_id);
 
                 // Walk up parent scopes looking for a same-named binding
-                let ident = Ident::from(name);
+                let ident = Ident::from(name.as_str());
                 let mut current_scope = scoping.scope_parent_id(binding_scope);
 
                 while let Some(scope_id) = current_scope {
                     if scoping.get_binding(scope_id, ident).is_some() {
-                        let decl_span = Span::new(binding.span.start, binding.span.end);
+                        let decl_span = Span::new(span.start, span.end);
                         let new_name = format!("{name}_inner");
                         let fix = {
                             let edits = fix_utils::rename_symbol_edits(
@@ -101,30 +112,13 @@ impl NativeRule for NoShadow {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoShadow)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoShadow)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

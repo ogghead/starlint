@@ -3,13 +3,13 @@
 //! Enforce a maximum number of lines per function. Functions that are too
 //! long are harder to understand and maintain.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Default maximum lines per function.
 const DEFAULT_MAX: u32 = 50;
@@ -34,7 +34,7 @@ impl Default for MaxLinesPerFunction {
     }
 }
 
-impl NativeRule for MaxLinesPerFunction {
+impl LintRule for MaxLinesPerFunction {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "max-lines-per-function".to_owned(),
@@ -51,22 +51,35 @@ impl NativeRule for MaxLinesPerFunction {
         Ok(())
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let (span, name) = match kind {
-            AstKind::Function(f) => {
-                let Some(body) = &f.body else { return };
-                (
-                    body.span,
-                    f.id.as_ref()
-                        .map_or_else(|| "(anonymous)".to_owned(), |id| id.name.to_string()),
-                )
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let (span, name) = match node {
+            AstNode::Function(f) => {
+                let Some(body_id) = f.body else { return };
+                let body_span = ctx.node(body_id).map_or(
+                    starlint_ast::types::Span::new(0, 0),
+                    starlint_ast::AstNode::span,
+                );
+                let fn_name =
+                    f.id.and_then(|id| {
+                        if let Some(AstNode::BindingIdentifier(ident)) = ctx.node(id) {
+                            Some(ident.name.clone())
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or_else(|| "(anonymous)".to_owned());
+                (body_span, fn_name)
             }
-            AstKind::ArrowFunctionExpression(arrow) => {
-                (arrow.body.span, "(arrow function)".to_owned())
+            AstNode::ArrowFunctionExpression(arrow) => {
+                let body_span = ctx.node(arrow.body).map_or(
+                    starlint_ast::types::Span::new(0, 0),
+                    starlint_ast::AstNode::span,
+                );
+                (body_span, "(arrow function)".to_owned())
             }
             _ => return,
         };
@@ -97,22 +110,13 @@ impl NativeRule for MaxLinesPerFunction {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint_with_max(source: &str, max: u32) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MaxLinesPerFunction { max })];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MaxLinesPerFunction { max })];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

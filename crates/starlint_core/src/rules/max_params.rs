@@ -60,11 +60,10 @@ impl LintRule for MaxParams {
         let (param_count, span, name) = match node {
             AstNode::Function(f) => {
                 let count = u32::try_from(f.params.len()).unwrap_or(0);
-                let fn_name = f
-                    .id
-                    .and_then(|id| ctx.node(id))
-                    .and_then(|n| n.as_binding_identifier())
-                    .map_or_else(|| "(anonymous)".to_owned(), |bi| bi.name.clone());
+                let fn_name =
+                    f.id.and_then(|id| ctx.node(id))
+                        .and_then(|n| n.as_binding_identifier())
+                        .map_or_else(|| "(anonymous)".to_owned(), |bi| bi.name.clone());
                 (count, f.span, fn_name)
             }
             AstNode::ArrowFunctionExpression(arrow) => {

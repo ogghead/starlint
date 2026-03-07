@@ -2,14 +2,13 @@
 //!
 //! Warn when lifecycle hooks (`beforeEach`, `afterEach`, `beforeAll`, `afterAll`) are used.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/no-hooks";
@@ -21,7 +20,7 @@ const HOOK_NAMES: &[&str] = &["beforeEach", "afterEach", "beforeAll", "afterAll"
 #[derive(Debug)]
 pub struct NoHooks;
 
-impl NativeRule for NoHooks {
+impl LintRule for NoHooks {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -31,21 +30,21 @@ impl NativeRule for NoHooks {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let callee_name = match &call.callee {
-            Expression::Identifier(id) => id.name.as_str(),
+        let callee_name = match ctx.node(call.callee) {
+            Some(AstNode::IdentifierReference(id)) => id.name.clone(),
             _ => return,
         };
 
-        if HOOK_NAMES.contains(&callee_name) {
+        if HOOK_NAMES.contains(&callee_name.as_str()) {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!(
@@ -63,22 +62,13 @@ impl NativeRule for NoHooks {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoHooks)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoHooks)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

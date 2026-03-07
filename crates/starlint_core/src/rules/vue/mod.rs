@@ -25,5 +25,5 @@ use crate::rule::NativeRule;
 /// Return all Vue rules.
 #[must_use]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![Box::new(custom_event_name_casing::CustomEventNameCasing)]
+    vec![]
 }

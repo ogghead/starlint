@@ -4,21 +4,19 @@
 //! Using `.some()` returns a boolean directly and is more semantically
 //! correct when you don't need the found element.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.find()` used in boolean contexts.
 #[derive(Debug)]
 pub struct PreferArraySome;
 
-impl NativeRule for PreferArraySome {
+impl LintRule for PreferArraySome {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-array-some".to_owned(),
@@ -28,22 +26,25 @@ impl NativeRule for PreferArraySome {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::IfStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::IfStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Look for `if (arr.find(...))` — find used in boolean context
-        let AstKind::IfStatement(if_stmt) = kind else {
+        let AstNode::IfStatement(if_stmt) = node else {
             return;
         };
 
-        if let Some(prop_span) = find_property_span(&if_stmt.test) {
-            let span = if_stmt.test.span();
+        if let Some(prop_span) = find_property_span(if_stmt.test, ctx) {
+            let test_span = ctx.node(if_stmt.test).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
             ctx.report(Diagnostic {
                 rule_name: "prefer-array-some".to_owned(),
                 message: "Prefer `.some()` over `.find()` when checking for existence".to_owned(),
-                span: Span::new(span.start, span.end),
+                span: Span::new(test_span.start, test_span.end),
                 severity: Severity::Warning,
                 help: Some("Replace `.find()` with `.some()`".to_owned()),
                 fix: Some(Fix {
@@ -62,37 +63,43 @@ impl NativeRule for PreferArraySome {
 }
 
 /// Check if an expression is a `.find(...)` call and return the property name span.
-fn find_property_span(expr: &Expression<'_>) -> Option<Span> {
-    let Expression::CallExpression(call) = expr else {
+fn find_property_span(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<Span> {
+    let AstNode::CallExpression(call) = ctx.node(expr_id)? else {
         return None;
     };
 
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+    let AstNode::StaticMemberExpression(member) = ctx.node(call.callee)? else {
         return None;
     };
 
-    (member.property.name == "find")
-        .then(|| Span::new(member.property.span.start, member.property.span.end))
+    if member.property != "find" {
+        return None;
+    }
+
+    // Find "find" in source text after the object
+    let source = ctx.source_text();
+    let obj_span = ctx.node(member.object).map_or(
+        starlint_ast::types::Span::EMPTY,
+        starlint_ast::AstNode::span,
+    );
+    let search_start = usize::try_from(obj_span.end).unwrap_or(0);
+    let prop_start = source
+        .get(search_start..)
+        .and_then(|s| s.find("find"))
+        .map(|offset| u32::try_from(search_start.saturating_add(offset)).unwrap_or(0))?;
+    let prop_end = prop_start.saturating_add(4); // "find" is 4 chars
+    Some(Span::new(prop_start, prop_end))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferArraySome)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferArraySome)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

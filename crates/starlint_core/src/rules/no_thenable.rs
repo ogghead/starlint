@@ -4,19 +4,19 @@
 //! Objects with a `then` method are treated as "thenables" by the
 //! Promise system, which can cause unexpected behavior.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags objects and classes that define a `then` property or method.
 #[derive(Debug)]
 pub struct NoThenable;
 
-impl NativeRule for NoThenable {
+impl LintRule for NoThenable {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-thenable".to_owned(),
@@ -26,23 +26,23 @@ impl NativeRule for NoThenable {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::MethodDefinition,
-            AstType::ObjectExpression,
-            AstType::PropertyDefinition,
+            AstNodeType::MethodDefinition,
+            AstNodeType::ObjectExpression,
+            AstNodeType::PropertyDefinition,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
             // Check object properties: { then: ... } or { then() {} }
-            AstKind::ObjectExpression(obj) => {
-                for prop in &obj.properties {
-                    let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(p) = prop else {
+            AstNode::ObjectExpression(obj) => {
+                for prop_id in &obj.properties {
+                    let Some(AstNode::ObjectProperty(p)) = ctx.node(*prop_id) else {
                         continue;
                     };
-                    if property_key_is_then(&p.key) {
+                    if property_key_is_then(p.key, ctx) {
                         ctx.report(Diagnostic {
                             rule_name: "no-thenable".to_owned(),
                             message: "Do not add `then` to an object".to_owned(),
@@ -56,8 +56,8 @@ impl NativeRule for NoThenable {
                 }
             }
             // Check class methods/properties named `then`
-            AstKind::MethodDefinition(method) => {
-                if property_key_is_then(&method.key) {
+            AstNode::MethodDefinition(method) => {
+                if property_key_is_then(method.key, ctx) {
                     ctx.report(Diagnostic {
                         rule_name: "no-thenable".to_owned(),
                         message: "Do not add `then` to a class".to_owned(),
@@ -69,8 +69,8 @@ impl NativeRule for NoThenable {
                     });
                 }
             }
-            AstKind::PropertyDefinition(prop) => {
-                if property_key_is_then(&prop.key) {
+            AstNode::PropertyDefinition(prop) => {
+                if property_key_is_then(prop.key, ctx) {
                     ctx.report(Diagnostic {
                         rule_name: "no-thenable".to_owned(),
                         message: "Do not add `then` to a class".to_owned(),
@@ -87,33 +87,25 @@ impl NativeRule for NoThenable {
     }
 }
 
-/// Check if a property key is the identifier or string `"then"`.
-fn property_key_is_then(key: &oxc_ast::ast::PropertyKey<'_>) -> bool {
-    match key {
-        oxc_ast::ast::PropertyKey::StaticIdentifier(id) => id.name == "then",
-        oxc_ast::ast::PropertyKey::StringLiteral(s) => s.value == "then",
+/// Check if a property key node is the identifier or string `"then"`.
+fn property_key_is_then(key_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(key_id) {
+        Some(AstNode::IdentifierReference(id)) => id.name == "then",
+        Some(AstNode::BindingIdentifier(id)) => id.name == "then",
+        Some(AstNode::StringLiteral(s)) => s.value == "then",
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoThenable)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoThenable)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

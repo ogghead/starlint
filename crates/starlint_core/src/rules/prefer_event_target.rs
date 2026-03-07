@@ -4,20 +4,19 @@
 //! is a web standard available in browsers and modern Node.js, making code
 //! more portable.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new EventEmitter()` and `extends EventEmitter`.
 #[derive(Debug)]
 pub struct PreferEventTarget;
 
-impl NativeRule for PreferEventTarget {
+impl LintRule for PreferEventTarget {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-event-target".to_owned(),
@@ -27,59 +26,71 @@ impl NativeRule for PreferEventTarget {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Class, AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Class, AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::NewExpression(new_expr) => {
-                if let Expression::Identifier(id) = &new_expr.callee {
-                    if id.name.as_str() == "EventEmitter" {
-                        let id_span = Span::new(id.span.start, id.span.end);
-                        ctx.report(Diagnostic {
-                            rule_name: "prefer-event-target".to_owned(),
-                            message: "Prefer `EventTarget` over `EventEmitter`".to_owned(),
-                            span: Span::new(new_expr.span.start, new_expr.span.end),
-                            severity: Severity::Warning,
-                            help: Some("Replace `EventEmitter` with `EventTarget`".to_owned()),
-                            fix: Some(Fix {
-                                kind: FixKind::SuggestionFix,
-                                message: "Replace `EventEmitter` with `EventTarget`".to_owned(),
-                                edits: vec![Edit {
-                                    span: id_span,
-                                    replacement: "EventTarget".to_owned(),
-                                }],
-                                is_snippet: false,
-                            }),
-                            labels: vec![],
-                        });
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::NewExpression(new_expr) => {
+                let callee_info = ctx.node(new_expr.callee).and_then(|n| {
+                    if let AstNode::IdentifierReference(id) = n {
+                        if id.name.as_str() == "EventEmitter" {
+                            return Some(Span::new(id.span.start, id.span.end));
+                        }
                     }
+                    None
+                });
+                if let Some(id_span) = callee_info {
+                    ctx.report(Diagnostic {
+                        rule_name: "prefer-event-target".to_owned(),
+                        message: "Prefer `EventTarget` over `EventEmitter`".to_owned(),
+                        span: Span::new(new_expr.span.start, new_expr.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace `EventEmitter` with `EventTarget`".to_owned()),
+                        fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
+                            message: "Replace `EventEmitter` with `EventTarget`".to_owned(),
+                            edits: vec![Edit {
+                                span: id_span,
+                                replacement: "EventTarget".to_owned(),
+                            }],
+                            is_snippet: false,
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
-            AstKind::Class(class) => {
-                if let Some(Expression::Identifier(id)) = class.super_class.as_ref() {
-                    if id.name.as_str() == "EventEmitter" {
-                        let id_span = Span::new(id.span.start, id.span.end);
-                        ctx.report(Diagnostic {
-                            rule_name: "prefer-event-target".to_owned(),
-                            message: "Prefer extending `EventTarget` over `EventEmitter`"
-                                .to_owned(),
-                            span: Span::new(class.span.start, class.span.end),
-                            severity: Severity::Warning,
-                            help: Some("Replace `EventEmitter` with `EventTarget`".to_owned()),
-                            fix: Some(Fix {
-                                kind: FixKind::SuggestionFix,
-                                message: "Replace `EventEmitter` with `EventTarget`".to_owned(),
-                                edits: vec![Edit {
-                                    span: id_span,
-                                    replacement: "EventTarget".to_owned(),
-                                }],
-                                is_snippet: false,
-                            }),
-                            labels: vec![],
-                        });
-                    }
+            AstNode::Class(class) => {
+                let super_info = class
+                    .super_class
+                    .and_then(|sc_id| ctx.node(sc_id))
+                    .and_then(|n| {
+                        if let AstNode::IdentifierReference(id) = n {
+                            if id.name.as_str() == "EventEmitter" {
+                                return Some(Span::new(id.span.start, id.span.end));
+                            }
+                        }
+                        None
+                    });
+                if let Some(id_span) = super_info {
+                    ctx.report(Diagnostic {
+                        rule_name: "prefer-event-target".to_owned(),
+                        message: "Prefer extending `EventTarget` over `EventEmitter`".to_owned(),
+                        span: Span::new(class.span.start, class.span.end),
+                        severity: Severity::Warning,
+                        help: Some("Replace `EventEmitter` with `EventTarget`".to_owned()),
+                        fix: Some(Fix {
+                            kind: FixKind::SuggestionFix,
+                            message: "Replace `EventEmitter` with `EventTarget`".to_owned(),
+                            edits: vec![Edit {
+                                span: id_span,
+                                replacement: "EventTarget".to_owned(),
+                            }],
+                            is_snippet: false,
+                        }),
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}
@@ -89,23 +100,13 @@ impl NativeRule for PreferEventTarget {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferEventTarget)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferEventTarget)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

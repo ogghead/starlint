@@ -3,21 +3,21 @@
 //! Disallow assignments where both sides are the same. Self-assignments
 //! like `x = x` have no effect and are almost always mistakes.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{AssignmentOperator, AssignmentTarget, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::AssignmentOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags assignments where the left and right sides are identical.
 #[derive(Debug)]
 pub struct NoSelfAssign;
 
-impl NativeRule for NoSelfAssign {
+impl LintRule for NoSelfAssign {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-self-assign".to_owned(),
@@ -27,12 +27,12 @@ impl NativeRule for NoSelfAssign {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::AssignmentExpression(assign) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
@@ -41,8 +41,8 @@ impl NativeRule for NoSelfAssign {
             return;
         }
 
-        let left_name = assignment_target_name(&assign.left);
-        let right_name = expression_name(&assign.right);
+        let left_name = assignment_target_name(assign.left, ctx);
+        let right_name = expression_name(assign.right, ctx);
 
         if let (Some(left), Some(right)) = (left_name, right_name) {
             if left == right {
@@ -68,40 +68,32 @@ impl NativeRule for NoSelfAssign {
     }
 }
 
-/// Extract a simple identifier name from an assignment target.
-fn assignment_target_name<'a>(target: &'a AssignmentTarget<'a>) -> Option<&'a str> {
-    match target {
-        AssignmentTarget::AssignmentTargetIdentifier(ident) => Some(ident.name.as_str()),
+/// Extract a simple identifier name from an assignment target node.
+fn assignment_target_name<'a>(target_id: NodeId, ctx: &'a LintContext<'_>) -> Option<&'a str> {
+    match ctx.node(target_id) {
+        Some(AstNode::IdentifierReference(ident)) => Some(ident.name.as_str()),
+        Some(AstNode::BindingIdentifier(ident)) => Some(ident.name.as_str()),
         _ => None,
     }
 }
 
-/// Extract a simple identifier name from an expression.
-fn expression_name<'a>(expr: &'a Expression<'a>) -> Option<&'a str> {
-    match expr {
-        Expression::Identifier(ident) => Some(ident.name.as_str()),
+/// Extract a simple identifier name from an expression node.
+fn expression_name<'a>(expr_id: NodeId, ctx: &'a LintContext<'_>) -> Option<&'a str> {
+    match ctx.node(expr_id) {
+        Some(AstNode::IdentifierReference(ident)) => Some(ident.name.as_str()),
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoSelfAssign)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSelfAssign)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

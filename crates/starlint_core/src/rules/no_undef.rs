@@ -7,13 +7,13 @@
 //! in the semantic model. Well-known globals (console, setTimeout, etc.)
 //! are allowed.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags references to undeclared variables.
 #[derive(Debug)]
@@ -156,7 +156,7 @@ const KNOWN_GLOBALS: &[&str] = &[
     "DocumentFragment",
 ];
 
-impl NativeRule for NoUndef {
+impl LintRule for NoUndef {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-undef".to_owned(),
@@ -170,12 +170,12 @@ impl NativeRule for NoUndef {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::IdentifierReference])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::IdentifierReference])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::IdentifierReference(ident) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::IdentifierReference(ident) = node else {
             return;
         };
 
@@ -184,17 +184,8 @@ impl NativeRule for NoUndef {
             return;
         }
 
-        let Some(semantic) = ctx.semantic() else {
-            return;
-        };
-
-        // If the reference is resolved (bound to a symbol), it's fine
-        if ident
-            .reference_id
-            .get()
-            .and_then(|ref_id| semantic.scoping().get_reference(ref_id).symbol_id())
-            .is_some()
-        {
+        // If the reference is resolved (bound to a symbol), it's fine.
+        if ctx.is_reference_resolved_at(ident.name.as_str(), ident.span) {
             return;
         }
 
@@ -212,30 +203,13 @@ impl NativeRule for NoUndef {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUndef)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUndef)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

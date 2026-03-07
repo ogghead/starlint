@@ -4,24 +4,21 @@
 //! A `for` loop with a stop condition that can never be reached (e.g.
 //! `for (i = 0; i < 10; i--)`) is almost certainly a bug.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{
-    AssignmentOperator, BinaryOperator, Expression, SimpleAssignmentTarget, UpdateOperator,
-};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{AssignmentOperator, BinaryOperator, UpdateOperator};
+use starlint_ast::types::NodeId;
 
 /// Flags `for` loops whose update clause moves the counter away from the stop
 /// condition, making the loop either infinite or immediately terminating.
 #[derive(Debug)]
 pub struct ForDirection;
 
-impl NativeRule for ForDirection {
+impl LintRule for ForDirection {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "for-direction".to_owned(),
@@ -33,32 +30,39 @@ impl NativeRule for ForDirection {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ForStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ForStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ForStatement(stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ForStatement(stmt) = node else {
             return;
         };
 
         // We need both a test (stop condition) and an update clause.
-        let (Some(test), Some(update)) = (&stmt.test, &stmt.update) else {
+        let (Some(test_id), Some(update_id)) = (stmt.test, stmt.update) else {
+            return;
+        };
+
+        let Some(test_node) = ctx.node(test_id) else {
+            return;
+        };
+        let Some(update_node) = ctx.node(update_id) else {
             return;
         };
 
         // Extract the comparison operator and the counter name from the test.
-        let Some((counter_name, direction)) = extract_test_direction(test) else {
+        let Some((counter_name, direction)) = extract_test_direction(ctx, test_node) else {
             return;
         };
 
         // Check whether the update moves the counter in the wrong direction.
-        if moves_wrong_direction(update, counter_name, direction) {
+        if moves_wrong_direction(ctx, update_node, &counter_name, direction) {
             // Fix: swap the update direction
             #[allow(clippy::as_conversions)]
             let fix = {
                 let source = ctx.source_text();
-                let update_span = update.span();
+                let update_span = update_node.span();
                 source
                     .get(update_span.start as usize..update_span.end as usize)
                     .and_then(|update_text| {
@@ -105,27 +109,32 @@ enum CounterDirection {
 /// Given a test expression like `i < 10`, extract the counter variable name
 /// and the required direction. Returns `None` if the test is not a simple
 /// comparison with an identifier on one side.
-fn extract_test_direction<'a>(test: &'a Expression<'a>) -> Option<(&'a str, CounterDirection)> {
-    let Expression::BinaryExpression(bin) = test else {
+fn extract_test_direction(
+    ctx: &LintContext<'_>,
+    test: &AstNode,
+) -> Option<(String, CounterDirection)> {
+    let AstNode::BinaryExpression(bin) = test else {
         return None;
     };
+
+    let left_node = ctx.node(bin.left)?;
 
     match bin.operator {
         // `counter < x` or `counter <= x` → counter must increase
         BinaryOperator::LessThan | BinaryOperator::LessEqualThan => {
-            identifier_name(&bin.left).map(|name| (name, CounterDirection::Increasing))
+            identifier_name(left_node).map(|name| (name.to_owned(), CounterDirection::Increasing))
         }
         // `counter > x` or `counter >= x` → counter must decrease
         BinaryOperator::GreaterThan | BinaryOperator::GreaterEqualThan => {
-            identifier_name(&bin.left).map(|name| (name, CounterDirection::Decreasing))
+            identifier_name(left_node).map(|name| (name.to_owned(), CounterDirection::Decreasing))
         }
         _ => None,
     }
 }
 
-/// Extract a plain identifier name from an expression.
-fn identifier_name<'a>(expr: &'a Expression<'a>) -> Option<&'a str> {
-    if let Expression::Identifier(ident) = expr {
+/// Extract a plain identifier name from an `AstNode`.
+fn identifier_name(node: &AstNode) -> Option<&str> {
+    if let AstNode::IdentifierReference(ident) = node {
         Some(ident.name.as_str())
     } else {
         None
@@ -134,14 +143,15 @@ fn identifier_name<'a>(expr: &'a Expression<'a>) -> Option<&'a str> {
 
 /// Check if the update expression moves the named counter in the wrong direction.
 fn moves_wrong_direction(
-    update: &Expression<'_>,
+    ctx: &LintContext<'_>,
+    update: &AstNode,
     counter_name: &str,
     required: CounterDirection,
 ) -> bool {
     match update {
         // `i++` or `i--`
-        Expression::UpdateExpression(upd) => {
-            let target_name = simple_assignment_target_name(&upd.argument);
+        AstNode::UpdateExpression(upd) => {
+            let target_name = ctx.node(upd.argument).and_then(identifier_name);
             if target_name != Some(counter_name) {
                 return false;
             }
@@ -151,17 +161,18 @@ fn moves_wrong_direction(
             }
         }
         // `i += 1` or `i -= 1`
-        Expression::AssignmentExpression(assign) => {
-            let target_name = assignment_target_name(&assign.left);
+        AstNode::AssignmentExpression(assign) => {
+            let target_name = ctx.node(assign.left).and_then(identifier_name);
             if target_name != Some(counter_name) {
                 return false;
             }
+            let right_positive = ctx.node(assign.right).is_some_and(is_positive_numeric);
             match assign.operator {
                 AssignmentOperator::Addition => {
-                    is_positive_numeric(&assign.right) && required == CounterDirection::Decreasing
+                    right_positive && required == CounterDirection::Decreasing
                 }
                 AssignmentOperator::Subtraction => {
-                    is_positive_numeric(&assign.right) && required == CounterDirection::Increasing
+                    right_positive && required == CounterDirection::Increasing
                 }
                 _ => false,
             }
@@ -170,28 +181,9 @@ fn moves_wrong_direction(
     }
 }
 
-/// Get the name from a `SimpleAssignmentTarget` if it's a plain identifier.
-fn simple_assignment_target_name<'a>(target: &'a SimpleAssignmentTarget<'a>) -> Option<&'a str> {
-    if let SimpleAssignmentTarget::AssignmentTargetIdentifier(ident) = target {
-        Some(ident.name.as_str())
-    } else {
-        None
-    }
-}
-
-/// Get the name from an `AssignmentTarget` if it's a plain identifier.
-fn assignment_target_name<'a>(target: &'a oxc_ast::ast::AssignmentTarget<'a>) -> Option<&'a str> {
-    match target {
-        oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(ident) => {
-            Some(ident.name.as_str())
-        }
-        _ => None,
-    }
-}
-
-/// Check if an expression is a positive numeric literal (not zero).
-fn is_positive_numeric(expr: &Expression<'_>) -> bool {
-    if let Expression::NumericLiteral(lit) = expr {
+/// Check if an `AstNode` is a positive numeric literal (not zero).
+fn is_positive_numeric(node: &AstNode) -> bool {
+    if let AstNode::NumericLiteral(lit) = node {
         lit.value > 0.0
     } else {
         false
@@ -228,22 +220,13 @@ fn swap_update_direction(text: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ForDirection)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ForDirection)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -6,21 +6,19 @@
 //! `"1"`, ...) and may also include inherited enumerable properties. Use
 //! `for...of` to iterate over array values instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags all `for...in` statements as potentially incorrect for array iteration.
 #[derive(Debug)]
 pub struct NoForInArray;
 
-impl NativeRule for NoForInArray {
+impl LintRule for NoForInArray {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-for-in-array".to_owned(),
@@ -30,34 +28,39 @@ impl NativeRule for NoForInArray {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ForInStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ForInStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ForInStatement(stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ForInStatement(stmt) = node else {
             return;
         };
 
         // Fix: for (x in arr) → for (x of arr)
+        // stmt.left and stmt.right are NodeId — resolve their spans
         #[allow(clippy::as_conversions)]
         let fix = {
             let source = ctx.source_text();
-            let left_end = stmt.left.span().end as usize;
-            let right_start = stmt.right.span().start as usize;
-            let between = source.get(left_end..right_start).unwrap_or("");
-            between.find(" in ").and_then(|pos| {
-                let in_start =
-                    u32::try_from(left_end.saturating_add(pos).saturating_add(1)).ok()?;
-                let in_end = in_start.saturating_add(2);
-                Some(Fix {
-                    kind: FixKind::SuggestionFix,
-                    message: "Replace `in` with `of`".to_owned(),
-                    edits: vec![Edit {
-                        span: Span::new(in_start, in_end),
-                        replacement: "of".to_owned(),
-                    }],
-                    is_snippet: false,
+            let left_span = ctx.node(stmt.left).map(AstNode::span);
+            let right_span = ctx.node(stmt.right).map(AstNode::span);
+            left_span.zip(right_span).and_then(|(ls, rs)| {
+                let left_end = ls.end as usize;
+                let right_start = rs.start as usize;
+                let between = source.get(left_end..right_start).unwrap_or("");
+                between.find(" in ").and_then(|pos| {
+                    let in_start =
+                        u32::try_from(left_end.saturating_add(pos).saturating_add(1)).ok()?;
+                    let in_end = in_start.saturating_add(2);
+                    Some(Fix {
+                        kind: FixKind::SuggestionFix,
+                        message: "Replace `in` with `of`".to_owned(),
+                        edits: vec![Edit {
+                            span: Span::new(in_start, in_end),
+                            replacement: "of".to_owned(),
+                        }],
+                        is_snippet: false,
+                    })
                 })
             })
         };
@@ -77,23 +80,13 @@ impl NativeRule for NoForInArray {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoForInArray)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoForInArray)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

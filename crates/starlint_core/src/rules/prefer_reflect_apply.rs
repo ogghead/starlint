@@ -4,22 +4,19 @@
 //! `Reflect.apply()` method is clearer and avoids relying on `.apply()`
 //! being present on the function object.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.apply()` calls with two arguments, suggesting `Reflect.apply()`.
 #[derive(Debug)]
 pub struct PreferReflectApply;
 
-impl NativeRule for PreferReflectApply {
+impl LintRule for PreferReflectApply {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-reflect-apply".to_owned(),
@@ -29,21 +26,21 @@ impl NativeRule for PreferReflectApply {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
         // Must be calling `.apply()`
-        if member.property.name.as_str() != "apply" {
+        if member.property.as_str() != "apply" {
             return;
         }
 
@@ -53,29 +50,32 @@ impl NativeRule for PreferReflectApply {
         }
 
         // Skip if the receiver is already `Reflect` (i.e. `Reflect.apply(...)`)
-        if let Expression::Identifier(ident) = &member.object {
+        if let Some(AstNode::IdentifierReference(ident)) = ctx.node(member.object) {
             if ident.name.as_str() == "Reflect" {
                 return;
             }
         }
 
         let source = ctx.source_text();
-        let fn_start = usize::try_from(member.object.span().start).unwrap_or(0);
-        let fn_end = usize::try_from(member.object.span().end).unwrap_or(0);
+        let obj_span = ctx.node(member.object).map_or(
+            starlint_ast::types::Span::new(0, 0),
+            starlint_ast::AstNode::span,
+        );
+        let fn_start = usize::try_from(obj_span.start).unwrap_or(0);
+        let fn_end = usize::try_from(obj_span.end).unwrap_or(0);
         let fn_text = source.get(fn_start..fn_end).unwrap_or("");
 
-        let fix = call
-            .arguments
-            .first()
-            .zip(call.arguments.get(1))
-            .map(|(ctx_arg, args_arg)| {
-                let ctx_start = usize::try_from(ctx_arg.span().start).unwrap_or(0);
-                let ctx_end = usize::try_from(ctx_arg.span().end).unwrap_or(0);
-                let args_start = usize::try_from(args_arg.span().start).unwrap_or(0);
-                let args_end = usize::try_from(args_arg.span().end).unwrap_or(0);
+        let fix = call.arguments.first().zip(call.arguments.get(1)).and_then(
+            |(&ctx_arg_id, &args_arg_id)| {
+                let ctx_span = ctx.node(ctx_arg_id)?.span();
+                let args_span = ctx.node(args_arg_id)?.span();
+                let ctx_start = usize::try_from(ctx_span.start).unwrap_or(0);
+                let ctx_end = usize::try_from(ctx_span.end).unwrap_or(0);
+                let args_start = usize::try_from(args_span.start).unwrap_or(0);
+                let args_end = usize::try_from(args_span.end).unwrap_or(0);
                 let ctx_text = source.get(ctx_start..ctx_end).unwrap_or("");
                 let args_text = source.get(args_start..args_end).unwrap_or("");
-                Fix {
+                Some(Fix {
                     kind: FixKind::SuggestionFix,
                     message: "Replace with `Reflect.apply()`".to_owned(),
                     edits: vec![Edit {
@@ -83,8 +83,9 @@ impl NativeRule for PreferReflectApply {
                         replacement: format!("Reflect.apply({fn_text}, {ctx_text}, {args_text})"),
                     }],
                     is_snippet: false,
-                }
-            });
+                })
+            },
+        );
 
         ctx.report(Diagnostic {
             rule_name: "prefer-reflect-apply".to_owned(),
@@ -100,23 +101,13 @@ impl NativeRule for PreferReflectApply {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferReflectApply)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferReflectApply)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

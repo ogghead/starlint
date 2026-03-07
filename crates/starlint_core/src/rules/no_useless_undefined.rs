@@ -4,21 +4,19 @@
 //! return value, or argument is usually unnecessary since JavaScript
 //! provides it implicitly.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags useless uses of `undefined`.
 #[derive(Debug)]
 pub struct NoUselessUndefined;
 
-impl NativeRule for NoUselessUndefined {
+impl LintRule for NoUselessUndefined {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-useless-undefined".to_owned(),
@@ -28,18 +26,25 @@ impl NativeRule for NoUselessUndefined {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ReturnStatement, AstType::VariableDeclarator])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[
+            AstNodeType::ReturnStatement,
+            AstNodeType::VariableDeclarator,
+        ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
             // `let x = undefined;` -> `let x;`
-            AstKind::VariableDeclarator(decl) => {
-                if let Some(init) = &decl.init {
-                    if is_undefined(init) {
+            AstNode::VariableDeclarator(decl) => {
+                if let Some(init_id) = &decl.init {
+                    if is_undefined(*init_id, ctx) {
                         // Remove from end of binding id to end of init (` = undefined`)
-                        let remove_span = Span::new(decl.id.span().end, init.span().end);
+                        let id_span_end =
+                            ctx.node(decl.id).map(|n| n.span().end).unwrap_or_default();
+                        let init_span_end =
+                            ctx.node(*init_id).map(|n| n.span().end).unwrap_or_default();
+                        let remove_span = Span::new(id_span_end, init_span_end);
                         ctx.report(Diagnostic {
                             rule_name: "no-useless-undefined".to_owned(),
                             message: "Do not use useless `undefined`".to_owned(),
@@ -61,13 +66,15 @@ impl NativeRule for NoUselessUndefined {
                 }
             }
             // `return undefined;` -> `return;`
-            AstKind::ReturnStatement(ret) => {
-                if let Some(arg) = &ret.argument {
-                    if is_undefined(arg) {
+            AstNode::ReturnStatement(ret) => {
+                if let Some(arg_id) = &ret.argument {
+                    if is_undefined(*arg_id, ctx) {
                         // Remove from after `return` keyword to end of argument (` undefined`)
                         // `return` is 6 chars, so the keyword ends at ret.span.start + 6
                         let return_keyword_end = ret.span.start.saturating_add(6);
-                        let remove_span = Span::new(return_keyword_end, arg.span().end);
+                        let arg_span_end =
+                            ctx.node(*arg_id).map(|n| n.span().end).unwrap_or_default();
+                        let remove_span = Span::new(return_keyword_end, arg_span_end);
                         ctx.report(Diagnostic {
                             rule_name: "no-useless-undefined".to_owned(),
                             message: "Do not use useless `undefined`".to_owned(),
@@ -94,29 +101,20 @@ impl NativeRule for NoUselessUndefined {
     }
 }
 
-/// Check if an expression is `undefined` (the identifier).
-fn is_undefined(expr: &Expression<'_>) -> bool {
-    matches!(expr, Expression::Identifier(ident) if ident.name == "undefined")
+/// Check if a node is `undefined` (the identifier).
+fn is_undefined(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    matches!(ctx.node(node_id), Some(AstNode::IdentifierReference(ident)) if ident.name == "undefined")
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessUndefined)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessUndefined)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

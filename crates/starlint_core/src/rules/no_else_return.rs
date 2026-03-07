@@ -4,22 +4,19 @@
 //! block always returns, the `else` is unnecessary and the code can be
 //! flattened.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags unnecessary `else` blocks after `return`.
 #[derive(Debug)]
 pub struct NoElseReturn;
 
-impl NativeRule for NoElseReturn {
+impl LintRule for NoElseReturn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-else-return".to_owned(),
@@ -29,35 +26,36 @@ impl NativeRule for NoElseReturn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::IfStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::IfStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::IfStatement(if_stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::IfStatement(if_stmt) = node else {
             return;
         };
 
         // Must have an else block
-        if if_stmt.alternate.is_none() {
+        let Some(alternate_id) = if_stmt.alternate else {
             return;
-        }
+        };
 
         // The consequent must always return
-        if !consequent_always_returns(&if_stmt.consequent) {
+        if !consequent_always_returns(if_stmt.consequent, ctx) {
             return;
         }
 
         let source = ctx.source_text();
-        let Some(alternate) = if_stmt.alternate.as_ref() else {
+        let Some(alternate) = ctx.node(alternate_id) else {
             return;
         };
-        let alt_start = usize::try_from(alternate.span().start).unwrap_or(0);
-        let alt_end = usize::try_from(alternate.span().end).unwrap_or(0);
+        let alt_span = alternate.span();
+        let alt_start = usize::try_from(alt_span.start).unwrap_or(0);
+        let alt_end = usize::try_from(alt_span.end).unwrap_or(0);
         let alt_source = source.get(alt_start..alt_end).unwrap_or("");
 
         // If alternate is a block, extract inner content (strip braces)
-        let body_text = if matches!(alternate, Statement::BlockStatement(_)) {
+        let body_text = if matches!(alternate, AstNode::BlockStatement(_)) {
             alt_source
                 .get(1..alt_source.len().saturating_sub(1))
                 .unwrap_or("")
@@ -68,7 +66,9 @@ impl NativeRule for NoElseReturn {
 
         // Replace ` else { ... }` (from consequent end to if_stmt end)
         // with `\n` + the body statements
-        let cons_end = if_stmt.consequent.span().end;
+        let cons_end = ctx
+            .node(if_stmt.consequent)
+            .map_or(if_stmt.span.end, |n| n.span().end);
 
         ctx.report(Diagnostic {
             rule_name: "no-else-return".to_owned(),
@@ -93,36 +93,29 @@ impl NativeRule for NoElseReturn {
 }
 
 /// Check if a statement always returns.
-fn consequent_always_returns(stmt: &Statement<'_>) -> bool {
+fn consequent_always_returns(stmt_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(stmt) = ctx.node(stmt_id) else {
+        return false;
+    };
     match stmt {
-        Statement::ReturnStatement(_) => true,
-        Statement::BlockStatement(block) => block
+        AstNode::ReturnStatement(_) => true,
+        AstNode::BlockStatement(block) => block
             .body
             .last()
-            .is_some_and(|last| matches!(last, Statement::ReturnStatement(_))),
+            .is_some_and(|last_id| matches!(ctx.node(*last_id), Some(AstNode::ReturnStatement(_)))),
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoElseReturn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoElseReturn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

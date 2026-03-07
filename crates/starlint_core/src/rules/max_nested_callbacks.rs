@@ -5,13 +5,13 @@
 
 use std::sync::RwLock;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Default maximum nesting depth for callbacks.
 const DEFAULT_MAX: u32 = 10;
@@ -41,7 +41,7 @@ impl Default for MaxNestedCallbacks {
     }
 }
 
-impl NativeRule for MaxNestedCallbacks {
+impl LintRule for MaxNestedCallbacks {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "max-nested-callbacks".to_owned(),
@@ -58,20 +58,20 @@ impl NativeRule for MaxNestedCallbacks {
         Ok(())
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Track callback nesting: a callback is a function/arrow that is
         // an argument to a call expression. We approximate this by tracking
         // all arrow/function expressions.
-        match kind {
-            AstKind::ArrowFunctionExpression(arrow) => {
+        match node {
+            AstNode::ArrowFunctionExpression(arrow) => {
                 let Ok(mut depth) = self.depth.write() else {
                     return;
                 };
@@ -91,7 +91,7 @@ impl NativeRule for MaxNestedCallbacks {
                     });
                 }
             }
-            AstKind::Function(f) if f.id.is_none() => {
+            AstNode::Function(f) if f.id.is_none() => {
                 // Only count anonymous functions (callbacks), not declarations
                 let Ok(mut depth) = self.depth.write() else {
                     return;
@@ -116,14 +116,14 @@ impl NativeRule for MaxNestedCallbacks {
         }
     }
 
-    fn leave(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::ArrowFunctionExpression(_) => {
+    fn leave(&self, _node_id: NodeId, node: &AstNode, _ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::ArrowFunctionExpression(_) => {
                 if let Ok(mut depth) = self.depth.write() {
                     *depth = depth.saturating_sub(1);
                 }
             }
-            AstKind::Function(f) if f.id.is_none() => {
+            AstNode::Function(f) if f.id.is_none() => {
                 if let Ok(mut depth) = self.depth.write() {
                     *depth = depth.saturating_sub(1);
                 }
@@ -135,25 +135,16 @@ impl NativeRule for MaxNestedCallbacks {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint_with_max(source: &str, max: u32) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MaxNestedCallbacks {
-                max,
-                depth: RwLock::new(0),
-            })];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MaxNestedCallbacks {
+            max,
+            depth: RwLock::new(0),
+        })];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -2,14 +2,13 @@
 //!
 //! Forbid `aria-hidden="true"` on focusable elements.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/no-aria-hidden-on-focusable";
@@ -20,21 +19,17 @@ const INTERACTIVE_ELEMENTS: &[&str] = &["button", "input", "select", "textarea"]
 #[derive(Debug)]
 pub struct NoAriaHiddenOnFocusable;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
-        } else {
-            false
-        }
+/// Check if an attribute with the given name exists on the JSX opening element's attributes.
+fn has_attribute(ctx: &LintContext<'_>, attributes: &[NodeId], name: &str) -> bool {
+    attributes.iter().any(|attr_id| {
+        let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
+            return false;
+        };
+        attr.name.as_str() == name
     })
 }
 
-impl NativeRule for NoAriaHiddenOnFocusable {
+impl LintRule for NoAriaHiddenOnFocusable {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -44,50 +39,46 @@ impl NativeRule for NoAriaHiddenOnFocusable {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
         // Check if aria-hidden="true" and capture its attribute span
-        let aria_hidden_span = opening.attributes.iter().find_map(|item| {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let is_aria_hidden = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "aria-hidden",
-                    JSXAttributeName::NamespacedName(_) => false,
-                };
-                if is_aria_hidden {
-                    if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                        if lit.value.as_str() == "true" {
-                            return Some(Span::new(attr.span.start, attr.span.end));
-                        }
-                    }
-                }
+        let aria_hidden_span = opening.attributes.iter().find_map(|attr_id| {
+            let AstNode::JSXAttribute(attr) = ctx.node(*attr_id)? else {
+                return None;
+            };
+            if attr.name.as_str() != "aria-hidden" {
+                return None;
             }
-            None
+            // Check if value is the string "true"
+            let val_id = attr.value?;
+            let AstNode::StringLiteral(lit) = ctx.node(val_id)? else {
+                return None;
+            };
+            (lit.value.as_str() == "true").then(|| Span::new(attr.span.start, attr.span.end))
         });
 
         let Some(attr_span) = aria_hidden_span else {
             return;
         };
 
-        let element_name = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+        let element_name = opening.name.as_str();
 
         // Check if inherently interactive
         let is_interactive = INTERACTIVE_ELEMENTS.contains(&element_name);
 
         // <a> with href is focusable
-        let is_anchor_with_href = element_name == "a" && has_attribute(opening, "href");
+        let is_anchor_with_href =
+            element_name == "a" && has_attribute(ctx, &opening.attributes, "href");
 
         // Any element with tabIndex is focusable
-        let has_tabindex = has_attribute(opening, "tabIndex");
+        let has_tabindex = has_attribute(ctx, &opening.attributes, "tabIndex");
 
         if is_interactive || is_anchor_with_href || has_tabindex {
             ctx.report(Diagnostic {
@@ -113,22 +104,13 @@ impl NativeRule for NoAriaHiddenOnFocusable {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAriaHiddenOnFocusable)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAriaHiddenOnFocusable)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

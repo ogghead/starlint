@@ -10,13 +10,13 @@
 
 use std::sync::RwLock;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags named function declarations nested inside other functions.
 #[derive(Debug)]
@@ -40,7 +40,7 @@ impl Default for ConsistentFunctionScoping {
     }
 }
 
-impl NativeRule for ConsistentFunctionScoping {
+impl LintRule for ConsistentFunctionScoping {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "consistent-function-scoping".to_owned(),
@@ -50,24 +50,28 @@ impl NativeRule for ConsistentFunctionScoping {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::Function(f) => {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::Function(f) => {
                 let Ok(mut depth) = self.depth.write() else {
                     return;
                 };
 
                 // Only flag named function declarations (not expressions)
-                if f.is_declaration() && *depth > 0 {
-                    let name = f.id.as_ref().map_or("anonymous", |id| id.name.as_str());
+                // A function with an id (name) is a declaration
+                if f.id.is_some() && *depth > 0 {
+                    let name =
+                        f.id.and_then(|id| ctx.node(id))
+                            .and_then(|n| n.as_binding_identifier())
+                            .map_or("anonymous", |id| id.name.as_str());
                     ctx.report(Diagnostic {
                         rule_name: "consistent-function-scoping".to_owned(),
                         message: format!(
@@ -84,7 +88,7 @@ impl NativeRule for ConsistentFunctionScoping {
                 // Track depth for all functions (declarations and expressions)
                 *depth = depth.saturating_add(1);
             }
-            AstKind::ArrowFunctionExpression(_) => {
+            AstNode::ArrowFunctionExpression(_) => {
                 let Ok(mut depth) = self.depth.write() else {
                     return;
                 };
@@ -94,9 +98,9 @@ impl NativeRule for ConsistentFunctionScoping {
         }
     }
 
-    fn leave(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::Function(_) | AstKind::ArrowFunctionExpression(_) => {
+    fn leave(&self, _node_id: NodeId, node: &AstNode, _ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::Function(_) | AstNode::ArrowFunctionExpression(_) => {
                 if let Ok(mut depth) = self.depth.write() {
                     *depth = depth.saturating_sub(1);
                 }
@@ -108,23 +112,13 @@ impl NativeRule for ConsistentFunctionScoping {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentFunctionScoping::new())];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentFunctionScoping::new())];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,14 +3,13 @@
 //! Enforce `new` for built-in constructors (`Map`, `Set`, `Promise`, etc.)
 //! and forbid `new` for factory functions (`Symbol`, `BigInt`).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Built-in constructors that require `new`.
 const REQUIRE_NEW: &[&str] = &[
@@ -47,7 +46,7 @@ const FORBID_NEW: &[&str] = &["Symbol", "BigInt"];
 #[derive(Debug)]
 pub struct NewForBuiltins;
 
-impl NativeRule for NewForBuiltins {
+impl LintRule for NewForBuiltins {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "new-for-builtins".to_owned(),
@@ -57,15 +56,16 @@ impl NativeRule for NewForBuiltins {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression, AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression, AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
             // Missing `new` for constructors: `Map()` instead of `new Map()`
-            AstKind::CallExpression(call) => {
-                let Expression::Identifier(id) = &call.callee else {
+            AstNode::CallExpression(call) => {
+                let Some(AstNode::IdentifierReference(id)) = ctx.node(call.callee) else {
                     return;
                 };
                 let name = id.name.as_str();
@@ -73,17 +73,20 @@ impl NativeRule for NewForBuiltins {
                     return;
                 }
 
+                let id_span_start = id.span.start;
+                let call_span = Span::new(call.span.start, call.span.end);
+                let name_owned = name.to_owned();
                 ctx.report(Diagnostic {
                     rule_name: "new-for-builtins".to_owned(),
-                    message: format!("Use `new {name}()` instead of `{name}()`"),
-                    span: Span::new(call.span.start, call.span.end),
+                    message: format!("Use `new {name_owned}()` instead of `{name_owned}()`"),
+                    span: call_span,
                     severity: Severity::Error,
-                    help: Some(format!("Add `new` before `{name}`")),
+                    help: Some(format!("Add `new` before `{name_owned}`")),
                     fix: Some(Fix {
                         kind: FixKind::SuggestionFix,
-                        message: format!("Add `new` before `{name}`"),
+                        message: format!("Add `new` before `{name_owned}`"),
                         edits: vec![Edit {
-                            span: Span::new(id.span.start, id.span.start),
+                            span: Span::new(id_span_start, id_span_start),
                             replacement: "new ".to_owned(),
                         }],
                         is_snippet: false,
@@ -93,8 +96,8 @@ impl NativeRule for NewForBuiltins {
             }
 
             // Forbidden `new` for factories: `new Symbol()` instead of `Symbol()`
-            AstKind::NewExpression(new_expr) => {
-                let Expression::Identifier(id) = &new_expr.callee else {
+            AstNode::NewExpression(new_expr) => {
+                let Some(AstNode::IdentifierReference(id)) = ctx.node(new_expr.callee) else {
                     return;
                 };
                 let name = id.name.as_str();
@@ -104,25 +107,27 @@ impl NativeRule for NewForBuiltins {
 
                 // Fix: remove `new ` by replacing the full expression span
                 // with the source text from callee start to expression end.
-                let callee_start = usize::try_from(id.span.start).unwrap_or(0);
-                let expr_end = usize::try_from(new_expr.span.end).unwrap_or(0);
+                let callee_start = id.span.start as usize;
+                let expr_end = new_expr.span.end as usize;
+                let name_owned = name.to_owned();
                 let replacement = ctx
                     .source_text()
                     .get(callee_start..expr_end)
-                    .unwrap_or(name)
+                    .unwrap_or(&name_owned)
                     .to_owned();
 
+                let new_expr_span = Span::new(new_expr.span.start, new_expr.span.end);
                 ctx.report(Diagnostic {
                     rule_name: "new-for-builtins".to_owned(),
-                    message: format!("`{name}` is not a constructor — do not use `new`"),
-                    span: Span::new(new_expr.span.start, new_expr.span.end),
+                    message: format!("`{name_owned}` is not a constructor — do not use `new`"),
+                    span: new_expr_span,
                     severity: Severity::Error,
-                    help: Some(format!("Remove `new` before `{name}`")),
+                    help: Some(format!("Remove `new` before `{name_owned}`")),
                     fix: Some(Fix {
                         kind: FixKind::SuggestionFix,
-                        message: format!("Remove `new` before `{name}`"),
+                        message: format!("Remove `new` before `{name_owned}`"),
                         edits: vec![Edit {
-                            span: Span::new(new_expr.span.start, new_expr.span.end),
+                            span: new_expr_span,
                             replacement,
                         }],
                         is_snippet: false,
@@ -138,22 +143,13 @@ impl NativeRule for NewForBuiltins {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NewForBuiltins)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NewForBuiltins)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

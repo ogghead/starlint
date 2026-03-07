@@ -2,15 +2,14 @@
 //!
 //! Enforce `lang` attribute has a valid value.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/lang";
@@ -39,7 +38,7 @@ fn primary_subtag(lang: &str) -> &str {
     lang.split('-').next().unwrap_or(lang)
 }
 
-impl NativeRule for Lang {
+impl LintRule for Lang {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -49,65 +48,60 @@ impl NativeRule for Lang {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let is_html = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str() == "html",
-            _ => false,
-        };
-
-        if !is_html {
+        // opening.name is a String
+        if opening.name.as_str() != "html" {
             return;
         }
 
-        for item in &opening.attributes {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let is_lang = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "lang",
-                    JSXAttributeName::NamespacedName(_) => false,
-                };
-
-                if !is_lang {
+        for attr_id in &*opening.attributes {
+            if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
+                if attr.name.as_str() != "lang" {
                     continue;
                 }
 
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    let val = lit.value.as_str().trim();
-                    if val.is_empty() {
-                        // Replace empty lang value with "en"
-                        let fix = FixBuilder::new("Set `lang` to `\"en\"`", FixKind::SafeFix)
-                            .replace(Span::new(lit.span.start, lit.span.end), "\"en\"")
-                            .build();
-                        ctx.report(Diagnostic {
-                            rule_name: RULE_NAME.to_owned(),
-                            message: "The `lang` attribute must not be empty".to_owned(),
-                            span: Span::new(opening.span.start, opening.span.end),
-                            severity: Severity::Warning,
-                            help: Some("Set `lang` to a valid BCP 47 tag like `\"en\"`".to_owned()),
-                            fix,
-                            labels: vec![],
-                        });
-                    } else {
-                        let primary = primary_subtag(val).to_lowercase();
-                        if !VALID_LANG_CODES.contains(&primary.as_str()) {
+                if let Some(value_id) = attr.value {
+                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                        let val = lit.value.as_str().trim();
+                        if val.is_empty() {
+                            // Replace empty lang value with "en"
+                            let fix = FixBuilder::new("Set `lang` to `\"en\"`", FixKind::SafeFix)
+                                .replace(Span::new(lit.span.start, lit.span.end), "\"en\"")
+                                .build();
                             ctx.report(Diagnostic {
                                 rule_name: RULE_NAME.to_owned(),
-                                message: format!("`{val}` is not a valid BCP 47 language tag"),
+                                message: "The `lang` attribute must not be empty".to_owned(),
                                 span: Span::new(opening.span.start, opening.span.end),
                                 severity: Severity::Warning,
                                 help: Some(
-                                    "Use a valid BCP 47 language tag like `\"en\"`".to_owned(),
+                                    "Set `lang` to a valid BCP 47 tag like `\"en\"`".to_owned(),
                                 ),
-                                fix: None,
+                                fix,
                                 labels: vec![],
                             });
+                        } else {
+                            let primary = primary_subtag(val).to_lowercase();
+                            if !VALID_LANG_CODES.contains(&primary.as_str()) {
+                                ctx.report(Diagnostic {
+                                    rule_name: RULE_NAME.to_owned(),
+                                    message: format!("`{val}` is not a valid BCP 47 language tag"),
+                                    span: Span::new(opening.span.start, opening.span.end),
+                                    severity: Severity::Warning,
+                                    help: Some(
+                                        "Use a valid BCP 47 language tag like `\"en\"`".to_owned(),
+                                    ),
+                                    fix: None,
+                                    labels: vec![],
+                                });
+                            }
                         }
                     }
                 }
@@ -118,22 +112,13 @@ impl NativeRule for Lang {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(Lang)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(Lang)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

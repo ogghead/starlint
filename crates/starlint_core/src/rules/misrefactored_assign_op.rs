@@ -4,22 +4,20 @@
 //! probably meant to be `a -= b` (or `a = a - b`). Similarly `a += a + b`
 //! probably meant `a += b`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{AssignmentOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{AssignmentOperator, BinaryOperator};
+use starlint_ast::types::NodeId;
 
 /// Flags misrefactored compound assignment operators.
 #[derive(Debug)]
 pub struct MisrefactoredAssignOp;
 
-impl NativeRule for MisrefactoredAssignOp {
+impl LintRule for MisrefactoredAssignOp {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "misrefactored-assign-op".to_owned(),
@@ -29,24 +27,22 @@ impl NativeRule for MisrefactoredAssignOp {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::AssignmentExpression(assign) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
         // Only check compound assignment operators
         let corresponding_binary = match assign.operator {
-            AssignmentOperator::Addition => Some(oxc_ast::ast::BinaryOperator::Addition),
-            AssignmentOperator::Subtraction => Some(oxc_ast::ast::BinaryOperator::Subtraction),
-            AssignmentOperator::Multiplication => {
-                Some(oxc_ast::ast::BinaryOperator::Multiplication)
-            }
-            AssignmentOperator::Division => Some(oxc_ast::ast::BinaryOperator::Division),
-            AssignmentOperator::Remainder => Some(oxc_ast::ast::BinaryOperator::Remainder),
+            AssignmentOperator::Addition => Some(BinaryOperator::Addition),
+            AssignmentOperator::Subtraction => Some(BinaryOperator::Subtraction),
+            AssignmentOperator::Multiplication => Some(BinaryOperator::Multiplication),
+            AssignmentOperator::Division => Some(BinaryOperator::Division),
+            AssignmentOperator::Remainder => Some(BinaryOperator::Remainder),
             _ => None,
         };
 
@@ -55,7 +51,7 @@ impl NativeRule for MisrefactoredAssignOp {
         };
 
         // The RHS should be a binary expression with the same operator
-        let Expression::BinaryExpression(rhs_bin) = &assign.right else {
+        let Some(AstNode::BinaryExpression(rhs_bin)) = ctx.node(assign.right) else {
             return;
         };
 
@@ -64,9 +60,9 @@ impl NativeRule for MisrefactoredAssignOp {
         }
 
         // Check if the left side of the binary expression matches the assignment target
-        // e.g., `a -= a - b` → the `a` in `a - b` matches the `a` being assigned
-        let target_span = assignment_target_span(&assign.left);
-        let lhs_span = expression_span(&rhs_bin.left);
+        // e.g., `a -= a - b` -> the `a` in `a - b` matches the `a` being assigned
+        let target_span = node_id_span(assign.left, ctx);
+        let lhs_span = node_id_span(rhs_bin.left, ctx);
 
         if let (Some(target), Some(lhs)) = (target_span, lhs_span) {
             // Compare by source text length (same identifier = same span length at same content)
@@ -85,10 +81,16 @@ impl NativeRule for MisrefactoredAssignOp {
                 };
 
                 // Fix: replace the RHS binary expression with just the right operand
-                let rhs_right_start = usize::try_from(rhs_bin.right.span().start).unwrap_or(0);
-                let rhs_right_end = usize::try_from(rhs_bin.right.span().end).unwrap_or(0);
+                let rhs_right_span = ctx.node(rhs_bin.right).map(starlint_ast::AstNode::span);
+                let (rhs_right_start, rhs_right_end) = rhs_right_span.map_or((0, 0), |s| {
+                    (
+                        usize::try_from(s.start).unwrap_or(0),
+                        usize::try_from(s.end).unwrap_or(0),
+                    )
+                });
                 let right_text = source.get(rhs_right_start..rhs_right_end).unwrap_or("");
 
+                let rhs_bin_span = rhs_bin.span;
                 ctx.report(Diagnostic {
                     rule_name: "misrefactored-assign-op".to_owned(),
                     message: format!(
@@ -103,7 +105,7 @@ impl NativeRule for MisrefactoredAssignOp {
                         kind: FixKind::SafeFix,
                         message: format!("Simplify to `{target_src} {op_str} {right_text}`"),
                         edits: vec![Edit {
-                            span: Span::new(rhs_bin.span.start, rhs_bin.span.end),
+                            span: Span::new(rhs_bin_span.start, rhs_bin_span.end),
                             replacement: right_text.to_owned(),
                         }],
                         is_snippet: false,
@@ -115,61 +117,24 @@ impl NativeRule for MisrefactoredAssignOp {
     }
 }
 
-/// Get the span (as usize range) of an assignment target.
-fn assignment_target_span(target: &oxc_ast::ast::AssignmentTarget<'_>) -> Option<(usize, usize)> {
-    match target {
-        oxc_ast::ast::AssignmentTarget::AssignmentTargetIdentifier(id) => {
-            usize::try_from(id.span.start)
-                .ok()
-                .zip(usize::try_from(id.span.end).ok())
-        }
-        oxc_ast::ast::AssignmentTarget::StaticMemberExpression(m) => usize::try_from(m.span.start)
-            .ok()
-            .zip(usize::try_from(m.span.end).ok()),
-        oxc_ast::ast::AssignmentTarget::ComputedMemberExpression(m) => {
-            usize::try_from(m.span.start)
-                .ok()
-                .zip(usize::try_from(m.span.end).ok())
-        }
-        _ => None,
-    }
-}
-
-/// Get the span (as usize range) of an expression.
-fn expression_span(expr: &Expression<'_>) -> Option<(usize, usize)> {
-    match expr {
-        Expression::Identifier(id) => usize::try_from(id.span.start)
-            .ok()
-            .zip(usize::try_from(id.span.end).ok()),
-        Expression::StaticMemberExpression(m) => usize::try_from(m.span.start)
-            .ok()
-            .zip(usize::try_from(m.span.end).ok()),
-        Expression::ComputedMemberExpression(m) => usize::try_from(m.span.start)
-            .ok()
-            .zip(usize::try_from(m.span.end).ok()),
-        _ => None,
-    }
+/// Get the span (as usize range) of a node by its ID.
+fn node_id_span(id: NodeId, ctx: &LintContext<'_>) -> Option<(usize, usize)> {
+    let node = ctx.node(id)?;
+    let span = node.span();
+    usize::try_from(span.start)
+        .ok()
+        .zip(usize::try_from(span.end).ok())
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MisrefactoredAssignOp)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MisrefactoredAssignOp)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,20 +4,19 @@
 //! `blob.stream()`) over using `FileReader`. The `Blob` API is simpler,
 //! promise-based, and avoids the callback-based `FileReader` pattern.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new FileReader()` — prefer `Blob` reading methods instead.
 #[derive(Debug)]
 pub struct PreferBlobReadingMethods;
 
-impl NativeRule for PreferBlobReadingMethods {
+impl LintRule for PreferBlobReadingMethods {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-blob-reading-methods".to_owned(),
@@ -27,18 +26,22 @@ impl NativeRule for PreferBlobReadingMethods {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
-        if let Expression::Identifier(id) = &new_expr.callee {
-            if id.name.as_str() == "FileReader" {
-                ctx.report(Diagnostic {
+        let is_file_reader = matches!(
+            ctx.node(new_expr.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "FileReader"
+        );
+
+        if is_file_reader {
+            ctx.report(Diagnostic {
                     rule_name: "prefer-blob-reading-methods".to_owned(),
                     message: "Prefer `Blob` reading methods (`blob.text()`, `blob.arrayBuffer()`, `blob.stream()`) over `FileReader`".to_owned(),
                     span: Span::new(new_expr.span.start, new_expr.span.end),
@@ -46,31 +49,20 @@ impl NativeRule for PreferBlobReadingMethods {
                     help: None,
                     fix: None,
                     labels: vec![],
-                });
-            }
+            });
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferBlobReadingMethods)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferBlobReadingMethods)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -76,17 +76,17 @@ mod tests {
     use super::*;
     use crate::lint_rule::lint_source;
 
-    fn lint_with_path(source: &str, path: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+    fn lint_with_path(
+        source: &str,
+        path: &str,
+    ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDocumentImportInPage)];
         lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_document_import_in_page() {
-        let diags = lint_with_path(
-            r#"import Document from "next/document";"#,
-            "pages/index.ts",
-        );
+        let diags = lint_with_path(r#"import Document from "next/document";"#, "pages/index.ts");
         assert_eq!(
             diags.len(),
             1,
@@ -108,10 +108,7 @@ mod tests {
 
     #[test]
     fn test_allows_other_imports() {
-        let diags = lint_with_path(
-            r#"import Head from "next/head";"#,
-            "pages/index.ts",
-        );
+        let diags = lint_with_path(r#"import Head from "next/head";"#, "pages/index.ts");
         assert!(diags.is_empty(), "other next imports should not be flagged");
     }
 }

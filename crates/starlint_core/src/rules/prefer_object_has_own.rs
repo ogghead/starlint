@@ -3,22 +3,20 @@
 //! Prefer `Object.hasOwn()` over `Object.prototype.hasOwnProperty.call()`.
 //! `Object.hasOwn()` (ES2022) is shorter and more intuitive.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
+#![allow(clippy::shadow_unrelated)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `Object.prototype.hasOwnProperty.call()` patterns.
 #[derive(Debug)]
 pub struct PreferObjectHasOwn;
 
-impl NativeRule for PreferObjectHasOwn {
+impl LintRule for PreferObjectHasOwn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-object-has-own".to_owned(),
@@ -29,37 +27,42 @@ impl NativeRule for PreferObjectHasOwn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for pattern: <something>.hasOwnProperty.call(...)
         // or Object.prototype.hasOwnProperty.call(...)
-        let Expression::StaticMemberExpression(outer_member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(outer_member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if outer_member.property.name.as_str() != "call" {
+        if outer_member.property.as_str() != "call" {
             return;
         }
 
         // The object should be <something>.hasOwnProperty
-        let Expression::StaticMemberExpression(inner_member) = &outer_member.object else {
+        let Some(AstNode::StaticMemberExpression(inner_member)) = ctx.node(outer_member.object)
+        else {
             return;
         };
 
-        if inner_member.property.name.as_str() != "hasOwnProperty" {
+        if inner_member.property.as_str() != "hasOwnProperty" {
             return;
         }
 
         // Check if it's Object.prototype.hasOwnProperty or {}.hasOwnProperty
-        let is_object_prototype = is_object_prototype_pattern(&inner_member.object);
-        let is_object_literal = matches!(&inner_member.object, Expression::ObjectExpression(_));
+        let is_object_prototype = is_object_prototype_pattern(inner_member.object, ctx);
+        let is_object_literal = matches!(
+            ctx.node(inner_member.object),
+            Some(AstNode::ObjectExpression(_))
+        );
 
         if is_object_prototype || is_object_literal {
             let source = ctx.source_text();
@@ -68,8 +71,16 @@ impl NativeRule for PreferObjectHasOwn {
                 .first()
                 .zip(call.arguments.last())
                 .map(|(first, last)| {
-                    let f_start = usize::try_from(first.span().start).unwrap_or(0);
-                    let l_end = usize::try_from(last.span().end).unwrap_or(0);
+                    let f_span = ctx.node(*first).map_or(
+                        starlint_ast::types::Span::EMPTY,
+                        starlint_ast::AstNode::span,
+                    );
+                    let l_span = ctx.node(*last).map_or(
+                        starlint_ast::types::Span::EMPTY,
+                        starlint_ast::AstNode::span,
+                    );
+                    let f_start = usize::try_from(f_span.start).unwrap_or(0);
+                    let l_end = usize::try_from(l_span.end).unwrap_or(0);
                     let args_text = source.get(f_start..l_end).unwrap_or("");
                     Fix {
                         kind: FixKind::SafeFix,
@@ -98,37 +109,27 @@ impl NativeRule for PreferObjectHasOwn {
 }
 
 /// Check if expression is `Object.prototype`.
-fn is_object_prototype_pattern(expr: &Expression<'_>) -> bool {
-    let Expression::StaticMemberExpression(member) = expr else {
+fn is_object_prototype_pattern(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(id) else {
         return false;
     };
 
-    if member.property.name.as_str() != "prototype" {
+    if member.property.as_str() != "prototype" {
         return false;
     }
 
-    matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Object")
+    matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Object")
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferObjectHasOwn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferObjectHasOwn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

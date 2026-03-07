@@ -5,14 +5,13 @@
 //! directly (e.g. `exports = {}`) breaks that reference and does not
 //! change what the module actually exports.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::AssignmentTarget;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags direct assignment to the `exports` identifier.
 ///
@@ -21,7 +20,7 @@ use crate::rule::{NativeLintContext, NativeRule};
 #[derive(Debug)]
 pub struct NoExportsAssign;
 
-impl NativeRule for NoExportsAssign {
+impl LintRule for NoExportsAssign {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "node/no-exports-assign".to_owned(),
@@ -31,24 +30,23 @@ impl NativeRule for NoExportsAssign {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AssignmentExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AssignmentExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::AssignmentExpression(assign) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::AssignmentExpression(assign) = node else {
             return;
         };
 
         // Only flag bare `exports = ...` (identifier target).
         // `exports.foo = bar` is fine (extending, not reassigning).
-        let AssignmentTarget::AssignmentTargetIdentifier(id) = &assign.left else {
-            return;
+        let id_span = match ctx.node(assign.left) {
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "exports" => {
+                Span::new(id.span.start, id.span.end)
+            }
+            _ => return,
         };
-
-        if id.name.as_str() != "exports" {
-            return;
-        }
 
         ctx.report(Diagnostic {
             rule_name: "node/no-exports-assign".to_owned(),
@@ -60,7 +58,7 @@ impl NativeRule for NoExportsAssign {
                 kind: FixKind::SafeFix,
                 message: "Replace `exports` with `module.exports`".to_owned(),
                 edits: vec![Edit {
-                    span: Span::new(id.span.start, id.span.end),
+                    span: id_span,
                     replacement: "module.exports".to_owned(),
                 }],
                 is_snippet: false,
@@ -72,22 +70,13 @@ impl NativeRule for NoExportsAssign {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoExportsAssign)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExportsAssign)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

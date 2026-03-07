@@ -4,20 +4,19 @@
 //! Using index as key can cause issues with component state when the list is
 //! reordered.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, BindingPattern, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags usage of array index as the `key` prop inside `.map()` callbacks.
 #[derive(Debug)]
 pub struct NoArrayIndexKey;
 
-impl NativeRule for NoArrayIndexKey {
+impl LintRule for NoArrayIndexKey {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/no-array-index-key".to_owned(),
@@ -27,45 +26,45 @@ impl NativeRule for NoArrayIndexKey {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if this is a .map() call
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "map" {
+        if member.property.as_str() != "map" {
             return;
         }
 
         // Get the callback argument
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
             return;
         };
 
         // Extract the index parameter name and body span from the callback
-        let (param_name, body_start, body_end) = match first_arg {
-            Argument::ArrowFunctionExpression(arrow) => {
-                let Some(param) = arrow.params.items.get(1) else {
+        let (param_name, body_start, body_end) = match ctx.node(*first_arg_id) {
+            Some(AstNode::ArrowFunctionExpression(arrow)) => {
+                let Some(param_id) = arrow.params.get(1) else {
                     return;
                 };
-                let Some(name) = extract_param_name(param) else {
+                let Some(name) = extract_param_name(*param_id, ctx) else {
                     return;
                 };
                 (name, arrow.span.start, arrow.span.end)
             }
-            Argument::FunctionExpression(func) => {
-                let Some(param) = func.params.items.get(1) else {
+            Some(AstNode::Function(func)) => {
+                let Some(param_id) = func.params.get(1) else {
                     return;
                 };
-                let Some(name) = extract_param_name(param) else {
+                let Some(name) = extract_param_name(*param_id, ctx) else {
                     return;
                 };
                 (name, func.span.start, func.span.end)
@@ -97,32 +96,23 @@ impl NativeRule for NoArrayIndexKey {
     }
 }
 
-/// Extract the binding identifier name from a formal parameter.
-fn extract_param_name(param: &oxc_ast::ast::FormalParameter<'_>) -> Option<String> {
-    match &param.pattern {
-        BindingPattern::BindingIdentifier(id) => Some(id.name.as_str().to_owned()),
+/// Extract the binding identifier name from a formal parameter node.
+fn extract_param_name(param_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    match ctx.node(param_id) {
+        Some(AstNode::BindingIdentifier(id)) => Some(id.name.clone()),
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoArrayIndexKey)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrayIndexKey)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

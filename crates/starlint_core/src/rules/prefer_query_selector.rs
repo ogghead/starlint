@@ -5,16 +5,13 @@
 //! `getElementsByTagNameNS`. The `querySelector` family uses CSS selectors
 //! and provides a more consistent, flexible API.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags legacy DOM query methods in favor of `querySelector` / `querySelectorAll`.
 #[derive(Debug)]
@@ -28,7 +25,7 @@ const LEGACY_METHODS: &[&str] = &[
     "getElementsByTagNameNS",
 ];
 
-impl NativeRule for PreferQuerySelector {
+impl LintRule for PreferQuerySelector {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-query-selector".to_owned(),
@@ -40,20 +37,20 @@ impl NativeRule for PreferQuerySelector {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method_name = member.property.name.as_str();
+        let method_name = member.property.as_str();
 
         if !LEGACY_METHODS.contains(&method_name) {
             return;
@@ -66,17 +63,16 @@ impl NativeRule for PreferQuerySelector {
         let fix = (call.arguments.len() == 1)
             .then(|| {
                 call.arguments.first().and_then(|arg| {
-                    let arg_expr = arg.as_expression()?;
-                    let Expression::StringLiteral(lit) = arg_expr else {
+                    let AstNode::StringLiteral(lit) = ctx.node(*arg)? else {
                         return None;
                     };
                     let source = ctx.source_text();
-                    let obj_span = member.object.span();
+                    let obj_span = ctx.node(member.object)?.span();
                     let obj_text = source.get(obj_span.start as usize..obj_span.end as usize)?;
                     let (method, selector) = match method_name {
                         "getElementById" => ("querySelector", format!("#{}", lit.value)),
                         "getElementsByClassName" => ("querySelectorAll", format!(".{}", lit.value)),
-                        "getElementsByTagName" => ("querySelectorAll", lit.value.to_string()),
+                        "getElementsByTagName" => ("querySelectorAll", lit.value.clone()),
                         _ => return None,
                     };
                     let replacement = format!("{obj_text}.{method}('{selector}')");
@@ -116,23 +112,13 @@ fn suggested_replacement(method: &str) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferQuerySelector)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferQuerySelector)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

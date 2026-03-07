@@ -4,20 +4,19 @@
 //! `const {a, ...rest} = obj`). Some codebases prefer avoiding these
 //! for compatibility or clarity.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::ObjectPropertyKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags object spread (`{...obj}`) and object rest (`const {a, ...rest} = obj`).
 #[derive(Debug)]
 pub struct NoRestSpreadProperties;
 
-impl NativeRule for NoRestSpreadProperties {
+impl LintRule for NoRestSpreadProperties {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-rest-spread-properties".to_owned(),
@@ -27,15 +26,15 @@ impl NativeRule for NoRestSpreadProperties {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ObjectExpression, AstType::ObjectPattern])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ObjectExpression, AstNodeType::ObjectPattern])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::ObjectExpression(obj) => {
-                for property in &obj.properties {
-                    if let ObjectPropertyKind::SpreadProperty(spread) = property {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::ObjectExpression(obj) => {
+                for prop_id in &obj.properties {
+                    if let Some(AstNode::SpreadElement(spread)) = ctx.node(*prop_id) {
                         ctx.report(Diagnostic {
                             rule_name: "no-rest-spread-properties".to_owned(),
                             message: "Unexpected object spread property".to_owned(),
@@ -48,12 +47,16 @@ impl NativeRule for NoRestSpreadProperties {
                     }
                 }
             }
-            AstKind::ObjectPattern(pat) => {
-                if let Some(rest) = &pat.rest {
+            AstNode::ObjectPattern(pat) => {
+                if let Some(rest_id) = pat.rest {
+                    let rest_ast_span = ctx.node(rest_id).map_or(
+                        starlint_ast::types::Span::new(0, 0),
+                        starlint_ast::AstNode::span,
+                    );
                     ctx.report(Diagnostic {
                         rule_name: "no-rest-spread-properties".to_owned(),
                         message: "Unexpected object rest property".to_owned(),
-                        span: Span::new(rest.span.start, rest.span.end),
+                        span: Span::new(rest_ast_span.start, rest_ast_span.end),
                         severity: Severity::Warning,
                         help: None,
                         fix: None,
@@ -68,23 +71,13 @@ impl NativeRule for NoRestSpreadProperties {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoRestSpreadProperties)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRestSpreadProperties)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

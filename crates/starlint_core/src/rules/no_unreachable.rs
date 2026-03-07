@@ -3,21 +3,21 @@
 //! Disallow unreachable code after `return`, `throw`, `break`, or `continue`.
 //! Code after these statements can never execute and is almost always a mistake.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::shadow_reuse, clippy::shadow_unrelated)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags statements that appear after `return`, `throw`, `break`, or `continue`
 /// within the same block.
 #[derive(Debug)]
 pub struct NoUnreachable;
 
-impl NativeRule for NoUnreachable {
+impl LintRule for NoUnreachable {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unreachable".to_owned(),
@@ -28,41 +28,46 @@ impl NativeRule for NoUnreachable {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::BlockStatement,
-            AstType::FunctionBody,
-            AstType::Program,
-            AstType::SwitchCase,
+            AstNodeType::BlockStatement,
+            AstNodeType::FunctionBody,
+            AstNodeType::Program,
+            AstNodeType::SwitchCase,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    #[allow(clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Check block statements for unreachable code
-        let statements: Option<&[Statement<'_>]> = match kind {
-            AstKind::FunctionBody(body) => Some(&body.statements),
-            AstKind::BlockStatement(block) => Some(&block.body),
-            AstKind::Program(program) => Some(&program.body),
-            AstKind::SwitchCase(case) => Some(&case.consequent),
+        let statements: Option<&[NodeId]> = match node {
+            AstNode::FunctionBody(body) => Some(&body.statements),
+            AstNode::BlockStatement(block) => Some(&block.body),
+            AstNode::Program(program) => Some(&program.body),
+            AstNode::SwitchCase(case) => Some(&case.consequent),
             _ => None,
         };
 
-        let Some(stmts) = statements else {
+        let Some(stmt_ids) = statements else {
             return;
         };
 
         let mut found_terminator = false;
-        for stmt in stmts {
+        for &stmt_id in stmt_ids {
+            let Some(stmt) = ctx.node(stmt_id) else {
+                continue;
+            };
             if found_terminator {
                 // Skip function/class declarations — they're hoisted
                 if is_hoisted_declaration(stmt) {
                     continue;
                 }
                 // Skip empty statements
-                if matches!(stmt, Statement::EmptyStatement(_)) {
+                if matches!(stmt, AstNode::EmptyStatement(_)) {
                     continue;
                 }
-                let span = statement_span(stmt);
+                let span = stmt.span();
+                let span = Span::new(span.start, span.end);
                 let fix = Some(Fix {
                     kind: FixKind::SafeFix,
                     message: "Remove unreachable code".to_owned(),
@@ -93,46 +98,30 @@ impl NativeRule for NoUnreachable {
 }
 
 /// Check if a statement terminates execution flow.
-const fn is_terminator(stmt: &Statement<'_>) -> bool {
+const fn is_terminator(stmt: &AstNode) -> bool {
     matches!(
         stmt,
-        Statement::ReturnStatement(_)
-            | Statement::ThrowStatement(_)
-            | Statement::BreakStatement(_)
-            | Statement::ContinueStatement(_)
+        AstNode::ReturnStatement(_)
+            | AstNode::ThrowStatement(_)
+            | AstNode::BreakStatement(_)
+            | AstNode::ContinueStatement(_)
     )
 }
 
 /// Check if a statement is a hoisted declaration (function/class).
-const fn is_hoisted_declaration(stmt: &Statement<'_>) -> bool {
-    matches!(stmt, Statement::FunctionDeclaration(_))
-}
-
-/// Get the span of a statement for reporting.
-fn statement_span(stmt: &Statement<'_>) -> Span {
-    use oxc_span::GetSpan;
-    let span = stmt.span();
-    Span::new(span.start, span.end)
+const fn is_hoisted_declaration(stmt: &AstNode) -> bool {
+    matches!(stmt, AstNode::Function(_))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnreachable)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnreachable)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

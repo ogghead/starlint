@@ -4,14 +4,13 @@
 //! expected name is `error`. This improves grep-ability and consistency
 //! across a codebase.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::BindingPattern;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Default expected catch parameter name.
 const DEFAULT_NAME: &str = "error";
@@ -39,7 +38,7 @@ impl CatchErrorName {
     }
 }
 
-impl NativeRule for CatchErrorName {
+impl LintRule for CatchErrorName {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "catch-error-name".to_owned(),
@@ -56,22 +55,22 @@ impl NativeRule for CatchErrorName {
         Ok(())
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CatchClause])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CatchClause])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CatchClause(clause) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CatchClause(clause) = node else {
             return;
         };
 
         // No param → nothing to check (`catch {}`)
-        let Some(param) = &clause.param else {
+        let Some(param_id) = clause.param else {
             return;
         };
 
         // Only check simple identifier params, skip destructured patterns
-        let BindingPattern::BindingIdentifier(id) = &param.pattern else {
+        let Some(AstNode::BindingIdentifier(id)) = ctx.node(param_id) else {
             return;
         };
 
@@ -86,18 +85,21 @@ impl NativeRule for CatchErrorName {
             return;
         }
 
+        // Extract data before mutable borrow of ctx
+        let id_span = Span::new(id.span.start, id.span.end);
+        let name_owned = name.to_owned();
         let expected = self.expected_name.clone();
         ctx.report(Diagnostic {
             rule_name: "catch-error-name".to_owned(),
             message: format!("Catch parameter should be named `{expected}`"),
-            span: Span::new(id.span.start, id.span.end),
+            span: id_span,
             severity: Severity::Warning,
-            help: Some(format!("Rename `{name}` to `{expected}`")),
+            help: Some(format!("Rename `{name_owned}` to `{expected}`")),
             fix: Some(Fix {
                 kind: FixKind::SafeFix,
                 message: format!("Rename to `{expected}`"),
                 edits: vec![Edit {
-                    span: Span::new(id.span.start, id.span.end),
+                    span: id_span,
                     replacement: expected,
                 }],
                 is_snippet: false,
@@ -109,34 +111,20 @@ impl NativeRule for CatchErrorName {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(CatchErrorName::new())];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(CatchErrorName::new())];
+        lint_source(source, "test.js", &rules)
     }
 
     fn lint_with_name(source: &str, expected: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(CatchErrorName {
-                expected_name: expected.to_owned(),
-            })];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(CatchErrorName {
+            expected_name: expected.to_owned(),
+        })];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

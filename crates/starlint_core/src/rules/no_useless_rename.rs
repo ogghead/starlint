@@ -44,9 +44,7 @@ impl LintRule for NoUselessRename {
                 if imported_name == local_name {
                     ctx.report(Diagnostic {
                         rule_name: "no-useless-rename".to_owned(),
-                        message: format!(
-                            "Import `{local_name}` is redundantly renamed to itself"
-                        ),
+                        message: format!("Import `{local_name}` is redundantly renamed to itself"),
                         span: Span::new(spec.span.start, spec.span.end),
                         severity: Severity::Warning,
                         help: Some(format!("Use `{local_name}` directly without `as`")),

@@ -5,20 +5,21 @@
 //! class has a constructor, extends another class, or contains any instance
 //! members, it is considered valid.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{ClassElement, MethodDefinitionKind};
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::match_same_arms)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::MethodDefinitionKind;
+use starlint_ast::types::NodeId;
 
 /// Flags classes that are empty or contain only static members.
 #[derive(Debug)]
 pub struct NoExtraneousClass;
 
-impl NativeRule for NoExtraneousClass {
+impl LintRule for NoExtraneousClass {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-extraneous-class".to_owned(),
@@ -28,12 +29,13 @@ impl NativeRule for NoExtraneousClass {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Class])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Class])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Class(class) = kind else {
+    #[allow(clippy::match_same_arms)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Class(class) = node else {
             return;
         };
 
@@ -42,10 +44,10 @@ impl NativeRule for NoExtraneousClass {
             return;
         }
 
-        let elements = &class.body.body;
+        let elements = &class.body;
 
         // Check if the class has a constructor or any instance member.
-        if has_constructor_or_instance_member(elements) {
+        if has_constructor_or_instance_member(elements, ctx) {
             return;
         }
 
@@ -69,33 +71,30 @@ impl NativeRule for NoExtraneousClass {
 }
 
 /// Check whether a class body contains a constructor or any instance (non-static) member.
-fn has_constructor_or_instance_member(elements: &[ClassElement<'_>]) -> bool {
-    for element in elements {
-        match element {
-            ClassElement::MethodDefinition(method) => {
+fn has_constructor_or_instance_member(elements: &[NodeId], ctx: &LintContext<'_>) -> bool {
+    for element_id in elements {
+        match ctx.node(*element_id) {
+            Some(AstNode::MethodDefinition(method)) => {
                 if method.kind == MethodDefinitionKind::Constructor {
                     return true;
                 }
-                if !method.r#static {
+                if !method.is_static {
                     return true;
                 }
             }
-            ClassElement::PropertyDefinition(prop) => {
-                if !prop.r#static {
+            Some(AstNode::PropertyDefinition(prop)) => {
+                if !prop.is_static {
                     return true;
                 }
             }
-            ClassElement::AccessorProperty(acc) => {
-                if !acc.r#static {
-                    return true;
-                }
-            }
-            // Static blocks are inherently static; TSIndexSignature is a TS
-            // construct that we treat as instance-like to avoid false positives.
-            ClassElement::StaticBlock(_) => {}
-            ClassElement::TSIndexSignature(_) => {
+            // Static blocks are inherently static
+            Some(AstNode::StaticBlock(_)) => {}
+            // Anything else (unknown member types) we treat as instance-like
+            // to avoid false positives.
+            Some(_) => {
                 return true;
             }
+            None => {}
         }
     }
     false
@@ -103,23 +102,13 @@ fn has_constructor_or_instance_member(elements: &[ClassElement<'_>]) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoExtraneousClass)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExtraneousClass)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

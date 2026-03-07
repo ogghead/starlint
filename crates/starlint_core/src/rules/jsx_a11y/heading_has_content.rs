@@ -2,16 +2,15 @@
 //!
 //! Enforce heading elements (`h1`-`h6`) have content.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/heading-has-content";
@@ -22,21 +21,18 @@ const HEADINGS: &[&str] = &["h1", "h2", "h3", "h4", "h5", "h6"];
 #[derive(Debug)]
 pub struct HeadingHasContent;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
+/// Check if an attribute exists on a JSX opening element by examining its attribute `NodeIds`.
+fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
+    attributes.iter().any(|&attr_id| {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            attr.name == name
         } else {
             false
         }
     })
 }
 
-impl NativeRule for HeadingHasContent {
+impl LintRule for HeadingHasContent {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -46,23 +42,22 @@ impl NativeRule for HeadingHasContent {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXElement(element) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXElement(element) = node else {
             return;
         };
 
-        let opening = &element.opening_element;
-
-        let element_name = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str(),
-            _ => return,
+        let Some(AstNode::JSXOpeningElement(opening)) = ctx.node(element.opening_element) else {
+            return;
         };
 
-        if !HEADINGS.contains(&element_name) {
+        let element_name = opening.name.clone();
+
+        if !HEADINGS.contains(&element_name.as_str()) {
             return;
         }
 
@@ -71,14 +66,17 @@ impl NativeRule for HeadingHasContent {
             return;
         }
 
+        let opening_span = opening.span;
+        let attrs: Vec<NodeId> = opening.attributes.to_vec();
+
         // Check for aria-label or aria-labelledby as alternative content
-        let has_accessible_content =
-            has_attribute(opening, "aria-label") || has_attribute(opening, "aria-labelledby");
+        let has_accessible_content = has_attribute(&attrs, "aria-label", ctx)
+            || has_attribute(&attrs, "aria-labelledby", ctx);
 
         if !has_accessible_content {
             let insert_pos = fix_utils::jsx_attr_insert_offset(
                 ctx.source_text(),
-                Span::new(opening.span.start, opening.span.end),
+                Span::new(opening_span.start, opening_span.end),
             );
             let fix = FixBuilder::new("Add `aria-label` attribute", FixKind::SuggestionFix)
                 .insert_at(insert_pos, " aria-label=\"${1:heading text}\"")
@@ -87,7 +85,7 @@ impl NativeRule for HeadingHasContent {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!("`<{element_name}>` must have content. Provide child text, `aria-label`, or `aria-labelledby`"),
-                span: Span::new(opening.span.start, opening.span.end),
+                span: Span::new(opening_span.start, opening_span.end),
                 severity: Severity::Warning,
                 help: None,
                 fix,
@@ -99,22 +97,13 @@ impl NativeRule for HeadingHasContent {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(HeadingHasContent)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(HeadingHasContent)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

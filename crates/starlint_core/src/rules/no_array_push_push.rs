@@ -5,15 +5,13 @@
 
 use std::sync::RwLock;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// State tracking the previous `.push()` call site.
 #[derive(Debug, Clone)]
@@ -49,7 +47,7 @@ impl Default for NoArrayPushPush {
     }
 }
 
-impl NativeRule for NoArrayPushPush {
+impl LintRule for NoArrayPushPush {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-array-push-push".to_owned(),
@@ -59,22 +57,22 @@ impl NativeRule for NoArrayPushPush {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ExpressionStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ExpressionStatement])
     }
 
-    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    #[allow(clippy::as_conversions)] // u32->usize is lossless on 32/64-bit
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Only react to ExpressionStatement nodes. During depth-first traversal,
         // child nodes (CallExpression, Identifier, etc.) are visited between
         // sibling ExpressionStatements. We ignore those entirely so that state
         // from a previous push is preserved until the next statement-level node.
-        let AstKind::ExpressionStatement(stmt) = kind else {
+        let AstNode::ExpressionStatement(stmt) = node else {
             return;
         };
 
         // Try to extract an `arr.push(...)` pattern from this statement.
-        let push_info = extract_push_info(&stmt.expression);
+        let push_info = extract_push_info(stmt.expression, ctx);
 
         match push_info {
             Some((array_name, args_close_paren, has_args)) => {
@@ -90,26 +88,27 @@ impl NativeRule for NoArrayPushPush {
                 if let Some((prev_close_paren, prev_has_args)) = fix_data {
                     // Build fix: insert current args into previous push, delete current statement
                     let source = ctx.source_text();
-                    let fix = extract_call_args_text(source, &stmt.expression).map(|args_text| {
-                        let separator = if prev_has_args { ", " } else { "" };
-                        Fix {
-                            kind: FixKind::SafeFix,
-                            message: "Merge into previous `.push()` call".to_owned(),
-                            edits: vec![
-                                // Insert args before the closing paren of the previous push
-                                Edit {
-                                    span: Span::new(prev_close_paren, prev_close_paren),
-                                    replacement: format!("{separator}{args_text}"),
-                                },
-                                // Delete the current push statement
-                                Edit {
-                                    span: Span::new(stmt.span.start, stmt.span.end),
-                                    replacement: String::new(),
-                                },
-                            ],
-                            is_snippet: false,
-                        }
-                    });
+                    let fix =
+                        extract_call_args_text(source, stmt.expression, ctx).map(|args_text| {
+                            let separator = if prev_has_args { ", " } else { "" };
+                            Fix {
+                                kind: FixKind::SafeFix,
+                                message: "Merge into previous `.push()` call".to_owned(),
+                                edits: vec![
+                                    // Insert args before the closing paren of the previous push
+                                    Edit {
+                                        span: Span::new(prev_close_paren, prev_close_paren),
+                                        replacement: format!("{separator}{args_text}"),
+                                    },
+                                    // Delete the current push statement
+                                    Edit {
+                                        span: Span::new(stmt.span.start, stmt.span.end),
+                                        replacement: String::new(),
+                                    },
+                                ],
+                                is_snippet: false,
+                            }
+                        });
 
                     ctx.report(Diagnostic {
                         rule_name: "no-array-push-push".to_owned(),
@@ -127,7 +126,7 @@ impl NativeRule for NoArrayPushPush {
                 // Record this push for the next iteration.
                 if let Ok(mut guard) = self.last_push.write() {
                     *guard = Some(PushInfo {
-                        array_name: array_name.to_owned(),
+                        array_name,
                         args_close_paren,
                         has_args,
                     });
@@ -144,34 +143,43 @@ impl NativeRule for NoArrayPushPush {
 }
 
 /// If the expression is `identifier.push(...)`, return (identifier name, close paren pos, `has_args`).
-fn extract_push_info<'a>(expr: &'a Expression<'a>) -> Option<(&'a str, u32, bool)> {
-    let Expression::CallExpression(call) = expr else {
+fn extract_push_info(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<(String, u32, bool)> {
+    let AstNode::CallExpression(call) = ctx.node(expr_id)? else {
         return None;
     };
 
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+    let callee_id = call.callee;
+    let call_span = call.span;
+    let arguments = call.arguments.clone();
+
+    let AstNode::StaticMemberExpression(member) = ctx.node(callee_id)? else {
         return None;
     };
 
-    if member.property.name.as_str() != "push" {
+    if member.property.as_str() != "push" {
         return None;
     }
 
-    let Expression::Identifier(id) = &member.object else {
+    let object_id = member.object;
+    let AstNode::IdentifierReference(id) = ctx.node(object_id)? else {
         return None;
     };
 
     // The closing paren is 1 before the end of the call expression span
-    let close_paren = call.span.end.saturating_sub(1);
-    let has_args = !call.arguments.is_empty();
+    let close_paren = call_span.end.saturating_sub(1);
+    let has_args = !arguments.is_empty();
 
-    Some((id.name.as_str(), close_paren, has_args))
+    Some((id.name.clone(), close_paren, has_args))
 }
 
 /// Extract the source text of the arguments to a `.push()` call.
 #[allow(clippy::as_conversions)]
-fn extract_call_args_text<'a>(source: &'a str, expr: &Expression<'_>) -> Option<&'a str> {
-    let Expression::CallExpression(call) = expr else {
+fn extract_call_args_text<'a>(
+    source: &'a str,
+    expr_id: NodeId,
+    ctx: &LintContext<'_>,
+) -> Option<&'a str> {
+    let AstNode::CallExpression(call) = ctx.node(expr_id)? else {
         return None;
     };
 
@@ -179,32 +187,24 @@ fn extract_call_args_text<'a>(source: &'a str, expr: &Expression<'_>) -> Option<
         return Some("");
     }
 
-    let first = call.arguments.first()?;
-    let last = call.arguments.last()?;
-    let start = first.span().start as usize;
-    let end = last.span().end as usize;
+    let first_id = call.arguments.first()?;
+    let last_id = call.arguments.last()?;
+    let first_node = ctx.node(*first_id)?;
+    let last_node = ctx.node(*last_id)?;
+    let start = first_node.span().start as usize;
+    let end = last_node.span().end as usize;
     source.get(start..end)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoArrayPushPush::new())];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrayPushPush::new())];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

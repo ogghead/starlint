@@ -2,14 +2,13 @@
 //!
 //! Forbid event handlers on static elements (`<div>`, `<span>`, etc.) without a role.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/no-static-element-interactions";
@@ -61,20 +60,21 @@ const EVENT_HANDLERS: &[&str] = &[
 pub struct NoStaticElementInteractions;
 
 /// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
+fn has_attribute(
+    opening: &starlint_ast::node::JSXOpeningElementNode,
+    name: &str,
+    ctx: &LintContext<'_>,
+) -> bool {
+    opening.attributes.iter().any(|attr_id| {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
+            attr.name.as_str() == name
         } else {
             false
         }
     })
 }
 
-impl NativeRule for NoStaticElementInteractions {
+impl LintRule for NoStaticElementInteractions {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -84,33 +84,30 @@ impl NativeRule for NoStaticElementInteractions {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let element_name = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+        let element_name = opening.name.as_str();
 
         if !STATIC_ELEMENTS.contains(&element_name) {
             return;
         }
 
         // If it has a role, it is intentionally interactive
-        if has_attribute(opening, "role") {
+        if has_attribute(opening, "role", ctx) {
             return;
         }
 
         // Check for event handler attributes
         let has_event_handler = EVENT_HANDLERS
             .iter()
-            .any(|handler| has_attribute(opening, handler));
+            .any(|handler| has_attribute(opening, handler, ctx));
 
         if has_event_handler {
             ctx.report(Diagnostic {
@@ -130,22 +127,13 @@ impl NativeRule for NoStaticElementInteractions {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoStaticElementInteractions)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoStaticElementInteractions)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

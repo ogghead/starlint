@@ -4,20 +4,19 @@
 //! Functions created in loops can lead to closure bugs where the loop
 //! variable is shared.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags function declarations/expressions inside loops.
 #[derive(Debug)]
 pub struct NoLoopFunc;
 
-impl NativeRule for NoLoopFunc {
+impl LintRule for NoLoopFunc {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-loop-func".to_owned(),
@@ -27,75 +26,66 @@ impl NativeRule for NoLoopFunc {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::WhileStatement,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForInStatement,
+            AstNodeType::ForOfStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Check loop bodies for function declarations
-        let loop_body: Option<&Statement<'_>> = match kind {
-            AstKind::ForStatement(stmt) => Some(&stmt.body),
-            AstKind::ForInStatement(stmt) => Some(&stmt.body),
-            AstKind::ForOfStatement(stmt) => Some(&stmt.body),
-            AstKind::WhileStatement(stmt) => Some(&stmt.body),
-            AstKind::DoWhileStatement(stmt) => Some(&stmt.body),
+        let loop_body_id: Option<NodeId> = match node {
+            AstNode::ForStatement(stmt) => Some(stmt.body),
+            AstNode::ForInStatement(stmt) => Some(stmt.body),
+            AstNode::ForOfStatement(stmt) => Some(stmt.body),
+            AstNode::WhileStatement(stmt) => Some(stmt.body),
+            AstNode::DoWhileStatement(stmt) => Some(stmt.body),
             _ => None,
         };
 
-        let Some(body) = loop_body else {
+        let Some(body_id) = loop_body_id else {
             return;
         };
 
         // Check the direct body block for function declarations
-        if let Statement::BlockStatement(block) = body {
-            let mut spans: Vec<Span> = Vec::new();
+        let Some(AstNode::BlockStatement(block)) = ctx.node(body_id) else {
+            return;
+        };
 
-            for stmt in &block.body {
-                if let Statement::FunctionDeclaration(func) = stmt {
-                    spans.push(Span::new(func.span.start, func.span.end));
-                }
+        let mut spans: Vec<Span> = Vec::new();
+        for stmt_id in &*block.body {
+            if let Some(AstNode::Function(func)) = ctx.node(*stmt_id) {
+                spans.push(Span::new(func.span.start, func.span.end));
             }
+        }
 
-            for span in spans {
-                ctx.report(Diagnostic {
-                    rule_name: "no-loop-func".to_owned(),
-                    message: "Function declaration inside a loop".to_owned(),
-                    span,
-                    severity: Severity::Warning,
-                    help: None,
-                    fix: None,
-                    labels: vec![],
-                });
-            }
+        for span in spans {
+            ctx.report(Diagnostic {
+                rule_name: "no-loop-func".to_owned(),
+                message: "Function declaration inside a loop".to_owned(),
+                span,
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoLoopFunc)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLoopFunc)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

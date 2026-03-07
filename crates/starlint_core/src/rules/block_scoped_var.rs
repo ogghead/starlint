@@ -12,14 +12,14 @@
 
 use std::sync::RwLock;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::VariableDeclarationKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::VariableDeclarationKind;
+use starlint_ast::types::NodeId;
 
 /// Marker for the kind of scope boundary.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,32 +53,32 @@ impl Default for BlockScopedVar {
     }
 }
 
-/// Check if an `AstKind` is a function boundary.
-const fn is_function_boundary(kind: &AstKind<'_>) -> bool {
+/// Check if an `AstNode` is a function boundary.
+const fn is_function_boundary(node: &AstNode) -> bool {
     matches!(
-        kind,
-        AstKind::Function(_) | AstKind::ArrowFunctionExpression(_)
+        node,
+        AstNode::Function(_) | AstNode::ArrowFunctionExpression(_)
     )
 }
 
-/// Check if an `AstKind` is a control-flow statement that introduces a
+/// Check if an `AstNode` is a control-flow statement that introduces a
 /// block scope (where a `var` would be surprising).
-const fn is_block_scope(kind: &AstKind<'_>) -> bool {
+const fn is_block_scope(node: &AstNode) -> bool {
     matches!(
-        kind,
-        AstKind::IfStatement(_)
-            | AstKind::ForStatement(_)
-            | AstKind::ForInStatement(_)
-            | AstKind::ForOfStatement(_)
-            | AstKind::WhileStatement(_)
-            | AstKind::DoWhileStatement(_)
-            | AstKind::TryStatement(_)
-            | AstKind::SwitchStatement(_)
-            | AstKind::LabeledStatement(_)
+        node,
+        AstNode::IfStatement(_)
+            | AstNode::ForStatement(_)
+            | AstNode::ForInStatement(_)
+            | AstNode::ForOfStatement(_)
+            | AstNode::WhileStatement(_)
+            | AstNode::DoWhileStatement(_)
+            | AstNode::TryStatement(_)
+            | AstNode::SwitchStatement(_)
+            | AstNode::LabeledStatement(_)
     )
 }
 
-impl NativeRule for BlockScopedVar {
+impl LintRule for BlockScopedVar {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "block-scoped-var".to_owned(),
@@ -90,43 +90,43 @@ impl NativeRule for BlockScopedVar {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::Function,
-            AstType::IfStatement,
-            AstType::LabeledStatement,
-            AstType::SwitchStatement,
-            AstType::TryStatement,
-            AstType::VariableDeclaration,
-            AstType::WhileStatement,
+            AstNodeType::ArrowFunctionExpression,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForInStatement,
+            AstNodeType::ForOfStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::Function,
+            AstNodeType::IfStatement,
+            AstNodeType::LabeledStatement,
+            AstNodeType::SwitchStatement,
+            AstNodeType::TryStatement,
+            AstNodeType::VariableDeclaration,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::Function,
-            AstType::IfStatement,
-            AstType::LabeledStatement,
-            AstType::SwitchStatement,
-            AstType::TryStatement,
-            AstType::VariableDeclaration,
-            AstType::WhileStatement,
+            AstNodeType::ArrowFunctionExpression,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForInStatement,
+            AstNodeType::ForOfStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::Function,
+            AstNodeType::IfStatement,
+            AstNodeType::LabeledStatement,
+            AstNodeType::SwitchStatement,
+            AstNodeType::TryStatement,
+            AstNodeType::VariableDeclaration,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Push scope markers for function boundaries.
-        if is_function_boundary(kind) {
+        if is_function_boundary(node) {
             if let Ok(mut stack) = self.scopes.write() {
                 stack.push(ScopeKind::Function);
             }
@@ -134,7 +134,7 @@ impl NativeRule for BlockScopedVar {
         }
 
         // Push scope markers for control-flow statements.
-        if is_block_scope(kind) {
+        if is_block_scope(node) {
             if let Ok(mut stack) = self.scopes.write() {
                 stack.push(ScopeKind::Block);
             }
@@ -142,7 +142,7 @@ impl NativeRule for BlockScopedVar {
         }
 
         // Check var declarations.
-        let AstKind::VariableDeclaration(decl) = kind else {
+        let AstNode::VariableDeclaration(decl) = node else {
             return;
         };
 
@@ -171,8 +171,8 @@ impl NativeRule for BlockScopedVar {
         }
     }
 
-    fn leave(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
-        if is_function_boundary(kind) || is_block_scope(kind) {
+    fn leave(&self, _node_id: NodeId, node: &AstNode, _ctx: &mut LintContext<'_>) {
+        if is_function_boundary(node) || is_block_scope(node) {
             if let Ok(mut stack) = self.scopes.write() {
                 let _ = stack.pop();
             }
@@ -182,23 +182,13 @@ impl NativeRule for BlockScopedVar {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(BlockScopedVar::new())];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BlockScopedVar::new())];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

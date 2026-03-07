@@ -4,21 +4,19 @@
 //! Patterns like `[...set].length` or `Array.from(set).length` create an
 //! unnecessary intermediate array just to count elements.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{ArrayExpressionElement, Expression};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.length` access on patterns that convert a Set to an array.
 #[derive(Debug)]
 pub struct PreferSetSize;
 
-impl NativeRule for PreferSetSize {
+impl LintRule for PreferSetSize {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-set-size".to_owned(),
@@ -29,21 +27,21 @@ impl NativeRule for PreferSetSize {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::StaticMemberExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::StaticMemberExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::StaticMemberExpression(member) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::StaticMemberExpression(member) = node else {
             return;
         };
 
-        if member.property.name.as_str() != "length" {
+        if member.property.as_str() != "length" {
             return;
         }
 
         // Pattern 1: `[...x].length` — array with a single spread element
-        if let Some(set_name) = get_spread_arg_name(&member.object, ctx.source_text()) {
+        if let Some(set_name) = get_spread_arg_name(member.object, ctx.source_text(), ctx) {
             let replacement = format!("{set_name}.size");
             ctx.report(Diagnostic {
                 rule_name: "prefer-set-size".to_owned(),
@@ -67,7 +65,7 @@ impl NativeRule for PreferSetSize {
         }
 
         // Pattern 2: `Array.from(x).length` — call to Array.from with one argument
-        if let Some(set_name) = get_array_from_arg_name(&member.object, ctx.source_text()) {
+        if let Some(set_name) = get_array_from_arg_name(member.object, ctx.source_text(), ctx) {
             let replacement = format!("{set_name}.size");
             ctx.report(Diagnostic {
                 rule_name: "prefer-set-size".to_owned(),
@@ -92,8 +90,12 @@ impl NativeRule for PreferSetSize {
 
 /// Extract the spread argument name from `[...something]` (array with a single spread element).
 #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-fn get_spread_arg_name<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
-    let Expression::ArrayExpression(array) = expr else {
+fn get_spread_arg_name<'s>(
+    obj_id: NodeId,
+    source: &'s str,
+    ctx: &LintContext<'_>,
+) -> Option<&'s str> {
+    let AstNode::ArrayExpression(array) = ctx.node(obj_id)? else {
         return None;
     };
 
@@ -101,18 +103,23 @@ fn get_spread_arg_name<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s
         return None;
     }
 
-    let Some(ArrayExpressionElement::SpreadElement(spread)) = array.elements.first() else {
+    let elem_id = array.elements.first()?;
+    let AstNode::SpreadElement(spread) = ctx.node(*elem_id)? else {
         return None;
     };
 
-    let span = spread.argument.span();
-    Some(&source[span.start as usize..span.end as usize])
+    let arg_span = ctx.node(spread.argument)?.span();
+    Some(&source[arg_span.start as usize..arg_span.end as usize])
 }
 
 /// Extract the argument name from `Array.from(something)` (single-argument call).
 #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-fn get_array_from_arg_name<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
-    let Expression::CallExpression(call) = expr else {
+fn get_array_from_arg_name<'s>(
+    obj_id: NodeId,
+    source: &'s str,
+    ctx: &LintContext<'_>,
+) -> Option<&'s str> {
+    let AstNode::CallExpression(call) = ctx.node(obj_id)? else {
         return None;
     };
 
@@ -120,42 +127,33 @@ fn get_array_from_arg_name<'s>(expr: &Expression<'_>, source: &'s str) -> Option
         return None;
     }
 
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+    let AstNode::StaticMemberExpression(member) = ctx.node(call.callee)? else {
         return None;
     };
 
-    if member.property.name.as_str() != "from" {
+    if member.property.as_str() != "from" {
         return None;
     }
 
-    if !matches!(&member.object, Expression::Identifier(id) if id.name.as_str() == "Array") {
+    if !matches!(ctx.node(member.object), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Array")
+    {
         return None;
     }
 
-    let arg = call.arguments.first()?;
-    let span = arg.span();
-    Some(&source[span.start as usize..span.end as usize])
+    let arg_id = call.arguments.first()?;
+    let arg_span = ctx.node(*arg_id)?.span();
+    Some(&source[arg_span.start as usize..arg_span.end as usize])
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferSetSize)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferSetSize)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

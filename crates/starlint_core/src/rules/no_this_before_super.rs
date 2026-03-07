@@ -4,20 +4,20 @@
 //! classes. Accessing `this` before `super()` is called throws a
 //! `ReferenceError` at runtime.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{AssignmentTarget, ClassElement, Expression, MethodDefinitionKind, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::MethodDefinitionKind;
+use starlint_ast::types::NodeId;
 
 /// Flags `this` usage before `super()` in derived class constructors.
 #[derive(Debug)]
 pub struct NoThisBeforeSuper;
 
-impl NativeRule for NoThisBeforeSuper {
+impl LintRule for NoThisBeforeSuper {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-this-before-super".to_owned(),
@@ -28,12 +28,12 @@ impl NativeRule for NoThisBeforeSuper {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Class])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Class])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Class(class) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Class(class) = node else {
             return;
         };
 
@@ -43,8 +43,8 @@ impl NativeRule for NoThisBeforeSuper {
         }
 
         // Find the constructor
-        for element in &class.body.body {
-            let ClassElement::MethodDefinition(method) = element else {
+        for &element_id in &*class.body {
+            let Some(AstNode::MethodDefinition(method)) = ctx.node(element_id) else {
                 continue;
             };
 
@@ -52,21 +52,30 @@ impl NativeRule for NoThisBeforeSuper {
                 continue;
             }
 
-            let Some(body) = &method.value.body else {
+            let Some(AstNode::Function(func)) = ctx.node(method.value) else {
                 continue;
             };
 
-            check_this_before_super(&body.statements, ctx);
+            let Some(body_id) = func.body else {
+                continue;
+            };
+
+            let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+                continue;
+            };
+
+            let stmts: Vec<NodeId> = body.statements.to_vec();
+            check_this_before_super(&stmts, ctx);
         }
     }
 }
 
 /// Walk statements linearly, tracking whether `super()` has been called.
 /// Flag any `this` usage before `super()`.
-fn check_this_before_super(stmts: &[Statement<'_>], ctx: &mut NativeLintContext<'_>) {
-    for stmt in stmts {
+fn check_this_before_super(stmts: &[NodeId], ctx: &mut LintContext<'_>) {
+    for &stmt_id in stmts {
         // Check if this statement contains `this` before we've seen `super()`
-        if let Some(this_span) = find_this_in_statement(stmt) {
+        if let Some(this_span) = find_this_in_statement(stmt_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: "no-this-before-super".to_owned(),
                 message: "`this` is not allowed before `super()`".to_owned(),
@@ -80,29 +89,33 @@ fn check_this_before_super(stmts: &[Statement<'_>], ctx: &mut NativeLintContext<
         }
 
         // Check if this statement contains a `super()` call
-        if statement_has_super_call(stmt) {
+        if statement_has_super_call(stmt_id, ctx) {
             return; // After super(), this is fine
         }
     }
 }
 
 /// Find `this` expression in a statement, returning its span.
-fn find_this_in_statement(stmt: &Statement<'_>) -> Option<Span> {
-    match stmt {
-        Statement::ExpressionStatement(expr_stmt) => find_this_in_expression(&expr_stmt.expression),
-        Statement::VariableDeclaration(decl) => {
-            for declarator in &decl.declarations {
-                if let Some(init) = &declarator.init {
-                    if let Some(span) = find_this_in_expression(init) {
-                        return Some(span);
+fn find_this_in_statement(stmt_id: NodeId, ctx: &LintContext<'_>) -> Option<Span> {
+    match ctx.node(stmt_id)? {
+        AstNode::ExpressionStatement(expr_stmt) => {
+            find_this_in_expression(expr_stmt.expression, ctx)
+        }
+        AstNode::VariableDeclaration(decl) => {
+            for &decl_id in &*decl.declarations {
+                if let Some(AstNode::VariableDeclarator(declarator)) = ctx.node(decl_id) {
+                    if let Some(init_id) = declarator.init {
+                        if let Some(span) = find_this_in_expression(init_id, ctx) {
+                            return Some(span);
+                        }
                     }
                 }
             }
             None
         }
-        Statement::ReturnStatement(ret) => {
-            if let Some(arg) = &ret.argument {
-                return find_this_in_expression(arg);
+        AstNode::ReturnStatement(ret) => {
+            if let Some(arg_id) = ret.argument {
+                return find_this_in_expression(arg_id, ctx);
             }
             None
         }
@@ -111,76 +124,59 @@ fn find_this_in_statement(stmt: &Statement<'_>) -> Option<Span> {
 }
 
 /// Find `this` expression recursively, returning its span.
-fn find_this_in_expression(expr: &Expression<'_>) -> Option<Span> {
-    match expr {
-        Expression::ThisExpression(this) => Some(Span::new(this.span.start, this.span.end)),
-        Expression::AssignmentExpression(assign) => {
-            // Check the assignment target (left side) for `this`
-            if let Some(span) = find_this_in_target(&assign.left) {
+fn find_this_in_expression(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<Span> {
+    match ctx.node(expr_id)? {
+        AstNode::ThisExpression(this) => Some(Span::new(this.span.start, this.span.end)),
+        AstNode::AssignmentExpression(assign) => {
+            // Check the left side for `this`
+            if let Some(span) = find_this_in_expression(assign.left, ctx) {
                 return Some(span);
             }
-            find_this_in_expression(&assign.right)
+            find_this_in_expression(assign.right, ctx)
         }
-        Expression::CallExpression(call) => {
-            // Skip super() calls — that's what we're looking for
-            if matches!(&call.callee, Expression::Super(_)) {
+        AstNode::CallExpression(call) => {
+            // Skip super() calls -- that's what we're looking for
+            if matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name == "super")
+            {
                 return None;
             }
-            find_this_in_expression(&call.callee)
+            find_this_in_expression(call.callee, ctx)
         }
-        Expression::StaticMemberExpression(member) => find_this_in_expression(&member.object),
-        Expression::ComputedMemberExpression(member) => find_this_in_expression(&member.object),
-        _ => None,
-    }
-}
-
-/// Find `this` in an assignment target (left side of assignment).
-fn find_this_in_target(target: &AssignmentTarget<'_>) -> Option<Span> {
-    match target {
-        AssignmentTarget::StaticMemberExpression(member) => find_this_in_expression(&member.object),
-        AssignmentTarget::ComputedMemberExpression(member) => {
-            find_this_in_expression(&member.object)
-        }
+        AstNode::StaticMemberExpression(member) => find_this_in_expression(member.object, ctx),
+        AstNode::ComputedMemberExpression(member) => find_this_in_expression(member.object, ctx),
         _ => None,
     }
 }
 
 /// Check if a statement contains a `super()` call.
-fn statement_has_super_call(stmt: &Statement<'_>) -> bool {
-    match stmt {
-        Statement::ExpressionStatement(expr_stmt) => {
-            expression_is_super_call(&expr_stmt.expression)
+fn statement_has_super_call(stmt_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(stmt_id) {
+        Some(AstNode::ExpressionStatement(expr_stmt)) => {
+            expression_is_super_call(expr_stmt.expression, ctx)
         }
         _ => false,
     }
 }
 
 /// Check if an expression is a `super()` call.
-fn expression_is_super_call(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::CallExpression(call) => matches!(&call.callee, Expression::Super(_)),
+fn expression_is_super_call(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(expr_id) {
+        Some(AstNode::CallExpression(call)) => {
+            matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name == "super")
+        }
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoThisBeforeSuper)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoThisBeforeSuper)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,16 +4,13 @@
 //! `classList.remove()`. The `toggle` method with a second argument is
 //! often cleaner, especially when conditionally adding or removing a class.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `classList.add()` and `classList.remove()` calls, suggesting `classList.toggle()`.
 #[derive(Debug)]
@@ -22,7 +19,7 @@ pub struct PreferClasslistToggle;
 /// Method names on `classList` that could be replaced by `toggle`.
 const TOGGLEABLE_METHODS: &[&str] = &["add", "remove"];
 
-impl NativeRule for PreferClasslistToggle {
+impl LintRule for PreferClasslistToggle {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-classlist-toggle".to_owned(),
@@ -33,43 +30,50 @@ impl NativeRule for PreferClasslistToggle {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Callee must be a static member expression like `X.classList.add(...)`
-        let Expression::StaticMemberExpression(outer) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(outer)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method_name = outer.property.name.as_str();
+        let method_name = outer.property.as_str();
 
         if !TOGGLEABLE_METHODS.contains(&method_name) {
             return;
         }
 
         // The object of the outer member must be `?.classList`
-        let Expression::StaticMemberExpression(inner) = &outer.object else {
+        let Some(AstNode::StaticMemberExpression(inner)) = ctx.node(outer.object) else {
             return;
         };
 
-        if inner.property.name.as_str() != "classList" {
+        if inner.property.as_str() != "classList" {
             return;
         }
 
-        // Fix: el.classList.add('x') → el.classList.toggle('x', true)
-        //      el.classList.remove('x') → el.classList.toggle('x', false)
+        // Fix: el.classList.add('x') -> el.classList.toggle('x', true)
+        //      el.classList.remove('x') -> el.classList.toggle('x', false)
         #[allow(clippy::as_conversions)]
         let fix = (call.arguments.len() == 1)
             .then(|| {
                 let source = ctx.source_text();
-                let el_span = inner.object.span();
-                let arg_span = call.arguments.first().map(oxc_span::GetSpan::span);
+                let el_span = ctx.node(inner.object).map_or(
+                    starlint_ast::types::Span::EMPTY,
+                    starlint_ast::AstNode::span,
+                );
+                let arg_span = call
+                    .arguments
+                    .first()
+                    .and_then(|&id| ctx.node(id))
+                    .map(starlint_ast::AstNode::span);
                 match (
                     source.get(el_span.start as usize..el_span.end as usize),
                     arg_span.and_then(|s| source.get(s.start as usize..s.end as usize)),
@@ -111,23 +115,13 @@ impl NativeRule for PreferClasslistToggle {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferClasslistToggle)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferClasslistToggle)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

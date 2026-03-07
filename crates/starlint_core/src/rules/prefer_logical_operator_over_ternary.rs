@@ -4,21 +4,20 @@
 //! truthiness/nullishness check. `a ? a : b` should be `a || b`, and
 //! `a !== null ? a : b` / `a !== undefined ? a : b` should be `a ?? b`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags ternary expressions that can be replaced with `||` or `??`.
 #[derive(Debug)]
 pub struct PreferLogicalOperatorOverTernary;
 
-impl NativeRule for PreferLogicalOperatorOverTernary {
+impl LintRule for PreferLogicalOperatorOverTernary {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-logical-operator-over-ternary".to_owned(),
@@ -28,21 +27,23 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ConditionalExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ConditionalExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ConditionalExpression(cond) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ConditionalExpression(cond) = node else {
             return;
         };
 
         let source = ctx.source_text();
 
         // Pattern 1: `a ? a : b` => `a || b`
-        if let Some(operator) = check_simple_truthiness(&cond.test, &cond.consequent, source) {
-            let test_text = expr_text(&cond.test, source).unwrap_or_default().to_owned();
-            let alt_text = expr_text(&cond.alternate, source)
+        if let Some(operator) = check_simple_truthiness(cond.test, cond.consequent, source, ctx) {
+            let test_text = node_text(cond.test, source, ctx)
+                .unwrap_or_default()
+                .to_owned();
+            let alt_text = node_text(cond.alternate, source, ctx)
                 .unwrap_or_default()
                 .to_owned();
             let replacement = format!("{test_text} {operator} {alt_text}");
@@ -68,8 +69,8 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
         }
 
         // Pattern 2: `a !== null ? a : b` => `a ?? b`
-        if let Some(value_text) = check_nullish_value(&cond.test, &cond.consequent, source) {
-            let alt_text = expr_text(&cond.alternate, source)
+        if let Some(value_text) = check_nullish_value(cond.test, cond.consequent, source, ctx) {
+            let alt_text = node_text(cond.alternate, source, ctx)
                 .unwrap_or_default()
                 .to_owned();
             let replacement = format!("{value_text} ?? {alt_text}");
@@ -95,9 +96,10 @@ impl NativeRule for PreferLogicalOperatorOverTernary {
     }
 }
 
-/// Extract a slice of source text for a given expression span.
-fn expr_text<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
-    let sp = expr.span();
+/// Extract a slice of source text for a given node by ID.
+fn node_text<'s>(id: NodeId, source: &'s str, ctx: &LintContext<'_>) -> Option<&'s str> {
+    let node = ctx.node(id)?;
+    let sp = node.span();
     let start = usize::try_from(sp.start).ok()?;
     let end = usize::try_from(sp.end).ok()?;
     source.get(start..end)
@@ -105,26 +107,27 @@ fn expr_text<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
 
 /// Check `a ? a : b` pattern (test == consequent by source text).
 fn check_simple_truthiness(
-    test: &Expression<'_>,
-    consequent: &Expression<'_>,
+    test_id: NodeId,
+    consequent_id: NodeId,
     source: &str,
+    ctx: &LintContext<'_>,
 ) -> Option<&'static str> {
     // Skip if the test is a binary expression (those are comparisons, not simple truthiness)
-    if matches!(test, Expression::BinaryExpression(_)) {
+    if matches!(ctx.node(test_id), Some(AstNode::BinaryExpression(_))) {
         return None;
     }
 
-    let test_text = expr_text(test, source)?;
-    let cons_text = expr_text(consequent, source)?;
+    let test_text = node_text(test_id, source, ctx)?;
+    let cons_text = node_text(consequent_id, source, ctx)?;
 
     (!test_text.is_empty() && test_text == cons_text).then_some("||")
 }
 
-/// Check whether an expression is `null` or `undefined`.
-fn is_nullish_literal(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::NullLiteral(_) => true,
-        Expression::Identifier(id) => id.name.as_str() == "undefined",
+/// Check whether a node is `null` or `undefined`.
+fn is_nullish_literal(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    match ctx.node(id) {
+        Some(AstNode::NullLiteral(_)) => true,
+        Some(AstNode::IdentifierReference(ident)) => ident.name.as_str() == "undefined",
         _ => false,
     }
 }
@@ -132,11 +135,12 @@ fn is_nullish_literal(expr: &Expression<'_>) -> bool {
 /// Check `a !== null ? a : b` or `a !== undefined ? a : b` or `a != null ? a : b`.
 /// Returns the value expression text if the pattern matches.
 fn check_nullish_value<'s>(
-    test: &Expression<'_>,
-    consequent: &Expression<'_>,
+    test_id: NodeId,
+    consequent_id: NodeId,
     source: &'s str,
+    ctx: &LintContext<'_>,
 ) -> Option<&'s str> {
-    let Expression::BinaryExpression(binary) = test else {
+    let Some(AstNode::BinaryExpression(binary)) = ctx.node(test_id) else {
         return None;
     };
 
@@ -149,40 +153,30 @@ fn check_nullish_value<'s>(
     }
 
     // Determine which side is the value and which is null/undefined
-    let value_expr = if is_nullish_literal(&binary.right) {
-        &binary.left
-    } else if is_nullish_literal(&binary.left) {
-        &binary.right
+    let value_id = if is_nullish_literal(binary.right, ctx) {
+        binary.left
+    } else if is_nullish_literal(binary.left, ctx) {
+        binary.right
     } else {
         return None;
     };
 
     // The value side should match the consequent
-    let value_text = expr_text(value_expr, source)?;
-    let cons_text = expr_text(consequent, source)?;
+    let value_text = node_text(value_id, source, ctx)?;
+    let cons_text = node_text(consequent_id, source, ctx)?;
 
     (!value_text.is_empty() && value_text == cons_text).then_some(value_text)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferLogicalOperatorOverTernary)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferLogicalOperatorOverTernary)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

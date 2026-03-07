@@ -2,14 +2,13 @@
 //!
 //! Enforce `<audio>` and `<video>` have `<track>` for captions.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/media-has-caption";
@@ -20,21 +19,22 @@ const MEDIA_ELEMENTS: &[&str] = &["audio", "video"];
 #[derive(Debug)]
 pub struct MediaHasCaption;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
+/// Check if an attribute with the given name exists on a JSX element.
+fn has_attribute(
+    opening: &starlint_ast::node::JSXOpeningElementNode,
+    name: &str,
+    ctx: &LintContext<'_>,
+) -> bool {
+    opening.attributes.iter().any(|attr_id| {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
+            attr.name.as_str() == name
         } else {
             false
         }
     })
 }
 
-impl NativeRule for MediaHasCaption {
+impl LintRule for MediaHasCaption {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -44,31 +44,30 @@ impl NativeRule for MediaHasCaption {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let element_name = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+        let element_name = opening.name.as_str();
 
         if !MEDIA_ELEMENTS.contains(&element_name) {
             return;
         }
 
         // Muted videos don't need captions
-        if element_name == "video" && has_attribute(opening, "muted") {
+        if element_name == "video" && has_attribute(opening, "muted", ctx) {
             return;
         }
 
         // Check for aria-label or aria-labelledby as alternatives
-        if has_attribute(opening, "aria-label") || has_attribute(opening, "aria-labelledby") {
+        if has_attribute(opening, "aria-label", ctx)
+            || has_attribute(opening, "aria-labelledby", ctx)
+        {
             return;
         }
 
@@ -90,22 +89,13 @@ impl NativeRule for MediaHasCaption {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MediaHasCaption)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MediaHasCaption)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

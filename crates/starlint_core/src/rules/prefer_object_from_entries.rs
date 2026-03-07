@@ -5,20 +5,19 @@
 //! object literal `{}`, it often indicates manual key-value accumulation
 //! that could use `Object.fromEntries()` instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.reduce()` calls with an empty object literal as initial value.
 #[derive(Debug)]
 pub struct PreferObjectFromEntries;
 
-impl NativeRule for PreferObjectFromEntries {
+impl LintRule for PreferObjectFromEntries {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-object-from-entries".to_owned(),
@@ -30,20 +29,24 @@ impl NativeRule for PreferObjectFromEntries {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
-            return;
-        };
-
-        if member.property.name.as_str() != "reduce" {
+        let is_reduce = ctx.node(call.callee).and_then(|n| {
+            if let AstNode::StaticMemberExpression(member) = n {
+                if member.property.as_str() == "reduce" {
+                    return Some(());
+                }
+            }
+            None
+        });
+        if is_reduce.is_none() {
             return;
         }
 
@@ -53,13 +56,13 @@ impl NativeRule for PreferObjectFromEntries {
         }
 
         // The second argument (initial value) must be an empty object literal `{}`
-        let Some(second_arg) = call.arguments.get(1) else {
+        let Some(&second_arg_id) = call.arguments.get(1) else {
             return;
         };
 
         let is_empty_object = matches!(
-            second_arg,
-            Argument::ObjectExpression(obj) if obj.properties.is_empty()
+            ctx.node(second_arg_id),
+            Some(AstNode::ObjectExpression(obj)) if obj.properties.is_empty()
         );
 
         if !is_empty_object {
@@ -82,23 +85,13 @@ impl NativeRule for PreferObjectFromEntries {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferObjectFromEntries)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferObjectFromEntries)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,14 +4,13 @@
 //! Unhandled promise rejections in Express crash the server because
 //! Express does not catch promise rejections from middleware.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags async functions passed as route handler arguments to Express-style methods.
 #[derive(Debug)]
@@ -20,16 +19,16 @@ pub struct NoAsyncEndpointHandlers;
 /// HTTP method names and Express middleware methods.
 const HTTP_METHODS: &[&str] = &["get", "post", "put", "delete", "patch", "use", "all"];
 
-/// Check if an argument is an async function or async arrow function.
-fn is_async_function_arg(arg: &Argument<'_>) -> bool {
-    match arg {
-        Argument::FunctionExpression(func) => func.r#async,
-        Argument::ArrowFunctionExpression(arrow) => arrow.r#async,
+/// Check if an argument node is an async function or async arrow function.
+const fn is_async_function_node(node: &AstNode) -> bool {
+    match node {
+        AstNode::Function(func) => func.is_async,
+        AstNode::ArrowFunctionExpression(arrow) => arrow.is_async,
         _ => false,
     }
 }
 
-impl NativeRule for NoAsyncEndpointHandlers {
+impl LintRule for NoAsyncEndpointHandlers {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-async-endpoint-handlers".to_owned(),
@@ -39,28 +38,31 @@ impl NativeRule for NoAsyncEndpointHandlers {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if callee is a member expression like app.get, router.post, etc.
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method_name = member.property.name.as_str();
+        let method_name = member.property.as_str();
         if !HTTP_METHODS.contains(&method_name) {
             return;
         }
 
         // Check if any argument is an async function
-        for arg in &call.arguments {
-            if is_async_function_arg(arg) {
+        for &arg_id in &*call.arguments {
+            let Some(arg_node) = ctx.node(arg_id) else {
+                continue;
+            };
+            if is_async_function_node(arg_node) {
                 ctx.report(Diagnostic {
                     rule_name: "no-async-endpoint-handlers".to_owned(),
                     message: format!(
@@ -80,23 +82,13 @@ impl NativeRule for NoAsyncEndpointHandlers {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoAsyncEndpointHandlers)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAsyncEndpointHandlers)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

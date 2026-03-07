@@ -4,14 +4,15 @@
 //! when the file doesn't match the category's expected patterns (e.g. jest
 //! rules skip non-test files). This avoids dispatching category-specific
 //! rules to irrelevant files, significantly reducing per-node work.
+#![allow(dead_code)]
 
 use std::fmt;
 use std::path::Path;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 use starlint_plugin_sdk::rule::RuleMeta;
 
 /// File-level predicate: returns `true` when a file is relevant to the category.
@@ -25,14 +26,14 @@ type FilePredicate = fn(&str, &Path) -> bool;
 /// skipped for the entire file (both traversal and `run_once`).
 struct CategoryGuarded {
     /// The wrapped rule.
-    inner: Box<dyn NativeRule>,
+    inner: Box<dyn LintRule>,
     /// Category-level file predicate.
     predicate: FilePredicate,
 }
 
 impl CategoryGuarded {
     /// Wrap `rule` with a category-level file guard.
-    fn new(rule: Box<dyn NativeRule>, predicate: FilePredicate) -> Self {
+    fn new(rule: Box<dyn LintRule>, predicate: FilePredicate) -> Self {
         Self {
             inner: rule,
             predicate,
@@ -49,20 +50,20 @@ impl fmt::Debug for CategoryGuarded {
     }
 }
 
-impl NativeRule for CategoryGuarded {
+impl LintRule for CategoryGuarded {
     fn meta(&self) -> RuleMeta {
         self.inner.meta()
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        self.inner.run(kind, ctx);
+    fn run(&self, node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        self.inner.run(node_id, node, ctx);
     }
 
-    fn leave(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        self.inner.leave(kind, ctx);
+    fn leave(&self, node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        self.inner.leave(node_id, node, ctx);
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         self.inner.run_once(ctx);
     }
 
@@ -74,12 +75,12 @@ impl NativeRule for CategoryGuarded {
         self.inner.needs_semantic()
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        self.inner.run_on_kinds()
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        self.inner.run_on_types()
     }
 
-    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
-        self.inner.leave_on_kinds()
+    fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
+        self.inner.leave_on_types()
     }
 
     fn should_run_on_file(&self, source_text: &str, file_path: &Path) -> bool {
@@ -94,11 +95,11 @@ impl NativeRule for CategoryGuarded {
 
 /// Wrap each rule in the vec with a category-level file guard.
 pub(super) fn guard_all(
-    rules: Vec<Box<dyn NativeRule>>,
+    rules: Vec<Box<dyn LintRule>>,
     predicate: FilePredicate,
-) -> Vec<Box<dyn NativeRule>> {
+) -> Vec<Box<dyn LintRule>> {
     rules
         .into_iter()
-        .map(|rule| -> Box<dyn NativeRule> { Box::new(CategoryGuarded::new(rule, predicate)) })
+        .map(|rule| -> Box<dyn LintRule> { Box::new(CategoryGuarded::new(rule, predicate)) })
         .collect()
 }

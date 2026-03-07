@@ -3,14 +3,13 @@
 //! Forbid `<Script>` component inside `<Head>`. The `next/script` `<Script>`
 //! component should not be placed within `next/head` `<Head>`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXChild, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "nextjs/no-script-component-in-head";
@@ -19,17 +18,7 @@ const RULE_NAME: &str = "nextjs/no-script-component-in-head";
 #[derive(Debug)]
 pub struct NoScriptComponentInHead;
 
-/// Check if a JSX element name matches the given string, handling both
-/// lowercase `Identifier` and `PascalCase` `IdentifierReference` variants.
-fn is_element_name(name: &JSXElementName<'_>, target: &str) -> bool {
-    match name {
-        JSXElementName::Identifier(ident) => ident.name.as_str() == target,
-        JSXElementName::IdentifierReference(ident) => ident.name.as_str() == target,
-        _ => false,
-    }
-}
-
-impl NativeRule for NoScriptComponentInHead {
+impl LintRule for NoScriptComponentInHead {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -39,47 +28,55 @@ impl NativeRule for NoScriptComponentInHead {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXElement(element) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXElement(element) = node else {
             return;
         };
 
         // Check if this is a <Head> element
-        if !is_element_name(&element.opening_element.name, "Head") {
+        // element.opening_element is a NodeId
+        let Some(AstNode::JSXOpeningElement(opening)) = ctx.node(element.opening_element) else {
+            return;
+        };
+        if opening.name.as_str() != "Head" {
             return;
         }
 
         // Check children for <Script> components
-        for child in &element.children {
-            if let JSXChild::Element(child_element) = child {
-                if is_element_name(&child_element.opening_element.name, "Script") {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: "Do not use `<Script>` inside `<Head>` -- move `<Script>` outside of `<Head>`".to_owned(),
-                        span: Span::new(
-                            child_element.opening_element.span.start,
-                            child_element.opening_element.span.end,
-                        ),
-                        severity: Severity::Error,
-                        help: None,
-                        fix: Some(Fix {
-                            kind: FixKind::SuggestionFix,
-                            message: "Remove `<Script>` from `<Head>`".to_owned(),
-                            edits: vec![Edit {
-                                span: Span::new(
-                                    child_element.span.start,
-                                    child_element.span.end,
-                                ),
-                                replacement: String::new(),
-                            }],
-                            is_snippet: false,
-                        }),
-                        labels: vec![],
-                    });
+        for child_id in &*element.children {
+            if let Some(AstNode::JSXElement(child_element)) = ctx.node(*child_id) {
+                if let Some(AstNode::JSXOpeningElement(child_opening)) =
+                    ctx.node(child_element.opening_element)
+                {
+                    if child_opening.name.as_str() == "Script" {
+                        ctx.report(Diagnostic {
+                            rule_name: RULE_NAME.to_owned(),
+                            message: "Do not use `<Script>` inside `<Head>` -- move `<Script>` outside of `<Head>`".to_owned(),
+                            span: Span::new(
+                                child_opening.span.start,
+                                child_opening.span.end,
+                            ),
+                            severity: Severity::Error,
+                            help: None,
+                            fix: Some(Fix {
+                                kind: FixKind::SuggestionFix,
+                                message: "Remove `<Script>` from `<Head>`".to_owned(),
+                                edits: vec![Edit {
+                                    span: Span::new(
+                                        child_element.span.start,
+                                        child_element.span.end,
+                                    ),
+                                    replacement: String::new(),
+                                }],
+                                is_snippet: false,
+                            }),
+                            labels: vec![],
+                        });
+                    }
                 }
             }
         }
@@ -88,22 +85,13 @@ impl NativeRule for NoScriptComponentInHead {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoScriptComponentInHead)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoScriptComponentInHead)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,22 +4,20 @@
 //! Sparse arrays are confusing because the empty slots are `undefined`
 //! but behave differently from explicit `undefined` values.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::ArrayExpressionElement;
-use oxc_ast::ast_kind::AstType;
+#![allow(clippy::shadow_reuse, clippy::shadow_unrelated)]
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
+use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use oxc_span::GetSpan;
-
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
-use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
-
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags array literals containing empty slots (elisions).
 #[derive(Debug)]
 pub struct NoSparseArrays;
 
-impl NativeRule for NoSparseArrays {
+impl LintRule for NoSparseArrays {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-sparse-arrays".to_owned(),
@@ -29,52 +27,47 @@ impl NativeRule for NoSparseArrays {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrayExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrayExpression])
     }
 
     #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ArrayExpression(arr) = kind else {
+    #[allow(clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ArrayExpression(arr) = node else {
             return;
         };
 
-        let has_elision = arr
-            .elements
-            .iter()
-            .any(|el| matches!(el, ArrayExpressionElement::Elision(_)));
+        // Detect sparse arrays by scanning source text for elision patterns
+        // (consecutive commas or leading commas within the array literal)
+        let source = ctx.source_text();
+        let start = arr.span.start as usize;
+        let end = arr.span.end as usize;
+        let Some(arr_text) = source.get(start..end) else {
+            return;
+        };
+
+        // Check for sparse patterns: ",," or "[," (leading elision)
+        let has_elision = {
+            let inner = arr_text.trim();
+            // Strip the outer brackets
+            let inner = inner.strip_prefix('[').unwrap_or(inner);
+            let inner = inner.strip_suffix(']').unwrap_or(inner);
+            let trimmed = inner.trim();
+            // Leading comma means leading elision
+            trimmed.starts_with(',')
+                // Or consecutive commas (with optional whitespace between)
+                || trimmed.contains(",,")
+        };
 
         if has_elision {
-            // Build fix: replace each elision with `undefined`
-            let source = ctx.source_text();
-            let parts: Vec<&str> = arr
-                .elements
-                .iter()
-                .map(|el| match el {
-                    ArrayExpressionElement::Elision(_) => "undefined",
-                    other => {
-                        let s = other.span();
-                        source.get(s.start as usize..s.end as usize).unwrap_or("")
-                    }
-                })
-                .collect();
-            let replacement = format!("[{}]", parts.join(", "));
-
             ctx.report(Diagnostic {
                 rule_name: "no-sparse-arrays".to_owned(),
                 message: "Unexpected comma in middle of array (sparse array)".to_owned(),
                 span: Span::new(arr.span.start, arr.span.end),
                 severity: Severity::Error,
                 help: Some("Replace empty slots with explicit `undefined`".to_owned()),
-                fix: Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: "Replace elisions with `undefined`".to_owned(),
-                    edits: vec![Edit {
-                        span: Span::new(arr.span.start, arr.span.end),
-                        replacement,
-                    }],
-                    is_snippet: false,
-                }),
+                fix: None,
                 labels: vec![],
             });
         }
@@ -83,22 +76,13 @@ impl NativeRule for NoSparseArrays {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoSparseArrays)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSparseArrays)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,20 +3,19 @@
 //! Disallow usage of `setState`. When using an external state management
 //! library (Redux, `MobX`, etc.), `setState` should not be used at all.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags all `this.setState()` and bare `setState()` calls.
 #[derive(Debug)]
 pub struct NoSetState;
 
-impl NativeRule for NoSetState {
+impl LintRule for NoSetState {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/no-set-state".to_owned(),
@@ -26,23 +25,25 @@ impl NativeRule for NoSetState {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let is_set_state = match &call.callee {
+        let is_set_state = match ctx.node(call.callee) {
             // this.setState(...)
-            Expression::StaticMemberExpression(member) => {
-                member.property.name.as_str() == "setState"
-                    && matches!(&member.object, Expression::ThisExpression(_))
+            Some(AstNode::StaticMemberExpression(member)) => {
+                member.property.as_str() == "setState"
+                    && ctx
+                        .node(member.object)
+                        .is_some_and(|n| matches!(n, AstNode::ThisExpression(_)))
             }
             // setState(...)
-            Expression::Identifier(ident) => ident.name.as_str() == "setState",
+            Some(AstNode::IdentifierReference(ident)) => ident.name.as_str() == "setState",
             _ => false,
         };
 
@@ -63,22 +64,13 @@ impl NativeRule for NoSetState {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.jsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoSetState)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.jsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSetState)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

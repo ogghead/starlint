@@ -4,20 +4,19 @@
 //! return anything will cause the component to render `undefined`, which is
 //! almost always a bug.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{PropertyKey, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `render()` methods without a return statement.
 #[derive(Debug)]
 pub struct RequireRenderReturn;
 
-impl NativeRule for RequireRenderReturn {
+impl LintRule for RequireRenderReturn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/require-render-return".to_owned(),
@@ -27,25 +26,33 @@ impl NativeRule for RequireRenderReturn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::MethodDefinition])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::MethodDefinition])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::MethodDefinition(method) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::MethodDefinition(method) = node else {
             return;
         };
 
-        let method_name = match &method.key {
-            PropertyKey::StaticIdentifier(ident) => ident.name.as_str(),
-            _ => return,
+        let method_name = ctx.node(method.key).and_then(|n| match n {
+            AstNode::IdentifierReference(id) => Some(id.name.as_str()),
+            AstNode::BindingIdentifier(id) => Some(id.name.as_str()),
+            _ => None,
+        });
+
+        let Some("render") = method_name else {
+            return;
         };
 
-        if method_name != "render" {
-            return;
-        }
-
-        let Some(body) = &method.value.body else {
+        // Resolve: method.value -> Function -> body -> FunctionBody
+        let func_body = ctx
+            .node(method.value)
+            .and_then(|n| n.as_function())
+            .and_then(|f| f.body)
+            .and_then(|body_id| ctx.node(body_id))
+            .and_then(|n| n.as_function_body());
+        let Some(body) = func_body else {
             return;
         };
 
@@ -53,7 +60,7 @@ impl NativeRule for RequireRenderReturn {
         let has_return = body
             .statements
             .iter()
-            .any(|stmt| matches!(stmt, Statement::ReturnStatement(_)));
+            .any(|&stmt_id| matches!(ctx.node(stmt_id), Some(AstNode::ReturnStatement(_))));
 
         if !has_return {
             ctx.report(Diagnostic {
@@ -71,22 +78,13 @@ impl NativeRule for RequireRenderReturn {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.jsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RequireRenderReturn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.jsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RequireRenderReturn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

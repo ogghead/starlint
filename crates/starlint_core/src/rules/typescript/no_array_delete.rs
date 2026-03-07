@@ -5,23 +5,21 @@
 //! a bug. The length of the array is not updated and the element becomes
 //! `undefined`. Use `Array.prototype.splice` instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::UnaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags `delete arr[i]` expressions where the index is numeric, indicating
 /// deletion from an array rather than an object.
 #[derive(Debug)]
 pub struct NoArrayDelete;
 
-impl NativeRule for NoArrayDelete {
+impl LintRule for NoArrayDelete {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-array-delete".to_owned(),
@@ -31,12 +29,12 @@ impl NativeRule for NoArrayDelete {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::UnaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::UnaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::UnaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::UnaryExpression(expr) = node else {
             return;
         };
 
@@ -47,17 +45,23 @@ impl NativeRule for NoArrayDelete {
         // Only flag computed member expressions (bracket access) where the
         // index expression looks numeric — this distinguishes array element
         // deletion from dynamic object key deletion.
-        let Expression::ComputedMemberExpression(member) = &expr.argument else {
+        let Some(AstNode::ComputedMemberExpression(member)) = ctx.node(expr.argument) else {
             return;
         };
 
-        if is_numeric_index(&member.expression) {
-            // Fix: `delete arr[i]` → `arr.splice(i, 1)`
+        if is_numeric_index(member.expression, ctx) {
+            // Fix: `delete arr[i]` -> `arr.splice(i, 1)`
             #[allow(clippy::as_conversions)]
             let fix = {
                 let source = ctx.source_text();
-                let obj_span = member.object.span();
-                let idx_span = member.expression.span();
+                let obj_span = ctx.node(member.object).map_or(
+                    starlint_ast::types::Span::EMPTY,
+                    starlint_ast::AstNode::span,
+                );
+                let idx_span = ctx.node(member.expression).map_or(
+                    starlint_ast::types::Span::EMPTY,
+                    starlint_ast::AstNode::span,
+                );
                 let obj_text = source
                     .get(obj_span.start as usize..obj_span.end as usize)
                     .unwrap_or("");
@@ -94,34 +98,24 @@ impl NativeRule for NoArrayDelete {
 /// Returns `true` for numeric literals (`delete arr[0]`) and identifiers
 /// commonly used as loop counters (`delete arr[i]`), which strongly suggest
 /// array element deletion rather than object property deletion.
-const fn is_numeric_index(expr: &Expression<'_>) -> bool {
+fn is_numeric_index(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
     matches!(
-        expr,
+        ctx.node(expr_id),
         // A bare identifier as index (e.g. `delete arr[i]`) is likely an
         // array index from a loop — flag conservatively.
-        Expression::NumericLiteral(_) | Expression::Identifier(_)
+        Some(AstNode::NumericLiteral(_) | AstNode::IdentifierReference(_))
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoArrayDelete)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrayDelete)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

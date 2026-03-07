@@ -2,14 +2,13 @@
 //!
 //! Warn when forbidden elements are used. Flags `<marquee>` and `<blink>`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::JSXElementName;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags usage of forbidden HTML elements. By default, `<marquee>` and
 /// `<blink>` are flagged as deprecated and non-standard elements.
@@ -19,7 +18,7 @@ pub struct ForbidElements;
 /// Deprecated or non-standard HTML element names that should be avoided.
 const FORBIDDEN_ELEMENTS: &[&str] = &["marquee", "blink"];
 
-impl NativeRule for ForbidElements {
+impl LintRule for ForbidElements {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/forbid-elements".to_owned(),
@@ -29,19 +28,16 @@ impl NativeRule for ForbidElements {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let tag_name = match &opening.name {
-            JSXElementName::Identifier(id) => id.name.as_str(),
-            _ => return,
-        };
+        let tag_name = opening.name.as_str();
 
         if FORBIDDEN_ELEMENTS.contains(&tag_name) {
             ctx.report(Diagnostic {
@@ -61,22 +57,13 @@ impl NativeRule for ForbidElements {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ForbidElements)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ForbidElements)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

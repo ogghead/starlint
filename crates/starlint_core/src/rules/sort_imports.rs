@@ -4,20 +4,19 @@
 //! module specifier. Only checks the order of import declarations, not the
 //! members within each import.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::ImportDeclaration;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::{AstNode, ImportDeclarationNode};
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags import declarations that are not sorted by source specifier.
 #[derive(Debug)]
 pub struct SortImports;
 
-impl NativeRule for SortImports {
+impl LintRule for SortImports {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "sort-imports".to_owned(),
@@ -27,22 +26,22 @@ impl NativeRule for SortImports {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Program])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Program])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Program(program) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Program(program) = node else {
             return;
         };
 
         // Collect all import declarations in order
-        let imports: Vec<&ImportDeclaration<'_>> = program
+        let imports: Vec<&ImportDeclarationNode> = program
             .body
             .iter()
-            .filter_map(|stmt| {
-                if let oxc_ast::ast::Statement::ImportDeclaration(import) = stmt {
-                    Some(import.as_ref())
+            .filter_map(|stmt_id| {
+                if let Some(AstNode::ImportDeclaration(import)) = ctx.node(*stmt_id) {
+                    Some(import)
                 } else {
                     None
                 }
@@ -55,15 +54,15 @@ impl NativeRule for SortImports {
 
         // Check pairwise ordering by source specifier (case-insensitive)
         for pair in imports.windows(2) {
-            let Some(prev) = pair.first() else {
+            let Some(prev) = pair.first().copied() else {
                 continue;
             };
-            let Some(curr) = pair.get(1) else {
+            let Some(curr) = pair.get(1).copied() else {
                 continue;
             };
 
-            let prev_source = prev.source.value.as_str();
-            let curr_source = curr.source.value.as_str();
+            let prev_source = prev.source.as_str();
+            let curr_source = curr.source.as_str();
 
             if prev_source.to_lowercase() > curr_source.to_lowercase() {
                 ctx.report(Diagnostic {
@@ -86,22 +85,13 @@ impl NativeRule for SortImports {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(SortImports)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SortImports)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

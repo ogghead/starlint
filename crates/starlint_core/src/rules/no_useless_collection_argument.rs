@@ -4,15 +4,13 @@
 //! `new WeakSet()`, or `new WeakMap()`. Passing `[]` is equivalent to calling
 //! the constructor with no arguments.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new Set([])`, `new Map([])`, `new WeakSet([])`, and `new WeakMap([])`.
 #[derive(Debug)]
@@ -21,7 +19,7 @@ pub struct NoUselessCollectionArgument;
 /// Collection constructor names that accept an iterable.
 const COLLECTION_TYPES: &[&str] = &["Set", "Map", "WeakSet", "WeakMap"];
 
-impl NativeRule for NoUselessCollectionArgument {
+impl LintRule for NoUselessCollectionArgument {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-useless-collection-argument".to_owned(),
@@ -31,16 +29,16 @@ impl NativeRule for NoUselessCollectionArgument {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
-        let Expression::Identifier(id) = &new_expr.callee else {
+        let Some(AstNode::IdentifierReference(id)) = ctx.node(new_expr.callee) else {
             return;
         };
 
@@ -50,59 +48,50 @@ impl NativeRule for NoUselessCollectionArgument {
         }
 
         // Check if first argument is an empty array literal `[]`
-        let Some(first_arg) = new_expr.arguments.first() else {
+        let Some(first_arg_id) = new_expr.arguments.first() else {
             return;
         };
 
-        if is_empty_array_argument(first_arg) {
-            let expr_span = Span::new(new_expr.span.start, new_expr.span.end);
-            // Remove the empty array argument
-            let arg_span = Span::new(first_arg.span().start, first_arg.span().end);
-            ctx.report(Diagnostic {
-                rule_name: "no-useless-collection-argument".to_owned(),
-                message: format!("Unnecessary empty array argument in `new {name}([])` — use `new {name}()` instead"),
-                span: expr_span,
-                severity: Severity::Warning,
-                help: Some(format!("Use `new {name}()` instead")),
-                fix: Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: "Remove empty array argument".to_owned(),
-                    edits: vec![Edit {
-                        span: arg_span,
-                        replacement: String::new(),
-                    }],
-                    is_snippet: false,
-                }),
-                labels: vec![],
-            });
-        }
-    }
-}
+        let Some(AstNode::ArrayExpression(arr)) = ctx.node(*first_arg_id) else {
+            return;
+        };
 
-/// Check if an argument is an empty array expression `[]`.
-fn is_empty_array_argument(arg: &Argument<'_>) -> bool {
-    matches!(arg, Argument::ArrayExpression(arr) if arr.elements.is_empty())
+        if !arr.elements.is_empty() {
+            return;
+        }
+
+        let expr_span = Span::new(new_expr.span.start, new_expr.span.end);
+        let arg_span = Span::new(arr.span.start, arr.span.end);
+        let name_owned = name.to_owned();
+        ctx.report(Diagnostic {
+            rule_name: "no-useless-collection-argument".to_owned(),
+            message: format!("Unnecessary empty array argument in `new {name_owned}([])` — use `new {name_owned}()` instead"),
+            span: expr_span,
+            severity: Severity::Warning,
+            help: Some(format!("Use `new {name_owned}()` instead")),
+            fix: Some(Fix {
+                kind: FixKind::SafeFix,
+                message: "Remove empty array argument".to_owned(),
+                edits: vec![Edit {
+                    span: arg_span,
+                    replacement: String::new(),
+                }],
+                is_snippet: false,
+            }),
+            labels: vec![],
+        });
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessCollectionArgument)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessCollectionArgument)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

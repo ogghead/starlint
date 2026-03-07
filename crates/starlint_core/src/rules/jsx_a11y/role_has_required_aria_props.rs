@@ -2,14 +2,13 @@
 //!
 //! Enforce elements with ARIA roles have required aria-* props.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/role-has-required-aria-props";
@@ -32,17 +31,13 @@ const ROLE_REQUIRED_PROPS: &[(&str, &[&str])] = &[
 #[derive(Debug)]
 pub struct RoleHasRequiredAriaProps;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
-        } else {
-            false
-        }
+/// Check if an attribute with the given name exists on a JSX opening element's attributes.
+fn has_attribute(ctx: &LintContext<'_>, attributes: &[NodeId], name: &str) -> bool {
+    attributes.iter().any(|attr_id| {
+        let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
+            return false;
+        };
+        attr.name.as_str() == name
     })
 }
 
@@ -56,7 +51,7 @@ fn required_props(role: &str) -> Option<&'static [&'static str]> {
     None
 }
 
-impl NativeRule for RoleHasRequiredAriaProps {
+impl LintRule for RoleHasRequiredAriaProps {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -66,30 +61,28 @@ impl NativeRule for RoleHasRequiredAriaProps {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
         // Find the role attribute value
-        let mut role_value: Option<&str> = None;
-        for item in &opening.attributes {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let is_role = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "role",
-                    JSXAttributeName::NamespacedName(_) => false,
-                };
-
-                if is_role {
-                    if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                        role_value = Some(lit.value.as_str());
+        let mut role_value: Option<String> = None;
+        for attr_id in &*opening.attributes {
+            let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
+                continue;
+            };
+            if attr.name.as_str() == "role" {
+                if let Some(val_id) = attr.value {
+                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(val_id) {
+                        role_value = Some(lit.value.clone());
                     }
-                    break;
                 }
+                break;
             }
         }
 
@@ -102,14 +95,19 @@ impl NativeRule for RoleHasRequiredAriaProps {
             return;
         };
 
+        let opening_span_start = opening.span.start;
+        let opening_span_end = opening.span.end;
+        // Collect attribute NodeIds into a vec to avoid borrow conflict
+        let attr_ids: Vec<NodeId> = opening.attributes.to_vec();
+
         for prop in props {
-            if !has_attribute(opening, prop) {
+            if !has_attribute(ctx, &attr_ids, prop) {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: format!(
                         "Elements with `role=\"{role}\"` must have the `{prop}` attribute"
                     ),
-                    span: Span::new(opening.span.start, opening.span.end),
+                    span: Span::new(opening_span_start, opening_span_end),
                     severity: Severity::Warning,
                     help: None,
                     fix: None,
@@ -122,22 +120,13 @@ impl NativeRule for RoleHasRequiredAriaProps {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RoleHasRequiredAriaProps)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RoleHasRequiredAriaProps)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

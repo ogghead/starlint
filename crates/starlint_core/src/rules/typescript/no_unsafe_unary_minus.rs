@@ -8,20 +8,20 @@
 //! Since we cannot perform full type checking, only literal expressions
 //! and well-known non-numeric identifiers are detected.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::UnaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags unary minus applied to obviously non-numeric values.
 #[derive(Debug)]
 pub struct NoUnsafeUnaryMinus;
 
-impl NativeRule for NoUnsafeUnaryMinus {
+impl LintRule for NoUnsafeUnaryMinus {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-unsafe-unary-minus".to_owned(),
@@ -31,12 +31,12 @@ impl NativeRule for NoUnsafeUnaryMinus {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::UnaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::UnaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::UnaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::UnaryExpression(expr) = node else {
             return;
         };
 
@@ -44,7 +44,7 @@ impl NativeRule for NoUnsafeUnaryMinus {
             return;
         }
 
-        if let Some(description) = is_non_numeric_operand(&expr.argument) {
+        if let Some(description) = ctx.node(expr.argument).and_then(is_non_numeric_operand) {
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-unsafe-unary-minus".to_owned(),
                 message: format!("Unary minus on {description} produces `NaN`"),
@@ -62,37 +62,27 @@ impl NativeRule for NoUnsafeUnaryMinus {
 ///
 /// Returns a human-readable description of the non-numeric type when the
 /// operand is clearly not a number, or `None` when it could be numeric.
-fn is_non_numeric_operand(expr: &Expression<'_>) -> Option<&'static str> {
-    match expr {
-        Expression::StringLiteral(_) => Some("a string literal"),
-        Expression::BooleanLiteral(_) => Some("a boolean literal"),
-        Expression::NullLiteral(_) => Some("`null`"),
-        Expression::ObjectExpression(_) => Some("an object literal"),
-        Expression::ArrayExpression(_) => Some("an array literal"),
-        Expression::Identifier(ident) if ident.name == "undefined" => Some("`undefined`"),
+fn is_non_numeric_operand(node: &AstNode) -> Option<&'static str> {
+    match node {
+        AstNode::StringLiteral(_) => Some("a string literal"),
+        AstNode::BooleanLiteral(_) => Some("a boolean literal"),
+        AstNode::NullLiteral(_) => Some("`null`"),
+        AstNode::ObjectExpression(_) => Some("an object literal"),
+        AstNode::ArrayExpression(_) => Some("an array literal"),
+        AstNode::IdentifierReference(ident) if ident.name == "undefined" => Some("`undefined`"),
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafeUnaryMinus)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeUnaryMinus)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

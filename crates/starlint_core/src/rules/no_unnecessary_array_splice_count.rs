@@ -4,21 +4,19 @@
 //! `.length`. Since `splice(index)` removes all remaining elements from the
 //! given index, passing `.length` as the delete count is redundant.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.splice(index, obj.length)` where the count argument is redundant.
 #[derive(Debug)]
 pub struct NoUnnecessaryArraySpliceCount;
 
-impl NativeRule for NoUnnecessaryArraySpliceCount {
+impl LintRule for NoUnnecessaryArraySpliceCount {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unnecessary-array-splice-count".to_owned(),
@@ -29,21 +27,21 @@ impl NativeRule for NoUnnecessaryArraySpliceCount {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Must be a `.splice()` call
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "splice" {
+        if member.property.as_str() != "splice" {
             return;
         }
 
@@ -56,25 +54,27 @@ impl NativeRule for NoUnnecessaryArraySpliceCount {
         }
 
         // Second argument must be a `.length` member expression
-        let Some(second_arg) = call.arguments.get(1) else {
+        let Some(second_arg_id) = call.arguments.get(1) else {
             return;
         };
 
-        let Some(second_expr) = second_arg.as_expression() else {
+        let Some(AstNode::StaticMemberExpression(length_member)) = ctx.node(*second_arg_id) else {
             return;
         };
 
-        let Expression::StaticMemberExpression(length_member) = second_expr else {
-            return;
-        };
-
-        if length_member.property.name.as_str() != "length" {
+        if length_member.property.as_str() != "length" {
             return;
         }
 
         // Compare the source text of the splice receiver and the .length owner
-        let receiver_span = member.object.span();
-        let length_owner_span = length_member.object.span();
+        let receiver_span = ctx.node(member.object).map_or(
+            starlint_ast::types::Span::EMPTY,
+            starlint_ast::AstNode::span,
+        );
+        let length_owner_span = ctx.node(length_member.object).map_or(
+            starlint_ast::types::Span::EMPTY,
+            starlint_ast::AstNode::span,
+        );
 
         let receiver_start = usize::try_from(receiver_span.start).unwrap_or(0);
         let receiver_end = usize::try_from(receiver_span.end).unwrap_or(0);
@@ -90,8 +90,11 @@ impl NativeRule for NoUnnecessaryArraySpliceCount {
                 let call_span = Span::new(call.span.start, call.span.end);
                 // Remove from end of first argument to end of second argument
                 // This removes ", arr.length" from ".splice(0, arr.length)"
-                let first_arg_end = call.arguments.first().map_or(0, |a| a.span().end);
-                let second_arg_end = second_arg.span().end;
+                let first_arg_end = call
+                    .arguments
+                    .first()
+                    .map_or(0, |a| ctx.node(*a).map_or(0, |n| n.span().end));
+                let second_arg_end = ctx.node(*second_arg_id).map_or(0, |n| n.span().end);
                 let remove_span = Span::new(first_arg_end, second_arg_end);
                 ctx.report(Diagnostic {
                     rule_name: "no-unnecessary-array-splice-count".to_owned(),
@@ -119,23 +122,13 @@ impl NativeRule for NoUnnecessaryArraySpliceCount {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnnecessaryArraySpliceCount)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryArraySpliceCount)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

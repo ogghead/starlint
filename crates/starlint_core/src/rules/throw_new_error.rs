@@ -3,14 +3,13 @@
 //! Require `new` when throwing Error constructors. `throw Error("msg")` works
 //! but is inconsistent — `throw new Error("msg")` is the standard form.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Standard JavaScript error constructors.
 const ERROR_CONSTRUCTORS: &[&str] = &[
@@ -28,7 +27,7 @@ const ERROR_CONSTRUCTORS: &[&str] = &[
 #[derive(Debug)]
 pub struct ThrowNewError;
 
-impl NativeRule for ThrowNewError {
+impl LintRule for ThrowNewError {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "throw-new-error".to_owned(),
@@ -38,32 +37,29 @@ impl NativeRule for ThrowNewError {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ThrowStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ThrowStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ThrowStatement(stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ThrowStatement(stmt) = node else {
             return;
         };
 
         // Must be a direct call: `throw Error(...)`, not `throw new Error(...)`.
-        let Expression::CallExpression(call) = &stmt.argument else {
-            return;
+        let (name, callee_start) = {
+            let Some(AstNode::CallExpression(call)) = ctx.node(stmt.argument) else {
+                return;
+            };
+            let callee_id = call.callee;
+            let Some(AstNode::IdentifierReference(id)) = ctx.node(callee_id) else {
+                return;
+            };
+            (id.name.clone(), id.span.start)
         };
-
-        // Callee must be a simple identifier (not a member expression).
-        let Expression::Identifier(id) = &call.callee else {
-            return;
-        };
-
-        let name = id.name.as_str();
-        if !ERROR_CONSTRUCTORS.contains(&name) {
+        if !ERROR_CONSTRUCTORS.contains(&name.as_str()) {
             return;
         }
-
-        // Build fix: insert `new ` before the error constructor name.
-        let callee_start = id.span.start;
 
         ctx.report(Diagnostic {
             rule_name: "throw-new-error".to_owned(),
@@ -87,22 +83,13 @@ impl NativeRule for ThrowNewError {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ThrowNewError)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ThrowNewError)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -5,14 +5,13 @@
 //! and `findIndex` expect their callbacks to return a value. Forgetting
 //! to return is a common bug.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, Expression, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Array methods whose callbacks must return a value.
 const METHODS_REQUIRING_RETURN: &[&str] = &[
@@ -33,7 +32,7 @@ const METHODS_REQUIRING_RETURN: &[&str] = &[
 #[derive(Debug)]
 pub struct ArrayCallbackReturn;
 
-impl NativeRule for ArrayCallbackReturn {
+impl LintRule for ArrayCallbackReturn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "array-callback-return".to_owned(),
@@ -43,40 +42,69 @@ impl NativeRule for ArrayCallbackReturn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if callee is `something.map(...)`, `something.filter(...)`, etc.
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method_name = member.property.name.as_str();
+        let method_name = member.property.as_str();
         if !METHODS_REQUIRING_RETURN.contains(&method_name) {
             return;
         }
 
         // Check the first argument (the callback)
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
+            return;
+        };
+
+        let Some(first_arg) = ctx.node(*first_arg_id) else {
             return;
         };
 
         match first_arg {
-            Argument::FunctionExpression(func) => {
-                if let Some(body) = &func.body {
-                    if !statements_contain_return(&body.statements) {
+            AstNode::Function(func) => {
+                if let Some(body_id) = func.body {
+                    if let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) {
+                        if !statements_contain_return(&body.statements, ctx) {
+                            ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
+                                rule_name: "array-callback-return".to_owned(),
+                                message: format!(
+                                    "Expected a return value in `.{method_name}()` callback"
+                                ),
+                                span: Span::new(func.span.start, func.span.end),
+                                severity: Severity::Error,
+                                help: Some(format!(
+                                    "Array `.{method_name}()` expects a return value from its callback"
+                                )),
+                                fix: None,
+                                labels: vec![],
+                            });
+                        }
+                    }
+                }
+            }
+            AstNode::ArrowFunctionExpression(arrow) => {
+                // Arrow functions with expression bodies always return
+                if arrow.expression {
+                    return;
+                }
+                if let Some(AstNode::FunctionBody(body)) = ctx.node(arrow.body) {
+                    if !statements_contain_return(&body.statements, ctx) {
                         ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
                             rule_name: "array-callback-return".to_owned(),
                             message: format!(
                                 "Expected a return value in `.{method_name}()` callback"
                             ),
-                            span: Span::new(func.span.start, func.span.end),
+                            span: Span::new(arrow.span.start, arrow.span.end),
                             severity: Severity::Error,
                             help: Some(format!(
                                 "Array `.{method_name}()` expects a return value from its callback"
@@ -87,46 +115,29 @@ impl NativeRule for ArrayCallbackReturn {
                     }
                 }
             }
-            Argument::ArrowFunctionExpression(arrow) => {
-                // Arrow functions with expression bodies always return
-                if arrow.expression {
-                    return;
-                }
-                if !statements_contain_return(&arrow.body.statements) {
-                    ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
-                        rule_name: "array-callback-return".to_owned(),
-                        message: format!("Expected a return value in `.{method_name}()` callback"),
-                        span: Span::new(arrow.span.start, arrow.span.end),
-                        severity: Severity::Error,
-                        help: Some(format!(
-                            "Array `.{method_name}()` expects a return value from its callback"
-                        )),
-                        fix: None,
-                        labels: vec![],
-                    });
-                }
-            }
             _ => {}
         }
     }
 }
 
 /// Check if statements contain a return statement with a value.
-fn statements_contain_return(stmts: &[Statement<'_>]) -> bool {
-    stmts.iter().any(|s| statement_contains_return(s))
+fn statements_contain_return(stmts: &[NodeId], ctx: &LintContext<'_>) -> bool {
+    stmts.iter().any(|s| statement_contains_return(*s, ctx))
 }
 
 /// Recursively check a statement for a return with a value.
-fn statement_contains_return(stmt: &Statement<'_>) -> bool {
+fn statement_contains_return(stmt_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(stmt) = ctx.node(stmt_id) else {
+        return false;
+    };
     match stmt {
-        Statement::ReturnStatement(ret) => ret.argument.is_some(),
-        Statement::BlockStatement(block) => statements_contain_return(&block.body),
-        Statement::IfStatement(if_stmt) => {
-            statement_contains_return(&if_stmt.consequent)
+        AstNode::ReturnStatement(ret) => ret.argument.is_some(),
+        AstNode::BlockStatement(block) => statements_contain_return(&block.body, ctx),
+        AstNode::IfStatement(if_stmt) => {
+            statement_contains_return(if_stmt.consequent, ctx)
                 || if_stmt
                     .alternate
-                    .as_ref()
-                    .is_some_and(|alt| statement_contains_return(alt))
+                    .is_some_and(|alt| statement_contains_return(alt, ctx))
         }
         _ => false,
     }
@@ -134,22 +145,14 @@ fn statement_contains_return(stmt: &Statement<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ArrayCallbackReturn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ArrayCallbackReturn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

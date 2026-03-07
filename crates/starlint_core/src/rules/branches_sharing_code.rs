@@ -4,21 +4,19 @@
 //! When the first or last statement of both branches is textually identical,
 //! it can be factored out before or after the `if/else` for clarity.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags if/else branches with identical leading or trailing statements.
 #[derive(Debug)]
 pub struct BranchesSharingCode;
 
-impl NativeRule for BranchesSharingCode {
+impl LintRule for BranchesSharingCode {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "branches-sharing-code".to_owned(),
@@ -30,28 +28,31 @@ impl NativeRule for BranchesSharingCode {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::IfStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::IfStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::IfStatement(if_stmt) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::IfStatement(if_stmt) = node else {
             return;
         };
 
         // Both branches must exist and be block statements.
-        let Some(alternate) = &if_stmt.alternate else {
+        let Some(alternate_id) = if_stmt.alternate else {
             return;
         };
 
-        let Statement::BlockStatement(consequent_block) = &if_stmt.consequent else {
+        let Some(AstNode::BlockStatement(consequent_block)) = ctx.node(if_stmt.consequent) else {
             return;
         };
-        let Statement::BlockStatement(alternate_block) = alternate else {
-            return;
-        };
+        let consequent_body = consequent_block.body.clone();
 
-        if consequent_block.body.is_empty() || alternate_block.body.is_empty() {
+        let Some(AstNode::BlockStatement(alternate_block)) = ctx.node(alternate_id) else {
+            return;
+        };
+        let alternate_body = alternate_block.body.clone();
+
+        if consequent_body.is_empty() || alternate_body.is_empty() {
             return;
         }
 
@@ -62,14 +63,16 @@ impl NativeRule for BranchesSharingCode {
 
             // Check leading (first) statements.
             if let (Some(first_cons), Some(first_alt)) =
-                (consequent_block.body.first(), alternate_block.body.first())
+                (consequent_body.first(), alternate_body.first())
             {
-                if statements_text_equal(first_cons, first_alt, source) {
-                    let span = first_cons.span();
-                    diags.push((
-                        Span::new(span.start, span.end),
-                        "This statement appears in both branches and can be moved before the `if`",
-                    ));
+                if statements_text_equal(*first_cons, *first_alt, source, ctx) {
+                    if let Some(n) = ctx.node(*first_cons) {
+                        let span = n.span();
+                        diags.push((
+                            Span::new(span.start, span.end),
+                            "This statement appears in both branches and can be moved before the `if`",
+                        ));
+                    }
                 }
             }
 
@@ -77,16 +80,18 @@ impl NativeRule for BranchesSharingCode {
             // Only report if it is a different statement from the leading one (avoid
             // double-report when both branches have only one statement that is the same).
             if let (Some(last_cons), Some(last_alt)) =
-                (consequent_block.body.last(), alternate_block.body.last())
+                (consequent_body.last(), alternate_body.last())
             {
-                let is_same_as_leading =
-                    consequent_block.body.len() == 1 && alternate_block.body.len() == 1;
-                if !is_same_as_leading && statements_text_equal(last_cons, last_alt, source) {
-                    let span = last_cons.span();
-                    diags.push((
-                        Span::new(span.start, span.end),
-                        "This statement appears in both branches and can be moved after the `if/else`",
-                    ));
+                let is_same_as_leading = consequent_body.len() == 1 && alternate_body.len() == 1;
+                if !is_same_as_leading && statements_text_equal(*last_cons, *last_alt, source, ctx)
+                {
+                    if let Some(n) = ctx.node(*last_cons) {
+                        let span = n.span();
+                        diags.push((
+                            Span::new(span.start, span.end),
+                            "This statement appears in both branches and can be moved after the `if/else`",
+                        ));
+                    }
                 }
             }
 
@@ -108,9 +113,12 @@ impl NativeRule for BranchesSharingCode {
 }
 
 /// Compare two statements by their source text.
-fn statements_text_equal(a: &Statement<'_>, b: &Statement<'_>, source: &str) -> bool {
-    let a_span = a.span();
-    let b_span = b.span();
+fn statements_text_equal(a: NodeId, b: NodeId, source: &str, ctx: &LintContext<'_>) -> bool {
+    let (Some(a_node), Some(b_node)) = (ctx.node(a), ctx.node(b)) else {
+        return false;
+    };
+    let a_span = a_node.span();
+    let b_span = b_node.span();
     let a_start = usize::try_from(a_span.start).unwrap_or(0);
     let a_end = usize::try_from(a_span.end).unwrap_or(0);
     let b_start = usize::try_from(b_span.start).unwrap_or(0);
@@ -128,22 +136,13 @@ fn statements_text_equal(a: &Statement<'_>, b: &Statement<'_>, source: &str) -> 
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(BranchesSharingCode)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BranchesSharingCode)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

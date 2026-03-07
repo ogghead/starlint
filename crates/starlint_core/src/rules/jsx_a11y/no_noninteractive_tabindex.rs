@@ -2,16 +2,15 @@
 //!
 //! Forbid `tabIndex` on non-interactive elements.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/no-noninteractive-tabindex";
@@ -64,14 +63,11 @@ const NON_INTERACTIVE_ELEMENTS: &[&str] = &[
 #[derive(Debug)]
 pub struct NoNoninteractiveTabindex;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
+/// Check if an attribute exists on a JSX opening element.
+fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
+    attributes.iter().any(|&attr_id| {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            attr.name == name
         } else {
             false
         }
@@ -79,19 +75,19 @@ fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> b
 }
 
 /// Get string value and span of an attribute if it's a string literal.
-fn get_attr_string_value_and_span<'a>(
-    opening: &'a oxc_ast::ast::JSXOpeningElement<'a>,
+fn get_attr_string_value_and_span(
+    attributes: &[NodeId],
     attr_name: &str,
-) -> Option<(&'a str, oxc_span::Span)> {
-    for item in &opening.attributes {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            let matches = match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name,
-                JSXAttributeName::NamespacedName(_) => false,
-            };
-            if matches {
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    return Some((lit.value.as_str(), attr.span));
+    ctx: &LintContext<'_>,
+) -> Option<(String, Span)> {
+    for &attr_id in attributes {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            if attr.name == attr_name {
+                let attr_span = Span::new(attr.span.start, attr.span.end);
+                if let Some(value_id) = attr.value {
+                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                        return Some((lit.value.clone(), attr_span));
+                    }
                 }
             }
         }
@@ -100,25 +96,18 @@ fn get_attr_string_value_and_span<'a>(
 }
 
 /// Get the span of a named attribute (regardless of value type).
-fn get_attr_span(
-    opening: &oxc_ast::ast::JSXOpeningElement<'_>,
-    attr_name: &str,
-) -> Option<oxc_span::Span> {
-    for item in &opening.attributes {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            let matches = match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name,
-                JSXAttributeName::NamespacedName(_) => false,
-            };
-            if matches {
-                return Some(attr.span);
+fn get_attr_span(attributes: &[NodeId], attr_name: &str, ctx: &LintContext<'_>) -> Option<Span> {
+    for &attr_id in attributes {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            if attr.name == attr_name {
+                return Some(Span::new(attr.span.start, attr.span.end));
             }
         }
     }
     None
 }
 
-impl NativeRule for NoNoninteractiveTabindex {
+impl LintRule for NoNoninteractiveTabindex {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -128,42 +117,40 @@ impl NativeRule for NoNoninteractiveTabindex {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let element_name = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str(),
-            _ => return,
-        };
+        let element_name = opening.name.clone();
+        let opening_span = opening.span;
+        let attrs: Vec<NodeId> = opening.attributes.to_vec();
 
         // Skip interactive elements
-        if INTERACTIVE_ELEMENTS.contains(&element_name) {
+        if INTERACTIVE_ELEMENTS.contains(&element_name.as_str()) {
             return;
         }
 
         // Only check known non-interactive elements
-        if !NON_INTERACTIVE_ELEMENTS.contains(&element_name) {
+        if !NON_INTERACTIVE_ELEMENTS.contains(&element_name.as_str()) {
             return;
         }
 
         // If element has a role, it may be intentionally interactive
-        if has_attribute(opening, "role") {
+        if has_attribute(&attrs, "role", ctx) {
             return;
         }
 
         // Check for tabIndex attribute
-        let tabindex_info = get_attr_string_value_and_span(opening, "tabIndex");
-        if let Some((val, attr_oxc_span)) = tabindex_info {
+        let tabindex_info = get_attr_string_value_and_span(&attrs, "tabIndex", ctx);
+        if let Some((val, attr_span)) = tabindex_info {
             let parsed = val.parse::<i32>().unwrap_or(-1);
             // tabIndex="-1" is acceptable (removes from tab order)
             if parsed >= 0 {
-                let attr_span = Span::new(attr_oxc_span.start, attr_oxc_span.end);
                 let fix = FixBuilder::new("Remove `tabIndex` attribute", FixKind::SuggestionFix)
                     .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                     .build();
@@ -172,16 +159,15 @@ impl NativeRule for NoNoninteractiveTabindex {
                     message: format!(
                         "`<{element_name}>` is non-interactive and should not have `tabIndex`"
                     ),
-                    span: Span::new(opening.span.start, opening.span.end),
+                    span: Span::new(opening_span.start, opening_span.end),
                     severity: Severity::Warning,
                     help: None,
                     fix,
                     labels: vec![],
                 });
             }
-        } else if let Some(attr_oxc_span) = get_attr_span(opening, "tabIndex") {
+        } else if let Some(attr_span) = get_attr_span(&attrs, "tabIndex", ctx) {
             // tabIndex without a value (boolean attribute) defaults to 0
-            let attr_span = Span::new(attr_oxc_span.start, attr_oxc_span.end);
             let fix = FixBuilder::new("Remove `tabIndex` attribute", FixKind::SuggestionFix)
                 .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
                 .build();
@@ -190,7 +176,7 @@ impl NativeRule for NoNoninteractiveTabindex {
                 message: format!(
                     "`<{element_name}>` is non-interactive and should not have `tabIndex`"
                 ),
-                span: Span::new(opening.span.start, opening.span.end),
+                span: Span::new(opening_span.start, opening_span.end),
                 severity: Severity::Warning,
                 help: None,
                 fix,
@@ -202,22 +188,13 @@ impl NativeRule for NoNoninteractiveTabindex {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoNoninteractiveTabindex)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNoninteractiveTabindex)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

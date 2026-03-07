@@ -3,20 +3,20 @@
 //! Enforce `return` statements in getters. A getter without a `return`
 //! statement implicitly returns `undefined`, which is almost always a bug.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{MethodDefinitionKind, PropertyKind, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{MethodDefinitionKind, PropertyKind};
+use starlint_ast::types::NodeId;
 
 /// Flags getters that don't contain a return statement.
 #[derive(Debug)]
 pub struct GetterReturn;
 
-impl NativeRule for GetterReturn {
+impl LintRule for GetterReturn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "getter-return".to_owned(),
@@ -26,42 +26,57 @@ impl NativeRule for GetterReturn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::MethodDefinition, AstType::ObjectProperty])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::MethodDefinition, AstNodeType::ObjectProperty])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::MethodDefinition(method) if method.kind == MethodDefinitionKind::Get => {
-                if let Some(body) = &method.value.body {
-                    if !statements_contain_return(&body.statements) {
-                        ctx.report(Diagnostic {
-                            rule_name: "getter-return".to_owned(),
-                            message: "Expected a return value in getter".to_owned(),
-                            span: Span::new(method.span.start, method.span.end),
-                            severity: Severity::Error,
-                            help: Some("Add a `return` statement to this getter".to_owned()),
-                            fix: None,
-                            labels: vec![],
-                        });
-                    }
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::MethodDefinition(method) if method.kind == MethodDefinitionKind::Get => {
+                // method.value is a NodeId pointing to a Function node
+                let Some(AstNode::Function(func)) = ctx.node(method.value) else {
+                    return;
+                };
+                let Some(body_id) = func.body else {
+                    return;
+                };
+                let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+                    return;
+                };
+                if !statements_contain_return(ctx, &body.statements) {
+                    let span = Span::new(method.span.start, method.span.end);
+                    ctx.report(Diagnostic {
+                        rule_name: "getter-return".to_owned(),
+                        message: "Expected a return value in getter".to_owned(),
+                        span,
+                        severity: Severity::Error,
+                        help: Some("Add a `return` statement to this getter".to_owned()),
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
-            AstKind::ObjectProperty(prop) if prop.kind == PropertyKind::Get => {
-                if let oxc_ast::ast::Expression::FunctionExpression(func) = &prop.value {
-                    if let Some(body) = &func.body {
-                        if !statements_contain_return(&body.statements) {
-                            ctx.report(Diagnostic {
-                                rule_name: "getter-return".to_owned(),
-                                message: "Expected a return value in getter".to_owned(),
-                                span: Span::new(prop.span.start, prop.span.end),
-                                severity: Severity::Error,
-                                help: Some("Add a `return` statement to this getter".to_owned()),
-                                fix: None,
-                                labels: vec![],
-                            });
-                        }
-                    }
+            AstNode::ObjectProperty(prop) if prop.kind == PropertyKind::Get => {
+                let Some(AstNode::Function(func)) = ctx.node(prop.value) else {
+                    return;
+                };
+                let Some(body_id) = func.body else {
+                    return;
+                };
+                let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
+                    return;
+                };
+                if !statements_contain_return(ctx, &body.statements) {
+                    let span = Span::new(prop.span.start, prop.span.end);
+                    ctx.report(Diagnostic {
+                        rule_name: "getter-return".to_owned(),
+                        message: "Expected a return value in getter".to_owned(),
+                        span,
+                        severity: Severity::Error,
+                        help: Some("Add a `return` statement to this getter".to_owned()),
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
             }
             _ => {}
@@ -70,32 +85,65 @@ impl NativeRule for GetterReturn {
 }
 
 /// Check if any statement in the list contains a return statement with a value.
-fn statements_contain_return(stmts: &[Statement<'_>]) -> bool {
-    stmts.iter().any(|s| statement_contains_return(s))
+fn statements_contain_return(ctx: &LintContext<'_>, stmt_ids: &[NodeId]) -> bool {
+    stmt_ids.iter().any(|&id| {
+        ctx.node(id)
+            .is_some_and(|s| statement_contains_return(ctx, s))
+    })
 }
 
 /// Recursively check a single statement for a return with a value.
-fn statement_contains_return(stmt: &Statement<'_>) -> bool {
+fn statement_contains_return(ctx: &LintContext<'_>, stmt: &AstNode) -> bool {
     match stmt {
-        Statement::ReturnStatement(ret) => ret.argument.is_some(),
-        Statement::BlockStatement(block) => statements_contain_return(&block.body),
-        Statement::IfStatement(if_stmt) => {
-            statement_contains_return(&if_stmt.consequent)
-                || if_stmt
-                    .alternate
-                    .as_ref()
-                    .is_some_and(|alt| statement_contains_return(alt))
+        AstNode::ReturnStatement(ret) => ret.argument.is_some(),
+        AstNode::BlockStatement(block) => statements_contain_return(ctx, &block.body),
+        AstNode::IfStatement(if_stmt) => {
+            let cons_has = ctx
+                .node(if_stmt.consequent)
+                .is_some_and(|n| statement_contains_return(ctx, n));
+            let alt_has = if_stmt
+                .alternate
+                .and_then(|id| ctx.node(id))
+                .is_some_and(|n| statement_contains_return(ctx, n));
+            cons_has || alt_has
         }
-        Statement::SwitchStatement(switch) => switch
-            .cases
-            .iter()
-            .any(|case| case.consequent.iter().any(|s| statement_contains_return(s))),
-        Statement::TryStatement(try_stmt) => {
-            statements_contain_return(&try_stmt.block.body)
-                || try_stmt
-                    .handler
-                    .as_ref()
-                    .is_some_and(|h| statements_contain_return(&h.body.body))
+        AstNode::SwitchStatement(switch) => switch.cases.iter().any(|&case_id| {
+            ctx.node(case_id).is_some_and(|case_node| {
+                if let AstNode::SwitchCase(case) = case_node {
+                    case.consequent.iter().any(|&s_id| {
+                        ctx.node(s_id)
+                            .is_some_and(|s| statement_contains_return(ctx, s))
+                    })
+                } else {
+                    false
+                }
+            })
+        }),
+        AstNode::TryStatement(try_stmt) => {
+            let block_has = ctx.node(try_stmt.block).is_some_and(|n| {
+                if let AstNode::BlockStatement(block) = n {
+                    statements_contain_return(ctx, &block.body)
+                } else {
+                    false
+                }
+            });
+            let handler_has = try_stmt
+                .handler
+                .and_then(|id| ctx.node(id))
+                .is_some_and(|n| {
+                    if let AstNode::CatchClause(catch) = n {
+                        ctx.node(catch.body).is_some_and(|body_node| {
+                            if let AstNode::BlockStatement(block) = body_node {
+                                statements_contain_return(ctx, &block.body)
+                            } else {
+                                false
+                            }
+                        })
+                    } else {
+                        false
+                    }
+                });
+            block_has || handler_has
         }
         _ => false,
     }
@@ -103,22 +151,13 @@ fn statement_contains_return(stmt: &Statement<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(GetterReturn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(GetterReturn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

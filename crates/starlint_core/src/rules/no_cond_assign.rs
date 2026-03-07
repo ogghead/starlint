@@ -4,22 +4,19 @@
 //! of `==` or `===` in conditions is a common mistake: `if (x = 5)` assigns 5
 //! to x instead of comparing.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags assignment expressions used directly in conditions.
 #[derive(Debug)]
 pub struct NoCondAssign;
 
-impl NativeRule for NoCondAssign {
+impl LintRule for NoCondAssign {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-cond-assign".to_owned(),
@@ -29,34 +26,34 @@ impl NativeRule for NoCondAssign {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ConditionalExpression,
-            AstType::DoWhileStatement,
-            AstType::ForStatement,
-            AstType::IfStatement,
-            AstType::WhileStatement,
+            AstNodeType::ConditionalExpression,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::IfStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::IfStatement(if_stmt) => {
-                check_condition(&if_stmt.test, ctx);
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::IfStatement(if_stmt) => {
+                check_condition(if_stmt.test, ctx);
             }
-            AstKind::WhileStatement(while_stmt) => {
-                check_condition(&while_stmt.test, ctx);
+            AstNode::WhileStatement(while_stmt) => {
+                check_condition(while_stmt.test, ctx);
             }
-            AstKind::DoWhileStatement(do_while) => {
-                check_condition(&do_while.test, ctx);
+            AstNode::DoWhileStatement(do_while) => {
+                check_condition(do_while.test, ctx);
             }
-            AstKind::ForStatement(for_stmt) => {
-                if let Some(test) = &for_stmt.test {
+            AstNode::ForStatement(for_stmt) => {
+                if let Some(test) = for_stmt.test {
                     check_condition(test, ctx);
                 }
             }
-            AstKind::ConditionalExpression(cond) => {
-                check_condition(&cond.test, ctx);
+            AstNode::ConditionalExpression(cond) => {
+                check_condition(cond.test, ctx);
             }
             _ => {}
         }
@@ -64,62 +61,67 @@ impl NativeRule for NoCondAssign {
 }
 
 /// Check if an expression (used as a condition) is an assignment.
-fn check_condition(expr: &Expression<'_>, ctx: &mut NativeLintContext<'_>) {
-    if let Expression::AssignmentExpression(assign) = expr {
-        // Fix: replace `=` with `===`
-        #[allow(clippy::as_conversions)]
-        let fix = {
-            let source = ctx.source_text();
-            let left_span = assign.left.span();
-            let right_span = assign.right.span();
-            let left_text = source
-                .get(left_span.start as usize..left_span.end as usize)
-                .unwrap_or("");
-            let right_text = source
-                .get(right_span.start as usize..right_span.end as usize)
-                .unwrap_or("");
-            let replacement = format!("{left_text} === {right_text}");
-            Some(Fix {
-                kind: FixKind::SafeFix,
-                message: format!("Replace with `{replacement}`"),
-                edits: vec![Edit {
-                    span: Span::new(assign.span.start, assign.span.end),
-                    replacement,
-                }],
-                is_snippet: false,
-            })
-        };
+fn check_condition(test_id: NodeId, ctx: &mut LintContext<'_>) {
+    let Some(AstNode::AssignmentExpression(assign)) = ctx.node(test_id) else {
+        return;
+    };
 
-        ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
-            rule_name: "no-cond-assign".to_owned(),
-            message: "Unexpected assignment in conditional expression".to_owned(),
-            span: Span::new(assign.span.start, assign.span.end),
-            severity: Severity::Error,
-            help: Some("Did you mean `===` instead of `=`?".to_owned()),
-            fix,
-            labels: vec![],
-        });
-    }
+    // Extract spans before mutably borrowing ctx
+    let assign_span = assign.span;
+    let left_id = assign.left;
+    let right_id = assign.right;
+
+    // Fix: replace `=` with `===`
+    #[allow(clippy::as_conversions)]
+    let fix = {
+        let source = ctx.source_text();
+        let left_span = ctx.node(left_id).map_or(
+            starlint_ast::types::Span::new(0, 0),
+            starlint_ast::AstNode::span,
+        );
+        let right_span = ctx.node(right_id).map_or(
+            starlint_ast::types::Span::new(0, 0),
+            starlint_ast::AstNode::span,
+        );
+        let left_text = source
+            .get(left_span.start as usize..left_span.end as usize)
+            .unwrap_or("");
+        let right_text = source
+            .get(right_span.start as usize..right_span.end as usize)
+            .unwrap_or("");
+        let replacement = format!("{left_text} === {right_text}");
+        Some(Fix {
+            kind: FixKind::SafeFix,
+            message: format!("Replace with `{replacement}`"),
+            edits: vec![Edit {
+                span: Span::new(assign_span.start, assign_span.end),
+                replacement,
+            }],
+            is_snippet: false,
+        })
+    };
+
+    ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
+        rule_name: "no-cond-assign".to_owned(),
+        message: "Unexpected assignment in conditional expression".to_owned(),
+        span: Span::new(assign_span.start, assign_span.end),
+        severity: Severity::Error,
+        help: Some("Did you mean `===` instead of `=`?".to_owned()),
+        fix,
+        labels: vec![],
+    });
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoCondAssign)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoCondAssign)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

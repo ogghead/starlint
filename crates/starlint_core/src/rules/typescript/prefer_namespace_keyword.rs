@@ -5,20 +5,19 @@
 //! namespace or an ambient module declaration. Using `namespace` makes the
 //! intent explicit and avoids confusion with ES modules.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{TSModuleDeclarationKind, TSModuleDeclarationName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `module Foo {}` declarations that should use `namespace` instead.
 #[derive(Debug)]
 pub struct PreferNamespaceKeyword;
 
-impl NativeRule for PreferNamespaceKeyword {
+impl LintRule for PreferNamespaceKeyword {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/prefer-namespace-keyword".to_owned(),
@@ -29,31 +28,37 @@ impl NativeRule for PreferNamespaceKeyword {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSModuleDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSModuleDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSModuleDeclaration(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSModuleDeclaration(decl) = node else {
             return;
         };
 
+        // TSModuleDeclarationNode has no `kind` field in starlint_ast.
+        // Use source text to detect `module` vs `namespace` keyword.
+        let decl_start = usize::try_from(decl.span.start).unwrap_or(0);
+        let decl_end = usize::try_from(decl.span.end).unwrap_or(0);
+        let decl_text = ctx.source_text().get(decl_start..decl_end).unwrap_or("");
+
         // Only flag `module` keyword, not `namespace`.
-        if decl.kind != TSModuleDeclarationKind::Module {
+        if !decl_text.starts_with("module") && !decl_text.starts_with("declare module") {
             return;
         }
 
         // Ambient module declarations with string literal names
         // (e.g. `declare module "express" {}`) are valid and should not be flagged.
-        if matches!(&decl.id, TSModuleDeclarationName::StringLiteral(_)) {
+        // Check if the id resolves to a string literal.
+        if ctx
+            .node(decl.id)
+            .is_some_and(|n| matches!(n, AstNode::StringLiteral(_)))
+        {
             return;
         }
 
         // Find the `module` keyword in the source text within the declaration span
-        let decl_start = usize::try_from(decl.span.start).unwrap_or(0);
-        let decl_end = usize::try_from(decl.span.end).unwrap_or(0);
-        let decl_text = ctx.source_text().get(decl_start..decl_end).unwrap_or("");
-
         if let Some(module_offset) = decl_text.find("module") {
             let module_start = u32::try_from(decl_start.saturating_add(module_offset)).unwrap_or(0);
             let module_end = module_start.saturating_add(6); // "module".len() == 6
@@ -82,23 +87,13 @@ impl NativeRule for PreferNamespaceKeyword {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferNamespaceKeyword)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferNamespaceKeyword)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

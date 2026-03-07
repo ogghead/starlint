@@ -3,20 +3,20 @@
 //! Prefer `.at()` for index access from the end of an array/string.
 //! `array.at(-1)` is more readable than `array[array.length - 1]`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags `arr[arr.length - 1]` patterns that should use `.at(-1)`.
 #[derive(Debug)]
 pub struct PreferAt;
 
-impl NativeRule for PreferAt {
+impl LintRule for PreferAt {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-at".to_owned(),
@@ -26,47 +26,52 @@ impl NativeRule for PreferAt {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ComputedMemberExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ComputedMemberExpression])
     }
 
-    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ComputedMemberExpression(computed) = kind else {
+    #[allow(clippy::as_conversions)] // u32->usize is lossless on 32/64-bit
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ComputedMemberExpression(computed) = node else {
             return;
         };
 
         // Check for `obj[obj.length - N]` pattern
-        let Expression::BinaryExpression(bin) = &computed.expression else {
+        let Some(AstNode::BinaryExpression(bin)) = ctx.node(computed.expression) else {
             return;
         };
 
-        if !matches!(bin.operator, oxc_ast::ast::BinaryOperator::Subtraction) {
+        if !matches!(bin.operator, BinaryOperator::Subtraction) {
             return;
         }
 
         // Left side should be `something.length`
-        let Expression::StaticMemberExpression(member) = &bin.left else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(bin.left) else {
             return;
         };
 
-        if member.property.name != "length" {
+        if member.property != "length" {
             return;
         }
 
         // Right side should be a numeric literal
-        let Expression::NumericLiteral(num_lit) = &bin.right else {
+        let Some(AstNode::NumericLiteral(num_lit)) = ctx.node(bin.right) else {
             return;
         };
 
+        let num_value = num_lit.value;
+        let member_object = member.object;
+
         // The object being accessed and the `.length` owner should be the same
-        if let (Expression::Identifier(obj_id), Expression::Identifier(len_obj_id)) =
-            (&computed.object, &member.object)
+        if let (
+            Some(AstNode::IdentifierReference(obj_id)),
+            Some(AstNode::IdentifierReference(len_obj_id)),
+        ) = (ctx.node(computed.object), ctx.node(member_object))
         {
             if obj_id.name == len_obj_id.name {
                 let obj_name = obj_id.name.as_str();
                 // Format the negative index value
-                let n = num_lit.value;
+                let n = num_value;
                 #[allow(clippy::cast_possible_truncation)]
                 let neg_index = if (n - n.round()).abs() < f64::EPSILON {
                     format!("-{}", n as i64)
@@ -100,22 +105,13 @@ impl NativeRule for PreferAt {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferAt)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferAt)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

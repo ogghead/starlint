@@ -4,15 +4,14 @@
 //! `!== -1` over `>= 0` and `=== -1` over `< 0` when checking the
 //! result of `indexOf` or `findIndex`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{BinaryOperator, UnaryOperator};
+use starlint_ast::types::NodeId;
 
 /// Method names that return an index (`-1` means not found).
 const INDEX_METHODS: &[&str] = &["indexOf", "findIndex"];
@@ -21,7 +20,7 @@ const INDEX_METHODS: &[&str] = &["indexOf", "findIndex"];
 #[derive(Debug)]
 pub struct ConsistentExistenceIndexCheck;
 
-impl NativeRule for ConsistentExistenceIndexCheck {
+impl LintRule for ConsistentExistenceIndexCheck {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "consistent-existence-index-check".to_owned(),
@@ -31,39 +30,39 @@ impl NativeRule for ConsistentExistenceIndexCheck {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
         // Check pattern: `someCall(...) OP value`
         // where someCall is .indexOf() or .findIndex()
-        if !is_index_call(&expr.left) {
+        if !is_index_call(expr.left, ctx) {
             return;
         }
 
         // (message, fix_description, replacement_operator, replacement_value)
         let fix_info = match expr.operator {
             // `indexOf(x) >= 0` → prefer `indexOf(x) !== -1`
-            BinaryOperator::GreaterEqualThan if is_numeric_literal(&expr.right, 0.0) => Some((
+            BinaryOperator::GreaterEqualThan if is_numeric_literal(expr.right, 0.0, ctx) => Some((
                 "Use `!== -1` instead of `>= 0` for index existence check",
                 "Replace `>= 0` with `!== -1`",
                 "!==",
                 "-1",
             )),
             // `indexOf(x) > -1` → prefer `indexOf(x) !== -1`
-            BinaryOperator::GreaterThan if is_numeric_literal(&expr.right, -1.0) => Some((
+            BinaryOperator::GreaterThan if is_numeric_literal(expr.right, -1.0, ctx) => Some((
                 "Use `!== -1` instead of `> -1` for index existence check",
                 "Replace `> -1` with `!== -1`",
                 "!==",
                 "-1",
             )),
             // `indexOf(x) < 0` → prefer `indexOf(x) === -1`
-            BinaryOperator::LessThan if is_numeric_literal(&expr.right, 0.0) => Some((
+            BinaryOperator::LessThan if is_numeric_literal(expr.right, 0.0, ctx) => Some((
                 "Use `=== -1` instead of `< 0` for index non-existence check",
                 "Replace `< 0` with `=== -1`",
                 "===",
@@ -74,8 +73,8 @@ impl NativeRule for ConsistentExistenceIndexCheck {
 
         if let Some((message, fix_desc, new_op, new_val)) = fix_info {
             // Find the operator span between left and right expressions
-            let left_end = expr.left.span().end;
-            let right_end = expr.right.span().end;
+            let left_end = ctx.node(expr.left).map_or(0, |n| n.span().end);
+            let right_end = ctx.node(expr.right).map_or(0, |n| n.span().end);
 
             ctx.report(Diagnostic {
                 rule_name: "consistent-existence-index-check".to_owned(),
@@ -99,32 +98,36 @@ impl NativeRule for ConsistentExistenceIndexCheck {
 }
 
 /// Check if an expression is a call to `.indexOf()` or `.findIndex()`.
-fn is_index_call(expr: &Expression<'_>) -> bool {
-    let Expression::CallExpression(call) = expr else {
+fn is_index_call(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::CallExpression(call)) = ctx.node(id) else {
         return false;
     };
 
-    let Expression::StaticMemberExpression(member) = &call.callee else {
+    let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
         return false;
     };
 
-    let method_name = member.property.name.as_str();
+    let method_name = member.property.as_str();
     INDEX_METHODS.contains(&method_name)
 }
 
 /// Check if an expression is a numeric literal with a specific value.
-fn is_numeric_literal(expr: &Expression<'_>, value: f64) -> bool {
+fn is_numeric_literal(id: NodeId, value: f64, ctx: &LintContext<'_>) -> bool {
+    let Some(node) = ctx.node(id) else {
+        return false;
+    };
+
     // Handle negative numbers: `-1` is parsed as `UnaryExpression(-, 1)`
-    if let Expression::UnaryExpression(unary) = expr {
-        if unary.operator == oxc_ast::ast::UnaryOperator::UnaryNegation {
-            if let Expression::NumericLiteral(lit) = &unary.argument {
+    if let AstNode::UnaryExpression(unary) = node {
+        if unary.operator == UnaryOperator::UnaryNegation {
+            if let Some(AstNode::NumericLiteral(lit)) = ctx.node(unary.argument) {
                 return ((-lit.value) - value).abs() < f64::EPSILON;
             }
         }
         return false;
     }
 
-    let Expression::NumericLiteral(lit) = expr else {
+    let AstNode::NumericLiteral(lit) = node else {
         return false;
     };
     (lit.value - value).abs() < f64::EPSILON
@@ -132,23 +135,13 @@ fn is_numeric_literal(expr: &Expression<'_>, value: f64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentExistenceIndexCheck)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentExistenceIndexCheck)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

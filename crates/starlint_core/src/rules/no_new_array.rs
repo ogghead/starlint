@@ -3,22 +3,19 @@
 //! Disallow `new Array()`. Use array literals `[]` or `Array.from()` instead.
 //! `new Array(n)` creates a sparse array which can be confusing.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `new Array()` calls.
 #[derive(Debug)]
 pub struct NoNewArray;
 
-impl NativeRule for NoNewArray {
+impl LintRule for NoNewArray {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-new-array".to_owned(),
@@ -28,26 +25,28 @@ impl NativeRule for NoNewArray {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NewExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NewExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NewExpression(new_expr) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NewExpression(new_expr) = node else {
             return;
         };
 
+        let callee_node = ctx.node(new_expr.callee);
         let is_array = matches!(
-            &new_expr.callee,
-            Expression::Identifier(id) if id.name.as_str() == "Array"
+            callee_node,
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Array"
         );
 
         if is_array {
             // Remove `new ` prefix: replace whole span with source from callee start
+            let callee_start = callee_node.map_or(0, |n| n.span().start as usize);
+            let expr_end = new_expr.span.end as usize;
             let source = ctx.source_text();
-            let callee_start = usize::try_from(new_expr.callee.span().start).unwrap_or(0);
-            let expr_end = usize::try_from(new_expr.span.end).unwrap_or(0);
-            let without_new = source.get(callee_start..expr_end).unwrap_or("");
+            let without_new = source.get(callee_start..expr_end).unwrap_or("").to_owned();
 
             ctx.report(Diagnostic {
                 rule_name: "no-new-array".to_owned(),
@@ -60,7 +59,7 @@ impl NativeRule for NoNewArray {
                     message: "Remove `new` keyword".to_owned(),
                     edits: vec![Edit {
                         span: Span::new(new_expr.span.start, new_expr.span.end),
-                        replacement: without_new.to_owned(),
+                        replacement: without_new,
                     }],
                     is_snippet: false,
                 }),
@@ -72,22 +71,13 @@ impl NativeRule for NoNewArray {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoNewArray)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNewArray)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

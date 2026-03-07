@@ -4,20 +4,19 @@
 //! Dynamic requires make it hard for bundlers and static analysis tools to
 //! determine the dependency graph.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `require()` calls whose argument is not a string literal.
 #[derive(Debug)]
 pub struct NoDynamicRequire;
 
-impl NativeRule for NoDynamicRequire {
+impl LintRule for NoDynamicRequire {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/no-dynamic-require".to_owned(),
@@ -27,19 +26,19 @@ impl NativeRule for NoDynamicRequire {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check if callee is `require`
         let is_require = matches!(
-            &call.callee,
-            Expression::Identifier(id) if id.name.as_str() == "require"
+            ctx.node(call.callee),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "require"
         );
 
         if !is_require {
@@ -48,8 +47,8 @@ impl NativeRule for NoDynamicRequire {
 
         // Check if the first argument is a string literal
         let first_arg = call.arguments.first();
-        let is_literal =
-            first_arg.is_some_and(|arg| matches!(arg, oxc_ast::ast::Argument::StringLiteral(_)));
+        let is_literal = first_arg
+            .is_some_and(|arg_id| matches!(ctx.node(*arg_id), Some(AstNode::StringLiteral(_))));
 
         if !is_literal {
             ctx.report(Diagnostic {
@@ -67,22 +66,13 @@ impl NativeRule for NoDynamicRequire {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDynamicRequire)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDynamicRequire)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

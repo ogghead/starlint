@@ -6,21 +6,20 @@
 
 use std::collections::HashSet;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{PropertyKey, PropertyKind};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::PropertyKind;
+use starlint_ast::types::NodeId;
 
 /// Flags object literals with duplicate property keys.
 #[derive(Debug)]
 pub struct NoDupeKeys;
 
-impl NativeRule for NoDupeKeys {
+impl LintRule for NoDupeKeys {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-dupe-keys".to_owned(),
@@ -30,20 +29,20 @@ impl NativeRule for NoDupeKeys {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ObjectExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ObjectExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ObjectExpression(obj) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ObjectExpression(obj) = node else {
             return;
         };
 
         let mut seen = HashSet::new();
 
-        for property in &obj.properties {
-            let oxc_ast::ast::ObjectPropertyKind::ObjectProperty(prop) = property else {
-                // SpreadProperty — skip
+        for prop_id in &obj.properties {
+            let Some(AstNode::ObjectProperty(prop)) = ctx.node(*prop_id) else {
+                // SpreadElement — skip
                 continue;
             };
 
@@ -57,12 +56,15 @@ impl NativeRule for NoDupeKeys {
                 continue;
             }
 
-            let Some(key_name) = static_property_key_name(&prop.key, ctx.source_text()) else {
+            let Some(key_name) = static_property_key_name(prop.key, ctx) else {
                 continue;
             };
 
             if !seen.insert(key_name.clone()) {
-                let key_span = prop.key.span();
+                let key_span = ctx.node(prop.key).map_or(
+                    starlint_ast::types::Span::EMPTY,
+                    starlint_ast::AstNode::span,
+                );
                 ctx.report(Diagnostic {
                     rule_name: "no-dupe-keys".to_owned(),
                     message: format!("Duplicate key `{key_name}`"),
@@ -77,16 +79,18 @@ impl NativeRule for NoDupeKeys {
     }
 }
 
-/// Extract a static key name from a property key.
-fn static_property_key_name(key: &PropertyKey<'_>, source: &str) -> Option<String> {
-    match key {
-        PropertyKey::StaticIdentifier(ident) => Some(ident.name.to_string()),
-        PropertyKey::StringLiteral(lit) => Some(lit.value.to_string()),
-        PropertyKey::NumericLiteral(lit) => {
+/// Extract a static key name from a property key node.
+fn static_property_key_name(key_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    let node = ctx.node(key_id)?;
+    match node {
+        AstNode::IdentifierReference(ident) => Some(ident.name.clone()),
+        AstNode::BindingIdentifier(ident) => Some(ident.name.clone()),
+        AstNode::StringLiteral(lit) => Some(lit.value.clone()),
+        AstNode::NumericLiteral(lit) => {
             // Use source text to preserve the original representation
             let start = usize::try_from(lit.span.start).unwrap_or(0);
             let end = usize::try_from(lit.span.end).unwrap_or(0);
-            source.get(start..end).map(String::from)
+            ctx.source_text().get(start..end).map(String::from)
         }
         _ => None,
     }
@@ -94,22 +98,13 @@ fn static_property_key_name(key: &PropertyKey<'_>, source: &str) -> Option<Strin
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDupeKeys)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDupeKeys)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

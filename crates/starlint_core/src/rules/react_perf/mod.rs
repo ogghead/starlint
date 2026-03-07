@@ -12,10 +12,5 @@ use crate::rule::NativeRule;
 /// Return all react-perf rules.
 #[must_use]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![
-        Box::new(jsx_no_jsx_as_prop::JsxNoJsxAsProp),
-        Box::new(jsx_no_new_array_as_prop::JsxNoNewArrayAsProp),
-        Box::new(jsx_no_new_function_as_prop::JsxNoNewFunctionAsProp),
-        Box::new(jsx_no_new_object_as_prop::JsxNoNewObjectAsProp),
-    ]
+    vec![]
 }

@@ -4,15 +4,15 @@
 //! For example, `btn` should be `button`, `cb` should be `callback`, etc.
 //! Only flags exact matches where the entire identifier is an abbreviation.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Known abbreviation-to-expansion mappings.
 const ABBREVIATIONS: &[(&str, &str)] = &[
@@ -72,7 +72,7 @@ fn find_expansion(name: &str) -> Option<&'static str> {
     None
 }
 
-impl NativeRule for PreventAbbreviations {
+impl LintRule for PreventAbbreviations {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prevent-abbreviations".to_owned(),
@@ -86,12 +86,12 @@ impl NativeRule for PreventAbbreviations {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BindingIdentifier])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BindingIdentifier])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BindingIdentifier(ident) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BindingIdentifier(ident) = node else {
             return;
         };
 
@@ -102,8 +102,8 @@ impl NativeRule for PreventAbbreviations {
 
             // With semantic, rename declaration + all references.
             // Without semantic, fall back to renaming only the declaration.
-            let fix = match ctx.semantic().and_then(|sem| {
-                let symbol_id = ident.symbol_id.get()?;
+            let fix = match ctx.resolve_symbol_id(ident.span).and_then(|symbol_id| {
+                let sem = ctx.semantic()?;
                 let edits = fix_utils::rename_symbol_edits(sem, symbol_id, expansion, decl_span);
                 FixBuilder::new(format!("Rename to `{expansion}`"), FixKind::SuggestionFix)
                     .edits(edits)
@@ -130,32 +130,14 @@ impl NativeRule for PreventAbbreviations {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
     use crate::fix::apply_fixes;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code with semantic analysis.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreventAbbreviations)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreventAbbreviations)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

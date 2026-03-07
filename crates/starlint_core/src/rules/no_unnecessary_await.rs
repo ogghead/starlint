@@ -5,21 +5,19 @@
 //! `await undefined` is pointless — the value is not a thenable and the
 //! `await` adds an unnecessary microtask tick.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `await` expressions whose argument is a non-thenable literal.
 #[derive(Debug)]
 pub struct NoUnnecessaryAwait;
 
-impl NativeRule for NoUnnecessaryAwait {
+impl LintRule for NoUnnecessaryAwait {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-unnecessary-await".to_owned(),
@@ -29,21 +27,22 @@ impl NativeRule for NoUnnecessaryAwait {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::AwaitExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::AwaitExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::AwaitExpression(await_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::AwaitExpression(await_expr) = node else {
             return;
         };
 
-        if is_non_thenable_literal(&await_expr.argument) {
+        let Some(arg_node) = ctx.node(await_expr.argument) else {
+            return;
+        };
+        if is_non_thenable_literal(arg_node) {
             let await_span = Span::new(await_expr.span.start, await_expr.span.end);
-            let arg_span = Span::new(
-                await_expr.argument.span().start,
-                await_expr.argument.span().end,
-            );
+            let arg_node_span = arg_node.span();
+            let arg_span = Span::new(arg_node_span.start, arg_node_span.end);
             let arg_text = ctx
                 .source_text()
                 .get(
@@ -73,42 +72,32 @@ impl NativeRule for NoUnnecessaryAwait {
     }
 }
 
-/// Returns `true` if the expression is a literal that cannot be a thenable:
+/// Returns `true` if the node is a literal that cannot be a thenable:
 /// numeric, string, boolean, null, or the identifier `undefined`.
-fn is_non_thenable_literal(expr: &Expression<'_>) -> bool {
+fn is_non_thenable_literal(node: &AstNode) -> bool {
     matches!(
-        expr,
-        Expression::NumericLiteral(_)
-            | Expression::StringLiteral(_)
-            | Expression::BooleanLiteral(_)
-            | Expression::NullLiteral(_)
-    ) || is_undefined_identifier(expr)
+        node,
+        AstNode::NumericLiteral(_)
+            | AstNode::StringLiteral(_)
+            | AstNode::BooleanLiteral(_)
+            | AstNode::NullLiteral(_)
+    ) || is_undefined_identifier(node)
 }
 
-/// Returns `true` if the expression is an identifier named `undefined`.
-fn is_undefined_identifier(expr: &Expression<'_>) -> bool {
-    matches!(expr, Expression::Identifier(ident) if ident.name == "undefined")
+/// Returns `true` if the node is an identifier named `undefined`.
+fn is_undefined_identifier(node: &AstNode) -> bool {
+    matches!(node, AstNode::IdentifierReference(ident) if ident.name == "undefined")
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnnecessaryAwait)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryAwait)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

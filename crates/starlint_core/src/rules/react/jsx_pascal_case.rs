@@ -2,14 +2,13 @@
 //!
 //! Warn when user-defined JSX components don't use `PascalCase` naming.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::JSXElementName;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "react/jsx-pascal-case";
@@ -41,7 +40,7 @@ fn is_pascal_case(name: &str) -> bool {
     has_lowercase && !has_invalid_underscore
 }
 
-impl NativeRule for JsxPascalCase {
+impl LintRule for JsxPascalCase {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -51,23 +50,17 @@ impl NativeRule for JsxPascalCase {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let (name, span) = match &opening.name {
-            JSXElementName::Identifier(ident) => (ident.name.as_str(), ident.span),
-            JSXElementName::IdentifierReference(ident_ref) => {
-                (ident_ref.name.as_str(), ident_ref.span)
-            }
-            // Member expressions (Foo.Bar) and namespaced names are skipped
-            _ => return,
-        };
+        // opening.name is a String directly
+        let name = opening.name.as_str();
 
         // Only check user-defined components (start with uppercase)
         let Some(first) = name.chars().next() else {
@@ -81,7 +74,7 @@ impl NativeRule for JsxPascalCase {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!("Component `{name}` should use PascalCase naming"),
-                span: Span::new(span.start, span.end),
+                span: Span::new(opening.span.start, opening.span.end),
                 severity: Severity::Warning,
                 help: None,
                 fix: None,
@@ -93,22 +86,13 @@ impl NativeRule for JsxPascalCase {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(JsxPascalCase)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxPascalCase)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

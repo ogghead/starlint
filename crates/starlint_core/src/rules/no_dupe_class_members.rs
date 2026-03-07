@@ -6,20 +6,20 @@
 
 use std::collections::HashSet;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{ClassElement, MethodDefinitionKind, PropertyKey};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::MethodDefinitionKind;
+use starlint_ast::types::NodeId;
 
 /// Flags duplicate method/property names in class bodies.
 #[derive(Debug)]
 pub struct NoDupeClassMembers;
 
-impl NativeRule for NoDupeClassMembers {
+impl LintRule for NoDupeClassMembers {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-dupe-class-members".to_owned(),
@@ -29,20 +29,20 @@ impl NativeRule for NoDupeClassMembers {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Class])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Class])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Class(class) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Class(class) = node else {
             return;
         };
 
         // Track seen member keys as (is_static, name) pairs
         let mut seen: HashSet<(bool, String)> = HashSet::new();
 
-        for element in &class.body.body {
-            let ClassElement::MethodDefinition(method) = element else {
+        for element_id in &class.body {
+            let Some(AstNode::MethodDefinition(method)) = ctx.node(*element_id) else {
                 continue;
             };
 
@@ -58,19 +58,18 @@ impl NativeRule for NoDupeClassMembers {
                 continue;
             }
 
-            let Some(name) = static_key_name(&method.key) else {
+            let Some(name) = static_key_name(method.key, ctx) else {
                 continue;
             };
 
-            let key = (method.r#static, name);
+            let method_span = method.span;
+            let is_static = method.is_static;
+            let key = (is_static, name.clone());
             if !seen.insert(key) {
                 ctx.report(Diagnostic {
                     rule_name: "no-dupe-class-members".to_owned(),
-                    message: format!(
-                        "Duplicate class member `{}`",
-                        static_key_name(&method.key).unwrap_or_default()
-                    ),
-                    span: Span::new(method.span.start, method.span.end),
+                    message: format!("Duplicate class member `{name}`"),
+                    span: Span::new(method_span.start, method_span.end),
                     severity: Severity::Error,
                     help: None,
                     fix: None,
@@ -82,34 +81,25 @@ impl NativeRule for NoDupeClassMembers {
 }
 
 /// Extract the name of a non-computed property key.
-fn static_key_name(key: &PropertyKey<'_>) -> Option<String> {
-    match key {
-        PropertyKey::StaticIdentifier(ident) => Some(ident.name.to_string()),
-        PropertyKey::StringLiteral(lit) => Some(lit.value.to_string()),
-        PropertyKey::NumericLiteral(lit) => Some(lit.raw_str().to_string()),
-        PropertyKey::PrivateIdentifier(ident) => Some(ident.name.to_string()),
+fn static_key_name(key_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
+    match ctx.node(key_id)? {
+        AstNode::IdentifierReference(ident) => Some(ident.name.clone()),
+        AstNode::StringLiteral(lit) => Some(lit.value.clone()),
+        AstNode::NumericLiteral(lit) => Some(lit.value.to_string()),
+        AstNode::BindingIdentifier(ident) => Some(ident.name.clone()),
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDupeClassMembers)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDupeClassMembers)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

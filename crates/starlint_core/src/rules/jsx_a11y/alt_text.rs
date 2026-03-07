@@ -2,15 +2,14 @@
 //!
 //! Enforce alt text on `<img>`, `<area>`, `<input type="image">`, and `<object>`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/alt-text";
@@ -21,22 +20,11 @@ const ELEMENTS_REQUIRING_ALT: &[&str] = &["img", "area", "object"];
 #[derive(Debug)]
 pub struct AltText;
 
-/// Get the element name from a JSX opening element.
-fn element_name<'a>(opening: &'a oxc_ast::ast::JSXOpeningElement<'a>) -> Option<&'a str> {
-    match &opening.name {
-        JSXElementName::Identifier(ident) => Some(ident.name.as_str()),
-        _ => None,
-    }
-}
-
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> bool {
-    opening.attributes.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == name,
-                JSXAttributeName::NamespacedName(_) => false,
-            }
+/// Check if an attribute exists on a JSX opening element by examining its attribute `NodeIds`.
+fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
+    attributes.iter().any(|&attr_id| {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            attr.name == name
         } else {
             false
         }
@@ -44,19 +32,18 @@ fn has_attribute(opening: &oxc_ast::ast::JSXOpeningElement<'_>, name: &str) -> b
 }
 
 /// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value<'a>(
-    opening: &'a oxc_ast::ast::JSXOpeningElement<'a>,
+fn get_attr_string_value(
+    attributes: &[NodeId],
     attr_name: &str,
-) -> Option<&'a str> {
-    for item in &opening.attributes {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            let matches = match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == attr_name,
-                JSXAttributeName::NamespacedName(_) => false,
-            };
-            if matches {
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    return Some(lit.value.as_str());
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    for &attr_id in attributes {
+        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
+            if attr.name == attr_name {
+                if let Some(value_id) = attr.value {
+                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                        return Some(lit.value.clone());
+                    }
                 }
             }
         }
@@ -65,11 +52,11 @@ fn get_attr_string_value<'a>(
 }
 
 /// Check if an `<input>` element has `type="image"`.
-fn is_input_type_image(opening: &oxc_ast::ast::JSXOpeningElement<'_>) -> bool {
-    get_attr_string_value(opening, "type") == Some("image")
+fn is_input_type_image(attributes: &[NodeId], ctx: &LintContext<'_>) -> bool {
+    get_attr_string_value(attributes, "type", ctx).as_deref() == Some("image")
 }
 
-impl NativeRule for AltText {
+impl LintRule for AltText {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -81,37 +68,37 @@ impl NativeRule for AltText {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let Some(name) = element_name(opening) else {
-            return;
-        };
+        let name = opening.name.as_str();
+        let opening_span = opening.span;
+        let attrs: Vec<NodeId> = opening.attributes.to_vec();
 
         let needs_alt = ELEMENTS_REQUIRING_ALT.contains(&name)
-            || (name == "input" && is_input_type_image(opening));
+            || (name == "input" && is_input_type_image(&attrs, ctx));
 
         if !needs_alt {
             return;
         }
 
-        let has_alt = has_attribute(opening, "alt");
+        let has_alt = has_attribute(&attrs, "alt", ctx);
 
         // For <object>, also accept aria-label or aria-labelledby
-        let has_aria_label =
-            has_attribute(opening, "aria-label") || has_attribute(opening, "aria-labelledby");
+        let has_aria_label = has_attribute(&attrs, "aria-label", ctx)
+            || has_attribute(&attrs, "aria-labelledby", ctx);
 
         if name == "object" {
             if !has_alt && !has_aria_label {
                 let insert_pos = crate::fix_utils::jsx_attr_insert_offset(
                     ctx.source_text(),
-                    Span::new(opening.span.start, opening.span.end),
+                    Span::new(opening_span.start, opening_span.end),
                 );
                 let fix = FixBuilder::new("Add `aria-label` attribute", FixKind::SuggestionFix)
                     .insert_at(insert_pos, " aria-label=\"${1:object description}\"")
@@ -120,7 +107,7 @@ impl NativeRule for AltText {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: "`<object>` elements must have an `alt`, `aria-label`, or `aria-labelledby` attribute".to_owned(),
-                    span: Span::new(opening.span.start, opening.span.end),
+                    span: Span::new(opening_span.start, opening_span.end),
                     severity: Severity::Warning,
                     help: None,
                     fix,
@@ -130,7 +117,7 @@ impl NativeRule for AltText {
         } else if !has_alt {
             let insert_pos = crate::fix_utils::jsx_attr_insert_offset(
                 ctx.source_text(),
-                Span::new(opening.span.start, opening.span.end),
+                Span::new(opening_span.start, opening_span.end),
             );
             let fix = FixBuilder::new("Add `alt` attribute", FixKind::SuggestionFix)
                 .insert_at(insert_pos, " alt=\"${1:descriptive text}\"")
@@ -139,7 +126,7 @@ impl NativeRule for AltText {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!("`<{name}>` elements must have an `alt` attribute"),
-                span: Span::new(opening.span.start, opening.span.end),
+                span: Span::new(opening_span.start, opening_span.end),
                 severity: Severity::Warning,
                 help: None,
                 fix,
@@ -151,22 +138,13 @@ impl NativeRule for AltText {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(AltText)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(AltText)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

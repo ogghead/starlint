@@ -5,20 +5,19 @@
 //! These assertions hide potential type errors and make refactoring harder.
 //! Prefer explicit type narrowing, generics, or proper type guards instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::TSType;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `as any` and `as unknown` type assertions.
 #[derive(Debug)]
 pub struct NoUnsafeTypeAssertion;
 
-impl NativeRule for NoUnsafeTypeAssertion {
+impl LintRule for NoUnsafeTypeAssertion {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-unsafe-type-assertion".to_owned(),
@@ -28,19 +27,28 @@ impl NativeRule for NoUnsafeTypeAssertion {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSAsExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSAsExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSAsExpression(expr) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSAsExpression(expr) = node else {
             return;
         };
 
-        let escape_type = match &expr.type_annotation {
-            TSType::TSAnyKeyword(_) => "any",
-            TSType::TSUnknownKeyword(_) => "unknown",
-            _ => return,
+        // TSAsExpressionNode in starlint_ast has no type_annotation field.
+        // Use source text heuristic to detect `as any` or `as unknown`.
+        let source = ctx.source_text();
+        let expr_text = source
+            .get(expr.span.start as usize..expr.span.end as usize)
+            .unwrap_or("");
+        let escape_type = if expr_text.contains(" as any") || expr_text.ends_with("as any") {
+            "any"
+        } else if expr_text.contains(" as unknown") || expr_text.ends_with("as unknown") {
+            "unknown"
+        } else {
+            return;
         };
 
         ctx.report(Diagnostic {
@@ -59,23 +67,13 @@ impl NativeRule for NoUnsafeTypeAssertion {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafeTypeAssertion)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeTypeAssertion)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

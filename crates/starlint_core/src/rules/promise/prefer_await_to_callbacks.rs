@@ -3,14 +3,13 @@
 //! Prefer `async`/`await` over callback-style functions. Encourages
 //! modern asynchronous patterns over Node.js-style error-first callbacks.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::BindingPattern;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Common callback parameter names that suggest callback-style code.
 const CALLBACK_PARAMS: &[&str] = &["cb", "callback", "done", "next"];
@@ -19,7 +18,7 @@ const CALLBACK_PARAMS: &[&str] = &["cb", "callback", "done", "next"];
 #[derive(Debug)]
 pub struct PreferAwaitToCallbacks;
 
-impl NativeRule for PreferAwaitToCallbacks {
+impl LintRule for PreferAwaitToCallbacks {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/prefer-await-to-callbacks".to_owned(),
@@ -29,38 +28,31 @@ impl NativeRule for PreferAwaitToCallbacks {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let params = match kind {
-            AstKind::Function(func) => {
-                if func.r#async {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let (params, span) = match node {
+            AstNode::Function(func) => {
+                if func.is_async {
                     return; // Already async, skip
                 }
-                &func.params
+                (&func.params, Span::new(func.span.start, func.span.end))
             }
-            AstKind::ArrowFunctionExpression(arrow) => {
-                if arrow.r#async {
+            AstNode::ArrowFunctionExpression(arrow) => {
+                if arrow.is_async {
                     return;
                 }
-                &arrow.params
+                (&arrow.params, Span::new(arrow.span.start, arrow.span.end))
             }
             _ => return,
         };
 
-        for param in &params.items {
-            if let BindingPattern::BindingIdentifier(id) = &param.pattern {
+        for param_id in params {
+            if let Some(AstNode::BindingIdentifier(id)) = ctx.node(*param_id) {
                 let name = id.name.as_str();
                 if CALLBACK_PARAMS.contains(&name) {
-                    let span = match kind {
-                        AstKind::Function(func) => Span::new(func.span.start, func.span.end),
-                        AstKind::ArrowFunctionExpression(arrow) => {
-                            Span::new(arrow.span.start, arrow.span.end)
-                        }
-                        _ => return,
-                    };
                     ctx.report(Diagnostic {
                         rule_name: "promise/prefer-await-to-callbacks".to_owned(),
                         message: format!(
@@ -81,22 +73,13 @@ impl NativeRule for PreferAwaitToCallbacks {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferAwaitToCallbacks)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferAwaitToCallbacks)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

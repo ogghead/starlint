@@ -4,16 +4,13 @@
 //! `element.setAttribute('data-foo', value)`. The `dataset` API is more
 //! readable and less error-prone.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `getAttribute`/`setAttribute` calls with `data-` prefixed string arguments.
 #[derive(Debug)]
@@ -22,7 +19,7 @@ pub struct PreferDomNodeDataset;
 /// Method names that operate on `data-*` attributes.
 const DATA_ATTR_METHODS: &[&str] = &["getAttribute", "setAttribute"];
 
-impl NativeRule for PreferDomNodeDataset {
+impl LintRule for PreferDomNodeDataset {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-dom-node-dataset".to_owned(),
@@ -32,34 +29,32 @@ impl NativeRule for PreferDomNodeDataset {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Callee must be a static member expression like `el.getAttribute(...)`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method_name = member.property.name.as_str();
+        let method_name = member.property.as_str();
 
         if !DATA_ATTR_METHODS.contains(&method_name) {
             return;
         }
 
         // The first argument must be a string literal starting with "data-"
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        let first_arg_expr = first_arg.as_expression();
-
-        let Some(Expression::StringLiteral(lit)) = first_arg_expr else {
+        let Some(AstNode::StringLiteral(lit)) = ctx.node(*first_arg_id) else {
             return;
         };
 
@@ -68,11 +63,15 @@ impl NativeRule for PreferDomNodeDataset {
         }
 
         let dataset_key = data_attr_to_camel_case(lit.value.as_str());
+        let member_object = member.object;
 
         #[allow(clippy::as_conversions)]
         let fix = {
             let source = ctx.source_text();
-            let obj_span = member.object.span();
+            let obj_span = ctx.node(member_object).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
             let obj_text = source
                 .get(obj_span.start as usize..obj_span.end as usize)
                 .unwrap_or("");
@@ -88,8 +87,11 @@ impl NativeRule for PreferDomNodeDataset {
                     is_snippet: false,
                 })
             } else if method_name == "setAttribute" && call.arguments.len() == 2 {
-                call.arguments.get(1).and_then(|val_arg| {
-                    let val_span = val_arg.span();
+                call.arguments.get(1).and_then(|val_arg_id| {
+                    let val_span = ctx.node(*val_arg_id).map_or(
+                        starlint_ast::types::Span::EMPTY,
+                        starlint_ast::AstNode::span,
+                    );
                     let val_text = source.get(val_span.start as usize..val_span.end as usize)?;
                     let replacement = format!("{obj_text}.dataset.{dataset_key} = {val_text}");
                     Some(Fix {
@@ -122,7 +124,7 @@ impl NativeRule for PreferDomNodeDataset {
 }
 
 /// Convert a `data-*` attribute name to its camelCase dataset key.
-/// e.g. `data-foo-bar` → `fooBar`
+/// e.g. `data-foo-bar` -> `fooBar`
 fn data_attr_to_camel_case(attr: &str) -> String {
     let without_prefix = attr.strip_prefix("data-").unwrap_or(attr);
     let mut result = String::new();
@@ -142,23 +144,13 @@ fn data_attr_to_camel_case(attr: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferDomNodeDataset)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferDomNodeDataset)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

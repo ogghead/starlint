@@ -4,16 +4,14 @@
 //! Comparisons like `x === true` or `x === false` are redundant when `x`
 //! is already a boolean. Prefer `x` or `!x` for cleaner, more idiomatic code.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/no-unnecessary-boolean-literal-compare";
@@ -23,7 +21,7 @@ const RULE_NAME: &str = "typescript/no-unnecessary-boolean-literal-compare";
 #[derive(Debug)]
 pub struct NoUnnecessaryBooleanLiteralCompare;
 
-impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
+impl LintRule for NoUnnecessaryBooleanLiteralCompare {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -33,12 +31,12 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
@@ -53,8 +51,8 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
             return;
         }
 
-        let left_is_bool = is_boolean_literal(&expr.left);
-        let right_is_bool = is_boolean_literal(&expr.right);
+        let left_is_bool = is_boolean_literal(expr.left, ctx);
+        let right_is_bool = is_boolean_literal(expr.right, ctx);
 
         if left_is_bool || right_is_bool {
             let op_str = match expr.operator {
@@ -66,9 +64,9 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
             };
 
             let bool_val = if left_is_bool {
-                boolean_value(&expr.left)
+                boolean_value(expr.left, ctx)
             } else {
-                boolean_value(&expr.right)
+                boolean_value(expr.right, ctx)
             };
 
             let bool_str = if bool_val.unwrap_or(true) {
@@ -78,28 +76,24 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
             };
 
             // Build fix: determine if we need negation
-            // === true / == true → just the non-bool operand
-            // !== true / != true → negate the non-bool operand
-            // === false / == false → negate the non-bool operand
-            // !== false / != false → just the non-bool operand
             let is_equality = matches!(
                 expr.operator,
                 BinaryOperator::Equality | BinaryOperator::StrictEquality
             );
             let needs_negation = if bool_val.unwrap_or(true) {
-                !is_equality // `!== true` or `!= true` → negate
+                !is_equality // `!== true` or `!= true` -> negate
             } else {
-                is_equality // `=== false` or `== false` → negate
+                is_equality // `=== false` or `== false` -> negate
             };
 
+            let other_id = if left_is_bool { expr.right } else { expr.left };
             let source = ctx.source_text();
-            let other = if left_is_bool {
-                &expr.right
-            } else {
-                &expr.left
-            };
-            let other_start = usize::try_from(other.span().start).unwrap_or(0);
-            let other_end = usize::try_from(other.span().end).unwrap_or(0);
+            let other_span = ctx.node(other_id).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
+            let other_start = usize::try_from(other_span.start).unwrap_or(0);
+            let other_end = usize::try_from(other_span.end).unwrap_or(0);
             let other_text = source.get(other_start..other_end).unwrap_or("");
 
             let replacement = if needs_negation {
@@ -131,14 +125,14 @@ impl NativeRule for NoUnnecessaryBooleanLiteralCompare {
     }
 }
 
-/// Check if an expression is a boolean literal (`true` or `false`).
-const fn is_boolean_literal(expr: &Expression<'_>) -> bool {
-    matches!(expr, Expression::BooleanLiteral(_))
+/// Check if a node is a boolean literal (`true` or `false`).
+fn is_boolean_literal(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    matches!(ctx.node(node_id), Some(AstNode::BooleanLiteral(_)))
 }
 
-/// Extract the boolean value from a boolean literal expression.
-fn boolean_value(expr: &Expression<'_>) -> Option<bool> {
-    if let Expression::BooleanLiteral(lit) = expr {
+/// Extract the boolean value from a boolean literal node.
+fn boolean_value(node_id: NodeId, ctx: &LintContext<'_>) -> Option<bool> {
+    if let Some(AstNode::BooleanLiteral(lit)) = ctx.node(node_id) {
         Some(lit.value)
     } else {
         None
@@ -147,24 +141,13 @@ fn boolean_value(expr: &Expression<'_>) -> Option<bool> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> =
-                vec![Box::new(NoUnnecessaryBooleanLiteralCompare)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryBooleanLiteralCompare)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

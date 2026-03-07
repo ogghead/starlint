@@ -4,21 +4,20 @@
 //! and in ternary operators. These are harder to read and should be
 //! inverted for clarity.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{BinaryOperator, UnaryOperator};
+use starlint_ast::types::NodeId;
 
 /// Flags negated conditions that should be inverted.
 #[derive(Debug)]
 pub struct NoNegatedCondition;
 
-impl NativeRule for NoNegatedCondition {
+impl LintRule for NoNegatedCondition {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-negated-condition".to_owned(),
@@ -28,18 +27,18 @@ impl NativeRule for NoNegatedCondition {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ConditionalExpression, AstType::IfStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ConditionalExpression, AstNodeType::IfStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::IfStatement(stmt) => {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::IfStatement(stmt) => {
                 // Only flag if there is an else branch
                 if stmt.alternate.is_none() {
                     return;
                 }
-                if is_negated(&stmt.test) {
+                if is_negated(stmt.test, ctx) {
                     // if-else autofix is too complex (multi-line blocks), just report
                     ctx.report_warning(
                         "no-negated-condition",
@@ -48,14 +47,14 @@ impl NativeRule for NoNegatedCondition {
                     );
                 }
             }
-            AstKind::ConditionalExpression(expr) => {
-                if is_negated(&expr.test) {
+            AstNode::ConditionalExpression(expr) => {
+                if is_negated(expr.test, ctx) {
                     let source = ctx.source_text();
-                    let negated_text = negate_condition(&expr.test, source);
-                    let cons_text = span_text(&expr.consequent, source).to_owned();
-                    let alt_text = span_text(&expr.alternate, source).to_owned();
+                    let negated_text = negate_condition(expr.test, source, ctx);
+                    let cons_text = span_text(expr.consequent, source, ctx).to_owned();
+                    let alt_text = span_text(expr.alternate, source, ctx).to_owned();
 
-                    // `!x ? a : b` → `x ? b : a`
+                    // `!x ? a : b` -> `x ? b : a`
                     let replacement = format!("{negated_text} ? {alt_text} : {cons_text}");
 
                     ctx.report(Diagnostic {
@@ -82,44 +81,52 @@ impl NativeRule for NoNegatedCondition {
     }
 }
 
-/// Get source text for an expression span.
-fn span_text<'s>(expr: &Expression<'_>, source: &'s str) -> &'s str {
-    let sp = expr.span();
+/// Get source text for a node's span.
+fn span_text<'s>(id: NodeId, source: &'s str, ctx: &LintContext<'_>) -> &'s str {
+    let sp = ctx.node(id).map_or(
+        starlint_ast::types::Span::EMPTY,
+        starlint_ast::AstNode::span,
+    );
     let start = usize::try_from(sp.start).unwrap_or(0);
     let end = usize::try_from(sp.end).unwrap_or(start);
     source.get(start..end).unwrap_or_default()
 }
 
 /// Produce the negated form of a condition.
-/// `!x` → `x`, `a !== b` → `a === b`, `a != b` → `a == b`.
-fn negate_condition(expr: &Expression<'_>, source: &str) -> String {
-    match expr {
-        Expression::UnaryExpression(unary) if unary.operator == UnaryOperator::LogicalNot => {
-            span_text(&unary.argument, source).to_owned()
+/// `!x` -> `x`, `a !== b` -> `a === b`, `a != b` -> `a == b`.
+fn negate_condition(id: NodeId, source: &str, ctx: &LintContext<'_>) -> String {
+    let Some(node) = ctx.node(id) else {
+        return span_text(id, source, ctx).to_owned();
+    };
+    match node {
+        AstNode::UnaryExpression(unary) if unary.operator == UnaryOperator::LogicalNot => {
+            span_text(unary.argument, source, ctx).to_owned()
         }
-        Expression::BinaryExpression(binary) => {
-            let left = span_text(&binary.left, source);
-            let right = span_text(&binary.right, source);
+        AstNode::BinaryExpression(binary) => {
+            let left = span_text(binary.left, source, ctx);
+            let right = span_text(binary.right, source, ctx);
             let new_op = match binary.operator {
-                oxc_ast::ast::BinaryOperator::StrictInequality => "===",
-                oxc_ast::ast::BinaryOperator::Inequality => "==",
-                _ => return span_text(expr, source).to_owned(),
+                BinaryOperator::StrictInequality => "===",
+                BinaryOperator::Inequality => "==",
+                _ => return span_text(id, source, ctx).to_owned(),
             };
             format!("{left} {new_op} {right}")
         }
-        _ => span_text(expr, source).to_owned(),
+        _ => span_text(id, source, ctx).to_owned(),
     }
 }
 
 /// Check if an expression is a negation (`!x`) or inequality (`a !== b`, `a != b`).
-fn is_negated(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::UnaryExpression(unary) => unary.operator == UnaryOperator::LogicalNot,
-        Expression::BinaryExpression(binary) => {
+fn is_negated(id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(node) = ctx.node(id) else {
+        return false;
+    };
+    match node {
+        AstNode::UnaryExpression(unary) => unary.operator == UnaryOperator::LogicalNot,
+        AstNode::BinaryExpression(binary) => {
             matches!(
                 binary.operator,
-                oxc_ast::ast::BinaryOperator::StrictInequality
-                    | oxc_ast::ast::BinaryOperator::Inequality
+                BinaryOperator::StrictInequality | BinaryOperator::Inequality
             )
         }
         _ => false,
@@ -128,23 +135,13 @@ fn is_negated(expr: &Expression<'_>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoNegatedCondition)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNegatedCondition)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

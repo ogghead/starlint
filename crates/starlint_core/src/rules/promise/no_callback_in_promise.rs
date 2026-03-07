@@ -4,14 +4,13 @@
 //! inside `.then()` or `.catch()`. Mixing callbacks with promises leads
 //! to confusing control flow and potential double-resolution bugs.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Common callback parameter names.
 const CALLBACK_NAMES: &[&str] = &["cb", "callback", "done", "next"];
@@ -20,7 +19,7 @@ const CALLBACK_NAMES: &[&str] = &["cb", "callback", "done", "next"];
 #[derive(Debug)]
 pub struct NoCallbackInPromise;
 
-impl NativeRule for NoCallbackInPromise {
+impl LintRule for NoCallbackInPromise {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "promise/no-callback-in-promise".to_owned(),
@@ -30,70 +29,62 @@ impl NativeRule for NoCallbackInPromise {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        // Check if this is a .then() or .catch() call
-        let Expression::StaticMemberExpression(member) = &call.callee else {
-            return;
+        // Check if this is a .then() or .catch() call — extract method name as owned
+        // to avoid holding an immutable borrow on ctx across ctx.report().
+        let method = match ctx.node(call.callee) {
+            Some(AstNode::StaticMemberExpression(member)) => member.property.clone(),
+            _ => return,
         };
 
-        let method = member.property.name.as_str();
         if method != "then" && method != "catch" {
             return;
         }
 
-        // Check each argument for callback-named identifiers being passed
+        // Collect callback names from arguments first to avoid borrow conflicts.
+        let mut callbacks: Vec<String> = Vec::new();
         for arg in &call.arguments {
-            let arg_expr = match arg {
-                oxc_ast::ast::Argument::SpreadElement(_) => continue,
-                _ => arg.to_expression(),
-            };
-
-            if let Expression::Identifier(ident) = arg_expr {
+            if let Some(AstNode::IdentifierReference(ident)) = ctx.node(*arg) {
                 if CALLBACK_NAMES.contains(&ident.name.as_str()) {
-                    ctx.report(Diagnostic {
-                        rule_name: "promise/no-callback-in-promise".to_owned(),
-                        message: format!(
-                            "Do not pass callback `{}` into `.{method}()` — avoid mixing callbacks and promises",
-                            ident.name
-                        ),
-                        span: Span::new(call.span.start, call.span.end),
-                        severity: Severity::Error,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
+                    callbacks.push(ident.name.clone());
                 }
             }
+        }
+
+        let call_span = Span::new(call.span.start, call.span.end);
+        for cb_name in callbacks {
+            ctx.report(Diagnostic {
+                rule_name: "promise/no-callback-in-promise".to_owned(),
+                message: format!(
+                    "Do not pass callback `{cb_name}` into `.{method}()` — avoid mixing callbacks and promises"
+                ),
+                span: call_span,
+                severity: Severity::Error,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoCallbackInPromise)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoCallbackInPromise)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

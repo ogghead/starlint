@@ -3,14 +3,13 @@
 //! Warn when a `done` callback parameter is used in test/hook callbacks.
 //! Prefer async/await patterns instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, BindingPattern, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/no-done-callback";
@@ -29,52 +28,52 @@ const CALLBACK_FUNS: &[&str] = &[
 #[derive(Debug)]
 pub struct NoDoneCallback;
 
-impl NativeRule for NoDoneCallback {
+impl LintRule for NoDoneCallback {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
-            description: "Disallow `done` callback in tests — use async/await instead".to_owned(),
+            description: "Disallow `done` callback in tests -- use async/await instead".to_owned(),
             category: Category::Suggestion,
             default_severity: Severity::Warning,
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check callee is a test/hook function
-        let callee_name = match &call.callee {
-            Expression::Identifier(id) => id.name.as_str(),
+        let callee_name = match ctx.node(call.callee) {
+            Some(AstNode::IdentifierReference(id)) => id.name.clone(),
             _ => return,
         };
 
-        if !CALLBACK_FUNS.contains(&callee_name) {
+        if !CALLBACK_FUNS.contains(&callee_name.as_str()) {
             return;
         }
 
         // For it/test, callback is the second arg; for hooks, it's the first
         let callback_idx = usize::from(callee_name == "it" || callee_name == "test");
 
-        let Some(callback) = call.arguments.get(callback_idx) else {
+        let Some(callback_id) = call.arguments.get(callback_idx) else {
             return;
         };
 
         // Check if the callback has a parameter named `done`
-        let has_done = match callback {
-            Argument::ArrowFunctionExpression(arrow) => {
-                arrow.params.items.iter().any(|p| {
-                    matches!(&p.pattern, BindingPattern::BindingIdentifier(id) if id.name.as_str() == "done")
+        let has_done = match ctx.node(*callback_id) {
+            Some(AstNode::ArrowFunctionExpression(arrow)) => {
+                arrow.params.iter().any(|p| {
+                    matches!(ctx.node(*p), Some(AstNode::BindingIdentifier(id)) if id.name.as_str() == "done")
                 })
             }
-            Argument::FunctionExpression(func) => {
-                func.params.items.iter().any(|p| {
-                    matches!(&p.pattern, BindingPattern::BindingIdentifier(id) if id.name.as_str() == "done")
+            Some(AstNode::Function(func)) => {
+                func.params.iter().any(|p| {
+                    matches!(ctx.node(*p), Some(AstNode::BindingIdentifier(id)) if id.name.as_str() == "done")
                 })
             }
             _ => false,
@@ -84,7 +83,7 @@ impl NativeRule for NoDoneCallback {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!(
-                    "Avoid using a `done` callback in `{callee_name}()` — use async/await instead"
+                    "Avoid using a `done` callback in `{callee_name}()` -- use async/await instead"
                 ),
                 span: Span::new(call.span.start, call.span.end),
                 severity: Severity::Warning,
@@ -98,22 +97,13 @@ impl NativeRule for NoDoneCallback {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDoneCallback)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDoneCallback)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

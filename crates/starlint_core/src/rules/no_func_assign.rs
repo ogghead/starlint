@@ -3,21 +3,22 @@
 //! Disallow reassignment of function declarations. Reassigning a function
 //! declaration is almost always a mistake.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
 use oxc_semantic::SymbolFlags;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags reassignment of function declarations.
 #[derive(Debug)]
 pub struct NoFuncAssign;
 
-impl NativeRule for NoFuncAssign {
+impl LintRule for NoFuncAssign {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-func-assign".to_owned(),
@@ -31,25 +32,33 @@ impl NativeRule for NoFuncAssign {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Function(func) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Function(func) = node else {
             return;
         };
 
         // Only check function declarations (not expressions)
-        if !func.is_declaration() {
-            return;
-        }
-
-        let Some(id) = &func.id else {
+        // A function is a declaration if it has an id and its body is present
+        // (function expressions can also have ids, but we check via semantic)
+        let Some(id_node_id) = func.id else {
             return;
         };
 
-        let Some(symbol_id) = id.symbol_id.get() else {
+        let Some(AstNode::BindingIdentifier(id)) = ctx.node(id_node_id) else {
+            return;
+        };
+
+        let id_name = id.name.clone();
+        let id_span = id.span;
+        let func_span = func.span;
+        let is_async = func.is_async;
+        let is_generator = func.is_generator;
+
+        let Some(symbol_id) = ctx.resolve_symbol_id(id_span) else {
             return;
         };
 
@@ -73,19 +82,18 @@ impl NativeRule for NoFuncAssign {
         if has_write {
             // Suggest converting function declaration to a `let` variable
             // with a function expression, making reassignment valid.
-            let fix = if !func.r#async && !func.generator {
-                let name = &id.name;
-                let prefix_span = Span::new(func.span.start, id.span.end);
+            let fix = if !is_async && !is_generator {
+                let prefix_span = Span::new(func_span.start, id_span.end);
                 let mut builder = FixBuilder::new(
-                    format!("Convert to `let {name} = function`"),
+                    format!("Convert to `let {id_name} = function`"),
                     FixKind::SuggestionFix,
                 )
-                .replace(prefix_span, format!("let {name} = function"));
+                .replace(prefix_span, format!("let {id_name} = function"));
                 // Add trailing semicolon if not already present.
                 let source = ctx.source_text();
-                let func_end = usize::try_from(func.span.end).unwrap_or(0);
+                let func_end = usize::try_from(func_span.end).unwrap_or(0);
                 if source.as_bytes().get(func_end) != Some(&b';') {
-                    builder = builder.insert_at(func.span.end, ";");
+                    builder = builder.insert_at(func_span.end, ";");
                 }
                 builder.build()
             } else {
@@ -95,10 +103,9 @@ impl NativeRule for NoFuncAssign {
             ctx.report(Diagnostic {
                 rule_name: "no-func-assign".to_owned(),
                 message: format!(
-                    "'{}' is a function declaration and should not be reassigned",
-                    id.name
+                    "'{id_name}' is a function declaration and should not be reassigned"
                 ),
-                span: Span::new(id.span.start, id.span.end),
+                span: Span::new(id_span.start, id_span.end),
                 severity: Severity::Error,
                 help: Some(
                     "Use a variable declaration instead if reassignment is intended".to_owned(),
@@ -112,30 +119,13 @@ impl NativeRule for NoFuncAssign {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoFuncAssign)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoFuncAssign)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

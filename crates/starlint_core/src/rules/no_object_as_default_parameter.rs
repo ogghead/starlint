@@ -5,20 +5,19 @@
 //! be confusing and wasteful. Prefer destructuring defaults instead:
 //! `function foo({ a = 1 } = {})` rather than `function foo(x = { a: 1 })`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags object literals used as default parameter values.
 #[derive(Debug)]
 pub struct NoObjectAsDefaultParameter;
 
-impl NativeRule for NoObjectAsDefaultParameter {
+impl LintRule for NoObjectAsDefaultParameter {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-object-as-default-parameter".to_owned(),
@@ -28,25 +27,27 @@ impl NativeRule for NoObjectAsDefaultParameter {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let params = match kind {
-            AstKind::Function(f) => &f.params,
-            AstKind::ArrowFunctionExpression(arrow) => &arrow.params,
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let params = match node {
+            AstNode::Function(f) => &f.params,
+            AstNode::ArrowFunctionExpression(arrow) => &arrow.params,
             _ => return,
         };
 
-        for param in &params.items {
-            let Some(init) = &param.initializer else {
+        // In the flat AST, default params are modeled as AssignmentExpression nodes
+        // where the right side is the default value. Iterate param NodeIds and check.
+        for param_id in &**params {
+            // Check if this param is an assignment expression (i.e., has a default)
+            let Some(AstNode::AssignmentExpression(assign)) = ctx.node(*param_id) else {
                 continue;
             };
 
-            // Only flag non-empty object expressions as defaults.
-            // `{ a = 1 } = {}` (empty object default for destructured param) is fine.
-            let Expression::ObjectExpression(obj) = init.as_ref() else {
+            // Check if the default value (right side) is an object expression
+            let Some(AstNode::ObjectExpression(obj)) = ctx.node(assign.right) else {
                 continue;
             };
 
@@ -54,10 +55,11 @@ impl NativeRule for NoObjectAsDefaultParameter {
                 continue;
             }
 
+            let assign_span = Span::new(assign.span.start, assign.span.end);
             ctx.report(Diagnostic {
                 rule_name: "no-object-as-default-parameter".to_owned(),
                 message: "Do not use an object literal as a default parameter — prefer destructuring defaults".to_owned(),
-                span: Span::new(param.span.start, param.span.end),
+                span: assign_span,
                 severity: Severity::Warning,
                 help: None,
                 fix: None,
@@ -69,23 +71,13 @@ impl NativeRule for NoObjectAsDefaultParameter {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoObjectAsDefaultParameter)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoObjectAsDefaultParameter)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

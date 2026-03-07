@@ -4,21 +4,21 @@
 //! bypasses React's DOM sanitization and exposes the application to XSS
 //! attacks if the HTML content is not properly sanitized.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags usage of the `dangerouslySetInnerHTML` prop.
 #[derive(Debug)]
 pub struct NoDanger;
 
-impl NativeRule for NoDanger {
+impl LintRule for NoDanger {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/no-danger".to_owned(),
@@ -28,16 +28,16 @@ impl NativeRule for NoDanger {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXAttribute])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXAttribute])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXAttribute(attr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXAttribute(attr) = node else {
             return;
         };
 
-        if attr.is_identifier("dangerouslySetInnerHTML") {
+        if attr.name == "dangerouslySetInnerHTML" {
             let attr_span = Span::new(attr.span.start, attr.span.end);
             let fix = FixBuilder::new(
                 "Remove `dangerouslySetInnerHTML` prop",
@@ -62,22 +62,13 @@ impl NativeRule for NoDanger {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.jsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDanger)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.jsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDanger)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

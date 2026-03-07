@@ -6,20 +6,19 @@
 //! literal type (e.g. `type Foo = { x: number }`), it can almost always be
 //! rewritten as an `interface`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::TSType;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `type` aliases that define object literal types.
 #[derive(Debug)]
 pub struct ConsistentTypeDefinitions;
 
-impl NativeRule for ConsistentTypeDefinitions {
+impl LintRule for ConsistentTypeDefinitions {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/consistent-type-definitions".to_owned(),
@@ -29,19 +28,31 @@ impl NativeRule for ConsistentTypeDefinitions {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSTypeAliasDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSTypeAliasDeclaration])
     }
 
     #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSTypeAliasDeclaration(decl) = kind else {
+    #[allow(clippy::arithmetic_side_effects)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSTypeAliasDeclaration(decl) = node else {
             return;
         };
 
-        // Only flag when the type annotation is a plain object literal type.
-        // Unions, intersections, primitives, etc. are fine as `type` aliases.
-        if !matches!(&decl.type_annotation, TSType::TSTypeLiteral(_)) {
+        // Only flag when the type body is a plain object literal type `{ ... }`.
+        // TSTypeAliasDeclarationNode has no type_annotation field, so we use a
+        // source text heuristic: check if the text after `=` starts with `{`.
+        #[allow(clippy::as_conversions)]
+        let is_object_type = {
+            let source = ctx.source_text();
+            let decl_text = source
+                .get(decl.span.start as usize..decl.span.end as usize)
+                .unwrap_or("");
+            decl_text
+                .find('=')
+                .is_some_and(|pos| decl_text[pos + 1..].trim_start().starts_with('{'))
+        };
+        if !is_object_type {
             return;
         }
 
@@ -76,23 +87,13 @@ impl NativeRule for ConsistentTypeDefinitions {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentTypeDefinitions)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentTypeDefinitions)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

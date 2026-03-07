@@ -2,14 +2,13 @@
 //!
 //! Warn when inline snapshot strings are too long (> 50 lines).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/no-large-snapshots";
@@ -21,7 +20,7 @@ const MAX_LINES: usize = 50;
 #[derive(Debug)]
 pub struct NoLargeSnapshots;
 
-impl NativeRule for NoLargeSnapshots {
+impl LintRule for NoLargeSnapshots {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -31,19 +30,19 @@ impl NativeRule for NoLargeSnapshots {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for `.toMatchInlineSnapshot(...)` pattern
-        let is_inline_snapshot = match &call.callee {
-            Expression::StaticMemberExpression(member) => {
-                member.property.name.as_str() == "toMatchInlineSnapshot"
+        let is_inline_snapshot = match ctx.node(call.callee) {
+            Some(AstNode::StaticMemberExpression(member)) => {
+                member.property.as_str() == "toMatchInlineSnapshot"
             }
             _ => false,
         };
@@ -53,18 +52,18 @@ impl NativeRule for NoLargeSnapshots {
         }
 
         // Check the first argument — should be a string literal or template literal
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        let line_count = match first_arg.as_expression() {
-            Some(Expression::StringLiteral(s)) => count_lines(s.value.as_str()),
-            Some(Expression::TemplateLiteral(t)) => {
+        let line_count = match ctx.node(*first_arg_id) {
+            Some(AstNode::StringLiteral(s)) => count_lines(s.value.as_str()),
+            Some(AstNode::TemplateLiteral(t)) => {
                 // Count lines across all quasis (template string parts)
+                // In starlint_ast, quasis are Box<[String]> directly
                 let mut lines: usize = 0;
                 for quasi in &t.quasis {
-                    let raw = quasi.value.raw.as_str();
-                    lines = lines.saturating_add(count_lines(raw));
+                    lines = lines.saturating_add(count_lines(quasi.as_str()));
                 }
                 lines
             }
@@ -97,22 +96,13 @@ fn count_lines(s: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoLargeSnapshots)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLargeSnapshots)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

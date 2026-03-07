@@ -5,14 +5,13 @@
 //! `x => Number(x)` is equivalent to just `Number` and adds unnecessary
 //! indirection.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, BindingPattern, Expression, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Coercion function names that can be passed directly.
 const COERCION_FUNCTIONS: &[&str] = &["Number", "String", "Boolean"];
@@ -21,7 +20,7 @@ const COERCION_FUNCTIONS: &[&str] = &["Number", "String", "Boolean"];
 #[derive(Debug)]
 pub struct PreferNativeCoercionFunctions;
 
-impl NativeRule for PreferNativeCoercionFunctions {
+impl LintRule for PreferNativeCoercionFunctions {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-native-coercion-functions".to_owned(),
@@ -33,17 +32,17 @@ impl NativeRule for PreferNativeCoercionFunctions {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ArrowFunctionExpression(arrow) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ArrowFunctionExpression(arrow) = node else {
             return;
         };
 
         // Must have exactly one parameter
-        if arrow.params.items.len() != 1 {
+        if arrow.params.len() != 1 {
             return;
         }
 
@@ -53,24 +52,44 @@ impl NativeRule for PreferNativeCoercionFunctions {
         }
 
         // The parameter must be a simple binding identifier (not destructured)
-        let Some(param) = arrow.params.items.first() else {
+        let Some(param_id) = arrow.params.first() else {
             return;
         };
-        let BindingPattern::BindingIdentifier(param_id) = &param.pattern else {
+        let Some(AstNode::BindingIdentifier(param_ident)) = ctx.node(*param_id) else {
             return;
         };
-        let param_name = param_id.name.as_str();
+        let param_name = param_ident.name.clone();
 
-        // Body must have exactly one statement (the expression statement)
-        let Some(stmt) = arrow.body.statements.first() else {
+        // Body must be a block statement with one expression statement,
+        // or the body NodeId directly points to the expression (expression body)
+        let Some(body_node) = ctx.node(arrow.body) else {
             return;
         };
-        let Statement::ExpressionStatement(expr_stmt) = stmt else {
-            return;
+
+        // For expression arrows, body might be a BlockStatement with one ExpressionStatement
+        // or directly the expression. Let's handle both.
+        let expr_id = match body_node {
+            AstNode::BlockStatement(block) => {
+                if block.body.len() != 1 {
+                    return;
+                }
+                let Some(stmt_id) = block.body.first() else {
+                    return;
+                };
+                let Some(stmt_node) = ctx.node(*stmt_id) else {
+                    return;
+                };
+                match stmt_node {
+                    AstNode::ExpressionStatement(es) => es.expression,
+                    _ => return,
+                }
+            }
+            // The body itself might be the expression for expression arrows
+            _ => arrow.body,
         };
 
         // The expression must be a call to a coercion function
-        let Expression::CallExpression(call) = &expr_stmt.expression else {
+        let Some(AstNode::CallExpression(call)) = ctx.node(expr_id) else {
             return;
         };
 
@@ -80,7 +99,7 @@ impl NativeRule for PreferNativeCoercionFunctions {
         }
 
         // Callee must be an identifier that is a coercion function
-        let Expression::Identifier(callee_id) = &call.callee else {
+        let Some(AstNode::IdentifierReference(callee_id)) = ctx.node(call.callee) else {
             return;
         };
         let callee_name = callee_id.name.as_str();
@@ -89,11 +108,14 @@ impl NativeRule for PreferNativeCoercionFunctions {
         }
 
         // The single argument must be an identifier reference matching the parameter
-        let Some(Argument::Identifier(arg_id)) = call.arguments.first() else {
+        let Some(arg_id) = call.arguments.first() else {
+            return;
+        };
+        let Some(AstNode::IdentifierReference(arg_ident)) = ctx.node(*arg_id) else {
             return;
         };
 
-        if arg_id.name.as_str() != param_name {
+        if arg_ident.name.as_str() != param_name.as_str() {
             return;
         }
 
@@ -119,23 +141,13 @@ impl NativeRule for PreferNativeCoercionFunctions {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferNativeCoercionFunctions)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferNativeCoercionFunctions)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

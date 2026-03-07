@@ -2,16 +2,15 @@
 //!
 //! Enforce `role` attribute has a valid value.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jsx-a11y/aria-role";
@@ -92,7 +91,7 @@ const VALID_ROLES: &[&str] = &[
 #[derive(Debug)]
 pub struct AriaRole;
 
-impl NativeRule for AriaRole {
+impl LintRule for AriaRole {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -102,46 +101,46 @@ impl NativeRule for AriaRole {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        for item in &opening.attributes {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                let is_role = match &attr.name {
-                    JSXAttributeName::Identifier(ident) => ident.name.as_str() == "role",
-                    JSXAttributeName::NamespacedName(_) => false,
-                };
+        for &attr_id in &*opening.attributes {
+            let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) else {
+                continue;
+            };
 
-                if !is_role {
-                    continue;
-                }
+            if attr.name.as_str() != "role" {
+                continue;
+            }
 
-                if let Some(JSXAttributeValue::StringLiteral(lit)) = &attr.value {
-                    let role = lit.value.as_str().trim();
-                    if !role.is_empty() && !VALID_ROLES.contains(&role) {
-                        let attr_span = Span::new(attr.span.start, attr.span.end);
-                        let fix = FixBuilder::new(
-                            format!("Remove invalid `role=\"{role}\"` attribute"),
-                            FixKind::SuggestionFix,
-                        )
-                        .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
-                        .build();
-                        ctx.report(Diagnostic {
-                            rule_name: RULE_NAME.to_owned(),
-                            message: format!("`{role}` is not a valid WAI-ARIA role"),
-                            span: Span::new(opening.span.start, opening.span.end),
-                            severity: Severity::Warning,
-                            help: None,
-                            fix,
-                            labels: vec![],
-                        });
-                    }
+            let Some(value_id) = attr.value else {
+                continue;
+            };
+            if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+                let role = lit.value.as_str().trim();
+                if !role.is_empty() && !VALID_ROLES.contains(&role) {
+                    let attr_span = Span::new(attr.span.start, attr.span.end);
+                    let fix = FixBuilder::new(
+                        format!("Remove invalid `role=\"{role}\"` attribute"),
+                        FixKind::SuggestionFix,
+                    )
+                    .edit(fix_utils::remove_jsx_attr(ctx.source_text(), attr_span))
+                    .build();
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: format!("`{role}` is not a valid WAI-ARIA role"),
+                        span: Span::new(opening.span.start, opening.span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix,
+                        labels: vec![],
+                    });
                 }
             }
         }
@@ -150,22 +149,13 @@ impl NativeRule for AriaRole {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(AriaRole)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(AriaRole)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

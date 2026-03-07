@@ -5,20 +5,20 @@
 //! while `substr()` is deprecated and `substring()` swaps arguments silently
 //! when the first is greater than the second.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::or_fun_call)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `substr()` and `substring()` usage.
 #[derive(Debug)]
 pub struct PreferStringSlice;
 
-impl NativeRule for PreferStringSlice {
+impl LintRule for PreferStringSlice {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-string-slice".to_owned(),
@@ -28,23 +28,38 @@ impl NativeRule for PreferStringSlice {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::map_unwrap_or
+    )]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method = member.property.name.as_str();
+        let method = member.property.as_str();
         match method {
             "substr" | "substring" => {
-                let prop_span = Span::new(member.property.span.start, member.property.span.end);
+                let source = ctx.source_text();
+                let call_text = source
+                    .get(call.span.start as usize..call.span.end as usize)
+                    .unwrap_or("");
+                let prop_span = call_text.find(method).map_or(
+                    Span::new(call.span.start, call.span.end),
+                    |offset| {
+                        let start = call.span.start.saturating_add(offset as u32);
+                        Span::new(start, start.saturating_add(method.len() as u32))
+                    },
+                );
 
                 ctx.report(Diagnostic {
                     rule_name: "prefer-string-slice".to_owned(),
@@ -71,22 +86,13 @@ impl NativeRule for PreferStringSlice {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferStringSlice)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStringSlice)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

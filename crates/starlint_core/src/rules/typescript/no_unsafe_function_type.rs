@@ -6,20 +6,19 @@
 //! `() => void`, `(arg: string) => number`, or the `(...args: any[]) => any`
 //! escape hatch when the signature is truly unknown.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::TSTypeName;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags usage of the `Function` type in type annotations.
 #[derive(Debug)]
 pub struct NoUnsafeFunctionType;
 
-impl NativeRule for NoUnsafeFunctionType {
+impl LintRule for NoUnsafeFunctionType {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-unsafe-function-type".to_owned(),
@@ -30,20 +29,16 @@ impl NativeRule for NoUnsafeFunctionType {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSTypeReference])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSTypeReference])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSTypeReference(type_ref) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSTypeReference(type_ref) = node else {
             return;
         };
 
-        let TSTypeName::IdentifierReference(ident) = &type_ref.type_name else {
-            return;
-        };
-
-        if ident.name.as_str() != "Function" {
+        if type_ref.type_name != "Function" {
             return;
         }
 
@@ -69,22 +64,13 @@ impl NativeRule for NoUnsafeFunctionType {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafeFunctionType)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeFunctionType)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

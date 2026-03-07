@@ -6,14 +6,13 @@
 //! type aliases wrapping object literal types should not contain construct
 //! signatures, as this is almost always a mistake.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{TSSignature, TSType};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/no-misused-new";
@@ -22,7 +21,7 @@ const RULE_NAME: &str = "typescript/no-misused-new";
 #[derive(Debug)]
 pub struct NoMisusedNew;
 
-impl NativeRule for NoMisusedNew {
+impl LintRule for NoMisusedNew {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -33,83 +32,67 @@ impl NativeRule for NoMisusedNew {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::TSInterfaceDeclaration,
-            AstType::TSTypeAliasDeclaration,
+            AstNodeType::TSInterfaceDeclaration,
+            AstNodeType::TSTypeAliasDeclaration,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::TSInterfaceDeclaration(decl) => {
-                check_interface_body(&decl.body.body, ctx);
-            }
-            AstKind::TSTypeAliasDeclaration(decl) => {
-                if let TSType::TSTypeLiteral(lit) = &decl.type_annotation {
-                    check_type_literal_members(&lit.members, ctx);
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::TSInterfaceDeclaration(decl) => {
+                // Check body members for construct signatures.
+                // Since starlint_ast does not have a TSConstructSignatureDeclaration variant,
+                // we use source text to detect `new(` patterns in interface body members.
+                // Collect spans of construct signatures, then report.
+                let construct_spans: Vec<(u32, u32)> = {
+                    let source = ctx.source_text();
+                    decl.body
+                        .iter()
+                        .filter_map(|member_id| {
+                            ctx.node(*member_id).map(starlint_ast::AstNode::span)
+                        })
+                        .filter(|sp| {
+                            let text = source.get(sp.start as usize..sp.end as usize).unwrap_or("");
+                            text.trim_start().starts_with("new") && text.contains('(')
+                        })
+                        .map(|sp| (sp.start, sp.end))
+                        .collect()
+                };
+
+                for (start, end) in construct_spans {
+                    ctx.report(Diagnostic {
+                        rule_name: RULE_NAME.to_owned(),
+                        message: "Interfaces cannot be constructed — use a class instead of `new()` in an interface".to_owned(),
+                        span: Span::new(start, end),
+                        severity: Severity::Error,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
                 }
+            }
+            AstNode::TSTypeAliasDeclaration(_decl) => {
+                // TSTypeAliasDeclarationNode in starlint_ast does not expose
+                // the type annotation body, so we cannot inspect members.
+                // This check requires richer AST support; skip for now.
             }
             _ => {}
         }
     }
 }
 
-/// Check interface body members for construct signatures.
-fn check_interface_body(members: &[TSSignature<'_>], ctx: &mut NativeLintContext<'_>) {
-    for member in members {
-        if let TSSignature::TSConstructSignatureDeclaration(sig) = member {
-            ctx.report(Diagnostic {
-                rule_name: RULE_NAME.to_owned(),
-                message: "Interfaces cannot be constructed — use a class instead of `new()` in an interface".to_owned(),
-                span: Span::new(sig.span.start, sig.span.end),
-                severity: Severity::Error,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
-        }
-    }
-}
-
-/// Check type literal members for construct signatures.
-fn check_type_literal_members(members: &[TSSignature<'_>], ctx: &mut NativeLintContext<'_>) {
-    for member in members {
-        if let TSSignature::TSConstructSignatureDeclaration(sig) = member {
-            ctx.report(Diagnostic {
-                rule_name: RULE_NAME.to_owned(),
-                message:
-                    "Type aliases should not contain construct signatures — use a class instead"
-                        .to_owned(),
-                span: Span::new(sig.span.start, sig.span.end),
-                severity: Severity::Error,
-                help: None,
-                fix: None,
-                labels: vec![],
-            });
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoMisusedNew)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoMisusedNew)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

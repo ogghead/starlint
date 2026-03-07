@@ -7,20 +7,19 @@
 //! Simplified syntax-only version — full checking requires type information.
 //! This rule detects explicit `const x = expr as any` patterns.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, TSType};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags variable declarations initialized with an `as any` assertion.
 #[derive(Debug)]
 pub struct NoUnsafeAssignment;
 
-impl NativeRule for NoUnsafeAssignment {
+impl LintRule for NoUnsafeAssignment {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-unsafe-assignment".to_owned(),
@@ -30,20 +29,20 @@ impl NativeRule for NoUnsafeAssignment {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclarator])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclarator])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclarator(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclarator(decl) = node else {
             return;
         };
 
-        let Some(init) = &decl.init else {
+        let Some(init_id) = decl.init else {
             return;
         };
 
-        if is_as_any(init) {
+        if is_as_any(init_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-unsafe-assignment".to_owned(),
                 message: "Unsafe assignment — assigning an `as any` value removes type safety for this binding".to_owned(),
@@ -57,37 +56,31 @@ impl NativeRule for NoUnsafeAssignment {
     }
 }
 
-/// Check whether an expression is a `TSAsExpression` casting to `any`,
-/// unwrapping parenthesized expressions.
-fn is_as_any(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::TSAsExpression(as_expr) => {
-            matches!(&as_expr.type_annotation, TSType::TSAnyKeyword(_))
-        }
-        Expression::ParenthesizedExpression(paren) => is_as_any(&paren.expression),
-        _ => false,
-    }
+/// Check whether a node is a `TSAsExpression` casting to `any`.
+/// Uses source text heuristic since `TSAsExpressionNode` has no
+/// `type_annotation` field. No `ParenthesizedExpression` exists in
+/// `starlint_ast` (parens are transparent in the AST).
+fn is_as_any(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::TSAsExpression(as_expr)) = ctx.node(node_id) else {
+        return false;
+    };
+    let source = ctx.source_text();
+    let start = usize::try_from(as_expr.span.start).unwrap_or(0);
+    let end = usize::try_from(as_expr.span.end).unwrap_or(0);
+    source
+        .get(start..end)
+        .is_some_and(|text| text.trim_end().ends_with("as any"))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafeAssignment)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeAssignment)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,14 +3,13 @@
 //! Warn when a file exports non-component values alongside components,
 //! which breaks Fast Refresh.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Declaration, ExportSpecifier, ModuleExportName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags named exports of non-component identifiers (lowercase names).
 ///
@@ -26,16 +25,7 @@ fn is_non_component_name(name: &str) -> bool {
         .is_some_and(|&b| b.is_ascii_lowercase())
 }
 
-/// Extract the exported name from a module export name node.
-fn get_export_name<'a>(name: &'a ModuleExportName<'a>) -> &'a str {
-    match name {
-        ModuleExportName::IdentifierName(id) => id.name.as_str(),
-        ModuleExportName::IdentifierReference(id) => id.name.as_str(),
-        ModuleExportName::StringLiteral(s) => s.value.as_str(),
-    }
-}
-
-impl NativeRule for OnlyExportComponents {
+impl LintRule for OnlyExportComponents {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/only-export-components".to_owned(),
@@ -46,27 +36,86 @@ impl NativeRule for OnlyExportComponents {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ExportNamedDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ExportNamedDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ExportNamedDeclaration(export) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ExportNamedDeclaration(export) = node else {
             return;
         };
 
         // Check specifiers like `export { foo, Bar }`
-        for spec in &export.specifiers {
-            check_specifier(spec, ctx);
+        // ExportSpecifierNode has `exported: String`
+        let spec_violations: Vec<(String, starlint_ast::types::Span)> = export
+            .specifiers
+            .iter()
+            .filter_map(|spec_id| {
+                if let Some(AstNode::ExportSpecifier(spec)) = ctx.node(*spec_id) {
+                    let name = spec.exported.as_str();
+                    if is_non_component_name(name) {
+                        return Some((name.to_owned(), spec.span));
+                    }
+                }
+                None
+            })
+            .collect();
+
+        for (name, span) in spec_violations {
+            ctx.report(Diagnostic {
+                rule_name: "react/only-export-components".to_owned(),
+                message: format!(
+                    "Fast Refresh only works when a file exports components. Use a separate file for `{name}`"
+                ),
+                span: Span::new(span.start, span.end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
 
         // Check inline declarations like `export const foo = ...`
-        if let Some(decl) = &export.declaration {
-            match decl {
-                Declaration::VariableDeclaration(var_decl) => {
-                    for declarator in &var_decl.declarations {
-                        if let oxc_ast::ast::BindingPattern::BindingIdentifier(id) = &declarator.id
-                        {
+        if let Some(decl_id) = export.declaration {
+            match ctx.node(decl_id) {
+                Some(AstNode::VariableDeclaration(var_decl)) => {
+                    let decl_violations: Vec<(String, starlint_ast::types::Span)> = var_decl
+                        .declarations
+                        .iter()
+                        .filter_map(|declarator_id| {
+                            if let Some(AstNode::VariableDeclarator(declarator)) =
+                                ctx.node(*declarator_id)
+                            {
+                                if let Some(AstNode::BindingIdentifier(id)) =
+                                    ctx.node(declarator.id)
+                                {
+                                    let name = id.name.as_str();
+                                    if is_non_component_name(name) {
+                                        return Some((name.to_owned(), id.span));
+                                    }
+                                }
+                            }
+                            None
+                        })
+                        .collect();
+
+                    for (name, span) in decl_violations {
+                        ctx.report(Diagnostic {
+                            rule_name: "react/only-export-components".to_owned(),
+                            message: format!(
+                                "Fast Refresh only works when a file exports components. Use a separate file for `{name}`"
+                            ),
+                            span: Span::new(span.start, span.end),
+                            severity: Severity::Warning,
+                            help: None,
+                            fix: None,
+                            labels: vec![],
+                        });
+                    }
+                }
+                Some(AstNode::Function(func)) => {
+                    if let Some(id_node_id) = func.id {
+                        if let Some(AstNode::BindingIdentifier(id)) = ctx.node(id_node_id) {
                             let name = id.name.as_str();
                             if is_non_component_name(name) {
                                 ctx.report(Diagnostic {
@@ -84,66 +133,21 @@ impl NativeRule for OnlyExportComponents {
                         }
                     }
                 }
-                Declaration::FunctionDeclaration(func) => {
-                    if let Some(id) = &func.id {
-                        let name = id.name.as_str();
-                        if is_non_component_name(name) {
-                            ctx.report(Diagnostic {
-                                rule_name: "react/only-export-components".to_owned(),
-                                message: format!(
-                                    "Fast Refresh only works when a file exports components. Use a separate file for `{name}`"
-                                ),
-                                span: Span::new(id.span.start, id.span.end),
-                                severity: Severity::Warning,
-                                help: None,
-                                fix: None,
-                                labels: vec![],
-                            });
-                        }
-                    }
-                }
                 _ => {}
             }
         }
     }
 }
 
-/// Check a single export specifier and report if it exports a non-component name.
-fn check_specifier(spec: &ExportSpecifier<'_>, ctx: &mut NativeLintContext<'_>) {
-    let name = get_export_name(&spec.exported);
-    if is_non_component_name(name) {
-        ctx.report(Diagnostic {
-            rule_name: "react/only-export-components".to_owned(),
-            message: format!(
-                "Fast Refresh only works when a file exports components. Use a separate file for `{name}`"
-            ),
-            span: Span::new(spec.span.start, spec.span.end),
-            severity: Severity::Warning,
-            help: None,
-            fix: None,
-            labels: vec![],
-        });
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(OnlyExportComponents)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(OnlyExportComponents)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

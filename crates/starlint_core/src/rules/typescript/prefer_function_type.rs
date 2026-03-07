@@ -5,14 +5,13 @@
 //! that member is a call signature, the interface can be replaced with a simpler
 //! function type alias, improving readability.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::TSSignature;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/prefer-function-type";
@@ -23,7 +22,7 @@ const RULE_NAME: &str = "typescript/prefer-function-type";
 #[derive(Debug)]
 pub struct PreferFunctionType;
 
-impl NativeRule for PreferFunctionType {
+impl LintRule for PreferFunctionType {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -34,80 +33,105 @@ impl NativeRule for PreferFunctionType {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSInterfaceDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSInterfaceDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSInterfaceDeclaration(decl) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSInterfaceDeclaration(decl) = node else {
             return;
         };
 
-        // Interfaces that extend other types are intentional even if they have
-        // a single call signature (they add the callable behavior to the base).
-        if !decl.extends.is_empty() {
-            return;
+        // TSInterfaceDeclarationNode has no extends field. Use source text to check.
+        let source = ctx.source_text();
+        let decl_start = decl.span.start as usize;
+        let decl_end = decl.span.end as usize;
+        let decl_text = source.get(decl_start..decl_end).unwrap_or("");
+        // Check if the interface extends something by looking for "extends" keyword
+        // before the opening brace
+        if let Some(brace_pos) = decl_text.find('{') {
+            let before_brace = &decl_text[..brace_pos];
+            if before_brace.contains("extends") {
+                return;
+            }
         }
 
-        let members = &decl.body.body;
+        let members = &decl.body;
 
         // Only flag when there is exactly one member
         if members.len() != 1 {
             return;
         }
 
-        // Check if the single member is a call signature
-        let Some(member) = members.first() else {
+        // Check if the single member is a call signature using source text.
+        // TSCallSignatureDeclaration is not in starlint_ast (mapped as Unknown).
+        // A call signature starts with `(` in the interface body.
+        let Some(member_id) = members.first() else {
             return;
         };
 
-        if let TSSignature::TSCallSignatureDeclaration(call_sig) = member {
-            let name = decl.id.name.as_str();
-            let message = format!(
-                "Interface `{name}` has only a call signature — use a function type instead (e.g. `type {name} = (...) => ...`)"
-            );
-            let decl_span = Span::new(decl.span.start, decl.span.end);
+        let member_span = ctx.node(*member_id).map_or(
+            starlint_ast::types::Span::EMPTY,
+            starlint_ast::AstNode::span,
+        );
+        let sig_start = member_span.start as usize;
+        let sig_end = member_span.end as usize;
+        let sig_text = source.get(sig_start..sig_end).unwrap_or("").trim();
 
-            // Build the fix: extract params and return type from source text
-            let source = ctx.source_text();
-            let sig_start = usize::try_from(call_sig.span.start).unwrap_or(0);
-            let sig_end = usize::try_from(call_sig.span.end).unwrap_or(0);
-            let sig_text = source.get(sig_start..sig_end).unwrap_or("");
-
-            // The call signature looks like `(params): ReturnType` or `(params)`
-            // Find the matching closing paren for the params
-            let fix = sig_text.find('(').and_then(|open| {
-                find_matching_paren(sig_text, open).map(|close| {
-                    let params = sig_text.get(open..close.saturating_add(1)).unwrap_or("()");
-                    // After the closing paren, look for `: ReturnType`
-                    let after_paren = sig_text.get(close.saturating_add(1)..).unwrap_or("").trim();
-                    let return_type = if let Some(stripped) = after_paren.strip_prefix(':') {
-                        stripped.trim().trim_end_matches(';').trim()
-                    } else {
-                        "void"
-                    };
-                    format!("type {name} = {params} => {return_type};")
-                })
-            });
-
-            ctx.report(Diagnostic {
-                rule_name: RULE_NAME.to_owned(),
-                message,
-                span: decl_span,
-                severity: Severity::Warning,
-                help: Some(format!("Convert to `type {name} = (...) => ...`")),
-                fix: fix.map(|replacement| Fix {
-                    kind: FixKind::SafeFix,
-                    message: "Convert to function type alias".to_owned(),
-                    edits: vec![Edit {
-                        span: decl_span,
-                        replacement,
-                    }],
-                    is_snippet: false,
-                }),
-                labels: vec![],
-            });
+        // A call signature starts with `(`, not a property name
+        if !sig_text.starts_with('(') {
+            return;
         }
+
+        let id_name = ctx
+            .node(decl.id)
+            .and_then(|n| {
+                if let AstNode::BindingIdentifier(id) = n {
+                    Some(id.name.as_str())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or("Unknown");
+        let message = format!(
+            "Interface `{id_name}` has only a call signature — use a function type instead (e.g. `type {id_name} = (...) => ...`)"
+        );
+        let decl_span = Span::new(decl.span.start, decl.span.end);
+
+        // Build the fix: extract params and return type from source text
+        // The call signature looks like `(params): ReturnType` or `(params)`
+        let fix = sig_text.find('(').and_then(|open| {
+            find_matching_paren(sig_text, open).map(|close| {
+                let params = sig_text.get(open..close.saturating_add(1)).unwrap_or("()");
+                // After the closing paren, look for `: ReturnType`
+                let after_paren = sig_text.get(close.saturating_add(1)..).unwrap_or("").trim();
+                let return_type = if let Some(stripped) = after_paren.strip_prefix(':') {
+                    stripped.trim().trim_end_matches(';').trim()
+                } else {
+                    "void"
+                };
+                format!("type {id_name} = {params} => {return_type};")
+            })
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: RULE_NAME.to_owned(),
+            message,
+            span: decl_span,
+            severity: Severity::Warning,
+            help: Some(format!("Convert to `type {id_name} = (...) => ...`")),
+            fix: fix.map(|replacement| Fix {
+                kind: FixKind::SafeFix,
+                message: "Convert to function type alias".to_owned(),
+                edits: vec![Edit {
+                    span: decl_span,
+                    replacement,
+                }],
+                is_snippet: false,
+            }),
+            labels: vec![],
+        });
     }
 }
 
@@ -134,22 +158,13 @@ fn find_matching_paren(source: &str, open_pos: usize) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferFunctionType)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferFunctionType)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

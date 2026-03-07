@@ -5,20 +5,19 @@
 //! ones. It is a common best practice to filter out inherited properties with
 //! an `if` guard (e.g. `if (obj.hasOwnProperty(k))`) or a `continue` guard.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Statement;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `for-in` loops that do not guard with an `if` statement or `continue`.
 #[derive(Debug)]
 pub struct GuardForIn;
 
-impl NativeRule for GuardForIn {
+impl LintRule for GuardForIn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "guard-for-in".to_owned(),
@@ -28,16 +27,16 @@ impl NativeRule for GuardForIn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ForInStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ForInStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ForInStatement(for_in) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ForInStatement(for_in) = node else {
             return;
         };
 
-        if is_guarded(&for_in.body) {
+        if is_guarded(for_in.body, ctx) {
             return;
         }
 
@@ -59,9 +58,12 @@ impl NativeRule for GuardForIn {
 /// - It is a block whose first statement is an `if` statement (guard pattern), OR
 /// - It is a block whose only statement is a `continue` statement, OR
 /// - It is directly an `if` statement (no block wrapper)
-fn is_guarded(body: &Statement<'_>) -> bool {
-    match body {
-        Statement::BlockStatement(block) => {
+fn is_guarded(body: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(body_node) = ctx.node(body) else {
+        return false;
+    };
+    match body_node {
+        AstNode::BlockStatement(block) => {
             let stmts = &block.body;
 
             // Empty block — nothing to guard
@@ -70,44 +72,38 @@ fn is_guarded(body: &Statement<'_>) -> bool {
             }
 
             // First statement is an if-statement — accepted as a guard
-            if let Some(Statement::IfStatement(_)) = stmts.first() {
-                return true;
+            if let Some(first_id) = stmts.first() {
+                if let Some(AstNode::IfStatement(_)) = ctx.node(*first_id) {
+                    return true;
+                }
             }
 
             // Single continue statement — accepted as a guard
             if stmts.len() == 1 {
-                if let Some(Statement::ContinueStatement(_)) = stmts.first() {
-                    return true;
+                if let Some(first_id) = stmts.first() {
+                    if let Some(AstNode::ContinueStatement(_)) = ctx.node(*first_id) {
+                        return true;
+                    }
                 }
             }
 
             false
         }
         // If statement directly as body (no block), or empty statement — nothing to guard
-        Statement::IfStatement(_) | Statement::EmptyStatement(_) => true,
+        AstNode::IfStatement(_) | AstNode::EmptyStatement(_) => true,
         _ => false,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code with the `GuardForIn` rule.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(GuardForIn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(GuardForIn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

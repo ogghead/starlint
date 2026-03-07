@@ -7,14 +7,14 @@
 //!
 //! Simplified syntax-only version — full checking requires type information.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/restrict-plus-operands";
@@ -24,7 +24,7 @@ const RULE_NAME: &str = "typescript/restrict-plus-operands";
 #[derive(Debug)]
 pub struct RestrictPlusOperands;
 
-impl NativeRule for RestrictPlusOperands {
+impl LintRule for RestrictPlusOperands {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -35,12 +35,12 @@ impl NativeRule for RestrictPlusOperands {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(bin) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(bin) = node else {
             return;
         };
 
@@ -48,7 +48,7 @@ impl NativeRule for RestrictPlusOperands {
             return;
         }
 
-        if is_mixed_string_number(&bin.left, &bin.right) {
+        if is_mixed_string_number(bin.left, bin.right, ctx) {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message:
@@ -67,34 +67,26 @@ impl NativeRule for RestrictPlusOperands {
 
 /// Returns `true` if one operand is a string literal and the other is a
 /// numeric literal (in either order).
-const fn is_mixed_string_number(left: &Expression<'_>, right: &Expression<'_>) -> bool {
-    let left_is_string = matches!(left, Expression::StringLiteral(_));
-    let left_is_number = matches!(left, Expression::NumericLiteral(_));
-    let right_is_string = matches!(right, Expression::StringLiteral(_));
-    let right_is_number = matches!(right, Expression::NumericLiteral(_));
+fn is_mixed_string_number(left_id: NodeId, right_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let left = ctx.node(left_id);
+    let right = ctx.node(right_id);
+    let left_is_string = matches!(left, Some(AstNode::StringLiteral(_)));
+    let left_is_number = matches!(left, Some(AstNode::NumericLiteral(_)));
+    let right_is_string = matches!(right, Some(AstNode::StringLiteral(_)));
+    let right_is_number = matches!(right, Some(AstNode::NumericLiteral(_)));
 
     (left_is_string && right_is_number) || (left_is_number && right_is_string)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RestrictPlusOperands)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RestrictPlusOperands)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,14 +3,13 @@
 //! Forbid styled-jsx in `_document`. The `<style jsx>` component does not
 //! work correctly in `_document` because it is rendered on the server only.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "nextjs/no-styled-jsx-in-document";
@@ -19,15 +18,7 @@ const RULE_NAME: &str = "nextjs/no-styled-jsx-in-document";
 #[derive(Debug)]
 pub struct NoStyledJsxInDocument;
 
-/// Get the attribute name as a string.
-fn attr_name<'a>(name: &'a JSXAttributeName<'a>) -> &'a str {
-    match name {
-        JSXAttributeName::Identifier(ident) => ident.name.as_str(),
-        JSXAttributeName::NamespacedName(ns) => ns.name.name.as_str(),
-    }
-}
-
-impl NativeRule for NoStyledJsxInDocument {
+impl LintRule for NoStyledJsxInDocument {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -37,11 +28,11 @@ impl NativeRule for NoStyledJsxInDocument {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         // Only check in _document files
         let file_stem = ctx
             .file_path()
@@ -52,24 +43,21 @@ impl NativeRule for NoStyledJsxInDocument {
             return;
         }
 
-        let AstKind::JSXOpeningElement(opening) = kind else {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let is_style = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str() == "style",
-            _ => false,
-        };
-        if !is_style {
+        // opening.name is a String
+        if opening.name.as_str() != "style" {
             return;
         }
 
         // Check for `jsx` attribute (boolean attribute)
-        let has_jsx_attr = opening.attributes.iter().any(|item| {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                return attr_name(&attr.name) == "jsx";
-            }
-            false
+        let has_jsx_attr = opening.attributes.iter().any(|attr_id| {
+            matches!(
+                ctx.node(*attr_id),
+                Some(AstNode::JSXAttribute(attr)) if attr.name.as_str() == "jsx"
+            )
         });
 
         if has_jsx_attr {
@@ -88,32 +76,20 @@ impl NativeRule for NoStyledJsxInDocument {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint_with_path(
-        source: &str,
-        path: &Path,
-    ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoStyledJsxInDocument)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+    fn lint_with_path(source: &str, path: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoStyledJsxInDocument)];
+        lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_styled_jsx_in_document() {
         let diags = lint_with_path(
             r"const el = <style jsx>{`.red { color: red; }`}</style>;",
-            Path::new("pages/_document.tsx"),
+            "pages/_document.tsx",
         );
         assert_eq!(diags.len(), 1, "styled-jsx in _document should be flagged");
     }
@@ -122,7 +98,7 @@ mod tests {
     fn test_allows_styled_jsx_in_page() {
         let diags = lint_with_path(
             r"const el = <style jsx>{`.red { color: red; }`}</style>;",
-            Path::new("pages/index.tsx"),
+            "pages/index.tsx",
         );
         assert!(diags.is_empty(), "styled-jsx in page should pass");
     }
@@ -131,7 +107,7 @@ mod tests {
     fn test_allows_regular_style_in_document() {
         let diags = lint_with_path(
             r"const el = <style>{`.red { color: red; }`}</style>;",
-            Path::new("pages/_document.tsx"),
+            "pages/_document.tsx",
         );
         assert!(diags.is_empty(), "regular style in _document should pass");
     }

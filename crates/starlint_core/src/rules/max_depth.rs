@@ -5,13 +5,13 @@
 
 use std::sync::RwLock;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Default maximum nesting depth.
 const DEFAULT_MAX: u32 = 4;
@@ -42,21 +42,21 @@ impl Default for MaxDepth {
 }
 
 /// Check if the AST node introduces a new nesting level.
-const fn is_nesting_node(kind: &AstKind<'_>) -> bool {
+const fn is_nesting_node(node: &AstNode) -> bool {
     matches!(
-        kind,
-        AstKind::IfStatement(_)
-            | AstKind::ForStatement(_)
-            | AstKind::ForInStatement(_)
-            | AstKind::ForOfStatement(_)
-            | AstKind::WhileStatement(_)
-            | AstKind::DoWhileStatement(_)
-            | AstKind::SwitchStatement(_)
-            | AstKind::TryStatement(_)
+        node,
+        AstNode::IfStatement(_)
+            | AstNode::ForStatement(_)
+            | AstNode::ForInStatement(_)
+            | AstNode::ForOfStatement(_)
+            | AstNode::WhileStatement(_)
+            | AstNode::DoWhileStatement(_)
+            | AstNode::SwitchStatement(_)
+            | AstNode::TryStatement(_)
     )
 }
 
-impl NativeRule for MaxDepth {
+impl LintRule for MaxDepth {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "max-depth".to_owned(),
@@ -73,34 +73,34 @@ impl NativeRule for MaxDepth {
         Ok(())
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::IfStatement,
-            AstType::SwitchStatement,
-            AstType::TryStatement,
-            AstType::WhileStatement,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForInStatement,
+            AstNodeType::ForOfStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::IfStatement,
+            AstNodeType::SwitchStatement,
+            AstNodeType::TryStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::DoWhileStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::IfStatement,
-            AstType::SwitchStatement,
-            AstType::TryStatement,
-            AstType::WhileStatement,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForInStatement,
+            AstNodeType::ForOfStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::IfStatement,
+            AstNodeType::SwitchStatement,
+            AstNodeType::TryStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        if !is_nesting_node(kind) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        if !is_nesting_node(node) {
             return;
         }
 
@@ -112,15 +112,15 @@ impl NativeRule for MaxDepth {
         drop(depth_guard);
 
         if current > self.max {
-            let span = match kind {
-                AstKind::IfStatement(s) => s.span,
-                AstKind::ForStatement(s) => s.span,
-                AstKind::ForInStatement(s) => s.span,
-                AstKind::ForOfStatement(s) => s.span,
-                AstKind::WhileStatement(s) => s.span,
-                AstKind::DoWhileStatement(s) => s.span,
-                AstKind::SwitchStatement(s) => s.span,
-                AstKind::TryStatement(s) => s.span,
+            let span = match node {
+                AstNode::IfStatement(s) => s.span,
+                AstNode::ForStatement(s) => s.span,
+                AstNode::ForInStatement(s) => s.span,
+                AstNode::ForOfStatement(s) => s.span,
+                AstNode::WhileStatement(s) => s.span,
+                AstNode::DoWhileStatement(s) => s.span,
+                AstNode::SwitchStatement(s) => s.span,
+                AstNode::TryStatement(s) => s.span,
                 _ => return,
             };
             ctx.report(Diagnostic {
@@ -138,8 +138,8 @@ impl NativeRule for MaxDepth {
         }
     }
 
-    fn leave(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
-        if !is_nesting_node(kind) {
+    fn leave(&self, _node_id: NodeId, node: &AstNode, _ctx: &mut LintContext<'_>) {
+        if !is_nesting_node(node) {
             return;
         }
 
@@ -151,25 +151,16 @@ impl NativeRule for MaxDepth {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint_with_max(source: &str, max: u32) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MaxDepth {
-                max,
-                depth: RwLock::new(0),
-            })];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MaxDepth {
+            max,
+            depth: RwLock::new(0),
+        })];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

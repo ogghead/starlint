@@ -42,7 +42,9 @@ impl LintRule for NoEmpty {
 
     fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         if let AstNode::BlockStatement(block) = node {
-            if block.body.is_empty() && !block_has_comment(ctx.source_text(), block.span.start, block.span.end) {
+            if block.body.is_empty()
+                && !block_has_comment(ctx.source_text(), block.span.start, block.span.end)
+            {
                 let span = Span::new(block.span.start, block.span.end);
                 ctx.report(Diagnostic {
                     rule_name: "no-empty".to_owned(),

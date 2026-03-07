@@ -4,65 +4,20 @@
 //! Variables declared without an initializer are a potential source of
 //! `undefined`-related bugs. However, for-in and for-of loop variables are
 //! assigned implicitly and are exempt.
-//!
-//! Uses semantic analysis to check whether a `VariableDeclaration` is the
-//! left-hand side of a `for-in` or `for-of` statement.
-
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags variable declarations without initializers.
 #[derive(Debug)]
 pub struct InitDeclarations;
 
-/// Check whether a variable declaration is the `left` of a for-in or for-of.
-///
-/// Walks the semantic ancestor chain to find the immediate parent statement.
-fn is_for_in_or_for_of_left(
-    node_id: oxc_semantic::NodeId,
-    semantic: &oxc_semantic::Semantic<'_>,
-) -> bool {
-    let nodes = semantic.nodes();
-    for ancestor in nodes.ancestors(node_id) {
-        match ancestor.kind() {
-            AstKind::ForInStatement(_) | AstKind::ForOfStatement(_) => return true,
-            // Stop at statements or declarations that cannot be parents of a for-left.
-            AstKind::Program(_)
-            | AstKind::Function(_)
-            | AstKind::ArrowFunctionExpression(_)
-            | AstKind::ExpressionStatement(_)
-            | AstKind::BlockStatement(_)
-            | AstKind::IfStatement(_)
-            | AstKind::WhileStatement(_)
-            | AstKind::DoWhileStatement(_)
-            | AstKind::ForStatement(_)
-            | AstKind::SwitchStatement(_) => return false,
-            _ => {}
-        }
-    }
-    false
-}
-
-/// Find the semantic [`NodeId`] for a node with the given span.
-fn find_node_id_by_span(
-    semantic: &oxc_semantic::Semantic<'_>,
-    span: oxc_span::Span,
-) -> Option<oxc_semantic::NodeId> {
-    for node in semantic.nodes() {
-        if node.kind().span() == span {
-            return Some(node.id());
-        }
-    }
-    None
-}
-
-impl NativeRule for InitDeclarations {
+impl LintRule for InitDeclarations {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "init-declarations".to_owned(),
@@ -72,89 +27,59 @@ impl NativeRule for InitDeclarations {
         }
     }
 
-    fn needs_semantic(&self) -> bool {
-        true
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclaration])
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[
-            AstType::ArrowFunctionExpression,
-            AstType::BlockStatement,
-            AstType::DoWhileStatement,
-            AstType::ExpressionStatement,
-            AstType::ForInStatement,
-            AstType::ForOfStatement,
-            AstType::ForStatement,
-            AstType::Function,
-            AstType::IfStatement,
-            AstType::Program,
-            AstType::SwitchStatement,
-            AstType::VariableDeclaration,
-            AstType::WhileStatement,
-        ])
-    }
-
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclaration(decl) = kind else {
-            return;
-        };
-
-        let Some(semantic) = ctx.semantic() else {
+    fn run(&self, node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclaration(decl) = node else {
             return;
         };
 
         // Check if this declaration is the left-hand side of a for-in/for-of.
-        if let Some(node_id) = find_node_id_by_span(semantic, decl.span) {
-            if is_for_in_or_for_of_left(node_id, semantic) {
+        // Walk ancestors to find if parent is a ForInStatement or ForOfStatement.
+        if let Some(parent_id) = ctx.parent(node_id) {
+            if let Some(AstNode::ForInStatement(_) | AstNode::ForOfStatement(_)) =
+                ctx.node(parent_id)
+            {
                 return;
             }
         }
 
-        // Check each declarator for missing initializers.
-        for declarator in &decl.declarations {
-            if declarator.init.is_none() {
-                let span = declarator.span();
-                ctx.report(Diagnostic {
-                    rule_name: "init-declarations".to_owned(),
-                    message: "Variable declaration should be initialized".to_owned(),
-                    span: Span::new(span.start, span.end),
-                    severity: Severity::Warning,
-                    help: None,
-                    fix: None,
-                    labels: vec![],
-                });
+        // Collect diagnostics from declarators
+        let mut diags = Vec::new();
+        for &declarator_id in &*decl.declarations {
+            if let Some(AstNode::VariableDeclarator(declarator)) = ctx.node(declarator_id) {
+                if declarator.init.is_none() {
+                    let span = declarator.span;
+                    diags.push(Diagnostic {
+                        rule_name: "init-declarations".to_owned(),
+                        message: "Variable declaration should be initialized".to_owned(),
+                        span: Span::new(span.start, span.end),
+                        severity: Severity::Warning,
+                        help: None,
+                        fix: None,
+                        labels: vec![],
+                    });
+                }
             }
+        }
+
+        for diag in diags {
+            ctx.report(diag);
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code with semantic analysis.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(InitDeclarations)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(InitDeclarations)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,20 +4,21 @@
 //! element or property directly. For example, prefer `const { x } = obj`
 //! over `const x = obj.x`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, VariableDeclarationKind};
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::shadow_reuse, clippy::shadow_unrelated)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::VariableDeclarationKind;
+use starlint_ast::types::NodeId;
 
 /// Flags variable declarations that could use destructuring.
 #[derive(Debug)]
 pub struct PreferDestructuring;
 
-impl NativeRule for PreferDestructuring {
+impl LintRule for PreferDestructuring {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-destructuring".to_owned(),
@@ -27,12 +28,13 @@ impl NativeRule for PreferDestructuring {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclaration(decl) = kind else {
+    #[allow(clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclaration(decl) = node else {
             return;
         };
 
@@ -41,37 +43,45 @@ impl NativeRule for PreferDestructuring {
             return;
         }
 
-        for declarator in &decl.declarations {
-            // Must be a simple identifier binding (not already destructured)
-            // If it has exactly one binding identifier, it's a simple binding.
-            // Destructuring patterns would have zero (or multiple) binding identifiers
-            // at the direct pattern level, or no match here.
-            let bindings = declarator.id.get_binding_identifiers();
-            if bindings.len() != 1 {
+        for &declarator_id in &*decl.declarations {
+            let Some(AstNode::VariableDeclarator(declarator)) = ctx.node(declarator_id) else {
                 continue;
-            }
+            };
 
-            let Some(init) = &declarator.init else {
+            // Must be a simple identifier binding (not already destructured)
+            let binding_name = ctx.node(declarator.id).and_then(|n| {
+                if let AstNode::BindingIdentifier(ident) = n {
+                    Some(ident.name.clone())
+                } else {
+                    None
+                }
+            });
+
+            let Some(binding_name) = binding_name else {
+                continue;
+            };
+
+            let Some(init_id) = declarator.init else {
+                continue;
+            };
+
+            let declarator_span = declarator.span;
+
+            let Some(init_node) = ctx.node(init_id) else {
                 continue;
             };
 
             // Check if init is a member expression like `obj.prop` or `arr[0]`
-            match init {
-                Expression::StaticMemberExpression(member) => {
-                    // obj.prop — suggest { prop } = obj
-                    let binding_name = declarator
-                        .id
-                        .get_binding_identifiers()
-                        .first()
-                        .map(|b| b.name.as_str());
-                    let prop_name = member.property.name.as_str();
+            match init_node {
+                AstNode::StaticMemberExpression(member) => {
+                    let prop_name = &member.property;
 
                     // Only suggest if the variable name matches the property name
-                    if binding_name == Some(prop_name) {
+                    if binding_name == *prop_name {
                         ctx.report(Diagnostic {
                             rule_name: "prefer-destructuring".to_owned(),
                             message: format!("Use object destructuring: `{{ {prop_name} }} = ...`"),
-                            span: Span::new(declarator.span.start, declarator.span.end),
+                            span: Span::new(declarator_span.start, declarator_span.end),
                             severity: Severity::Warning,
                             help: None,
                             fix: None,
@@ -79,13 +89,16 @@ impl NativeRule for PreferDestructuring {
                         });
                     }
                 }
-                Expression::ComputedMemberExpression(member) => {
+                AstNode::ComputedMemberExpression(member) => {
                     // arr[0] — suggest destructuring for numeric indices
-                    if let Expression::NumericLiteral(_) = &member.expression {
+                    if ctx
+                        .node(member.expression)
+                        .is_some_and(|n| matches!(n, AstNode::NumericLiteral(_)))
+                    {
                         ctx.report(Diagnostic {
                             rule_name: "prefer-destructuring".to_owned(),
                             message: "Use array destructuring instead of indexed access".to_owned(),
-                            span: Span::new(declarator.span.start, declarator.span.end),
+                            span: Span::new(declarator_span.start, declarator_span.end),
                             severity: Severity::Warning,
                             help: None,
                             fix: None,
@@ -101,22 +114,13 @@ impl NativeRule for PreferDestructuring {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferDestructuring)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferDestructuring)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

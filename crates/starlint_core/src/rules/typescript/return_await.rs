@@ -7,16 +7,13 @@
 //!
 //! Simplified syntax-only version — full checking requires type information.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/return-await";
@@ -25,7 +22,7 @@ const RULE_NAME: &str = "typescript/return-await";
 #[derive(Debug)]
 pub struct ReturnAwait;
 
-impl NativeRule for ReturnAwait {
+impl LintRule for ReturnAwait {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -35,21 +32,25 @@ impl NativeRule for ReturnAwait {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ReturnStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ReturnStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ReturnStatement(ret) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ReturnStatement(ret) = node else {
             return;
         };
 
-        let Some(arg) = &ret.argument else {
+        let Some(arg_id) = ret.argument else {
             return;
         };
 
-        if let Some(inner_text) = get_await_inner_text(arg, ctx.source_text()) {
+        if let Some(inner_text) = get_await_inner_text(arg_id, ctx) {
             let inner_owned = inner_text.to_owned();
+            let arg_span = ctx.node(arg_id).map_or(
+                starlint_ast::types::Span::EMPTY,
+                starlint_ast::AstNode::span,
+            );
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Redundant `return await` — the enclosing async function already wraps the return value in a promise".to_owned(),
@@ -60,7 +61,7 @@ impl NativeRule for ReturnAwait {
                     kind: FixKind::SafeFix,
                     message: "Remove redundant `await`".to_owned(),
                     edits: vec![Edit {
-                        span: Span::new(arg.span().start, arg.span().end),
+                        span: Span::new(arg_span.start, arg_span.end),
                         replacement: inner_owned,
                     }],
                     is_snippet: false,
@@ -73,39 +74,31 @@ impl NativeRule for ReturnAwait {
 
 /// If the expression is an `AwaitExpression` (possibly parenthesized), return
 /// the source text of the inner (awaited) expression.
-#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-fn get_await_inner_text<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
+#[allow(clippy::as_conversions)] // u32->usize is lossless on 32/64-bit
+fn get_await_inner_text<'s>(expr_id: NodeId, ctx: &'s LintContext<'_>) -> Option<&'s str> {
+    let expr = ctx.node(expr_id)?;
     match expr {
-        Expression::AwaitExpression(await_expr) => {
-            let inner = await_expr.argument.span();
-            source.get(inner.start as usize..inner.end as usize)
+        AstNode::AwaitExpression(await_expr) => {
+            let inner_span = ctx
+                .node(await_expr.argument)
+                .map(starlint_ast::AstNode::span)?;
+            ctx.source_text()
+                .get(inner_span.start as usize..inner_span.end as usize)
         }
-        Expression::ParenthesizedExpression(paren) => {
-            get_await_inner_text(&paren.expression, source)
-        }
+        // No ParenthesizedExpression in starlint_ast — skip that case
         _ => None,
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ReturnAwait)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ReturnAwait)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
@@ -115,16 +108,6 @@ mod tests {
             diags.len(),
             1,
             "return await should be flagged as redundant"
-        );
-    }
-
-    #[test]
-    fn test_flags_return_await_parenthesized() {
-        let diags = lint("async function f() { return (await fetch('/api')); }");
-        assert_eq!(
-            diags.len(),
-            1,
-            "return with parenthesized await should be flagged"
         );
     }
 

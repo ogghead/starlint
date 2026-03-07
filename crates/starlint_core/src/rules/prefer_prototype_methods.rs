@@ -5,23 +5,20 @@
 //! `"".trim.call(str)` create a throwaway literal just to access a
 //! prototype method. Use `Array.prototype.forEach.call(obj, fn)` instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `.call()`/`.apply()` on methods accessed from empty array or string
 /// literals.
 #[derive(Debug)]
 pub struct PreferPrototypeMethods;
 
-impl NativeRule for PreferPrototypeMethods {
+impl LintRule for PreferPrototypeMethods {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-prototype-methods".to_owned(),
@@ -32,52 +29,57 @@ impl NativeRule for PreferPrototypeMethods {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Callee must be `<something>.call(...)` or `<something>.apply(...)`
-        let Expression::StaticMemberExpression(outer_member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(outer_member)) = ctx.node(call.callee) else {
             return;
         };
 
-        let method = outer_member.property.name.as_str();
+        let method = outer_member.property.as_str();
         if method != "call" && method != "apply" {
             return;
         }
 
         // The object of the outer `.call()`/`.apply()` must itself be a
         // member expression: `[].forEach` or `"".trim`
-        let Expression::StaticMemberExpression(inner_member) = &outer_member.object else {
+        let Some(AstNode::StaticMemberExpression(inner_member)) = ctx.node(outer_member.object)
+        else {
             return;
         };
 
         // The innermost object must be an empty array literal or empty string
         // literal.
+        let inner_obj = ctx.node(inner_member.object);
         let is_empty_array = matches!(
-            &inner_member.object,
-            Expression::ArrayExpression(arr) if arr.elements.is_empty()
+            inner_obj,
+            Some(AstNode::ArrayExpression(arr)) if arr.elements.is_empty()
         );
 
         let is_empty_string = matches!(
-            &inner_member.object,
-            Expression::StringLiteral(s) if s.value.is_empty()
+            inner_obj,
+            Some(AstNode::StringLiteral(s)) if s.value.is_empty()
         );
 
         if !is_empty_array && !is_empty_string {
             return;
         }
 
-        let prototype_method = inner_member.property.name.as_str();
+        let prototype_method = inner_member.property.as_str();
         let prototype_owner = if is_empty_array { "Array" } else { "String" };
 
         // Replace the literal (`[]` or `""`) with `Type.prototype`
-        let literal_span = inner_member.object.span();
+        let literal_span = inner_obj.map_or(
+            starlint_ast::types::Span::EMPTY,
+            starlint_ast::AstNode::span,
+        );
         let replacement = format!("{prototype_owner}.prototype");
 
         ctx.report(Diagnostic {
@@ -109,23 +111,13 @@ impl NativeRule for PreferPrototypeMethods {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferPrototypeMethods)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferPrototypeMethods)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

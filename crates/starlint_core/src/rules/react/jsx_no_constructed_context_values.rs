@@ -3,16 +3,13 @@
 //! Warn when a `value` prop on a Context Provider contains an inline
 //! object or array literal, causing unnecessary re-renders.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{
-    JSXAttributeName, JSXAttributeValue, JSXElementName, JSXExpression, JSXMemberExpressionObject,
-};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "react/jsx-no-constructed-context-values";
@@ -22,30 +19,14 @@ const RULE_NAME: &str = "react/jsx-no-constructed-context-values";
 #[derive(Debug)]
 pub struct JsxNoConstructedContextValues;
 
-/// Check if the JSX element name looks like a `.Provider` member expression.
-fn is_provider(name: &JSXElementName<'_>) -> bool {
-    if let JSXElementName::MemberExpression(member) = name {
-        if member.property.name.as_str() != "Provider" {
-            return false;
-        }
-        if let JSXMemberExpressionObject::IdentifierReference(_) = &member.object {
-            return true;
-        }
-    }
-    false
+/// Check if the JSX element name looks like a Provider.
+fn is_provider_name(name: &str) -> bool {
+    // Matches `Foo.Provider` (converted to just "Provider" via member expr)
+    // or names ending with "Provider" like `MyContextProvider`
+    name.ends_with("Provider") || name.contains(".Provider")
 }
 
-/// Check if the element name is an identifier ending with `Provider`.
-fn is_provider_identifier(name: &JSXElementName<'_>) -> bool {
-    match name {
-        JSXElementName::Identifier(ident) => ident.name.as_str().ends_with("Provider"),
-        JSXElementName::IdentifierReference(ident) => ident.name.as_str().ends_with("Provider"),
-        JSXElementName::MemberExpression(member) => member.property.name.as_str() == "Provider",
-        JSXElementName::NamespacedName(_) | JSXElementName::ThisExpression(_) => false,
-    }
-}
-
-impl NativeRule for JsxNoConstructedContextValues {
+impl LintRule for JsxNoConstructedContextValues {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -56,50 +37,57 @@ impl NativeRule for JsxNoConstructedContextValues {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
         // Check if this looks like a context provider
-        if !is_provider(&opening.name) && !is_provider_identifier(&opening.name) {
+        if !is_provider_name(&opening.name) {
             return;
         }
 
+        let attrs: Vec<NodeId> = opening.attributes.to_vec();
+
         // Look for the `value` attribute
-        for attr_item in &opening.attributes {
-            let oxc_ast::ast::JSXAttributeItem::Attribute(attr) = attr_item else {
+        for &attr_id in &attrs {
+            let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) else {
                 continue;
             };
-            let is_value = match &attr.name {
-                JSXAttributeName::Identifier(ident) => ident.name.as_str() == "value",
-                JSXAttributeName::NamespacedName(_) => false,
-            };
-            if !is_value {
+            if attr.name != "value" {
                 continue;
             }
 
-            if let Some(JSXAttributeValue::ExpressionContainer(container)) = &attr.value {
-                let is_constructed = matches!(
-                    &container.expression,
-                    JSXExpression::ObjectExpression(_)
-                        | JSXExpression::ArrayExpression(_)
-                        | JSXExpression::NewExpression(_)
-                );
-                if is_constructed {
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: "Context provider `value` contains an inline constructed value that will create a new reference on every render. Extract it to a variable or use `useMemo`".to_owned(),
-                        span: Span::new(attr.span.start, attr.span.end),
-                        severity: Severity::Warning,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
+            let attr_span = attr.span;
+
+            if let Some(value_id) = attr.value {
+                // Check if value is a JSXExpressionContainer containing an inline object/array/new
+                if let Some(AstNode::JSXExpressionContainer(container)) = ctx.node(value_id) {
+                    if let Some(expr_id) = container.expression {
+                        let is_constructed = matches!(
+                            ctx.node(expr_id),
+                            Some(
+                                AstNode::ObjectExpression(_)
+                                    | AstNode::ArrayExpression(_)
+                                    | AstNode::NewExpression(_)
+                            )
+                        );
+                        if is_constructed {
+                            ctx.report(Diagnostic {
+                                rule_name: RULE_NAME.to_owned(),
+                                message: "Context provider `value` contains an inline constructed value that will create a new reference on every render. Extract it to a variable or use `useMemo`".to_owned(),
+                                span: Span::new(attr_span.start, attr_span.end),
+                                severity: Severity::Warning,
+                                help: None,
+                                fix: None,
+                                labels: vec![],
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -108,22 +96,13 @@ impl NativeRule for JsxNoConstructedContextValues {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(JsxNoConstructedContextValues)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxNoConstructedContextValues)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

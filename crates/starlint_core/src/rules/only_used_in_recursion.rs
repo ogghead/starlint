@@ -8,21 +8,19 @@
 //! It uses source-text analysis to count how a parameter identifier is used
 //! inside the function body.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BindingPattern, CallExpression, Expression, FormalParameters, Statement};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags function parameters that are only used in recursive calls.
 #[derive(Debug)]
 pub struct OnlyUsedInRecursion;
 
-impl NativeRule for OnlyUsedInRecursion {
+impl LintRule for OnlyUsedInRecursion {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "only-used-in-recursion".to_owned(),
@@ -34,49 +32,52 @@ impl NativeRule for OnlyUsedInRecursion {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Function(func) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Function(func) = node else {
             return;
         };
 
         // Only check named function declarations.
-        let Some(func_id) = &func.id else {
+        let func_name = match func.id {
+            Some(id) => match ctx.node(id) {
+                Some(AstNode::BindingIdentifier(bi)) => bi.name.clone(),
+                _ => return,
+            },
+            None => return,
+        };
+
+        let Some(body_id) = func.body else {
             return;
         };
-        let func_name = func_id.name.as_str();
-
-        let Some(body) = &func.body else {
+        let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
             return;
         };
+        let body_span = body.span;
+        let body_stmt_ids: Vec<NodeId> = body.statements.to_vec();
 
-        let params = &func.params;
-        let param_info = collect_param_info(params);
+        let param_info = collect_param_info(&func.params, ctx);
         if param_info.is_empty() {
             return;
         }
 
-        // Collect all recursive calls to the same function name.
-        let mut recursive_calls: Vec<&CallExpression<'_>> = Vec::new();
-        collect_recursive_calls(&body.statements, func_name, &mut recursive_calls);
+        // Collect all recursive call argument spans from the function body.
+        let mut recursive_call_args: Vec<Box<[Span]>> = Vec::new();
+        collect_recursive_call_args(&body_stmt_ids, &func_name, &mut recursive_call_args, ctx);
 
-        if recursive_calls.is_empty() {
+        if recursive_call_args.is_empty() {
             return;
         }
 
         // For each parameter, check if it is ONLY used as a same-position
         // argument in recursive calls and nowhere else.
-        //
-        // Collect flagged params first, then report — avoids borrowing `ctx`
-        // immutably (via `source_text()`) and mutably (via `report_warning()`)
-        // at the same time.
         let flagged_params = {
             let source = ctx.source_text();
-            let body_start = usize::try_from(body.span.start).unwrap_or(0);
-            let body_end = usize::try_from(body.span.end).unwrap_or(source.len());
+            let body_start = usize::try_from(body_span.start).unwrap_or(0);
+            let body_end = usize::try_from(body_span.end).unwrap_or(source.len());
             let body_source = source.get(body_start..body_end).unwrap_or("");
 
             let mut flagged: Vec<(String, Span)> = Vec::new();
@@ -88,8 +89,12 @@ impl NativeRule for OnlyUsedInRecursion {
                     continue;
                 }
 
-                let recursive_uses =
-                    count_recursive_pass_through(&recursive_calls, param_name, *param_idx, source);
+                let recursive_uses = count_recursive_pass_through(
+                    &recursive_call_args,
+                    param_name,
+                    *param_idx,
+                    source,
+                );
 
                 if recursive_uses > 0 && recursive_uses == total_uses {
                     flagged.push((param_name.clone(), *param_span));
@@ -115,61 +120,62 @@ impl NativeRule for OnlyUsedInRecursion {
 }
 
 /// Extract (index, name, span) for each simple binding-identifier parameter.
-fn collect_param_info(params: &FormalParameters<'_>) -> Vec<(usize, String, Span)> {
+fn collect_param_info(params: &[NodeId], ctx: &LintContext<'_>) -> Vec<(usize, String, Span)> {
     let mut result = Vec::new();
-    for (idx, param) in params.items.iter().enumerate() {
-        if let BindingPattern::BindingIdentifier(id) = &param.pattern {
-            result.push((
-                idx,
-                id.name.to_string(),
-                Span::new(id.span.start, id.span.end),
-            ));
+    for (idx, param_id) in params.iter().enumerate() {
+        if let Some(AstNode::BindingIdentifier(id)) = ctx.node(*param_id) {
+            result.push((idx, id.name.clone(), Span::new(id.span.start, id.span.end)));
         }
     }
     result
 }
 
-/// Recursively walk statements and collect `CallExpression` nodes whose
-/// callee is a plain identifier matching `func_name`.
-fn collect_recursive_calls<'a>(
-    stmts: &'a [Statement<'a>],
+/// Recursively walk statements and collect argument spans of recursive calls
+/// whose callee matches `func_name`.
+fn collect_recursive_call_args(
+    stmt_ids: &[NodeId],
     func_name: &str,
-    out: &mut Vec<&'a CallExpression<'a>>,
+    out: &mut Vec<Box<[Span]>>,
+    ctx: &LintContext<'_>,
 ) {
-    for stmt in stmts {
-        collect_recursive_calls_in_statement(stmt, func_name, out);
+    for stmt_id in stmt_ids {
+        collect_recursive_calls_in_statement(*stmt_id, func_name, out, ctx);
     }
 }
 
 /// Walk a single statement for recursive calls.
-fn collect_recursive_calls_in_statement<'a>(
-    stmt: &'a Statement<'a>,
+fn collect_recursive_calls_in_statement(
+    stmt_id: NodeId,
     func_name: &str,
-    out: &mut Vec<&'a CallExpression<'a>>,
+    out: &mut Vec<Box<[Span]>>,
+    ctx: &LintContext<'_>,
 ) {
-    match stmt {
-        Statement::ExpressionStatement(expr_stmt) => {
-            collect_recursive_calls_in_expr(&expr_stmt.expression, func_name, out);
+    match ctx.node(stmt_id) {
+        Some(AstNode::ExpressionStatement(expr_stmt)) => {
+            collect_recursive_calls_in_expr(expr_stmt.expression, func_name, out, ctx);
         }
-        Statement::ReturnStatement(ret) => {
-            if let Some(arg) = &ret.argument {
-                collect_recursive_calls_in_expr(arg, func_name, out);
+        Some(AstNode::ReturnStatement(ret)) => {
+            if let Some(arg) = ret.argument {
+                collect_recursive_calls_in_expr(arg, func_name, out, ctx);
             }
         }
-        Statement::BlockStatement(block) => {
-            collect_recursive_calls(&block.body, func_name, out);
+        Some(AstNode::BlockStatement(block)) => {
+            let body_ids: Vec<NodeId> = block.body.to_vec();
+            collect_recursive_call_args(&body_ids, func_name, out, ctx);
         }
-        Statement::IfStatement(if_stmt) => {
-            collect_recursive_calls_in_expr(&if_stmt.test, func_name, out);
-            collect_recursive_calls_in_statement(&if_stmt.consequent, func_name, out);
-            if let Some(alt) = &if_stmt.alternate {
-                collect_recursive_calls_in_statement(alt, func_name, out);
+        Some(AstNode::IfStatement(if_stmt)) => {
+            collect_recursive_calls_in_expr(if_stmt.test, func_name, out, ctx);
+            collect_recursive_calls_in_statement(if_stmt.consequent, func_name, out, ctx);
+            if let Some(alt) = if_stmt.alternate {
+                collect_recursive_calls_in_statement(alt, func_name, out, ctx);
             }
         }
-        Statement::VariableDeclaration(decl) => {
-            for declarator in &decl.declarations {
-                if let Some(init) = &declarator.init {
-                    collect_recursive_calls_in_expr(init, func_name, out);
+        Some(AstNode::VariableDeclaration(decl)) => {
+            for decl_id in &decl.declarations {
+                if let Some(AstNode::VariableDeclarator(declarator)) = ctx.node(*decl_id) {
+                    if let Some(init) = declarator.init {
+                        collect_recursive_calls_in_expr(init, func_name, out, ctx);
+                    }
                 }
             }
         }
@@ -178,34 +184,45 @@ fn collect_recursive_calls_in_statement<'a>(
 }
 
 /// Walk an expression tree for call expressions targeting `func_name`.
-fn collect_recursive_calls_in_expr<'a>(
-    expr: &'a Expression<'a>,
+/// Instead of collecting references to `CallExpression` nodes, we collect
+/// the argument spans as owned data.
+fn collect_recursive_calls_in_expr(
+    expr_id: NodeId,
     func_name: &str,
-    out: &mut Vec<&'a CallExpression<'a>>,
+    out: &mut Vec<Box<[Span]>>,
+    ctx: &LintContext<'_>,
 ) {
-    match expr {
-        Expression::CallExpression(call) => {
-            if let Expression::Identifier(ident) = &call.callee {
+    match ctx.node(expr_id) {
+        Some(AstNode::CallExpression(call)) => {
+            if let Some(AstNode::IdentifierReference(ident)) = ctx.node(call.callee) {
                 if ident.name.as_str() == func_name {
-                    out.push(call);
+                    // Collect argument spans
+                    let arg_spans: Vec<Span> = call
+                        .arguments
+                        .iter()
+                        .map(|arg_id| {
+                            ctx.node(*arg_id).map_or(Span::new(0, 0), |n| {
+                                let s = n.span();
+                                Span::new(s.start, s.end)
+                            })
+                        })
+                        .collect();
+                    out.push(arg_spans.into_boxed_slice());
                 }
             }
         }
-        Expression::BinaryExpression(bin) => {
-            collect_recursive_calls_in_expr(&bin.left, func_name, out);
-            collect_recursive_calls_in_expr(&bin.right, func_name, out);
+        Some(AstNode::BinaryExpression(bin)) => {
+            collect_recursive_calls_in_expr(bin.left, func_name, out, ctx);
+            collect_recursive_calls_in_expr(bin.right, func_name, out, ctx);
         }
-        Expression::ConditionalExpression(cond) => {
-            collect_recursive_calls_in_expr(&cond.test, func_name, out);
-            collect_recursive_calls_in_expr(&cond.consequent, func_name, out);
-            collect_recursive_calls_in_expr(&cond.alternate, func_name, out);
+        Some(AstNode::ConditionalExpression(cond)) => {
+            collect_recursive_calls_in_expr(cond.test, func_name, out, ctx);
+            collect_recursive_calls_in_expr(cond.consequent, func_name, out, ctx);
+            collect_recursive_calls_in_expr(cond.alternate, func_name, out, ctx);
         }
-        Expression::LogicalExpression(logic) => {
-            collect_recursive_calls_in_expr(&logic.left, func_name, out);
-            collect_recursive_calls_in_expr(&logic.right, func_name, out);
-        }
-        Expression::ParenthesizedExpression(paren) => {
-            collect_recursive_calls_in_expr(&paren.expression, func_name, out);
+        Some(AstNode::LogicalExpression(logic)) => {
+            collect_recursive_calls_in_expr(logic.left, func_name, out, ctx);
+            collect_recursive_calls_in_expr(logic.right, func_name, out, ctx);
         }
         _ => {}
     }
@@ -256,16 +273,16 @@ const fn is_ident_char(b: u8) -> bool {
 /// Count how many recursive calls pass `param_name` at position `param_idx`
 /// as a plain identifier argument.
 fn count_recursive_pass_through(
-    calls: &[&CallExpression<'_>],
+    calls: &[Box<[Span]>],
     param_name: &str,
     param_idx: usize,
     source: &str,
 ) -> u32 {
     let mut count: u32 = 0;
-    for call in calls {
-        if let Some(arg) = call.arguments.get(param_idx) {
-            let arg_start = usize::try_from(arg.span().start).unwrap_or(0);
-            let arg_end = usize::try_from(arg.span().end).unwrap_or(0);
+    for arg_spans in calls {
+        if let Some(arg_span) = arg_spans.get(param_idx) {
+            let arg_start = usize::try_from(arg_span.start).unwrap_or(0);
+            let arg_end = usize::try_from(arg_span.end).unwrap_or(0);
             let arg_text = source.get(arg_start..arg_end).unwrap_or("");
             if arg_text == param_name {
                 count = count.saturating_add(1);
@@ -277,23 +294,13 @@ fn count_recursive_pass_through(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(OnlyUsedInRecursion)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(OnlyUsedInRecursion)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

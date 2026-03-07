@@ -4,20 +4,20 @@
 //! `.append()` accepts multiple arguments, accepts strings, and does not
 //! return the appended node — making it more flexible for common use cases.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::or_fun_call)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `appendChild()` calls, suggesting `.append()` instead.
 #[derive(Debug)]
 pub struct PreferDomNodeAppend;
 
-impl NativeRule for PreferDomNodeAppend {
+impl LintRule for PreferDomNodeAppend {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-dom-node-append".to_owned(),
@@ -27,25 +27,41 @@ impl NativeRule for PreferDomNodeAppend {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    #[allow(
+        clippy::as_conversions,
+        clippy::cast_possible_truncation,
+        clippy::map_unwrap_or
+    )]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Callee must be a static member expression like `parent.appendChild(...)`
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
-        if member.property.name.as_str() != "appendChild" {
+        if member.property.as_str() != "appendChild" {
             return;
         }
 
-        let prop_span = Span::new(member.property.span.start, member.property.span.end);
+        // Compute property span from source text
+        let source = ctx.source_text();
+        let call_text = source
+            .get(call.span.start as usize..call.span.end as usize)
+            .unwrap_or("");
+        let prop_span = call_text.find("appendChild").map_or(
+            Span::new(call.span.start, call.span.end),
+            |offset| {
+                let start = call.span.start.saturating_add(offset as u32);
+                Span::new(start, start.saturating_add(12)) // "appendChild".len() == 12
+            },
+        );
         ctx.report(Diagnostic {
             rule_name: "prefer-dom-node-append".to_owned(),
             message: "Prefer `Node.append()` over `Node.appendChild()`".to_owned(),
@@ -68,23 +84,13 @@ impl NativeRule for PreferDomNodeAppend {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferDomNodeAppend)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferDomNodeAppend)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

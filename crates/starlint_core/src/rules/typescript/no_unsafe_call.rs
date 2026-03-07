@@ -7,20 +7,19 @@
 //! Simplified syntax-only version — full checking requires type information.
 //! This rule detects explicit `(expr as any)(...)` patterns.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, TSType};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags call expressions where the callee is cast to `any`.
 #[derive(Debug)]
 pub struct NoUnsafeCall;
 
-impl NativeRule for NoUnsafeCall {
+impl LintRule for NoUnsafeCall {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/no-unsafe-call".to_owned(),
@@ -30,16 +29,16 @@ impl NativeRule for NoUnsafeCall {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        if is_as_any_callee(&call.callee) {
+        if is_as_any_callee(call.callee, ctx) {
             ctx.report(Diagnostic {
                 rule_name: "typescript/no-unsafe-call".to_owned(),
                 message: "Unsafe call — calling an `as any` expression bypasses argument and return type checking".to_owned(),
@@ -53,37 +52,30 @@ impl NativeRule for NoUnsafeCall {
     }
 }
 
-/// Check whether a callee expression is an `as any` cast, unwrapping
-/// parenthesized expressions.
-fn is_as_any_callee(expr: &Expression<'_>) -> bool {
-    match expr {
-        Expression::TSAsExpression(as_expr) => {
-            matches!(&as_expr.type_annotation, TSType::TSAnyKeyword(_))
-        }
-        Expression::ParenthesizedExpression(paren) => is_as_any_callee(&paren.expression),
-        _ => false,
-    }
+/// Check whether a callee expression is an `as any` cast.
+/// Uses source text heuristic. No `ParenthesizedExpression` exists in
+/// `starlint_ast` (parens are transparent in the AST).
+fn is_as_any_callee(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::TSAsExpression(as_expr)) = ctx.node(node_id) else {
+        return false;
+    };
+    let source = ctx.source_text();
+    let start = usize::try_from(as_expr.span.start).unwrap_or(0);
+    let end = usize::try_from(as_expr.span.end).unwrap_or(0);
+    source
+        .get(start..end)
+        .is_some_and(|text| text.trim_end().ends_with("as any"))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafeCall)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeCall)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

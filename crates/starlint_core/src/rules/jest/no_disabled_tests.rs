@@ -2,16 +2,13 @@
 //!
 //! Warn when `xdescribe`, `xit`, `xtest`, `test.skip`, `it.skip`, `describe.skip` are used.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/no-disabled-tests";
@@ -26,7 +23,7 @@ const SKIP_BASES: &[&str] = &["describe", "it", "test"];
 #[derive(Debug)]
 pub struct NoDisabledTests;
 
-impl NativeRule for NoDisabledTests {
+impl LintRule for NoDisabledTests {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -36,18 +33,20 @@ impl NativeRule for NoDisabledTests {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        match &call.callee {
+        match ctx.node(call.callee) {
             // xdescribe(...), xit(...), xtest(...)
-            Expression::Identifier(id) if DISABLED_IDENTIFIERS.contains(&id.name.as_str()) => {
+            Some(AstNode::IdentifierReference(id))
+                if DISABLED_IDENTIFIERS.contains(&id.name.as_str()) =>
+            {
                 let replacement = match id.name.as_str() {
                     "xdescribe" => "describe",
                     "xit" => "it",
@@ -55,15 +54,15 @@ impl NativeRule for NoDisabledTests {
                     _ => return,
                 };
                 let id_span = Span::new(id.span.start, id.span.end);
+                let id_name = id.name.clone();
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: format!(
-                        "Unexpected disabled test: `{}()` — remove or re-enable",
-                        id.name
+                        "Unexpected disabled test: `{id_name}()` — remove or re-enable"
                     ),
                     span: Span::new(call.span.start, call.span.end),
                     severity: Severity::Warning,
-                    help: Some(format!("Replace `{}` with `{replacement}`", id.name)),
+                    help: Some(format!("Replace `{id_name}` with `{replacement}`")),
                     fix: Some(Fix {
                         kind: FixKind::SafeFix,
                         message: format!("Replace with `{replacement}`"),
@@ -77,20 +76,22 @@ impl NativeRule for NoDisabledTests {
                 });
             }
             // describe.skip(...), it.skip(...), test.skip(...)
-            Expression::StaticMemberExpression(member) => {
-                if member.property.name.as_str() == "skip" {
+            Some(AstNode::StaticMemberExpression(member)) => {
+                if member.property.as_str() == "skip" {
                     let is_test_base = matches!(
-                        &member.object,
-                        Expression::Identifier(id) if SKIP_BASES.contains(&id.name.as_str())
+                        ctx.node(member.object),
+                        Some(AstNode::IdentifierReference(id)) if SKIP_BASES.contains(&id.name.as_str())
                     );
                     if is_test_base {
-                        let base_name = if let Expression::Identifier(id) = &member.object {
-                            id.name.as_str()
+                        let base_name = if let Some(AstNode::IdentifierReference(id)) =
+                            ctx.node(member.object)
+                        {
+                            id.name.as_str().to_owned()
                         } else {
-                            "test"
+                            "test".to_owned()
                         };
                         // Replace `test.skip` with `test` (remove `.skip`)
-                        let callee_span = Span::new(member.span().start, member.span().end);
+                        let callee_span = Span::new(member.span.start, member.span.end);
                         ctx.report(Diagnostic {
                             rule_name: RULE_NAME.to_owned(),
                             message: format!(
@@ -104,7 +105,7 @@ impl NativeRule for NoDisabledTests {
                                 message: format!("Replace `{base_name}.skip` with `{base_name}`"),
                                 edits: vec![Edit {
                                     span: callee_span,
-                                    replacement: base_name.to_owned(),
+                                    replacement: base_name,
                                 }],
                                 is_snippet: false,
                             }),
@@ -120,22 +121,13 @@ impl NativeRule for NoDisabledTests {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDisabledTests)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDisabledTests)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

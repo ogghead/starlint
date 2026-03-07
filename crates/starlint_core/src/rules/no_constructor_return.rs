@@ -4,20 +4,20 @@
 //! `return <value>` — it interferes with the normal `new` operator behavior.
 //! A bare `return;` is acceptable for early exit.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{MethodDefinitionKind, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::MethodDefinitionKind;
+use starlint_ast::types::NodeId;
 
 /// Flags `return <value>` statements inside class constructors.
 #[derive(Debug)]
 pub struct NoConstructorReturn;
 
-impl NativeRule for NoConstructorReturn {
+impl LintRule for NoConstructorReturn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-constructor-return".to_owned(),
@@ -27,12 +27,12 @@ impl NativeRule for NoConstructorReturn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::MethodDefinition])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::MethodDefinition])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::MethodDefinition(method) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::MethodDefinition(method) = node else {
             return;
         };
 
@@ -40,37 +40,47 @@ impl NativeRule for NoConstructorReturn {
             return;
         }
 
-        let Some(body) = &method.value.body else {
+        // method.value is NodeId -> Function -> body is Option<NodeId> -> FunctionBody
+        let func_node = ctx.node(method.value);
+        let Some(AstNode::Function(func)) = func_node else {
+            return;
+        };
+        let Some(body_id) = func.body else {
+            return;
+        };
+        let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) else {
             return;
         };
 
-        check_statements_for_value_return(&body.statements, ctx);
+        let stmt_ids: Vec<NodeId> = body.statements.to_vec();
+        check_statements_for_value_return(&stmt_ids, ctx);
     }
 }
 
 /// Walk statements looking for return statements that have a value.
-fn check_statements_for_value_return(stmts: &[Statement<'_>], ctx: &mut NativeLintContext<'_>) {
-    for stmt in stmts {
-        check_statement_for_value_return(stmt, ctx);
+fn check_statements_for_value_return(stmt_ids: &[NodeId], ctx: &mut LintContext<'_>) {
+    for stmt_id in stmt_ids {
+        check_statement_for_value_return(*stmt_id, ctx);
     }
 }
 
 /// Check a single statement for `return <value>`.
-fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintContext<'_>) {
-    match stmt {
-        Statement::ReturnStatement(ret) => {
+fn check_statement_for_value_return(stmt_id: NodeId, ctx: &mut LintContext<'_>) {
+    match ctx.node(stmt_id) {
+        Some(AstNode::ReturnStatement(ret)) => {
             if ret.argument.is_some() {
+                let ret_span = ret.span;
                 ctx.report(Diagnostic {
                     rule_name: "no-constructor-return".to_owned(),
                     message: "Unexpected return statement in constructor".to_owned(),
-                    span: Span::new(ret.span.start, ret.span.end),
+                    span: Span::new(ret_span.start, ret_span.end),
                     severity: Severity::Error,
                     help: Some("Remove the return value or use a bare `return;`".to_owned()),
                     fix: Some(Fix {
                         kind: FixKind::SafeFix,
                         message: "Remove the return value".to_owned(),
                         edits: vec![Edit {
-                            span: Span::new(ret.span.start, ret.span.end),
+                            span: Span::new(ret_span.start, ret_span.end),
                             replacement: "return;".to_owned(),
                         }],
                         is_snippet: false,
@@ -79,12 +89,15 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
                 });
             }
         }
-        Statement::BlockStatement(block) => {
-            check_statements_for_value_return(&block.body, ctx);
+        Some(AstNode::BlockStatement(block)) => {
+            let body_ids: Vec<NodeId> = block.body.to_vec();
+            check_statements_for_value_return(&body_ids, ctx);
         }
-        Statement::IfStatement(if_stmt) => {
-            check_statement_for_value_return(&if_stmt.consequent, ctx);
-            if let Some(alt) = &if_stmt.alternate {
+        Some(AstNode::IfStatement(if_stmt)) => {
+            let consequent = if_stmt.consequent;
+            let alternate = if_stmt.alternate;
+            check_statement_for_value_return(consequent, ctx);
+            if let Some(alt) = alternate {
                 check_statement_for_value_return(alt, ctx);
             }
         }
@@ -94,22 +107,13 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConstructorReturn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoConstructorReturn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

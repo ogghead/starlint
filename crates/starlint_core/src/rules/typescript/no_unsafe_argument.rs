@@ -8,14 +8,13 @@
 //! This AST-based rule only detects `as any` expressions passed directly as
 //! function call arguments (e.g. `foo(x as any)`).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Argument, TSType};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/no-unsafe-argument";
@@ -24,7 +23,7 @@ const RULE_NAME: &str = "typescript/no-unsafe-argument";
 #[derive(Debug)]
 pub struct NoUnsafeArgument;
 
-impl NativeRule for NoUnsafeArgument {
+impl LintRule for NoUnsafeArgument {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -34,24 +33,27 @@ impl NativeRule for NoUnsafeArgument {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        for arg in &call.arguments {
-            if is_as_any_argument(arg) {
-                let arg_span = argument_span(arg);
+        for arg_id in &call.arguments {
+            if is_as_any_argument(*arg_id, ctx) {
+                let arg_span = ctx.node(*arg_id).map_or(
+                    starlint_ast::types::Span::EMPTY,
+                    starlint_ast::AstNode::span,
+                );
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: "Unsafe `as any` argument — this bypasses type checking for \
                      the corresponding parameter"
                         .to_owned(),
-                    span: arg_span,
+                    span: Span::new(arg_span.start, arg_span.end),
                     severity: Severity::Warning,
                     help: None,
                     fix: None,
@@ -63,39 +65,29 @@ impl NativeRule for NoUnsafeArgument {
 }
 
 /// Check if a function argument is a `TSAsExpression` casting to `any`.
-fn is_as_any_argument(arg: &Argument<'_>) -> bool {
-    let Argument::TSAsExpression(ts_as) = arg else {
+/// `TSAsExpressionNode` has no `type_annotation` — use source text heuristic.
+fn is_as_any_argument(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let Some(AstNode::TSAsExpression(ts_as)) = ctx.node(node_id) else {
         return false;
     };
-    matches!(ts_as.type_annotation, TSType::TSAnyKeyword(_))
-}
-
-/// Extract the span from an `Argument`.
-fn argument_span(arg: &Argument<'_>) -> Span {
-    use oxc_span::GetSpan;
-    let span = arg.span();
-    Span::new(span.start, span.end)
+    // Check if the source text of the as-expression ends with "as any"
+    let source = ctx.source_text();
+    let start = usize::try_from(ts_as.span.start).unwrap_or(0);
+    let end = usize::try_from(ts_as.span.end).unwrap_or(0);
+    source
+        .get(start..end)
+        .is_some_and(|text| text.trim_end().ends_with("as any"))
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUnsafeArgument)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeArgument)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,20 +4,20 @@
 //! Uses semantic analysis to detect when the same name is bound
 //! multiple times in a single scope.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags variables that are redeclared in the same scope.
 #[derive(Debug)]
 pub struct NoRedeclare;
 
-impl NativeRule for NoRedeclare {
+impl LintRule for NoRedeclare {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-redeclare".to_owned(),
@@ -31,12 +31,12 @@ impl NativeRule for NoRedeclare {
         true
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclaration(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclaration(decl) = node else {
             return;
         };
 
@@ -46,11 +46,22 @@ impl NativeRule for NoRedeclare {
 
         let scoping = semantic.scoping();
 
-        for declarator in &decl.declarations {
-            let binding_ids = declarator.id.get_binding_identifiers();
+        for &declarator_id in &*decl.declarations {
+            let pattern_id = match ctx.node(declarator_id) {
+                Some(AstNode::VariableDeclarator(d)) => d.id,
+                _ => continue,
+            };
 
-            for binding in &binding_ids {
-                let Some(symbol_id) = binding.symbol_id.get() else {
+            // Collect owned binding data to avoid borrow conflicts with ctx.report().
+            let binding_data: Vec<(String, starlint_ast::types::Span)> = ctx
+                .tree()
+                .get_binding_identifiers(pattern_id)
+                .iter()
+                .map(|(_, b)| (b.name.clone(), b.span))
+                .collect();
+
+            for (name, span) in &binding_data {
+                let Some(symbol_id) = ctx.resolve_symbol_id(*span) else {
                     continue;
                 };
 
@@ -60,7 +71,7 @@ impl NativeRule for NoRedeclare {
                     // Only report on the redeclaration, not the original
                     // The original declaration's span will differ from the redecl spans
                     for respan in redeclarations {
-                        let new_name = format!("{}_2", binding.name);
+                        let new_name = format!("{name}_2");
                         let respan_sdk = Span::new(respan.span.start, respan.span.end);
                         let fix = FixBuilder::new(
                             format!("Rename to `{new_name}`"),
@@ -71,7 +82,7 @@ impl NativeRule for NoRedeclare {
 
                         ctx.report(Diagnostic {
                             rule_name: "no-redeclare".to_owned(),
-                            message: format!("'{}' is already defined", binding.name),
+                            message: format!("'{name}' is already defined"),
                             span: respan_sdk,
                             severity: Severity::Error,
                             help: Some(format!(
@@ -89,30 +100,13 @@ impl NativeRule for NoRedeclare {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::{build_semantic, parse_file};
-    use crate::traversal::traverse_and_lint_with_semantic;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let program = allocator.alloc(parsed.program);
-            let semantic = build_semantic(program);
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoRedeclare)];
-            traverse_and_lint_with_semantic(
-                program,
-                &rules,
-                source,
-                Path::new("test.js"),
-                Some(&semantic),
-            )
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRedeclare)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

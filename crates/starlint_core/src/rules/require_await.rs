@@ -33,13 +33,10 @@ impl LintRule for RequireAwait {
     fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         match node {
             AstNode::Function(func) if func.is_async => {
-                let resolved_body = func
-                    .body
-                    .and_then(|body_id| ctx.node(body_id))
-                    .map(|n| {
-                        let s = n.span();
-                        starlint_ast::types::Span::new(s.start, s.end)
-                    });
+                let resolved_body = func.body.and_then(|body_id| ctx.node(body_id)).map(|n| {
+                    let s = n.span();
+                    starlint_ast::types::Span::new(s.start, s.end)
+                });
                 let Some(bspan) = resolved_body else {
                     return;
                 };

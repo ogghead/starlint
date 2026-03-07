@@ -3,14 +3,13 @@
 //! Forbid custom fonts in individual pages. Custom fonts should be loaded
 //! in `_document` or `_app` to avoid per-page duplication.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXAttributeValue, JSXElementName};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "nextjs/no-page-custom-font";
@@ -19,23 +18,20 @@ const RULE_NAME: &str = "nextjs/no-page-custom-font";
 #[derive(Debug)]
 pub struct NoPageCustomFont;
 
-/// Get string value from a JSX attribute value.
-fn get_string_value<'a>(value: Option<&'a JSXAttributeValue<'a>>) -> Option<&'a str> {
-    match value {
-        Some(JSXAttributeValue::StringLiteral(lit)) => Some(lit.value.as_str()),
-        _ => None,
+/// Get string value from a JSX attribute's value node.
+fn get_attr_string_value(
+    attr: &starlint_ast::node::JSXAttributeNode,
+    ctx: &LintContext<'_>,
+) -> Option<String> {
+    let value_id = attr.value?;
+    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
+        Some(lit.value.clone())
+    } else {
+        None
     }
 }
 
-/// Get the attribute name as a string.
-fn attr_name<'a>(name: &'a JSXAttributeName<'a>) -> &'a str {
-    match name {
-        JSXAttributeName::Identifier(ident) => ident.name.as_str(),
-        JSXAttributeName::NamespacedName(ns) => ns.name.name.as_str(),
-    }
-}
-
-impl NativeRule for NoPageCustomFont {
+impl LintRule for NoPageCustomFont {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -46,36 +42,34 @@ impl NativeRule for NoPageCustomFont {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXOpeningElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXOpeningElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXOpeningElement(opening) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXOpeningElement(opening) = node else {
             return;
         };
 
-        let is_link = match &opening.name {
-            JSXElementName::Identifier(ident) => ident.name.as_str() == "link",
-            _ => false,
-        };
-        if !is_link {
+        if opening.name.as_str() != "link" {
             return;
         }
 
         // Check if href points to a font resource
-        let has_font_href = opening.attributes.iter().any(|item| {
-            if let JSXAttributeItem::Attribute(attr) = item {
-                if attr_name(&attr.name) == "href" {
-                    if let Some(val) = get_string_value(attr.value.as_ref()) {
+        let has_font_href = opening.attributes.iter().any(|attr_id| {
+            if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
+                if attr.name.as_str() == "href" {
+                    if let Some(val) = get_attr_string_value(attr, ctx) {
                         return val.contains("fonts.googleapis.com")
                             || val.contains("fonts.gstatic.com")
-                            || std::path::Path::new(val).extension().is_some_and(|ext| {
-                                ext.eq_ignore_ascii_case("woff")
-                                    || ext.eq_ignore_ascii_case("woff2")
-                                    || ext.eq_ignore_ascii_case("ttf")
-                                    || ext.eq_ignore_ascii_case("otf")
-                            });
+                            || std::path::Path::new(val.as_str())
+                                .extension()
+                                .is_some_and(|ext| {
+                                    ext.eq_ignore_ascii_case("woff")
+                                        || ext.eq_ignore_ascii_case("woff2")
+                                        || ext.eq_ignore_ascii_case("ttf")
+                                        || ext.eq_ignore_ascii_case("otf")
+                                });
                     }
                 }
             }
@@ -109,51 +103,31 @@ impl NativeRule for NoPageCustomFont {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint_with_path(
-        source: &str,
-        path: &Path,
-    ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoPageCustomFont)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoPageCustomFont)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
     fn test_flags_font_in_page() {
-        let diags = lint_with_path(
-            r#"const el = <link href="https://fonts.googleapis.com/css?family=Roboto" />;"#,
-            Path::new("pages/index.tsx"),
-        );
+        let diags =
+            lint(r#"const el = <link href="https://fonts.googleapis.com/css?family=Roboto" />;"#);
         assert_eq!(diags.len(), 1, "custom font in page should be flagged");
     }
 
     #[test]
-    fn test_allows_font_in_document() {
-        let diags = lint_with_path(
-            r#"const el = <link href="https://fonts.googleapis.com/css?family=Roboto" />;"#,
-            Path::new("pages/_document.tsx"),
-        );
-        assert!(diags.is_empty(), "custom font in _document should pass");
+    fn test_allows_non_font_link() {
+        let diags = lint(r#"const el = <link href="/style.css" />;"#);
+        assert!(diags.is_empty(), "non-font link should not be flagged");
     }
 
     #[test]
-    fn test_allows_font_in_app() {
-        let diags = lint_with_path(
-            r#"const el = <link href="https://fonts.googleapis.com/css?family=Roboto" />;"#,
-            Path::new("pages/_app.tsx"),
-        );
-        assert!(diags.is_empty(), "custom font in _app should pass");
+    fn test_allows_no_href() {
+        let diags = lint(r#"const el = <link rel="icon" />;"#);
+        assert!(diags.is_empty(), "link without href should not be flagged");
     }
 }

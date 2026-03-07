@@ -4,21 +4,20 @@
 //! clamping. A conditional like `a > b ? a : b` is equivalent to
 //! `Math.max(a, b)` and the built-in call is clearer and less error-prone.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags ternary expressions that can be replaced with `Math.min()` / `Math.max()`.
 #[derive(Debug)]
 pub struct PreferMathMinMax;
 
-impl NativeRule for PreferMathMinMax {
+impl LintRule for PreferMathMinMax {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "prefer-math-min-max".to_owned(),
@@ -28,35 +27,39 @@ impl NativeRule for PreferMathMinMax {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ConditionalExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ConditionalExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ConditionalExpression(cond) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ConditionalExpression(cond) = node else {
             return;
         };
 
         // The test must be a binary comparison expression
-        let Expression::BinaryExpression(binary) = &cond.test else {
+        let Some(AstNode::BinaryExpression(binary)) = ctx.node(cond.test) else {
             return;
         };
+
+        let source = ctx.source_text();
 
         // Only care about comparison operators
         let suggestion = match binary.operator {
             BinaryOperator::GreaterThan | BinaryOperator::GreaterEqualThan => classify_greater(
-                &binary.left,
-                &binary.right,
-                &cond.consequent,
-                &cond.alternate,
-                ctx.source_text(),
+                ctx,
+                binary.left,
+                binary.right,
+                cond.consequent,
+                cond.alternate,
+                source,
             ),
             BinaryOperator::LessThan | BinaryOperator::LessEqualThan => classify_less(
-                &binary.left,
-                &binary.right,
-                &cond.consequent,
-                &cond.alternate,
-                ctx.source_text(),
+                ctx,
+                binary.left,
+                binary.right,
+                cond.consequent,
+                cond.alternate,
+                source,
             ),
             _ => None,
         };
@@ -84,9 +87,10 @@ impl NativeRule for PreferMathMinMax {
     }
 }
 
-/// Extract a slice of source text for a given expression span.
-fn span_text<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
-    let sp = expr.span();
+/// Extract a slice of source text for a given node ID.
+fn span_text_by_id<'s>(ctx: &LintContext<'_>, id: NodeId, source: &'s str) -> Option<&'s str> {
+    let node = ctx.node(id)?;
+    let sp = node.span();
     let start = usize::try_from(sp.start).ok()?;
     let end = usize::try_from(sp.end).ok()?;
     source.get(start..end)
@@ -95,18 +99,18 @@ fn span_text<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
 /// For `a > b` (or `a >= b`):
 ///   consequent=a, alternate=b  =>  Math.max
 ///   consequent=b, alternate=a  =>  Math.min
-/// Returns (`func_name`, `first_arg_text`, `second_arg_text`).
 fn classify_greater<'s>(
-    left: &Expression<'_>,
-    right: &Expression<'_>,
-    consequent: &Expression<'_>,
-    alternate: &Expression<'_>,
+    ctx: &LintContext<'_>,
+    left: NodeId,
+    right: NodeId,
+    consequent: NodeId,
+    alternate: NodeId,
     source: &'s str,
 ) -> Option<(&'static str, &'s str, &'s str)> {
-    let left_text = span_text(left, source)?;
-    let right_text = span_text(right, source)?;
-    let cons_text = span_text(consequent, source)?;
-    let alt_text = span_text(alternate, source)?;
+    let left_text = span_text_by_id(ctx, left, source)?;
+    let right_text = span_text_by_id(ctx, right, source)?;
+    let cons_text = span_text_by_id(ctx, consequent, source)?;
+    let alt_text = span_text_by_id(ctx, alternate, source)?;
 
     if left_text == cons_text && right_text == alt_text {
         Some(("Math.max", left_text, right_text))
@@ -120,18 +124,18 @@ fn classify_greater<'s>(
 /// For `a < b` (or `a <= b`):
 ///   consequent=a, alternate=b  =>  Math.min
 ///   consequent=b, alternate=a  =>  Math.max
-/// Returns (`func_name`, `first_arg_text`, `second_arg_text`).
 fn classify_less<'s>(
-    left: &Expression<'_>,
-    right: &Expression<'_>,
-    consequent: &Expression<'_>,
-    alternate: &Expression<'_>,
+    ctx: &LintContext<'_>,
+    left: NodeId,
+    right: NodeId,
+    consequent: NodeId,
+    alternate: NodeId,
     source: &'s str,
 ) -> Option<(&'static str, &'s str, &'s str)> {
-    let left_text = span_text(left, source)?;
-    let right_text = span_text(right, source)?;
-    let cons_text = span_text(consequent, source)?;
-    let alt_text = span_text(alternate, source)?;
+    let left_text = span_text_by_id(ctx, left, source)?;
+    let right_text = span_text_by_id(ctx, right, source)?;
+    let cons_text = span_text_by_id(ctx, consequent, source)?;
+    let alt_text = span_text_by_id(ctx, alternate, source)?;
 
     if left_text == cons_text && right_text == alt_text {
         Some(("Math.min", left_text, right_text))
@@ -144,23 +148,13 @@ fn classify_less<'s>(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferMathMinMax)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferMathMinMax)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

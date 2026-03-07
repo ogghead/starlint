@@ -4,19 +4,19 @@
 //! a default parameter cannot take advantage of defaults without passing
 //! `undefined` explicitly.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags default parameters that are not in the last positions.
 #[derive(Debug)]
 pub struct DefaultParamLast;
 
-impl NativeRule for DefaultParamLast {
+impl LintRule for DefaultParamLast {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "default-param-last".to_owned(),
@@ -26,28 +26,61 @@ impl NativeRule for DefaultParamLast {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let params = match kind {
-            AstKind::Function(f) => &f.params,
-            AstKind::ArrowFunctionExpression(arrow) => &arrow.params,
+    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
+    #[allow(clippy::arithmetic_side_effects, clippy::indexing_slicing)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let (params, func_span) = match node {
+            AstNode::Function(f) => (&f.params, f.span),
+            AstNode::ArrowFunctionExpression(arrow) => (&arrow.params, arrow.span),
             _ => return,
         };
+
+        if params.is_empty() {
+            return;
+        }
+
+        // For each param, determine if it has a default value by checking the
+        // source text between consecutive param spans for `=`.
+        let source = ctx.source_text();
+        // Collect resolved param spans
+        let param_spans: Vec<_> = params
+            .iter()
+            .filter_map(|pid| ctx.node(*pid).map(starlint_ast::AstNode::span))
+            .collect();
+
+        if param_spans.is_empty() {
+            return;
+        }
+
+        // Determine if each param has a default by looking at source text
+        // between this param's end and the next param's start (or closing paren).
+        let mut has_default = Vec::with_capacity(param_spans.len());
+        for (i, ps) in param_spans.iter().enumerate() {
+            let region_end = if i + 1 < param_spans.len() {
+                param_spans[i + 1].start as usize
+            } else {
+                // Find the closing `)` after the last param
+                func_span.end as usize
+            };
+            let region = source.get(ps.end as usize..region_end).unwrap_or("");
+            has_default.push(region.contains('='));
+        }
 
         // Find the last non-default, non-rest parameter.
         // Any default parameter before it is a violation.
         let mut seen_non_default = false;
-        for param in params.items.iter().rev() {
-            if param.initializer.is_some() {
-                // This is a default parameter
+        for (i, is_default) in has_default.iter().enumerate().rev() {
+            if *is_default {
                 if seen_non_default {
+                    let ps = param_spans[i];
                     ctx.report(Diagnostic {
                         rule_name: "default-param-last".to_owned(),
                         message: "Default parameters should be last".to_owned(),
-                        span: Span::new(param.span.start, param.span.end),
+                        span: Span::new(ps.start, ps.end),
                         severity: Severity::Warning,
                         help: None,
                         fix: None,
@@ -63,22 +96,13 @@ impl NativeRule for DefaultParamLast {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(DefaultParamLast)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DefaultParamLast)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

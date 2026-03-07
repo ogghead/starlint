@@ -4,20 +4,20 @@
 //! operands. For example, `x > 5 && x > 3` (the second check is redundant)
 //! or `x > 5 && x < 3` (always false — impossible range).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression, LogicalOperator};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{BinaryOperator, LogicalOperator};
+use starlint_ast::types::NodeId;
 
 /// Flags always-true or always-false constant comparisons.
 #[derive(Debug)]
 pub struct ConstComparisons;
 
-impl NativeRule for ConstComparisons {
+impl LintRule for ConstComparisons {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "const-comparisons".to_owned(),
@@ -27,26 +27,26 @@ impl NativeRule for ConstComparisons {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::LogicalExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::LogicalExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::LogicalExpression(logical) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::LogicalExpression(logical) = node else {
             return;
         };
 
-        let Expression::BinaryExpression(left) = &logical.left else {
+        let Some(AstNode::BinaryExpression(left)) = ctx.node(logical.left) else {
             return;
         };
-        let Expression::BinaryExpression(right) = &logical.right else {
+        let Some(AstNode::BinaryExpression(right)) = ctx.node(logical.right) else {
             return;
         };
 
         // Both sides must have one variable operand and one numeric literal
         let source = ctx.source_text();
-        let left_info = extract_comparison_info(left, source);
-        let right_info = extract_comparison_info(right, source);
+        let left_info = extract_comparison_info(ctx, left, source);
+        let right_info = extract_comparison_info(ctx, right, source);
 
         let (Some(l_info), Some(r_info)) = (left_info, right_info) else {
             return;
@@ -112,21 +112,25 @@ struct ComparisonInfo<'a> {
 
 /// Extract comparison info if one side is a variable and the other is a number.
 fn extract_comparison_info<'s>(
-    expr: &oxc_ast::ast::BinaryExpression<'_>,
+    ctx: &LintContext<'_>,
+    expr: &starlint_ast::node::BinaryExpressionNode,
     source: &'s str,
 ) -> Option<ComparisonInfo<'s>> {
     if !expr.operator.is_compare() {
         return None;
     }
 
-    let left_num = get_numeric_value(&expr.left);
-    let right_num = get_numeric_value(&expr.right);
+    let left_node = ctx.node(expr.left)?;
+    let right_node = ctx.node(expr.right)?;
+    let left_num = get_numeric_value(left_node);
+    let right_num = get_numeric_value(right_node);
 
     match (left_num, right_num) {
         // variable OP number
         (None, Some(value)) => {
-            let start = usize::try_from(expr.left.span().start).ok()?;
-            let end = usize::try_from(expr.left.span().end).ok()?;
+            let left_span = left_node.span();
+            let start = usize::try_from(left_span.start).ok()?;
+            let end = usize::try_from(left_span.end).ok()?;
             let var_text = source.get(start..end)?;
             Some(ComparisonInfo {
                 var_text,
@@ -136,8 +140,9 @@ fn extract_comparison_info<'s>(
         }
         // number OP variable → flip the operator
         (Some(value), None) => {
-            let start = usize::try_from(expr.right.span().start).ok()?;
-            let end = usize::try_from(expr.right.span().end).ok()?;
+            let right_span = right_node.span();
+            let start = usize::try_from(right_span.start).ok()?;
+            let end = usize::try_from(right_span.end).ok()?;
             let var_text = source.get(start..end)?;
             Some(ComparisonInfo {
                 var_text,
@@ -149,12 +154,10 @@ fn extract_comparison_info<'s>(
     }
 }
 
-use oxc_span::GetSpan;
-
-/// Get the numeric value from an expression if it's a numeric literal.
-fn get_numeric_value(expr: &Expression<'_>) -> Option<f64> {
-    match expr {
-        Expression::NumericLiteral(n) => Some(n.value),
+/// Get the numeric value from an `AstNode` if it's a numeric literal.
+const fn get_numeric_value(node: &AstNode) -> Option<f64> {
+    match node {
+        AstNode::NumericLiteral(n) => Some(n.value),
         _ => None,
     }
 }
@@ -171,7 +174,6 @@ const fn flip_comparison(op: BinaryOperator) -> BinaryOperator {
 }
 
 /// Check if an AND combination is impossible (always false).
-/// e.g., x > 5 && x < 3 → impossible.
 #[allow(clippy::float_cmp)]
 fn check_impossible_range(
     left_op: BinaryOperator,
@@ -196,7 +198,6 @@ fn check_impossible_range(
 }
 
 /// Check if an OR combination is tautological (always true).
-/// e.g., x > 3 || x < 5 → always true (covers everything).
 #[allow(clippy::float_cmp)]
 fn check_tautological_range(
     left_op: BinaryOperator,
@@ -222,23 +223,13 @@ fn check_tautological_range(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConstComparisons)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConstComparisons)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

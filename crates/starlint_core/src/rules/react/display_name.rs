@@ -4,20 +4,19 @@
 //! `React.memo()` or `React.forwardRef()` with anonymous functions make
 //! debugging harder because they appear as "Anonymous" in React `DevTools`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `React.memo()` and `React.forwardRef()` calls with anonymous functions.
 #[derive(Debug)]
 pub struct DisplayName;
 
-impl NativeRule for DisplayName {
+impl LintRule for DisplayName {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/display-name".to_owned(),
@@ -27,22 +26,22 @@ impl NativeRule for DisplayName {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
         // Check for React.memo(...) or React.forwardRef(...) or memo(...) or forwardRef(...)
-        let wrapper_name = match &call.callee {
-            Expression::StaticMemberExpression(member) => {
-                let prop = member.property.name.as_str();
+        let wrapper_name = match ctx.node(call.callee) {
+            Some(AstNode::StaticMemberExpression(member)) => {
+                let prop = member.property.as_str();
                 (prop == "memo" || prop == "forwardRef").then_some(prop)
             }
-            Expression::Identifier(ident) => {
+            Some(AstNode::IdentifierReference(ident)) => {
                 let name = ident.name.as_str();
                 (name == "memo" || name == "forwardRef").then_some(name)
             }
@@ -54,13 +53,13 @@ impl NativeRule for DisplayName {
         };
 
         // Check if the first argument is an anonymous function
-        let Some(first_arg) = call.arguments.first() else {
+        let Some(first_arg_id) = call.arguments.first() else {
             return;
         };
 
-        let is_anonymous = match first_arg {
-            oxc_ast::ast::Argument::FunctionExpression(func) => func.id.is_none(),
-            oxc_ast::ast::Argument::ArrowFunctionExpression(_) => true,
+        let is_anonymous = match ctx.node(*first_arg_id) {
+            Some(AstNode::Function(func)) => func.id.is_none(),
+            Some(AstNode::ArrowFunctionExpression(_)) => true,
             _ => false,
         };
 
@@ -80,22 +79,13 @@ impl NativeRule for DisplayName {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.jsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(DisplayName)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.jsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DisplayName)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

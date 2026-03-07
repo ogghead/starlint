@@ -4,14 +4,13 @@
 //! Simplified: flags `use*()` calls inside if/for/while blocks by checking
 //! source text position for enclosing control flow.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags React hook calls (`use*()`) that appear inside control flow
 /// statements (if, for, while, ternary), which violates the Rules of Hooks.
@@ -52,7 +51,7 @@ fn is_hook_name(name: &str) -> bool {
     }
 }
 
-impl NativeRule for RulesOfHooks {
+impl LintRule for RulesOfHooks {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/rules-of-hooks".to_owned(),
@@ -62,47 +61,47 @@ impl NativeRule for RulesOfHooks {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::CallExpression,
-            AstType::ConditionalExpression,
-            AstType::DoWhileStatement,
-            AstType::ForStatement,
-            AstType::IfStatement,
-            AstType::WhileStatement,
+            AstNodeType::CallExpression,
+            AstNodeType::ConditionalExpression,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::IfStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn leave_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::CallExpression,
-            AstType::ConditionalExpression,
-            AstType::DoWhileStatement,
-            AstType::ForStatement,
-            AstType::IfStatement,
-            AstType::WhileStatement,
+            AstNodeType::CallExpression,
+            AstNodeType::ConditionalExpression,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::IfStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         use std::sync::atomic::Ordering;
-        match kind {
-            AstKind::IfStatement(_)
-            | AstKind::ForStatement(_)
-            | AstKind::WhileStatement(_)
-            | AstKind::DoWhileStatement(_)
-            | AstKind::ConditionalExpression(_) => {
+        match node {
+            AstNode::IfStatement(_)
+            | AstNode::ForStatement(_)
+            | AstNode::WhileStatement(_)
+            | AstNode::DoWhileStatement(_)
+            | AstNode::ConditionalExpression(_) => {
                 self.control_flow_depth.fetch_add(1, Ordering::Relaxed);
             }
-            AstKind::CallExpression(call) => {
+            AstNode::CallExpression(call) => {
                 if self.control_flow_depth.load(Ordering::Relaxed) == 0 {
                     return;
                 }
 
-                let hook_name = match &call.callee {
-                    Expression::Identifier(id) => id.name.as_str(),
+                let hook_name = match ctx.node(call.callee) {
+                    Some(AstNode::IdentifierReference(id)) => id.name.as_str(),
                     // React.useXxx()
-                    Expression::StaticMemberExpression(member) => member.property.name.as_str(),
+                    Some(AstNode::StaticMemberExpression(member)) => member.property.as_str(),
                     _ => return,
                 };
 
@@ -124,14 +123,14 @@ impl NativeRule for RulesOfHooks {
         }
     }
 
-    fn leave(&self, kind: &AstKind<'_>, _ctx: &mut NativeLintContext<'_>) {
+    fn leave(&self, _node_id: NodeId, node: &AstNode, _ctx: &mut LintContext<'_>) {
         use std::sync::atomic::Ordering;
-        match kind {
-            AstKind::IfStatement(_)
-            | AstKind::ForStatement(_)
-            | AstKind::WhileStatement(_)
-            | AstKind::DoWhileStatement(_)
-            | AstKind::ConditionalExpression(_) => {
+        match node {
+            AstNode::IfStatement(_)
+            | AstNode::ForStatement(_)
+            | AstNode::WhileStatement(_)
+            | AstNode::DoWhileStatement(_)
+            | AstNode::ConditionalExpression(_) => {
                 self.control_flow_depth.fetch_sub(1, Ordering::Relaxed);
             }
             _ => {}
@@ -141,22 +140,13 @@ impl NativeRule for RulesOfHooks {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RulesOfHooks::new())];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RulesOfHooks::new())];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

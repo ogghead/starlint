@@ -3,20 +3,20 @@
 //! Disallow returning a value from a setter. Setters cannot return a value;
 //! any `return <expr>` inside a setter is ignored and indicates a mistake.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{MethodDefinitionKind, PropertyKind, Statement};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{MethodDefinitionKind, PropertyKind};
+use starlint_ast::types::NodeId;
 
 /// Flags `return <value>` statements inside setter functions.
 #[derive(Debug)]
 pub struct NoSetterReturn;
 
-impl NativeRule for NoSetterReturn {
+impl LintRule for NoSetterReturn {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-setter-return".to_owned(),
@@ -26,21 +26,30 @@ impl NativeRule for NoSetterReturn {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::MethodDefinition, AstType::ObjectProperty])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::MethodDefinition, AstNodeType::ObjectProperty])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::MethodDefinition(method) if method.kind == MethodDefinitionKind::Set => {
-                if let Some(body) = &method.value.body {
-                    check_statements_for_value_return(&body.statements, ctx);
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::MethodDefinition(method) if method.kind == MethodDefinitionKind::Set => {
+                // method.value is a NodeId pointing to a Function node
+                if let Some(AstNode::Function(func)) = ctx.node(method.value) {
+                    if let Some(body_id) = func.body {
+                        if let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) {
+                            let stmts = body.statements.clone();
+                            check_statements_for_value_return(&stmts, ctx);
+                        }
+                    }
                 }
             }
-            AstKind::ObjectProperty(prop) if prop.kind == PropertyKind::Set => {
-                if let oxc_ast::ast::Expression::FunctionExpression(func) = &prop.value {
-                    if let Some(body) = &func.body {
-                        check_statements_for_value_return(&body.statements, ctx);
+            AstNode::ObjectProperty(prop) if prop.kind == PropertyKind::Set => {
+                if let Some(AstNode::Function(func)) = ctx.node(prop.value) {
+                    if let Some(body_id) = func.body {
+                        if let Some(AstNode::FunctionBody(body)) = ctx.node(body_id) {
+                            let stmts = body.statements.clone();
+                            check_statements_for_value_return(&stmts, ctx);
+                        }
                     }
                 }
             }
@@ -50,22 +59,26 @@ impl NativeRule for NoSetterReturn {
 }
 
 /// Walk statements looking for return statements that have a value.
-fn check_statements_for_value_return(stmts: &[Statement<'_>], ctx: &mut NativeLintContext<'_>) {
-    for stmt in stmts {
-        check_statement_for_value_return(stmt, ctx);
+fn check_statements_for_value_return(stmts: &[NodeId], ctx: &mut LintContext<'_>) {
+    for stmt_id in stmts {
+        check_statement_for_value_return(*stmt_id, ctx);
     }
 }
 
 /// Check a single statement for `return <value>`.
-fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintContext<'_>) {
+fn check_statement_for_value_return(stmt_id: NodeId, ctx: &mut LintContext<'_>) {
+    let Some(stmt) = ctx.node(stmt_id) else {
+        return;
+    };
     match stmt {
-        Statement::ReturnStatement(ret) => {
+        AstNode::ReturnStatement(ret) => {
             if ret.argument.is_some() {
+                let ret_span = Span::new(ret.span.start, ret.span.end);
                 let fix = Some(Fix {
                     kind: FixKind::SafeFix,
                     message: "Replace with bare `return;`".to_owned(),
                     edits: vec![Edit {
-                        span: Span::new(ret.span.start, ret.span.end),
+                        span: ret_span,
                         replacement: "return;".to_owned(),
                     }],
                     is_snippet: false,
@@ -73,7 +86,7 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
                 ctx.report(Diagnostic {
                     rule_name: "no-setter-return".to_owned(),
                     message: "Setter cannot return a value".to_owned(),
-                    span: Span::new(ret.span.start, ret.span.end),
+                    span: ret_span,
                     severity: Severity::Error,
                     help: None,
                     fix,
@@ -81,12 +94,15 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
                 });
             }
         }
-        Statement::BlockStatement(block) => {
-            check_statements_for_value_return(&block.body, ctx);
+        AstNode::BlockStatement(block) => {
+            let body = block.body.clone();
+            check_statements_for_value_return(&body, ctx);
         }
-        Statement::IfStatement(if_stmt) => {
-            check_statement_for_value_return(&if_stmt.consequent, ctx);
-            if let Some(alt) = &if_stmt.alternate {
+        AstNode::IfStatement(if_stmt) => {
+            let consequent = if_stmt.consequent;
+            let alternate = if_stmt.alternate;
+            check_statement_for_value_return(consequent, ctx);
+            if let Some(alt) = alternate {
                 check_statement_for_value_return(alt, ctx);
             }
         }
@@ -96,22 +112,13 @@ fn check_statement_for_value_return(stmt: &Statement<'_>, ctx: &mut NativeLintCo
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoSetterReturn)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSetterReturn)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -4,20 +4,20 @@
 //! `componentDidMount` triggers an extra re-render that can cause performance
 //! issues and confusing behavior.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::PropertyKey;
-use oxc_ast::ast_kind::AstType;
-
+#![allow(clippy::shadow_reuse, clippy::shadow_unrelated)]
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `this.setState()` calls inside `componentDidMount`.
 #[derive(Debug)]
 pub struct NoDidMountSetState;
 
-impl NativeRule for NoDidMountSetState {
+impl LintRule for NoDidMountSetState {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/no-did-mount-set-state".to_owned(),
@@ -27,32 +27,40 @@ impl NativeRule for NoDidMountSetState {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::MethodDefinition])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::MethodDefinition])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::MethodDefinition(method) = kind else {
+    #[allow(clippy::shadow_unrelated)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::MethodDefinition(method) = node else {
             return;
         };
 
-        let method_name = match &method.key {
-            PropertyKey::StaticIdentifier(ident) => ident.name.as_str(),
-            _ => return,
+        let method_name = ctx.node(method.key).and_then(|n| match n {
+            AstNode::IdentifierReference(id) => Some(id.name.as_str()),
+            AstNode::BindingIdentifier(id) => Some(id.name.as_str()),
+            _ => None,
+        });
+
+        let Some("componentDidMount") = method_name else {
+            return;
         };
 
-        if method_name != "componentDidMount" {
-            return;
-        }
-
-        let Some(body) = &method.value.body else {
+        // method.value is a NodeId pointing to a Function node
+        let body_span = ctx
+            .node(method.value)
+            .and_then(|n| n.as_function())
+            .and_then(|f| f.body)
+            .and_then(|body_id| ctx.node(body_id))
+            .map(starlint_ast::AstNode::span);
+        let Some(body_span) = body_span else {
             return;
         };
 
         // Walk the body source range looking for this.setState calls
-        // We check all call expressions within this method via source span containment
-        let method_start = body.span.start;
-        let method_end = body.span.end;
+        let method_start = body_span.start;
+        let method_end = body_span.end;
         let source = ctx.source_text();
 
         // Simple source-text scan for `this.setState` within the method body
@@ -75,22 +83,13 @@ impl NativeRule for NoDidMountSetState {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.jsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDidMountSetState)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.jsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDidMountSetState)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

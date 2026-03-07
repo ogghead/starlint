@@ -5,21 +5,19 @@
 //! and is less common in modern TypeScript codebases. Using `as` consistently
 //! avoids confusion and ensures compatibility with JSX.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags angle-bracket type assertions (`<Type>expr`), preferring `as` syntax.
 #[derive(Debug)]
 pub struct ConsistentTypeAssertions;
 
-impl NativeRule for ConsistentTypeAssertions {
+impl LintRule for ConsistentTypeAssertions {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/consistent-type-assertions".to_owned(),
@@ -29,28 +27,40 @@ impl NativeRule for ConsistentTypeAssertions {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::TSTypeAssertion])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::TSTypeAssertion])
     }
 
     #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::TSTypeAssertion(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::TSTypeAssertion(expr) = node else {
             return;
         };
 
         // Build fix: rewrite <Type>expression to expression as Type
+        // TSTypeAssertionNode only has span + expression (NodeId).
+        // Extract the type text from the source: it's the text between `<` and `>`
+        // at the start of the assertion span.
         let source = ctx.source_text();
-        let type_span = expr.type_annotation.span();
-        let expr_span = expr.expression.span();
-        let type_text = source
-            .get(type_span.start as usize..type_span.end as usize)
-            .unwrap_or("")
-            .to_owned();
-        let expr_text = source
-            .get(expr_span.start as usize..expr_span.end as usize)
-            .unwrap_or("")
-            .to_owned();
+        let expr_span = ctx.node(expr.expression).map(AstNode::span);
+        let (type_text, expr_text) = {
+            let full = source
+                .get(expr.span.start as usize..expr.span.end as usize)
+                .unwrap_or("");
+            // The angle-bracket assertion looks like: <Type>expression
+            // Find the closing `>` to split type from expression
+            let type_t = full
+                .strip_prefix('<')
+                .and_then(|rest| rest.find('>').map(|pos| &rest[..pos]))
+                .unwrap_or("")
+                .to_owned();
+            let expr_t = expr_span
+                .map_or("", |sp| {
+                    source.get(sp.start as usize..sp.end as usize).unwrap_or("")
+                })
+                .to_owned();
+            (type_t, expr_t)
+        };
 
         let fix = (!type_text.is_empty() && !expr_text.is_empty()).then(|| Fix {
             kind: FixKind::SafeFix,
@@ -77,23 +87,13 @@ impl NativeRule for ConsistentTypeAssertions {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentTypeAssertions)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentTypeAssertions)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

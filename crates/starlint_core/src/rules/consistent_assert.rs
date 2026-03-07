@@ -6,14 +6,13 @@
 //! `assert.deepStrictEqual` instead of `assert.deepEqual`,
 //! and `assert.notDeepStrictEqual` instead of `assert.notDeepEqual`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags loose assertion methods on the `assert` object.
 #[derive(Debug)]
@@ -30,7 +29,7 @@ fn strict_equivalent(method: &str) -> Option<&'static str> {
     }
 }
 
-impl NativeRule for ConsistentAssert {
+impl LintRule for ConsistentAssert {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "consistent-assert".to_owned(),
@@ -40,32 +39,47 @@ impl NativeRule for ConsistentAssert {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::CallExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::CallExpression(call) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::CallExpression(call) = node else {
             return;
         };
 
-        let Expression::StaticMemberExpression(member) = &call.callee else {
+        let Some(AstNode::StaticMemberExpression(member)) = ctx.node(call.callee) else {
             return;
         };
 
         // Check that the object is `assert`
-        let Expression::Identifier(id) = &member.object else {
-            return;
-        };
+        let is_assert = matches!(
+            ctx.node(member.object),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "assert"
+        );
 
-        if id.name.as_str() != "assert" {
+        if !is_assert {
             return;
         }
 
-        let method = member.property.name.as_str();
+        let method = member.property.as_str();
         let Some(replacement) = strict_equivalent(method) else {
             return;
         };
+
+        // Compute the span of the property name from source text
+        // The property starts after the '.' in the member expression
+        let source = ctx.source_text();
+        let member_start = usize::try_from(member.span.start).unwrap_or(0);
+        let member_end = usize::try_from(member.span.end).unwrap_or(0);
+        let member_text = source.get(member_start..member_end).unwrap_or("");
+        let dot_offset = member_text.rfind('.').unwrap_or(0);
+        let prop_start = member
+            .span
+            .start
+            .saturating_add(u32::try_from(dot_offset).unwrap_or(0))
+            .saturating_add(1);
+        let prop_end = member.span.end;
 
         ctx.report(Diagnostic {
             rule_name: "consistent-assert".to_owned(),
@@ -79,7 +93,7 @@ impl NativeRule for ConsistentAssert {
                 kind: FixKind::SafeFix,
                 message: format!("Replace `{method}` with `{replacement}`"),
                 edits: vec![Edit {
-                    span: Span::new(member.property.span.start, member.property.span.end),
+                    span: Span::new(prop_start, prop_end),
                     replacement: replacement.to_owned(),
                 }],
                 is_snippet: false,
@@ -91,23 +105,13 @@ impl NativeRule for ConsistentAssert {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentAssert)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentAssert)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

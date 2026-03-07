@@ -94,26 +94,23 @@ mod tests {
     use super::*;
     use crate::lint_rule::lint_source;
 
-    fn lint_with_path(source: &str, path: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+    fn lint_with_path(
+        source: &str,
+        path: &str,
+    ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
         let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoCycle)];
         lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_self_import() {
-        let diags = lint_with_path(
-            r#"import { foo } from "./myModule";"#,
-            "myModule.ts",
-        );
+        let diags = lint_with_path(r#"import { foo } from "./myModule";"#, "myModule.ts");
         assert_eq!(diags.len(), 1, "self-import should be flagged as a cycle");
     }
 
     #[test]
     fn test_allows_different_module() {
-        let diags = lint_with_path(
-            r#"import { foo } from "./other";"#,
-            "myModule.ts",
-        );
+        let diags = lint_with_path(r#"import { foo } from "./other";"#, "myModule.ts");
         assert!(
             diags.is_empty(),
             "importing a different module should not be flagged"

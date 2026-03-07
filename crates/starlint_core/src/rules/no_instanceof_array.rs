@@ -3,22 +3,20 @@
 //! Disallow `instanceof Array`. Use `Array.isArray()` instead, which works
 //! across different realms (iframes, workers).
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 /// Flags `x instanceof Array`.
 #[derive(Debug)]
 pub struct NoInstanceofArray;
 
-impl NativeRule for NoInstanceofArray {
+impl LintRule for NoInstanceofArray {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-instanceof-array".to_owned(),
@@ -28,28 +26,31 @@ impl NativeRule for NoInstanceofArray {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
-        if expr.operator != oxc_ast::ast::BinaryOperator::Instanceof {
+        if expr.operator != BinaryOperator::Instanceof {
             return;
         }
 
         let is_array = matches!(
-            &expr.right,
-            Expression::Identifier(id) if id.name.as_str() == "Array"
+            ctx.node(expr.right),
+            Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "Array"
         );
 
         if is_array {
             let source = ctx.source_text();
-            let left_start = usize::try_from(expr.left.span().start).unwrap_or(0);
-            let left_end = usize::try_from(expr.left.span().end).unwrap_or(0);
+            let left_ast_span = ctx.node(expr.left).map(starlint_ast::AstNode::span);
+            let (left_start_u32, left_end_u32) =
+                left_ast_span.map_or((0u32, 0u32), |s| (s.start, s.end));
+            let left_start = usize::try_from(left_start_u32).unwrap_or(0);
+            let left_end = usize::try_from(left_end_u32).unwrap_or(0);
             let left_text = source.get(left_start..left_end).unwrap_or("x");
 
             ctx.report(Diagnostic {
@@ -75,22 +76,13 @@ impl NativeRule for NoInstanceofArray {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoInstanceofArray)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInstanceofArray)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

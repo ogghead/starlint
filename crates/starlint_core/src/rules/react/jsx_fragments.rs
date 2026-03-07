@@ -3,14 +3,13 @@
 //! Suggest using `<>` short syntax instead of `<React.Fragment>` when no key
 //! prop is present.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{JSXAttributeItem, JSXAttributeName, JSXElementName, JSXMemberExpressionObject};
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "react/jsx-fragments";
@@ -21,31 +20,23 @@ const RULE_NAME: &str = "react/jsx-fragments";
 pub struct JsxFragments;
 
 /// Check whether a JSX opening element has a `key` attribute.
-fn has_key_prop(attrs: &[JSXAttributeItem<'_>]) -> bool {
-    attrs.iter().any(|item| {
-        if let JSXAttributeItem::Attribute(attr) = item {
-            if let JSXAttributeName::Identifier(ident) = &attr.name {
-                return ident.name.as_str() == "key";
-            }
-        }
-        false
+fn has_key_prop(ctx: &LintContext<'_>, attributes: &[NodeId]) -> bool {
+    attributes.iter().any(|attr_id| {
+        let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
+            return false;
+        };
+        attr.name.as_str() == "key"
     })
 }
 
 /// Check if the element name is `React.Fragment`.
-fn is_react_fragment(name: &JSXElementName<'_>) -> bool {
-    if let JSXElementName::MemberExpression(member) = name {
-        if member.property.name.as_str() != "Fragment" {
-            return false;
-        }
-        if let JSXMemberExpressionObject::IdentifierReference(obj) = &member.object {
-            return obj.name.as_str() == "React";
-        }
-    }
-    false
+/// In `starlint_ast`, JSXOpeningElementNode.name is a String.
+/// For member expressions like `React.Fragment`, the name is stored as "React.Fragment".
+fn is_react_fragment(name: &str) -> bool {
+    name == "React.Fragment"
 }
 
-impl NativeRule for JsxFragments {
+impl LintRule for JsxFragments {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -56,37 +47,51 @@ impl NativeRule for JsxFragments {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::JSXElement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::JSXElement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::JSXElement(element) = kind else {
+    #[allow(clippy::as_conversions)]
+    #[allow(clippy::arithmetic_side_effects, clippy::cast_possible_truncation)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::JSXElement(element) = node else {
             return;
         };
 
-        let opening = &element.opening_element;
+        let Some(AstNode::JSXOpeningElement(opening)) = ctx.node(element.opening_element) else {
+            return;
+        };
 
         if !is_react_fragment(&opening.name) {
             return;
         }
 
         // If there's a `key` prop, React.Fragment is required
-        if has_key_prop(&opening.attributes) {
+        if has_key_prop(ctx, &opening.attributes) {
             return;
         }
 
         let opening_span = Span::new(opening.span.start, opening.span.end);
 
-        // Build edits: replace opening tag and closing tag
+        // Build edits: replace opening tag with `<>`
+        // Since starlint_ast doesn't have a closing_element field on JSXElementNode,
+        // we replace just the opening tag and rely on the source text to find the closing tag.
+        let source = ctx.source_text();
+        let element_text = source
+            .get(element.span.start as usize..element.span.end as usize)
+            .unwrap_or("");
+
+        // Find the closing tag `</React.Fragment>` in the element text
         let mut edits = vec![Edit {
             span: opening_span,
             replacement: "<>".to_owned(),
         }];
 
-        if let Some(closing) = &element.closing_element {
+        if let Some(closing_start) = element_text.rfind("</React.Fragment>") {
+            let closing_abs_start = element.span.start + closing_start as u32;
+            let closing_abs_end = closing_abs_start + "</React.Fragment>".len() as u32;
             edits.push(Edit {
-                span: Span::new(closing.span.start, closing.span.end),
+                span: Span::new(closing_abs_start, closing_abs_end),
                 replacement: "</>".to_owned(),
             });
         }
@@ -111,22 +116,13 @@ impl NativeRule for JsxFragments {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(JsxFragments)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxFragments)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,20 +3,19 @@
 //! Require variables within the same declaration to be sorted alphabetically.
 //! For example, `var a, b, c;` is valid, but `var b, a, c;` is not.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags variable declarations where declarators are not alphabetically sorted.
 #[derive(Debug)]
 pub struct SortVars;
 
-impl NativeRule for SortVars {
+impl LintRule for SortVars {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "sort-vars".to_owned(),
@@ -26,12 +25,12 @@ impl NativeRule for SortVars {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::VariableDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::VariableDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::VariableDeclaration(decl) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::VariableDeclaration(decl) = node else {
             return;
         };
 
@@ -42,13 +41,17 @@ impl NativeRule for SortVars {
 
         // Only check var/let/const with simple identifier bindings
         // Skip destructuring patterns — ordering doesn't apply there
-        let names: Vec<(&str, oxc_span::Span)> = decl
+        let names: Vec<(String, starlint_ast::types::Span)> = decl
             .declarations
             .iter()
-            .filter_map(|d| {
-                d.id.get_binding_identifiers()
-                    .first()
-                    .map(|ident| (ident.name.as_str(), d.id.span()))
+            .filter_map(|&d_id| {
+                let AstNode::VariableDeclarator(d) = ctx.node(d_id)? else {
+                    return None;
+                };
+                let AstNode::BindingIdentifier(ident) = ctx.node(d.id)? else {
+                    return None;
+                };
+                Some((ident.name.clone(), ident.span))
             })
             .collect();
 
@@ -58,10 +61,10 @@ impl NativeRule for SortVars {
 
         // Check pairwise ordering (case-insensitive by default, matching ESLint)
         for pair in names.windows(2) {
-            let Some(&(prev_name, _)) = pair.first() else {
+            let Some((prev_name, _)) = pair.first() else {
                 continue;
             };
-            let Some(&(curr_name, curr_span)) = pair.get(1) else {
+            let Some((curr_name, curr_span)) = pair.get(1) else {
                 continue;
             };
 
@@ -87,22 +90,13 @@ impl NativeRule for SortVars {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(SortVars)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SortVars)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
