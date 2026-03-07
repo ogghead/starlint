@@ -3,16 +3,19 @@
 //! Require or disallow the Unicode Byte Order Mark (BOM, U+FEFF).
 //! By default, this rule requires that files do NOT start with a BOM.
 
+use starlint_ast::node::AstNode;
+use starlint_ast::types::NodeId;
+
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags files that start with (or are missing) a Unicode BOM.
 #[derive(Debug)]
 pub struct UnicodeBom;
 
-impl NativeRule for UnicodeBom {
+impl LintRule for UnicodeBom {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "unicode-bom".to_owned(),
@@ -26,7 +29,7 @@ impl NativeRule for UnicodeBom {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
 
         // Default behavior: disallow BOM
@@ -50,26 +53,20 @@ impl NativeRule for UnicodeBom {
             });
         }
     }
+
+    fn run(&self, _node_id: NodeId, _node: &AstNode, _ctx: &mut LintContext<'_>) {
+        // This rule uses run_once only
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(UnicodeBom)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(UnicodeBom)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

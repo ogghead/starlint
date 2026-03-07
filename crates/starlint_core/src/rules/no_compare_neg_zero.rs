@@ -4,22 +4,21 @@
 //! work as expected because `-0 === 0` is `true` in JavaScript.
 //! Use `Object.is(x, -0)` instead.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::UnaryOperator;
+use starlint_ast::types::NodeId;
 
-use oxc_span::GetSpan;
-
-use starlint_plugin_sdk::diagnostic::{Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags comparisons against `-0`.
 #[derive(Debug)]
 pub struct NoCompareNegZero;
 
-impl NativeRule for NoCompareNegZero {
+impl LintRule for NoCompareNegZero {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-compare-neg-zero".to_owned(),
@@ -29,12 +28,13 @@ impl NativeRule for NoCompareNegZero {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
@@ -43,81 +43,76 @@ impl NativeRule for NoCompareNegZero {
             return;
         }
 
-        let has_neg_zero = is_negative_zero(&expr.left) || is_negative_zero(&expr.right);
+        let left_neg_zero = is_negative_zero(ctx, expr.left);
+        let right_neg_zero = is_negative_zero(ctx, expr.right);
 
-        if has_neg_zero {
-            // Fix: `x === -0` → `Object.is(x, -0)`
-            #[allow(clippy::as_conversions)]
-            let fix = {
-                let source = ctx.source_text();
-                let (value_expr, _neg_zero_expr) = if is_negative_zero(&expr.right) {
-                    (&expr.left, &expr.right)
-                } else {
-                    (&expr.right, &expr.left)
-                };
-                let val_span = value_expr.span();
-                source
-                    .get(val_span.start as usize..val_span.end as usize)
-                    .map(|val_text| {
-                        let replacement = format!("Object.is({val_text}, -0)");
-                        Fix {
-                            kind: FixKind::SafeFix,
-                            message: format!("Replace with `{replacement}`"),
-                            edits: vec![Edit {
-                                span: Span::new(expr.span.start, expr.span.end),
-                                replacement,
-                            }],
-                            is_snippet: false,
-                        }
-                    })
-            };
-
-            ctx.report(starlint_plugin_sdk::diagnostic::Diagnostic {
-                rule_name: "no-compare-neg-zero".to_owned(),
-                message: format!(
-                    "Do not use the `{}` operator to compare against `-0`",
-                    expr.operator.as_str()
-                ),
-                span: Span::new(expr.span.start, expr.span.end),
-                severity: Severity::Error,
-                help: Some("Use `Object.is(x, -0)` to test for negative zero".to_owned()),
-                fix,
-                labels: vec![],
-            });
+        if !left_neg_zero && !right_neg_zero {
+            return;
         }
+
+        // Fix: `x === -0` → `Object.is(x, -0)`
+        let value_id = if right_neg_zero {
+            expr.left
+        } else {
+            expr.right
+        };
+
+        let fix = ctx.node(value_id).and_then(|val_node| {
+            let val_span = val_node.span();
+            let source = ctx.source_text();
+            source
+                .get(val_span.start as usize..val_span.end as usize)
+                .map(|val_text| {
+                    let replacement = format!("Object.is({val_text}, -0)");
+                    Fix {
+                        kind: FixKind::SafeFix,
+                        message: format!("Replace with `{replacement}`"),
+                        edits: vec![Edit {
+                            span: Span::new(expr.span.start, expr.span.end),
+                            replacement,
+                        }],
+                        is_snippet: false,
+                    }
+                })
+        });
+
+        ctx.report(Diagnostic {
+            rule_name: "no-compare-neg-zero".to_owned(),
+            message: format!(
+                "Do not use the `{}` operator to compare against `-0`",
+                expr.operator.as_str()
+            ),
+            span: Span::new(expr.span.start, expr.span.end),
+            severity: Severity::Error,
+            help: Some("Use `Object.is(x, -0)` to test for negative zero".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 
-/// Check if an expression is the literal `-0`.
-fn is_negative_zero(expr: &Expression<'_>) -> bool {
-    if let Expression::UnaryExpression(unary) = expr {
-        if unary.operator == UnaryOperator::UnaryNegation {
-            if let Expression::NumericLiteral(lit) = &unary.argument {
-                return lit.value == 0.0;
-            }
-        }
+/// Check if a node is the literal `-0` (`UnaryExpression(-)` → `NumericLiteral(0)`).
+fn is_negative_zero(ctx: &LintContext<'_>, id: NodeId) -> bool {
+    let Some(AstNode::UnaryExpression(unary)) = ctx.node(id) else {
+        return false;
+    };
+    if unary.operator != UnaryOperator::UnaryNegation {
+        return false;
     }
-    false
+    matches!(
+        ctx.node(unary.argument),
+        Some(AstNode::NumericLiteral(lit)) if lit.value == 0.0
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoCompareNegZero)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoCompareNegZero)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

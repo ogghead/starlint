@@ -406,7 +406,7 @@ fn fix_idempotent_text_encoding_identifier_case() {
 
 #[test]
 fn fix_idempotent_unicode_bom() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::unicode_bom::UnicodeBom)],
         "\u{FEFF}const x = 1;",
         "unicode_bom",

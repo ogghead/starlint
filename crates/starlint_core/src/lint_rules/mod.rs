@@ -68,6 +68,13 @@ pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(rules::func_names::FuncNames),
         Box::new(rules::func_style::FuncStyle),
         Box::new(rules::valid_typeof::ValidTypeof),
+        // Batch 7
+        Box::new(rules::no_compare_neg_zero::NoCompareNegZero),
+        Box::new(rules::no_document_cookie::NoDocumentCookie),
+        Box::new(rules::no_new_func::NoNewFunc),
+        Box::new(rules::no_optional_chaining::NoOptionalChaining),
+        Box::new(rules::no_this_assignment::NoThisAssignment),
+        Box::new(rules::unicode_bom::UnicodeBom),
     ]
 }
 
@@ -123,4 +130,11 @@ pub const MIGRATED_RULE_NAMES: &[&str] = &[
     "func-names",
     "func-style",
     "valid-typeof",
+    // Batch 7
+    "no-compare-neg-zero",
+    "no-document-cookie",
+    "no-new-func",
+    "no-optional-chaining",
+    "no-this-assignment",
+    "unicode-bom",
 ];
