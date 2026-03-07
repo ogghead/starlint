@@ -54,12 +54,8 @@ impl LintRule for BadBitwiseOperator {
         let actual = if intended == "||" { "|" } else { "&" };
 
         let source = ctx.source_text();
-        let left_end = ctx
-            .node(expr.left)
-            .map_or(0, |n| n.span().end as usize);
-        let right_start = ctx
-            .node(expr.right)
-            .map_or(0, |n| n.span().start as usize);
+        let left_end = ctx.node(expr.left).map_or(0, |n| n.span().end as usize);
+        let right_start = ctx.node(expr.right).map_or(0, |n| n.span().start as usize);
         let between = source.get(left_end..right_start).unwrap_or("");
 
         let fix = between.find(actual).map(|offset| {

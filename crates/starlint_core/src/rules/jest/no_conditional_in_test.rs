@@ -2,13 +2,13 @@
 //!
 //! Warn when if/switch/ternary is used inside test callbacks.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "jest/no-conditional-in-test";
@@ -16,13 +16,13 @@ const RULE_NAME: &str = "jest/no-conditional-in-test";
 /// Flags conditional statements inside test callbacks.
 ///
 /// Simplified: detects `if`/`switch`/ternary at the source level within test
-/// file context. The rule matches `AstKind::IfStatement`, `AstKind::SwitchStatement`,
-/// and `AstKind::ConditionalExpression` and checks if they appear inside a
+/// file context. The rule matches `AstNode::IfStatement`, `AstNode::SwitchStatement`,
+/// and `AstNode::ConditionalExpression` and checks if they appear inside a
 /// `test`/`it` callback by scanning the preceding source.
 #[derive(Debug)]
 pub struct NoConditionalInTest;
 
-impl NativeRule for NoConditionalInTest {
+impl LintRule for NoConditionalInTest {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -32,19 +32,19 @@ impl NativeRule for NoConditionalInTest {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ConditionalExpression,
-            AstType::IfStatement,
-            AstType::SwitchStatement,
+            AstNodeType::ConditionalExpression,
+            AstNodeType::IfStatement,
+            AstNodeType::SwitchStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let (stmt_type, span_start, span_end) = match kind {
-            AstKind::IfStatement(stmt) => ("if statement", stmt.span.start, stmt.span.end),
-            AstKind::SwitchStatement(stmt) => ("switch statement", stmt.span.start, stmt.span.end),
-            AstKind::ConditionalExpression(expr) => {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let (stmt_type, span_start, span_end) = match node {
+            AstNode::IfStatement(stmt) => ("if statement", stmt.span.start, stmt.span.end),
+            AstNode::SwitchStatement(stmt) => ("switch statement", stmt.span.start, stmt.span.end),
+            AstNode::ConditionalExpression(expr) => {
                 ("ternary expression", expr.span.start, expr.span.end)
             }
             _ => return,
@@ -105,22 +105,13 @@ fn is_inside_test_callback(before: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoConditionalInTest)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoConditionalInTest)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

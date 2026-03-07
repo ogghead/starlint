@@ -4,13 +4,13 @@
 //! underscore (e.g. `new_foo`, `class_name`). These prefixes are confusing
 //! because they look like keyword usage rather than variable names.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Keyword prefixes to check for (each includes the trailing underscore).
 const KEYWORD_PREFIXES: &[&str] = &[
@@ -39,12 +39,7 @@ fn find_keyword_prefix(name: &str) -> Option<&'static str> {
 }
 
 /// Report a diagnostic for an identifier with a keyword prefix.
-fn report_keyword_prefix(
-    name: &str,
-    span_start: u32,
-    span_end: u32,
-    ctx: &mut NativeLintContext<'_>,
-) {
+fn report_keyword_prefix(name: &str, span_start: u32, span_end: u32, ctx: &mut LintContext<'_>) {
     if let Some(keyword) = find_keyword_prefix(name) {
         ctx.report(Diagnostic {
             rule_name: "no-keyword-prefix".to_owned(),
@@ -58,7 +53,7 @@ fn report_keyword_prefix(
     }
 }
 
-impl NativeRule for NoKeywordPrefix {
+impl LintRule for NoKeywordPrefix {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-keyword-prefix".to_owned(),
@@ -69,16 +64,19 @@ impl NativeRule for NoKeywordPrefix {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BindingIdentifier, AstType::IdentifierReference])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[
+            AstNodeType::BindingIdentifier,
+            AstNodeType::IdentifierReference,
+        ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::BindingIdentifier(ident) => {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::BindingIdentifier(ident) => {
                 report_keyword_prefix(ident.name.as_str(), ident.span.start, ident.span.end, ctx);
             }
-            AstKind::IdentifierReference(ident) => {
+            AstNode::IdentifierReference(ident) => {
                 report_keyword_prefix(ident.name.as_str(), ident.span.start, ident.span.end, ctx);
             }
             _ => {}
@@ -88,23 +86,13 @@ impl NativeRule for NoKeywordPrefix {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoKeywordPrefix)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoKeywordPrefix)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

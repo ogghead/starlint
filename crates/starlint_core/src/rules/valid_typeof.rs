@@ -73,11 +73,7 @@ fn is_typeof(ctx: &LintContext<'_>, id: NodeId) -> bool {
 }
 
 /// If the other side of the comparison is a string literal, check it's a valid typeof value.
-fn check_typeof_value(
-    ctx: &mut LintContext<'_>,
-    id: NodeId,
-    full_span: starlint_ast::types::Span,
-) {
+fn check_typeof_value(ctx: &mut LintContext<'_>, id: NodeId, full_span: starlint_ast::types::Span) {
     let Some(AstNode::StringLiteral(lit)) = ctx.node(id) else {
         return;
     };
@@ -88,16 +84,14 @@ fn check_typeof_value(
     }
 
     let suggestion = closest_typeof_value(value);
-    let fix = suggestion.map(|suggested| {
-        Fix {
-            kind: FixKind::SafeFix,
-            message: format!("Replace with `\"{suggested}\"`"),
-            edits: vec![Edit {
-                span: Span::new(lit.span.start, lit.span.end),
-                replacement: format!("\"{suggested}\""),
-            }],
-            is_snippet: false,
-        }
+    let fix = suggestion.map(|suggested| Fix {
+        kind: FixKind::SafeFix,
+        message: format!("Replace with `\"{suggested}\"`"),
+        edits: vec![Edit {
+            span: Span::new(lit.span.start, lit.span.end),
+            replacement: format!("\"{suggested}\""),
+        }],
+        is_snippet: false,
     });
     let help = suggestion.map(|s| format!("Did you mean `\"{s}\"`?"));
     ctx.report(Diagnostic {

@@ -71,13 +71,11 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_alias_methods::NoAliasMethods),
         Box::new(no_commented_out_tests::NoCommentedOutTests),
         Box::new(no_conditional_expect::NoConditionalExpect),
-        Box::new(no_conditional_in_test::NoConditionalInTest),
         Box::new(no_confusing_set_timeout::NoConfusingSetTimeout),
         Box::new(no_deprecated_functions::NoDeprecatedFunctions),
         Box::new(no_disabled_tests::NoDisabledTests),
         Box::new(no_done_callback::NoDoneCallback),
         Box::new(no_duplicate_hooks::NoDuplicateHooks),
-        Box::new(no_export::NoExport),
         Box::new(no_focused_tests::NoFocusedTests),
         Box::new(no_hooks::NoHooks),
         Box::new(no_identical_title::NoIdenticalTitle),
@@ -89,7 +87,6 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_restricted_matchers::NoRestrictedMatchers),
         Box::new(no_standalone_expect::NoStandaloneExpect),
         Box::new(no_test_prefixes::NoTestPrefixes),
-        Box::new(no_test_return_statement::NoTestReturnStatement),
         Box::new(no_unneeded_async_expect_function::NoUnneededAsyncExpectFunction),
         Box::new(no_untyped_mock_factory::NoUntypedMockFactory),
         Box::new(padding_around_test_blocks::PaddingAroundTestBlocks),
@@ -118,5 +115,6 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(valid_describe_callback::ValidDescribeCallback),
         Box::new(valid_expect::ValidExpect),
         Box::new(valid_title::ValidTitle),
+        Box::new(no_export::NoExport),
     ]
 }

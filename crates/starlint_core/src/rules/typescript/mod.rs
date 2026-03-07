@@ -133,8 +133,6 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_duplicate_enum_values::NoDuplicateEnumValues),
         Box::new(no_dynamic_delete::NoDynamicDelete),
         Box::new(no_empty_interface::NoEmptyInterface),
-        Box::new(no_empty_object_type::NoEmptyObjectType),
-        Box::new(no_explicit_any::NoExplicitAny),
         Box::new(no_extra_non_null_assertion::NoExtraNonNullAssertion),
         Box::new(no_extraneous_class::NoExtraneousClass),
         Box::new(no_floating_promises::NoFloatingPromises),
@@ -146,7 +144,6 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_misused_promises::NoMisusedPromises),
         Box::new(no_misused_spread::NoMisusedSpread),
         Box::new(no_mixed_enums::NoMixedEnums),
-        Box::new(no_namespace::NoNamespace),
         Box::new(no_non_null_asserted_optional_chain::NoNonNullAssertedOptionalChain),
         Box::new(no_non_null_assertion::NoNonNullAssertion),
         Box::new(no_require_imports::NoRequireImports),
@@ -210,5 +207,8 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(unbound_method::UnboundMethod),
         Box::new(unified_signatures::UnifiedSignatures),
         Box::new(use_unknown_in_catch_callback_variable::UseUnknownInCatchCallbackVariable),
+        Box::new(no_empty_object_type::NoEmptyObjectType),
+        Box::new(no_explicit_any::NoExplicitAny),
+        Box::new(no_namespace::NoNamespace),
     ]
 }

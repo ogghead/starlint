@@ -71,9 +71,8 @@ impl LintRule for NoProcessExit {
 
         ctx.report(Diagnostic {
             rule_name: "no-process-exit".to_owned(),
-            message:
-                "Avoid `process.exit()` — use `process.exitCode` or throw an error instead"
-                    .to_owned(),
+            message: "Avoid `process.exit()` — use `process.exitCode` or throw an error instead"
+                .to_owned(),
             span: Span::new(call.span.start, call.span.end),
             severity: Severity::Warning,
             help: Some("Set `process.exitCode` instead for graceful shutdown".to_owned()),

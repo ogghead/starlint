@@ -30,7 +30,6 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(catch_or_return::CatchOrReturn),
         Box::new(no_callback_in_promise::NoCallbackInPromise),
         Box::new(no_multiple_resolved::NoMultipleResolved),
-        Box::new(no_native::NoNative),
         Box::new(no_nesting::NoNesting),
         Box::new(no_new_statics::NoNewStatics),
         Box::new(no_promise_in_callback::NoPromiseInCallback),

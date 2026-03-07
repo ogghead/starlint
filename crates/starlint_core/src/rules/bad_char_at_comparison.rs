@@ -41,10 +41,8 @@ impl LintRule for BadCharAtComparison {
         }
 
         // Check left.charAt() == "multi-char" or "multi-char" == right.charAt()
-        let flagged = (is_char_at_call(ctx, expr.left)
-            && is_multi_char_string(ctx, expr.right))
-            || (is_multi_char_string(ctx, expr.left)
-                && is_char_at_call(ctx, expr.right));
+        let flagged = (is_char_at_call(ctx, expr.left) && is_multi_char_string(ctx, expr.right))
+            || (is_multi_char_string(ctx, expr.left) && is_char_at_call(ctx, expr.right));
 
         if flagged {
             ctx.report(Diagnostic {

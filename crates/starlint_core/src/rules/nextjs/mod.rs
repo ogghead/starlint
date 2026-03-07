@@ -31,7 +31,6 @@ use crate::rule::NativeRule;
 #[allow(clippy::too_many_lines)]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
     vec![
-        Box::new(google_font_display::GoogleFontDisplay),
         Box::new(google_font_preconnect::GoogleFontPreconnect),
         Box::new(inline_script_id::InlineScriptId),
         Box::new(next_script_for_ga::NextScriptForGa),

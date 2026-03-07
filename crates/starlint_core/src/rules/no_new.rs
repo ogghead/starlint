@@ -38,10 +38,7 @@ impl LintRule for NoNew {
             return;
         };
 
-        if matches!(
-            ctx.node(stmt.expression),
-            Some(AstNode::NewExpression(_))
-        ) {
+        if matches!(ctx.node(stmt.expression), Some(AstNode::NewExpression(_))) {
             let span = Span::new(stmt.span.start, stmt.span.end);
             let fix = FixBuilder::new("Remove `new` statement", FixKind::SuggestionFix)
                 .edit(fix_utils::delete_statement(ctx.source_text(), span))

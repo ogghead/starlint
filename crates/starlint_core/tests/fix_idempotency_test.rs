@@ -219,7 +219,7 @@ fn fix_idempotent_no_extra_semi() {
 
 #[test]
 fn fix_idempotent_no_zero_fractions() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_zero_fractions::NoZeroFractions)],
         "const x = 1.0;\nconst y = 2.0;",
         "no_zero_fractions",
@@ -228,7 +228,7 @@ fn fix_idempotent_no_zero_fractions() {
 
 #[test]
 fn fix_idempotent_number_literal_case() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::number_literal_case::NumberLiteralCase)],
         "const x = 0XFF;\nconst y = 0B1010;",
         "number_literal_case",
@@ -395,7 +395,7 @@ fn fix_idempotent_prefer_const() {
 
 #[test]
 fn fix_idempotent_text_encoding_identifier_case() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(
             rules::text_encoding_identifier_case::TextEncodingIdentifierCase,
         )],
@@ -520,7 +520,7 @@ fn fix_idempotent_escape_case() {
 
 #[test]
 fn fix_idempotent_no_hex_escape() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_hex_escape::NoHexEscape)],
         r"var s = '\x41';",
         "no_hex_escape",
@@ -716,7 +716,7 @@ fn fix_idempotent_no_implicit_coercion() {
 
 #[test]
 fn fix_idempotent_numeric_separators_style() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(
             rules::numeric_separators_style::NumericSeparatorsStyle,
         )],
@@ -809,15 +809,14 @@ fn fix_idempotent_no_new_buffer() {
 
 #[test]
 fn fix_idempotent_combined_multi_rule() {
-    let native_rules: Vec<Box<dyn NativeRule>> = vec![
-        Box::new(rules::no_zero_fractions::NoZeroFractions),
-    ];
+    let native_rules: Vec<Box<dyn NativeRule>> = vec![];
     let lint_rules: Vec<Box<dyn LintRule>> = vec![
         Box::new(lint_rules::no_debugger::NoDebugger),
         Box::new(rules::no_extra_semi::NoExtraSemi),
         Box::new(lint_rules::eqeqeq::Eqeqeq),
         Box::new(lint_rules::no_var::NoVar),
         Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
+        Box::new(rules::no_zero_fractions::NoZeroFractions),
     ];
     let session = LintSession::new_dual(native_rules, lint_rules, OutputFormat::Pretty);
     let file = Path::new("test.js");
