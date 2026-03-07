@@ -277,7 +277,9 @@ pub fn lint_source(source: &str, file_path: &str, rules: &[Box<dyn LintRule>]) -
 
     let path = Path::new(file_path);
     let allocator = Allocator::default();
-    let source_type = SourceType::from_path(path).unwrap_or_default();
+    let source_type = SourceType::from_path(path)
+        .unwrap_or_default()
+        .with_jsx(true);
     let parsed = Parser::new(&allocator, source, source_type).parse();
     let tree = ast_converter::convert(&parsed.program);
     let traversal_indices: Vec<usize> = rules

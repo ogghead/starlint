@@ -97,7 +97,7 @@ mod tests {
 
     fn lint(source: &str) -> Vec<Diagnostic> {
         let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDynamicDelete)];
-        lint_source(source, "test.js", &rules)
+        lint_source(source, "test.ts", &rules)
     }
 
     #[test]
