@@ -35,12 +35,3 @@ pub mod no_unassigned_import;
 pub mod no_webpack_loader_syntax;
 pub mod prefer_default_export;
 pub mod unambiguous;
-
-use crate::rule::NativeRule;
-
-/// Return all import rules.
-#[must_use]
-#[allow(clippy::too_many_lines)]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

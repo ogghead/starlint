@@ -8,11 +8,3 @@ pub mod no_new_require;
 pub mod no_path_concat;
 pub mod no_process_env;
 pub mod no_process_exit;
-
-use crate::rule::NativeRule;
-
-/// Return all Node.js rules.
-#[must_use]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

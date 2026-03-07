@@ -18,11 +18,3 @@ pub mod prefer_await_to_callbacks;
 pub mod prefer_await_to_then;
 pub mod spec_only;
 pub mod valid_params;
-
-use crate::rule::NativeRule;
-
-/// Return all Promise rules.
-#[must_use]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

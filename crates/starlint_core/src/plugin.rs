@@ -1,6 +1,6 @@
 //! Plugin host trait for external lint plugins.
 //!
-//! Native Rust rules use [`NativeRule`](crate::rule::NativeRule) directly.
+//! Native Rust rules implement [`LintRule`](crate::lint_rule::LintRule).
 //! External plugin hosts (e.g., WASM) implement [`PluginHost`] and are
 //! injected into [`LintSession`](crate::engine::LintSession).
 

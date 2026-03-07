@@ -352,7 +352,7 @@ use std::collections::{HashMap, HashSet};
 use starlint_plugin_sdk::diagnostic::Severity;
 use starlint_plugin_sdk::rule::RuleMeta;
 
-use crate::rule::NativeRule;
+use crate::lint_rule::LintRule;
 
 // ---------------------------------------------------------------------------
 // Category-level file predicates
@@ -407,17 +407,10 @@ fn is_vue_file(source: &str, _path: &std::path::Path) -> bool {
     source.contains("defineComponent") || source.contains("createApp") || source.contains("vue")
 }
 
-/// Return all built-in native rules with their default configuration.
-#[must_use]
-#[allow(clippy::too_many_lines, clippy::large_stack_frames)]
-pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}
-
-/// Mapping from builtin plugin name to the native rule‐name prefixes it replaces.
+/// Mapping from builtin plugin name to the rule‐name prefixes it replaces.
 ///
 /// When a builtin plugin is active, rules whose names start with any of these
-/// prefixes are excluded from `all_rules_excluding`.
+/// prefixes are excluded from the active rule set.
 const BUILTIN_PLUGIN_PREFIXES: &[(&str, &[&str])] = &[
     ("storybook", &["storybook/"]),
     ("testing", &["jest/", "vitest/"]),
@@ -432,49 +425,13 @@ const BUILTIN_PLUGIN_PREFIXES: &[(&str, &[&str])] = &[
     ("typescript", &["typescript/"]),
 ];
 
-/// Return all built-in native rules, excluding categories handled by active
-/// builtin plugins and rules already migrated to [`LintRule`](crate::lint_rule::LintRule).
-///
-/// `active_builtins` is the set of builtin plugin names that are enabled.
-/// Rules whose names match an active plugin's prefixes are omitted.
-#[must_use]
-pub fn all_rules_excluding<S: ::std::hash::BuildHasher>(
-    active_builtins: &HashSet<String, S>,
-) -> Vec<Box<dyn NativeRule>> {
-    let migrated = crate::lint_rules::MIGRATED_RULE_NAMES;
-
-    if active_builtins.is_empty() {
-        return all_rules()
-            .into_iter()
-            .filter(|r| !migrated.contains(&r.meta().name.as_str()))
-            .collect();
-    }
-
-    // Collect all prefixes to exclude.
-    let excluded_prefixes: Vec<&str> = BUILTIN_PLUGIN_PREFIXES
-        .iter()
-        .filter(|(name, _)| active_builtins.contains(*name))
-        .flat_map(|(_, prefixes)| prefixes.iter().copied())
-        .collect();
-
-    all_rules()
-        .into_iter()
-        .filter(|rule| {
-            let name = rule.meta().name;
-            !migrated.contains(&name.as_str())
-                && !excluded_prefixes
-                    .iter()
-                    .any(|prefix| name.starts_with(prefix))
-        })
-        .collect()
-}
-
-/// Return metadata for all built-in rules (native + unified lint rules).
+/// Return metadata for all built-in rules.
 #[must_use]
 pub fn all_rule_metas() -> Vec<RuleMeta> {
-    let mut metas: Vec<RuleMeta> = all_rules().iter().map(|r| r.meta()).collect();
-    metas.extend(crate::lint_rules::all_lint_rules().iter().map(|r| r.meta()));
-    metas
+    crate::lint_rules::all_lint_rules()
+        .iter()
+        .map(|r| r.meta())
+        .collect()
 }
 
 /// Parse a severity string from config into a [`Severity`].
@@ -494,10 +451,8 @@ pub fn parse_severity(s: &str) -> Result<Option<Severity>, String> {
 
 /// Rules and their configured severity overrides.
 pub struct ConfiguredRules {
-    /// Enabled native rules.
-    pub rules: Vec<Box<dyn NativeRule>>,
-    /// Enabled unified lint rules (migrated from `NativeRule`).
-    pub lint_rules: Vec<Box<dyn crate::lint_rule::LintRule>>,
+    /// Enabled lint rules.
+    pub rules: Vec<Box<dyn LintRule>>,
     /// Severity overrides from config (rule name → configured severity).
     pub severity_overrides: HashMap<String, Severity>,
     /// Rules loaded but disabled by default (only active via file-pattern overrides).
@@ -514,8 +469,8 @@ pub struct ConfiguredRules {
 /// [`ConfiguredRules::disabled_rules`] — their diagnostics are suppressed
 /// by default and only activated for files matching an override pattern.
 ///
-/// `active_builtins` lists builtin plugin names whose corresponding native
-/// rules should be excluded (they will be handled by the WASM plugin instead).
+/// `active_builtins` lists builtin plugin names whose corresponding rules
+/// should be excluded (they will be handled by the WASM plugin instead).
 ///
 /// Configured severities are returned in [`ConfiguredRules::severity_overrides`]
 /// so the engine can apply them to diagnostics.
@@ -531,17 +486,37 @@ pub fn rules_for_config<S: ::std::hash::BuildHasher, S2: ::std::hash::BuildHashe
         .flat_map(|ov| ov.rules.keys().cloned())
         .collect();
 
+    // Collect prefixes to exclude based on active builtin plugins.
+    let excluded_prefixes: Vec<&str> = if active_builtins.is_empty() {
+        Vec::new()
+    } else {
+        BUILTIN_PLUGIN_PREFIXES
+            .iter()
+            .filter(|(name, _)| active_builtins.contains(*name))
+            .flat_map(|(_, prefixes)| prefixes.iter().copied())
+            .collect()
+    };
+
+    // Get all available lint rules, excluding those handled by builtin plugins.
+    let available: Vec<Box<dyn LintRule>> = crate::lint_rules::all_lint_rules()
+        .into_iter()
+        .filter(|rule| {
+            let name = rule.meta().name;
+            !excluded_prefixes
+                .iter()
+                .any(|prefix| name.starts_with(prefix))
+        })
+        .collect();
+
     if rule_configs.is_empty() {
         return ConfiguredRules {
-            rules: all_rules_excluding(active_builtins),
-            lint_rules: crate::lint_rules::all_lint_rules(),
+            rules: available,
             severity_overrides: HashMap::new(),
             disabled_rules: HashSet::new(),
         };
     }
 
-    let available = all_rules_excluding(active_builtins);
-    let mut enabled: Vec<Box<dyn NativeRule>> = Vec::new();
+    let mut enabled: Vec<Box<dyn LintRule>> = Vec::new();
     let mut severity_overrides: HashMap<String, Severity> = HashMap::new();
     let mut disabled_rules: HashSet<String> = HashSet::new();
 
@@ -629,7 +604,6 @@ pub fn rules_for_config<S: ::std::hash::BuildHasher, S2: ::std::hash::BuildHashe
 
     ConfiguredRules {
         rules: enabled,
-        lint_rules: crate::lint_rules::all_lint_rules(),
         severity_overrides,
         disabled_rules,
     }
@@ -641,8 +615,6 @@ mod tests {
 
     #[test]
     fn test_all_rules_returns_builtin_rules() {
-        // All rules have been migrated to LintRule; all_rules() returns NativeRules only
-        // which is now empty. Check all_lint_rules() instead.
         let rules = crate::lint_rules::all_lint_rules();
         assert!(
             rules.len() >= 2,
@@ -690,10 +662,9 @@ mod tests {
     fn test_rules_for_empty_config() {
         let configs = HashMap::new();
         let configured = rules_for_config(&configs, &[], &HashSet::new());
-        // All rules have been migrated to LintRule — check lint_rules instead
         assert!(
-            configured.lint_rules.len() >= 2,
-            "empty config should return all default lint rules"
+            configured.rules.len() >= 2,
+            "empty config should return all default rules"
         );
         assert!(
             configured.severity_overrides.is_empty(),
@@ -703,13 +674,14 @@ mod tests {
 
     #[test]
     fn test_rules_for_config_filters() {
-        // for-direction is migrated to LintRule; the config filtering for
-        // native rules returns 0 but lint_rules always returns all.
-        // Verify lint_rules contains for-direction.
-        let lint_rules = crate::lint_rules::all_lint_rules();
+        let configs = HashMap::new();
+        let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert!(
-            lint_rules.iter().any(|r| r.meta().name == "for-direction"),
-            "lint_rules should contain for-direction"
+            configured
+                .rules
+                .iter()
+                .any(|r| r.meta().name == "for-direction"),
+            "rules should contain for-direction"
         );
     }
 
@@ -722,30 +694,32 @@ mod tests {
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert!(
-            configured.rules.is_empty(),
+            !configured
+                .rules
+                .iter()
+                .any(|r| r.meta().name == "for-direction"),
             "rule set to 'off' should not be enabled"
         );
     }
 
     #[test]
     fn test_severity_override_applied() {
-        // for-direction is now a LintRule; severity overrides are only tracked
-        // for NativeRules, so this test just verifies the override map is empty
-        // when no native rules match.
         let mut configs = HashMap::new();
         configs.insert(
             "for-direction".to_owned(),
             starlint_config::RuleConfig::Severity("warn".to_owned()),
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
-        // Native rules are empty since for-direction is migrated.
-        // The lint_rules still contain it.
         assert!(
             configured
-                .lint_rules
+                .rules
                 .iter()
                 .any(|r| r.meta().name == "for-direction"),
-            "lint_rules should contain for-direction"
+            "rules should contain for-direction"
+        );
+        assert!(
+            configured.severity_overrides.contains_key("for-direction"),
+            "severity override should be applied for for-direction"
         );
     }
 
@@ -776,27 +750,24 @@ mod tests {
 
     #[test]
     fn test_override_only_rule_loaded_as_disabled() {
-        // Both for-direction and no-console are migrated to LintRule.
-        // Verify they exist in lint_rules.
-        let lint_rules = crate::lint_rules::all_lint_rules();
-        let names: Vec<String> = lint_rules.iter().map(|r| r.meta().name).collect();
+        let rules = crate::lint_rules::all_lint_rules();
+        let names: Vec<String> = rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.contains(&"for-direction".to_owned()),
-            "lint_rules should contain for-direction"
+            "rules should contain for-direction"
         );
         assert!(
             names.contains(&"no-console".to_owned()),
-            "lint_rules should contain no-console"
+            "rules should contain no-console"
         );
     }
 
     #[test]
     fn test_off_rule_loaded_when_in_override() {
-        // for-direction is now a LintRule. Verify lint_rules contains it.
-        let lint_rules = crate::lint_rules::all_lint_rules();
+        let rules = crate::lint_rules::all_lint_rules();
         assert!(
-            lint_rules.iter().any(|r| r.meta().name == "for-direction"),
-            "lint_rules should contain for-direction"
+            rules.iter().any(|r| r.meta().name == "for-direction"),
+            "rules should contain for-direction"
         );
     }
 
@@ -810,46 +781,44 @@ mod tests {
         );
         let configured = rules_for_config(&configs, &[], &HashSet::new());
         assert!(
-            configured.rules.is_empty(),
+            !configured
+                .rules
+                .iter()
+                .any(|r| r.meta().name == "for-direction"),
             "off rule with no override should be skipped"
         );
     }
 
     #[test]
     fn test_glob_config_enables_category() {
-        // node/ rules are now LintRules. Verify they exist in lint_rules.
-        let lint_rules = crate::lint_rules::all_lint_rules();
-        let names: Vec<String> = lint_rules.iter().map(|r| r.meta().name).collect();
+        let rules = crate::lint_rules::all_lint_rules();
+        let names: Vec<String> = rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.iter().any(|n| n.starts_with("node/")),
-            "lint_rules should contain node/ prefixed rules"
+            "rules should contain node/ prefixed rules"
         );
     }
 
     #[test]
     fn test_exact_match_overrides_glob() {
-        // node/ rules are now LintRules. Verify the registry contains them.
-        let lint_rules = crate::lint_rules::all_lint_rules();
-        let names: Vec<String> = lint_rules.iter().map(|r| r.meta().name).collect();
+        let rules = crate::lint_rules::all_lint_rules();
+        let names: Vec<String> = rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.contains(&"node/global-require".to_owned()),
-            "lint_rules should contain node/global-require"
+            "rules should contain node/global-require"
         );
         assert!(
             names.contains(&"node/no-process-env".to_owned()),
-            "lint_rules should contain node/no-process-env"
+            "rules should contain node/no-process-env"
         );
     }
 
     #[test]
     fn test_prefixed_rules_in_all_rules() {
-        // node/ rules are now LintRules.
-        let lint_rules = crate::lint_rules::all_lint_rules();
+        let rules = crate::lint_rules::all_lint_rules();
         assert!(
-            lint_rules
-                .iter()
-                .any(|r| r.meta().name == "node/global-require"),
-            "lint_rules should include prefixed node rules"
+            rules.iter().any(|r| r.meta().name == "node/global-require"),
+            "should include prefixed node rules"
         );
     }
 
@@ -863,20 +832,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_rules_excluding_filters_by_builtin() {
-        // All rules are now LintRules. Verify jest/ rules exist in lint_rules.
-        let lint_rules = crate::lint_rules::all_lint_rules();
-        let has_jest = lint_rules
-            .iter()
-            .any(|r| r.meta().name.starts_with("jest/"));
-        assert!(has_jest, "lint_rules should include jest/ rules");
-
-        let has_for_dir = lint_rules.iter().any(|r| r.meta().name == "for-direction");
-        assert!(has_for_dir, "lint_rules should include for-direction");
-    }
-
-    #[test]
-    fn test_rules_for_config_with_active_builtin() {
+    fn test_rules_for_config_excludes_builtin_prefixes() {
         let configs = HashMap::new();
         let mut active = HashSet::new();
         active.insert("react".to_owned());

@@ -55,12 +55,3 @@ pub mod self_closing_comp;
 pub mod state_in_constructor;
 pub mod style_prop_object;
 pub mod void_dom_elements_no_children;
-
-use crate::rule::NativeRule;
-
-/// Return all React rules.
-#[must_use]
-#[allow(clippy::too_many_lines)]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

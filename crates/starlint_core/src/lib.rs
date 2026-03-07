@@ -17,7 +17,6 @@ pub mod lint_rules;
 pub mod overrides;
 pub mod parser;
 pub mod plugin;
-pub mod rule;
 pub mod rules;
 pub mod traversal;
 

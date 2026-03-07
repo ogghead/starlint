@@ -18,10 +18,10 @@ use starlint_plugin_sdk::rule::RuleMeta;
 /// File-level predicate: returns `true` when a file is relevant to the category.
 type FilePredicate = fn(&str, &Path) -> bool;
 
-/// Wraps a [`NativeRule`] with a category-level file guard.
+/// Wraps a [`LintRule`] with a category-level file guard.
 ///
 /// All trait methods delegate to the inner rule except
-/// [`should_run_on_file`](NativeRule::should_run_on_file), which first checks
+/// [`should_run_on_file`](LintRule::should_run_on_file), which first checks
 /// the category predicate. If the predicate returns `false`, the rule is
 /// skipped for the entire file (both traversal and `run_once`).
 struct CategoryGuarded {

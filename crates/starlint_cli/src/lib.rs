@@ -107,13 +107,9 @@ pub fn run() -> miette::Result<ExitStatus> {
         .map(|(name, _)| name.clone())
         .collect();
     let configured = rules_for_config(&config.rules, &config.overrides, &active_builtins);
-    tracing::debug!(
-        "enabled {} native rule(s), {} lint rule(s)",
-        configured.rules.len(),
-        configured.lint_rules.len()
-    );
+    tracing::debug!("enabled {} rule(s)", configured.rules.len());
     let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);
-    let mut session = LintSession::new_dual(configured.rules, configured.lint_rules, output_format)
+    let mut session = LintSession::new(configured.rules, output_format)
         .with_severity_overrides(configured.severity_overrides)
         .with_override_set(override_set)
         .with_disabled_rules(configured.disabled_rules);

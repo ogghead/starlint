@@ -19,11 +19,3 @@ pub mod prefer_to_be_object;
 pub mod prefer_to_be_truthy;
 pub mod require_local_test_context_for_concurrent_snapshots;
 pub mod warn_todo;
-
-use crate::rule::NativeRule;
-
-/// Return all Vitest rules.
-#[must_use]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

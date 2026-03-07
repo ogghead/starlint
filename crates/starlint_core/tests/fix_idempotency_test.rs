@@ -22,7 +22,7 @@ const MAX_FIX_PASSES: usize = 10;
 /// The multi-pass loop mirrors the CLI's `apply_fixes_to_files`: overlapping
 /// fixes that get skipped on one pass are picked up on the next.
 fn assert_fix_idempotent(rules: Vec<Box<dyn LintRule>>, source: &str, label: &str) {
-    let session = LintSession::new_dual(vec![], rules, OutputFormat::Pretty);
+    let session = LintSession::new(rules, OutputFormat::Pretty);
     let file = Path::new("test.js");
 
     let result = session.lint_single_file(file, source);
@@ -736,7 +736,7 @@ fn fix_idempotent_combined_multi_rule() {
         Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
         Box::new(rules::no_zero_fractions::NoZeroFractions),
     ];
-    let session = LintSession::new_dual(vec![], lint_rules, OutputFormat::Pretty);
+    let session = LintSession::new(lint_rules, OutputFormat::Pretty);
     let file = Path::new("test.js");
     let source = "\
 debugger;
@@ -910,9 +910,7 @@ fn fix_idempotent_all_rules() {
     // no-console-spaces with overlapping spans — the multi-pass convergence
     // loop handles this by picking up the skipped fix on the next pass.
     //
-    // Uses `new_dual` to include both native rules and migrated lint rules.
-    let session = LintSession::new_dual(
-        rules::all_rules(),
+    let session = LintSession::new(
         starlint_core::lint_rules::all_lint_rules(),
         OutputFormat::Pretty,
     );

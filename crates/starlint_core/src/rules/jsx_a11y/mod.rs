@@ -33,12 +33,3 @@ pub mod role_has_required_aria_props;
 pub mod role_supports_aria_props;
 pub mod scope;
 pub mod tabindex_no_positive;
-
-use crate::rule::NativeRule;
-
-/// Return all JSX accessibility rules.
-#[must_use]
-#[allow(clippy::too_many_lines)]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

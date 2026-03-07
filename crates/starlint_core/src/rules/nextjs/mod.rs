@@ -23,12 +23,3 @@ pub mod no_sync_scripts;
 pub mod no_title_in_document_head;
 pub mod no_typos;
 pub mod no_unwanted_polyfillio;
-
-use crate::rule::NativeRule;
-
-/// Return all Next.js rules.
-#[must_use]
-#[allow(clippy::too_many_lines)]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

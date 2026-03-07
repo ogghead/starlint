@@ -19,11 +19,3 @@ pub mod no_setup_props_reactivity_loss;
 pub mod no_watch_after_await;
 pub mod prefer_define_options;
 pub mod require_prop_comment;
-
-use crate::rule::NativeRule;
-
-/// Return all Vue rules.
-#[must_use]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

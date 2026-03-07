@@ -101,12 +101,3 @@ pub mod triple_slash_reference;
 pub mod unbound_method;
 pub mod unified_signatures;
 pub mod use_unknown_in_catch_callback_variable;
-
-use crate::rule::NativeRule;
-
-/// Return all TypeScript rules.
-#[must_use]
-#[allow(clippy::too_many_lines)]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

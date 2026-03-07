@@ -56,12 +56,3 @@ pub mod require_top_level_describe;
 pub mod valid_describe_callback;
 pub mod valid_expect;
 pub mod valid_title;
-
-use crate::rule::NativeRule;
-
-/// Return all Jest rules.
-#[must_use]
-#[allow(clippy::too_many_lines)]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}

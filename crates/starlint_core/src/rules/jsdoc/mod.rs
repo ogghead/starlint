@@ -21,8 +21,6 @@ pub mod require_param_description;
 pub mod require_param_type;
 pub mod require_returns;
 
-use crate::rule::NativeRule;
-
 /// Strip `JSDoc` comment markers from a single line within a `/** ... */` block.
 ///
 /// Handles single-line `/** @tag */`, multi-line `* @tag`, and boundary lines.
@@ -31,10 +29,4 @@ pub(crate) fn trim_jsdoc_line(line: &str) -> &str {
     let without_open = trimmed.strip_prefix("/**").unwrap_or(trimmed);
     let without_close = without_open.strip_suffix("*/").unwrap_or(without_open);
     without_close.trim_start_matches('*').trim()
-}
-
-/// Return all `JSDoc` rules.
-#[must_use]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
 }

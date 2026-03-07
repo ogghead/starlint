@@ -17,11 +17,3 @@ pub mod prefer_pascal_case;
 pub mod story_exports;
 pub mod use_storybook_expect;
 pub mod use_storybook_testing_library;
-
-use crate::rule::NativeRule;
-
-/// Return all Storybook rules.
-#[must_use]
-pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![]
-}
