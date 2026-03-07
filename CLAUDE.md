@@ -62,16 +62,16 @@ starlint_plugin_sdk → serde
 3. `file_discovery` walks dirs, filters by extension → file list
 4. Per file (parallel via rayon): `starlint_parser::parse()` → `AstTree`
 5. If semantic rules active: `starlint_scope::build_scope_data(&tree)` → `ScopeData`
-6. Single-pass AST traversal → dispatch to rules via `AstNodeType` match
-7. Node collection → serialize for WASM plugins → call plugins
-8. Merge all diagnostics → format (pretty/json/compact) → exit code
+6. Dispatch to all plugins uniformly via `Plugin::lint_file(&FileContext)`
+7. Merge all diagnostics → apply overrides → format (pretty/json/compact) → exit code
 
 ### Key Design Decisions
 
+- **Unified Plugin trait**: Native rules and WASM plugins implement the same `Plugin` trait. Native rules use Rust types directly (zero serialization); WASM plugins serialize across the boundary.
 - **Custom parser + flat AST**: `starlint_parser` produces a `NodeId`-indexed `AstTree` — no arena allocation, no lifetime constraints
 - **Lightweight scope analysis**: `starlint_scope` builds scope tree, symbol table, and reference tracking in two passes over `AstTree`
-- **Single-pass traversal**: Rules receive `AstNodeType` via type-filtered dispatch — miss is free
-- **Interest-based filtering**: WASM plugins declare which node types they need
+- **Single-pass traversal**: Native rules receive `AstNodeType` via type-filtered dispatch inside `LintRulePlugin` — miss is free
+- **Interest-based filtering**: WASM v1 plugins declare which node types they need
 - **Parallel processing**: rayon for file-level parallelism
 - **Batched WASM calls**: One `lint-file` call per file per plugin (not per-node)
 
