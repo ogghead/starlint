@@ -7,13 +7,14 @@
 //! Detection uses a string-prefix check on the raw source text, which is more
 //! reliable than floating-point comparison for this purpose.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags numeric literals that approximate well-known `Math` constants.
 #[derive(Debug)]
@@ -63,7 +64,7 @@ const KNOWN_CONSTANTS: &[KnownConstant] = &[
     },
 ];
 
-impl NativeRule for ApproxConstant {
+impl LintRule for ApproxConstant {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "approx-constant".to_owned(),
@@ -74,17 +75,16 @@ impl NativeRule for ApproxConstant {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::NumericLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::NumericLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::NumericLiteral(lit) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::NumericLiteral(lit) = node else {
             return;
         };
 
-        let raw = lit.raw_str();
-        let raw_str = raw.as_ref();
+        let raw_str = lit.raw.as_str();
 
         // Only check decimal float literals (must contain a decimal point).
         if !raw_str.contains('.') {
@@ -122,22 +122,12 @@ impl NativeRule for ApproxConstant {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ApproxConstant)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ApproxConstant)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

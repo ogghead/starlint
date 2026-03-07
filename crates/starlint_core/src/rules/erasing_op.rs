@@ -3,20 +3,21 @@
 //! Detect operations that always produce a known constant regardless of the
 //! other operand, such as `x * 0`, `x & 0`, `x % 1`, or `x ** 0`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression};
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags operations that erase the value of one operand.
 #[derive(Debug)]
 pub struct ErasingOp;
 
-impl NativeRule for ErasingOp {
+impl LintRule for ErasingOp {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "erasing-op".to_owned(),
@@ -26,30 +27,30 @@ impl NativeRule for ErasingOp {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
         let msg = match expr.operator {
             // x * 0 or 0 * x → always 0
-            BinaryOperator::Multiplication => (is_integer_literal(&expr.left, 0)
-                || is_integer_literal(&expr.right, 0))
+            BinaryOperator::Multiplication => (is_integer_literal(ctx, expr.left, 0)
+                || is_integer_literal(ctx, expr.right, 0))
             .then_some("Multiplying by 0 always produces 0"),
             // x & 0 or 0 & x → always 0
-            BinaryOperator::BitwiseAnd => (is_integer_literal(&expr.left, 0)
-                || is_integer_literal(&expr.right, 0))
+            BinaryOperator::BitwiseAnd => (is_integer_literal(ctx, expr.left, 0)
+                || is_integer_literal(ctx, expr.right, 0))
             .then_some("Bitwise AND with 0 always produces 0"),
             // x % 1 → always 0
             BinaryOperator::Remainder => {
-                is_integer_literal(&expr.right, 1).then_some("Remainder by 1 always produces 0")
+                is_integer_literal(ctx, expr.right, 1).then_some("Remainder by 1 always produces 0")
             }
             // x ** 0 → always 1
-            BinaryOperator::Exponential => is_integer_literal(&expr.right, 0)
+            BinaryOperator::Exponential => is_integer_literal(ctx, expr.right, 0)
                 .then_some("Exponentiation by 0 always produces 1"),
             _ => None,
         };
@@ -82,14 +83,12 @@ impl NativeRule for ErasingOp {
     }
 }
 
-/// Check if an expression is a numeric literal with the given integer value.
-///
-/// Uses the raw string representation to avoid float comparison issues.
-fn is_integer_literal(expr: &Expression<'_>, value: u64) -> bool {
-    match expr {
-        Expression::NumericLiteral(n) => {
+/// Check if a node is a numeric literal with the given integer value.
+fn is_integer_literal(ctx: &LintContext<'_>, id: NodeId, value: u64) -> bool {
+    match ctx.node(id) {
+        Some(AstNode::NumericLiteral(n)) => {
             let expected = format!("{value}");
-            n.raw.as_ref().is_some_and(|r| r.as_str() == expected)
+            n.raw.as_str() == expected
         }
         _ => false,
     }
@@ -97,23 +96,12 @@ fn is_integer_literal(expr: &Expression<'_>, value: u64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ErasingOp)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ErasingOp)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

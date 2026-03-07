@@ -4,20 +4,21 @@
 //! already coerced to a boolean (e.g. `if`, `while`, `for`, ternary test,
 //! logical `!`), wrapping in `Boolean()` or `!!` is redundant.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::UnaryOperator;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags unnecessary boolean casts like `!!x` in boolean contexts.
 #[derive(Debug)]
 pub struct NoExtraBooleanCast;
 
-impl NativeRule for NoExtraBooleanCast {
+impl LintRule for NoExtraBooleanCast {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-extra-boolean-cast".to_owned(),
@@ -27,120 +28,128 @@ impl NativeRule for NoExtraBooleanCast {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[
-            AstType::ConditionalExpression,
-            AstType::DoWhileStatement,
-            AstType::ForStatement,
-            AstType::IfStatement,
-            AstType::WhileStatement,
+            AstNodeType::ConditionalExpression,
+            AstNodeType::DoWhileStatement,
+            AstNodeType::ForStatement,
+            AstNodeType::IfStatement,
+            AstNodeType::WhileStatement,
         ])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        // Check conditions in if/while/for/ternary for double-negation or Boolean()
-        let test_expr: Option<&Expression<'_>> = match kind {
-            AstKind::IfStatement(stmt) => Some(&stmt.test),
-            AstKind::WhileStatement(stmt) => Some(&stmt.test),
-            AstKind::DoWhileStatement(stmt) => Some(&stmt.test),
-            AstKind::ForStatement(stmt) => stmt.test.as_ref(),
-            AstKind::ConditionalExpression(expr) => Some(&expr.test),
-            _ => None,
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        // Extract the test condition's NodeId from various statement/expression types
+        let test_id: NodeId = match node {
+            AstNode::IfStatement(stmt) => stmt.test,
+            AstNode::WhileStatement(stmt) => stmt.test,
+            AstNode::DoWhileStatement(stmt) => stmt.test,
+            AstNode::ForStatement(stmt) => {
+                let Some(id) = stmt.test else { return };
+                id
+            }
+            AstNode::ConditionalExpression(cond) => cond.test,
+            _ => return,
         };
 
-        let Some(test) = test_expr else {
+        let Some(test_node) = ctx.node(test_id) else {
             return;
         };
 
-        if is_double_negation(test) || is_boolean_call(test) {
-            let inner_span = unwrap_boolean_cast(test);
-            let source = ctx.source_text();
-            let inner_start = usize::try_from(inner_span.start).unwrap_or(0);
-            let inner_end = usize::try_from(inner_span.end).unwrap_or(0);
-            let inner_text = source.get(inner_start..inner_end).unwrap_or("x");
-
-            ctx.report(Diagnostic {
-                rule_name: "no-extra-boolean-cast".to_owned(),
-                message: "Redundant double negation in boolean context".to_owned(),
-                span: Span::new(test.span().start, test.span().end),
-                severity: Severity::Warning,
-                help: Some("Remove the unnecessary boolean cast".to_owned()),
-                fix: Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: "Remove unnecessary boolean cast".to_owned(),
-                    edits: vec![Edit {
-                        span: Span::new(test.span().start, test.span().end),
-                        replacement: inner_text.to_owned(),
-                    }],
-                    is_snippet: false,
-                }),
-                labels: vec![],
-            });
+        if !is_double_negation(ctx, test_node) && !is_boolean_call(ctx, test_node) {
+            return;
         }
+
+        let inner_span = unwrap_boolean_cast(ctx, test_node);
+        let inner_text = ctx
+            .source_text()
+            .get(inner_span.start as usize..inner_span.end as usize)
+            .unwrap_or("x");
+
+        let test_span = test_node.span();
+        ctx.report(Diagnostic {
+            rule_name: "no-extra-boolean-cast".to_owned(),
+            message: "Redundant double negation in boolean context".to_owned(),
+            span: Span::new(test_span.start, test_span.end),
+            severity: Severity::Warning,
+            help: Some("Remove the unnecessary boolean cast".to_owned()),
+            fix: Some(Fix {
+                kind: FixKind::SafeFix,
+                message: "Remove unnecessary boolean cast".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(test_span.start, test_span.end),
+                    replacement: inner_text.to_owned(),
+                }],
+                is_snippet: false,
+            }),
+            labels: vec![],
+        });
     }
 }
 
-/// Check if expression is `!!x`.
-fn is_double_negation(expr: &Expression<'_>) -> bool {
-    if let Expression::UnaryExpression(outer) = expr {
-        if outer.operator == UnaryOperator::LogicalNot {
-            if let Expression::UnaryExpression(inner) = &outer.argument {
-                return inner.operator == UnaryOperator::LogicalNot;
-            }
-        }
+/// Check if node is `!!x`.
+fn is_double_negation(ctx: &LintContext<'_>, node: &AstNode) -> bool {
+    let AstNode::UnaryExpression(outer) = node else {
+        return false;
+    };
+    if outer.operator != UnaryOperator::LogicalNot {
+        return false;
     }
-    false
+    matches!(
+        ctx.node(outer.argument),
+        Some(AstNode::UnaryExpression(inner)) if inner.operator == UnaryOperator::LogicalNot
+    )
 }
 
-/// Check if expression is `Boolean(x)`.
-fn is_boolean_call(expr: &Expression<'_>) -> bool {
-    if let Expression::CallExpression(call) = expr {
-        return matches!(&call.callee, Expression::Identifier(id) if id.name.as_str() == "Boolean");
-    }
-    false
+/// Check if node is `Boolean(x)`.
+fn is_boolean_call(ctx: &LintContext<'_>, node: &AstNode) -> bool {
+    let AstNode::CallExpression(call) = node else {
+        return false;
+    };
+    matches!(
+        ctx.node(call.callee),
+        Some(AstNode::IdentifierReference(id)) if id.name == "Boolean"
+    )
 }
-
-use oxc_span::GetSpan;
 
 /// Extract the span of the inner expression from `!!x` or `Boolean(x)`.
-fn unwrap_boolean_cast(expr: &Expression<'_>) -> Span {
-    if let Expression::UnaryExpression(outer) = expr {
+fn unwrap_boolean_cast(ctx: &LintContext<'_>, node: &AstNode) -> Span {
+    // !!x → get inner.argument span
+    if let AstNode::UnaryExpression(outer) = node {
         if outer.operator == UnaryOperator::LogicalNot {
-            if let Expression::UnaryExpression(inner) = &outer.argument {
+            if let Some(AstNode::UnaryExpression(inner)) = ctx.node(outer.argument) {
                 if inner.operator == UnaryOperator::LogicalNot {
-                    return Span::new(inner.argument.span().start, inner.argument.span().end);
+                    if let Some(arg_node) = ctx.node(inner.argument) {
+                        let s = arg_node.span();
+                        return Span::new(s.start, s.end);
+                    }
                 }
             }
         }
     }
-    if let Expression::CallExpression(call) = expr {
-        if let Some(arg) = call.arguments.first() {
-            return Span::new(arg.span().start, arg.span().end);
+    // Boolean(x) → get first argument span
+    if let AstNode::CallExpression(call) = node {
+        if let Some(first_arg_id) = call.arguments.first() {
+            if let Some(arg_node) = ctx.node(*first_arg_id) {
+                let s = arg_node.span();
+                return Span::new(s.start, s.end);
+            }
         }
     }
-    // Fallback: return the expression's own span
-    Span::new(expr.span().start, expr.span().end)
+    // Fallback: return the node's own span
+    let s = node.span();
+    Span::new(s.start, s.end)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoExtraBooleanCast)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExtraBooleanCast)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

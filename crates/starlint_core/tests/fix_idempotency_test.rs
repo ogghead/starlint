@@ -192,7 +192,7 @@ fn fix_idempotent_no_debugger() {
 
 #[test]
 fn fix_idempotent_empty_brace_spaces() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::empty_brace_spaces::EmptyBraceSpaces)],
         "const a = { };\nconst b = {   };",
         "empty_brace_spaces",
@@ -493,7 +493,7 @@ fn fix_idempotent_no_instanceof_array() {
 
 #[test]
 fn fix_idempotent_no_extra_boolean_cast() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_extra_boolean_cast::NoExtraBooleanCast)],
         "if (!!x) {}",
         "no_extra_boolean_cast",
@@ -540,7 +540,7 @@ fn fix_idempotent_no_useless_computed_key() {
 
 #[test]
 fn fix_idempotent_no_useless_escape() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_useless_escape::NoUselessEscape)],
         r#"var x = "hell\o";"#,
         "no_useless_escape",
@@ -549,7 +549,7 @@ fn fix_idempotent_no_useless_escape() {
 
 #[test]
 fn fix_idempotent_no_useless_concat() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_useless_concat::NoUselessConcat)],
         "var x = 'a' + 'b';",
         "no_useless_concat",
@@ -562,7 +562,7 @@ fn fix_idempotent_no_useless_concat() {
 
 #[test]
 fn fix_idempotent_bad_bitwise_operator() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::bad_bitwise_operator::BadBitwiseOperator)],
         "if (a > 1 | b > 2) {}",
         "bad_bitwise_operator",
@@ -571,7 +571,7 @@ fn fix_idempotent_bad_bitwise_operator() {
 
 #[test]
 fn fix_idempotent_double_comparisons() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::double_comparisons::DoubleComparisons)],
         "if (a >= b && a <= b) {}",
         "double_comparisons",
@@ -810,7 +810,6 @@ fn fix_idempotent_no_new_buffer() {
 #[test]
 fn fix_idempotent_combined_multi_rule() {
     let native_rules: Vec<Box<dyn NativeRule>> = vec![
-        Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
         Box::new(rules::no_zero_fractions::NoZeroFractions),
     ];
     let lint_rules: Vec<Box<dyn LintRule>> = vec![
@@ -818,6 +817,7 @@ fn fix_idempotent_combined_multi_rule() {
         Box::new(rules::no_extra_semi::NoExtraSemi),
         Box::new(lint_rules::eqeqeq::Eqeqeq),
         Box::new(lint_rules::no_var::NoVar),
+        Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
     ];
     let session = LintSession::new_dual(native_rules, lint_rules, OutputFormat::Pretty);
     let file = Path::new("test.js");

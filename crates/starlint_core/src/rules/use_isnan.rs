@@ -5,21 +5,21 @@
 //! including itself, comparisons like `x === NaN` always evaluate to `false`
 //! and `x !== NaN` always evaluates to `true`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::BinaryOperator;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags comparisons with `NaN` and suggests using `Number.isNaN()`.
 #[derive(Debug)]
 pub struct UseIsnan;
 
-impl NativeRule for UseIsnan {
+impl LintRule for UseIsnan {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "use-isnan".to_owned(),
@@ -29,12 +29,12 @@ impl NativeRule for UseIsnan {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
@@ -42,24 +42,25 @@ impl NativeRule for UseIsnan {
             return;
         }
 
-        if is_nan(&expr.left) || is_nan(&expr.right) {
-            // Determine the non-NaN operand to build the fix
-            let non_nan_span = if is_nan(&expr.left) {
-                expr.right.span()
-            } else {
-                expr.left.span()
-            };
+        let left_is_nan = is_nan(ctx, expr.left);
+        let right_is_nan = is_nan(ctx, expr.right);
 
-            #[allow(clippy::as_conversions)]
-            let fix = ctx
-                .source_text()
+        if !left_is_nan && !right_is_nan {
+            return;
+        }
+
+        // Determine the non-NaN operand to build the fix
+        let non_nan_id = if left_is_nan { expr.right } else { expr.left };
+
+        #[allow(clippy::as_conversions)]
+        let fix = ctx.node(non_nan_id).and_then(|non_nan_node| {
+            let non_nan_span = non_nan_node.span();
+            ctx.source_text()
                 .get(non_nan_span.start as usize..non_nan_span.end as usize)
                 .map(|value_text| {
-                    // For inequality operators, wrap in negation
                     let is_negated = matches!(
                         expr.operator,
-                        oxc_ast::ast::BinaryOperator::StrictInequality
-                            | oxc_ast::ast::BinaryOperator::Inequality
+                        BinaryOperator::StrictInequality | BinaryOperator::Inequality
                     );
                     let replacement = if is_negated {
                         format!("!Number.isNaN({value_text})")
@@ -75,44 +76,34 @@ impl NativeRule for UseIsnan {
                         }],
                         is_snippet: false,
                     }
-                });
+                })
+        });
 
-            ctx.report(Diagnostic {
-                rule_name: "use-isnan".to_owned(),
-                message: "Comparisons with `NaN` always produce unexpected results".to_owned(),
-                span: Span::new(expr.span.start, expr.span.end),
-                severity: Severity::Error,
-                help: Some("Use `Number.isNaN(value)` instead".to_owned()),
-                fix,
-                labels: vec![],
-            });
-        }
+        ctx.report(Diagnostic {
+            rule_name: "use-isnan".to_owned(),
+            message: "Comparisons with `NaN` always produce unexpected results".to_owned(),
+            span: Span::new(expr.span.start, expr.span.end),
+            severity: Severity::Error,
+            help: Some("Use `Number.isNaN(value)` instead".to_owned()),
+            fix,
+            labels: vec![],
+        });
     }
 }
 
-/// Check if an expression is the identifier `NaN`.
-fn is_nan(expr: &Expression<'_>) -> bool {
-    matches!(expr, Expression::Identifier(ident) if ident.name == "NaN")
+/// Check if a node is the identifier `NaN`.
+fn is_nan(ctx: &LintContext<'_>, id: NodeId) -> bool {
+    matches!(ctx.node(id), Some(AstNode::IdentifierReference(ident)) if ident.name == "NaN")
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(UseIsnan)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(UseIsnan)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

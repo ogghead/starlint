@@ -43,6 +43,22 @@ pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(rules::no_new::NoNew),
         Box::new(rules::no_proto::NoProto),
         Box::new(rules::prefer_rest_params::PreferRestParams),
+        // Batch 4
+        Box::new(rules::approx_constant::ApproxConstant),
+        Box::new(rules::bad_comparison_sequence::BadComparisonSequence),
+        Box::new(rules::double_comparisons::DoubleComparisons),
+        Box::new(rules::erasing_op::ErasingOp),
+        Box::new(rules::id_length::IdLength::new()),
+        Box::new(rules::use_isnan::UseIsnan),
+        // Batch 5
+        Box::new(rules::bad_bitwise_operator::BadBitwiseOperator),
+        Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
+        Box::new(rules::no_empty_character_class::NoEmptyCharacterClass),
+        Box::new(rules::no_extra_boolean_cast::NoExtraBooleanCast),
+        Box::new(rules::no_multi_str::NoMultiStr),
+        Box::new(rules::no_new_wrappers::NoNewWrappers),
+        Box::new(rules::no_useless_concat::NoUselessConcat),
+        Box::new(rules::no_useless_escape::NoUselessEscape),
     ]
 }
 
@@ -73,4 +89,20 @@ pub const MIGRATED_RULE_NAMES: &[&str] = &[
     "no-void",
     "no-with",
     "prefer-rest-params",
+    "use-isnan",
+    // Batch 4
+    "approx-constant",
+    "bad-comparison-sequence",
+    "double-comparisons",
+    "erasing-op",
+    "id-length",
+    // Batch 5
+    "bad-bitwise-operator",
+    "empty-brace-spaces",
+    "no-empty-character-class",
+    "no-extra-boolean-cast",
+    "no-multi-str",
+    "no-new-wrappers",
+    "no-useless-concat",
+    "no-useless-escape",
 ];

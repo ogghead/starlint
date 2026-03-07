@@ -3,13 +3,14 @@
 //! Flag identifiers that are too short. Single-letter variable names
 //! (other than `_`) hurt readability and make code harder to search.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Default minimum identifier length.
 const DEFAULT_MIN: u32 = 2;
@@ -35,7 +36,7 @@ impl Default for IdLength {
     }
 }
 
-impl NativeRule for IdLength {
+impl LintRule for IdLength {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "id-length".to_owned(),
@@ -52,12 +53,12 @@ impl NativeRule for IdLength {
         Ok(())
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BindingIdentifier])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BindingIdentifier])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BindingIdentifier(id) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BindingIdentifier(id) = node else {
             return;
         };
 
@@ -88,22 +89,12 @@ impl NativeRule for IdLength {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(IdLength::new())];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(IdLength::new())];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

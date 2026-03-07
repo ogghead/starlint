@@ -3,20 +3,21 @@
 //! Detect `a >= b && a <= b` which can be simplified to `a === b`, and
 //! `a > b || a < b` which can be simplified to `a !== b`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{BinaryOperator, Expression, LogicalOperator};
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::{BinaryOperator, LogicalOperator};
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags redundant double comparisons that can be simplified.
 #[derive(Debug)]
 pub struct DoubleComparisons;
 
-impl NativeRule for DoubleComparisons {
+impl LintRule for DoubleComparisons {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "double-comparisons".to_owned(),
@@ -26,28 +27,28 @@ impl NativeRule for DoubleComparisons {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::LogicalExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::LogicalExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::LogicalExpression(logical) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::LogicalExpression(logical) = node else {
             return;
         };
 
-        let Expression::BinaryExpression(left) = &logical.left else {
+        let Some(AstNode::BinaryExpression(left)) = ctx.node(logical.left) else {
             return;
         };
-        let Expression::BinaryExpression(right) = &logical.right else {
+        let Some(AstNode::BinaryExpression(right)) = ctx.node(logical.right) else {
             return;
         };
 
         // Extract source text for operand comparison
         let source = ctx.source_text();
-        let same_operands = (src_equal(&left.left, &right.left, source)
-            && src_equal(&left.right, &right.right, source))
-            || (src_equal(&left.left, &right.right, source)
-                && src_equal(&left.right, &right.left, source));
+        let same_operands = (src_equal(ctx, left.left, right.left, source)
+            && src_equal(ctx, left.right, right.right, source))
+            || (src_equal(ctx, left.left, right.right, source)
+                && src_equal(ctx, left.right, right.left, source));
 
         if !same_operands {
             return;
@@ -85,8 +86,8 @@ impl NativeRule for DoubleComparisons {
                 LogicalOperator::And => "===",
                 _ => "!==",
             };
-            let left_a = expr_source(&left.left, source).unwrap_or("");
-            let right_b = expr_source(&left.right, source).unwrap_or("");
+            let left_a = node_source(ctx, left.left, source).unwrap_or("");
+            let right_b = node_source(ctx, left.right, source).unwrap_or("");
 
             ctx.report(Diagnostic {
                 rule_name: "double-comparisons".to_owned(),
@@ -109,44 +110,32 @@ impl NativeRule for DoubleComparisons {
     }
 }
 
-/// Compare two expressions by their source text content.
-fn src_equal(a: &Expression<'_>, b: &Expression<'_>, source: &str) -> bool {
-    let a_slice = expr_source(a, source);
-    let b_slice = expr_source(b, source);
+/// Compare two nodes by their source text content.
+fn src_equal(ctx: &LintContext<'_>, a: NodeId, b: NodeId, source: &str) -> bool {
+    let a_slice = node_source(ctx, a, source);
+    let b_slice = node_source(ctx, b, source);
     match (a_slice, b_slice) {
         (Some(a_str), Some(b_str)) => a_str == b_str,
         _ => false,
     }
 }
 
-/// Extract the source text slice for an expression.
-fn expr_source<'s>(expr: &Expression<'_>, source: &'s str) -> Option<&'s str> {
-    let start = usize::try_from(expr.span().start).ok()?;
-    let end = usize::try_from(expr.span().end).ok()?;
-    source.get(start..end)
+/// Extract the source text slice for a node.
+#[allow(clippy::as_conversions)]
+fn node_source<'s>(ctx: &LintContext<'_>, id: NodeId, source: &'s str) -> Option<&'s str> {
+    let node = ctx.node(id)?;
+    let span = node.span();
+    source.get(span.start as usize..span.end as usize)
 }
-
-use oxc_span::GetSpan;
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(DoubleComparisons)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DoubleComparisons)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -3,13 +3,14 @@
 //! Disallow unnecessary escape characters in strings and regular expressions.
 //! Characters that don't need escaping produce unnecessary visual noise.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags unnecessary escape characters in string literals.
 #[derive(Debug)]
@@ -24,7 +25,7 @@ const fn is_meaningful_escape(ch: char) -> bool {
         || ch == 'x'
 }
 
-impl NativeRule for NoUselessEscape {
+impl LintRule for NoUselessEscape {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-useless-escape".to_owned(),
@@ -34,19 +35,20 @@ impl NativeRule for NoUselessEscape {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::StringLiteral])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::StringLiteral])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::StringLiteral(lit) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::StringLiteral(lit) = node else {
             return;
         };
 
         let source = ctx.source_text();
-        let start = usize::try_from(lit.span.start).unwrap_or(0);
-        let end = usize::try_from(lit.span.end).unwrap_or(0);
-        let raw = source.get(start..end).unwrap_or("");
+        let raw = source
+            .get(lit.span.start as usize..lit.span.end as usize)
+            .unwrap_or("");
 
         // Need at least 2 chars for opening and closing quotes
         if raw.len() < 2 {
@@ -55,33 +57,32 @@ impl NativeRule for NoUselessEscape {
 
         // Strip the quote characters (first and last)
         let inner = &raw[1..raw.len().saturating_sub(1)];
-        let has_useless = has_useless_escape(inner);
-        let span_start = lit.span.start;
-        let span_end = lit.span.end;
 
-        if has_useless {
-            let quote = &raw[..1];
-            let fixed_inner = strip_useless_escapes(inner);
-            let fixed = format!("{quote}{fixed_inner}{quote}");
-
-            ctx.report(Diagnostic {
-                rule_name: "no-useless-escape".to_owned(),
-                message: "Unnecessary escape character".to_owned(),
-                span: Span::new(span_start, span_end),
-                severity: Severity::Warning,
-                help: Some("Remove the unnecessary escape".to_owned()),
-                fix: Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: "Remove unnecessary escape".to_owned(),
-                    edits: vec![Edit {
-                        span: Span::new(span_start, span_end),
-                        replacement: fixed,
-                    }],
-                    is_snippet: false,
-                }),
-                labels: vec![],
-            });
+        if !has_useless_escape(inner) {
+            return;
         }
+
+        let quote = &raw[..1];
+        let fixed_inner = strip_useless_escapes(inner);
+        let fixed = format!("{quote}{fixed_inner}{quote}");
+
+        ctx.report(Diagnostic {
+            rule_name: "no-useless-escape".to_owned(),
+            message: "Unnecessary escape character".to_owned(),
+            span: Span::new(lit.span.start, lit.span.end),
+            severity: Severity::Warning,
+            help: Some("Remove the unnecessary escape".to_owned()),
+            fix: Some(Fix {
+                kind: FixKind::SafeFix,
+                message: "Remove unnecessary escape".to_owned(),
+                edits: vec![Edit {
+                    span: Span::new(lit.span.start, lit.span.end),
+                    replacement: fixed,
+                }],
+                is_snippet: false,
+            }),
+            labels: vec![],
+        });
     }
 }
 
@@ -130,23 +131,12 @@ fn has_useless_escape(inner: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessEscape)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessEscape)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
