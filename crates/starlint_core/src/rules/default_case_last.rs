@@ -5,19 +5,19 @@
 //! understand the flow, because you have to mentally skip over it when
 //! reading the subsequent cases.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `default` cases that are not the last case in a switch statement.
 #[derive(Debug)]
 pub struct DefaultCaseLast;
 
-impl NativeRule for DefaultCaseLast {
+impl LintRule for DefaultCaseLast {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "default-case-last".to_owned(),
@@ -27,48 +27,57 @@ impl NativeRule for DefaultCaseLast {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::SwitchStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::SwitchStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::SwitchStatement(switch) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::SwitchStatement(switch) = node else {
             return;
         };
 
-        let cases = &switch.cases;
-        let case_count = cases.len();
+        let case_count = switch.cases.len();
 
         // No cases or only one case — nothing to flag
         if case_count <= 1 {
             return;
         }
 
-        for (i, case) in cases.iter().enumerate() {
-            // The default case has no test expression
-            let is_default = case.test.is_none();
-            let is_last = i.saturating_add(1) >= case_count;
+        // Collect case info upfront to avoid borrow conflicts
+        let cases_info: Vec<(Span, bool)> = switch
+            .cases
+            .iter()
+            .filter_map(|&case_id| {
+                let case = ctx.node(case_id)?.as_switch_case()?;
+                Some((Span::new(case.span.start, case.span.end), case.test.is_none()))
+            })
+            .collect();
+
+        let info_count = cases_info.len();
+
+        for (i, &(case_span, is_default)) in cases_info.iter().enumerate() {
+            let is_last = i.saturating_add(1) >= info_count;
 
             if is_default && !is_last {
                 // Fix: move the default case to the end by deleting it from
                 // its current position and inserting it after the last case.
                 #[allow(clippy::as_conversions)]
-                let fix = cases.last().and_then(|last_case| {
+                let fix = cases_info.last().and_then(|&(last_span, _)| {
                     let source = ctx.source_text();
                     let default_text =
-                        source.get(case.span.start as usize..case.span.end as usize)?;
+                        source.get(case_span.start as usize..case_span.end as usize)?;
                     Some(Fix {
                         kind: FixKind::SuggestionFix,
                         message: "Move `default` case to the end".to_owned(),
                         edits: vec![
                             // Delete the default case from current position
                             Edit {
-                                span: Span::new(case.span.start, case.span.end),
+                                span: case_span,
                                 replacement: String::new(),
                             },
                             // Insert it after the last case
                             Edit {
-                                span: Span::new(last_case.span.end, last_case.span.end),
+                                span: Span::new(last_span.end, last_span.end),
                                 replacement: format!(" {default_text}"),
                             },
                         ],
@@ -80,7 +89,7 @@ impl NativeRule for DefaultCaseLast {
                     rule_name: "default-case-last".to_owned(),
                     message: "The `default` case should be the last case in a `switch` statement"
                         .to_owned(),
-                    span: Span::new(case.span.start, case.span.end),
+                    span: case_span,
                     severity: Severity::Warning,
                     help: None,
                     fix,
@@ -93,23 +102,13 @@ impl NativeRule for DefaultCaseLast {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     /// Helper to lint source code with the `DefaultCaseLast` rule.
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(DefaultCaseLast)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DefaultCaseLast)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

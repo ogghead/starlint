@@ -237,7 +237,7 @@ fn fix_idempotent_number_literal_case() {
 
 #[test]
 fn fix_idempotent_no_useless_rename() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::no_useless_rename::NoUselessRename)],
         "import { foo as foo } from 'bar';",
         "no_useless_rename",

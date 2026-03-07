@@ -426,8 +426,8 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(const_comparisons::ConstComparisons),
         Box::new(constructor_super::ConstructorSuper),
         Box::new(curly::Curly),
-        Box::new(default_case::DefaultCase),
-        Box::new(default_case_last::DefaultCaseLast),
+        // default_case → migrated to LintRule
+        // default_case_last → migrated to LintRule
         Box::new(default_param_last::DefaultParamLast),
         Box::new(explicit_length_check::ExplicitLengthCheck),
         Box::new(for_direction::ForDirection),
@@ -440,7 +440,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(max_depth::MaxDepth::new()),
         Box::new(max_lines_per_function::MaxLinesPerFunction::new()),
         Box::new(max_nested_callbacks::MaxNestedCallbacks::new()),
-        Box::new(max_params::MaxParams::new()),
+        // max_params → migrated to LintRule
         Box::new(max_statements::MaxStatements::new()),
         Box::new(misrefactored_assign_op::MisrefactoredAssignOp),
         Box::new(missing_throw::MissingThrow),
@@ -471,8 +471,8 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_constructor_return::NoConstructorReturn),        Box::new(no_dupe_class_members::NoDupeClassMembers),
         Box::new(no_dupe_else_if::NoDupeElseIf),
         Box::new(no_dupe_keys::NoDupeKeys),
-        Box::new(no_duplicate_case::NoDuplicateCase),
-        Box::new(no_duplicate_imports::NoDuplicateImports),
+        // no_duplicate_case → migrated to LintRule
+        // no_duplicate_imports → migrated to LintRule
         Box::new(no_else_return::NoElseReturn),
         Box::new(no_eval::NoEval),
         Box::new(no_ex_assign::NoExAssign),
@@ -510,7 +510,7 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_return_assign::NoReturnAssign),
         Box::new(no_self_assign::NoSelfAssign),
         Box::new(no_self_compare::NoSelfCompare),
-        Box::new(no_sequences::NoSequences),
+        // no_sequences → migrated to LintRule
         Box::new(no_setter_return::NoSetterReturn),
         Box::new(no_shadow::NoShadow),
         Box::new(no_single_promise_in_promise_methods::NoSinglePromiseInPromiseMethods),
@@ -547,10 +547,10 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_useless_fallback_in_spread::NoUselessFallbackInSpread),
         Box::new(no_useless_length_check::NoUselessLengthCheck),
         Box::new(no_useless_promise_resolve_reject::NoUselessPromiseResolveReject),
-        Box::new(no_useless_rename::NoUselessRename),
+        // no_useless_rename → migrated to LintRule
         Box::new(no_useless_return::NoUselessReturn),
         Box::new(no_useless_spread::NoUselessSpread),
-        Box::new(no_useless_switch_case::NoUselessSwitchCase),
+        // no_useless_switch_case → migrated to LintRule
         Box::new(no_useless_undefined::NoUselessUndefined),
         Box::new(number_arg_out_of_range::NumberArgOutOfRange),
         Box::new(only_used_in_recursion::OnlyUsedInRecursion),
@@ -617,12 +617,12 @@ pub fn all_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(radix::Radix),
         Box::new(relative_url_style::RelativeUrlStyle),
         Box::new(require_array_join_separator::RequireArrayJoinSeparator),
-        Box::new(require_await::RequireAwait),
+        // require_await → migrated to LintRule
         Box::new(require_module_attributes::RequireModuleAttributes),
         Box::new(require_module_specifiers::RequireModuleSpecifiers),
         Box::new(require_number_to_fixed_digits_argument::RequireNumberToFixedDigitsArgument),
         Box::new(require_post_message_target_origin::RequirePostMessageTargetOrigin),
-        Box::new(require_yield::RequireYield),
+        // require_yield → migrated to LintRule
         Box::new(sort_imports::SortImports),
         Box::new(sort_keys::SortKeys),
         Box::new(sort_vars::SortVars),

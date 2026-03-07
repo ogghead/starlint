@@ -4,19 +4,19 @@
 //! function without `await` is likely a mistake — the author probably
 //! forgot to await something or doesn't need async.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags async functions that contain no `await` expressions.
 #[derive(Debug)]
 pub struct RequireAwait;
 
-impl NativeRule for RequireAwait {
+impl LintRule for RequireAwait {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "require-await".to_owned(),
@@ -26,23 +26,39 @@ impl NativeRule for RequireAwait {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrowFunctionExpression, AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrowFunctionExpression, AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        match kind {
-            AstKind::Function(func) if func.r#async => {
-                let Some(body) = &func.body else { return };
-                check_for_await(
-                    ctx,
-                    func.span,
-                    body.span,
-                    func.id.as_ref().map(|id| id.name.as_str()),
-                );
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        match node {
+            AstNode::Function(func) if func.is_async => {
+                let resolved_body = func
+                    .body
+                    .and_then(|body_id| ctx.node(body_id))
+                    .map(|n| {
+                        let s = n.span();
+                        starlint_ast::types::Span::new(s.start, s.end)
+                    });
+                let Some(bspan) = resolved_body else {
+                    return;
+                };
+                let name: Option<String> = func
+                    .id
+                    .and_then(|id| ctx.node(id))
+                    .and_then(|n| n.as_binding_identifier())
+                    .map(|bi| bi.name.clone());
+                check_for_await(ctx, func.span, bspan, name.as_deref());
             }
-            AstKind::ArrowFunctionExpression(arrow) if arrow.r#async => {
-                check_for_await(ctx, arrow.span, arrow.body.span, None);
+            AstNode::ArrowFunctionExpression(arrow) if arrow.is_async => {
+                let resolved_body = ctx.node(arrow.body).map(|n| {
+                    let s = n.span();
+                    starlint_ast::types::Span::new(s.start, s.end)
+                });
+                let Some(bspan) = resolved_body else {
+                    return;
+                };
+                check_for_await(ctx, arrow.span, bspan, None);
             }
             _ => {}
         }
@@ -51,9 +67,9 @@ impl NativeRule for RequireAwait {
 
 /// Check if the body source text contains `await` and report if not.
 fn check_for_await(
-    ctx: &mut crate::rule::NativeLintContext<'_>,
-    func_span: oxc_span::Span,
-    body_span: oxc_span::Span,
+    ctx: &mut LintContext<'_>,
+    func_span: starlint_ast::types::Span,
+    body_span: starlint_ast::types::Span,
     name: Option<&str>,
 ) {
     let source = ctx.source_text();
@@ -90,22 +106,12 @@ fn check_for_await(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RequireAwait)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RequireAwait)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

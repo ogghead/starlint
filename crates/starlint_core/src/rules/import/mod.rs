@@ -52,6 +52,7 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_commonjs::NoCommonjs),        Box::new(no_default_export::NoDefaultExport),
         Box::new(no_dynamic_require::NoDynamicRequire),
         Box::new(no_empty_named_blocks::NoEmptyNamedBlocks),
-        Box::new(no_namespace::NoNamespace),        Box::new(no_self_import::NoSelfImport),
+        Box::new(no_namespace::NoNamespace),
+        // no_self_import → migrated to LintRule
         Box::new(no_unassigned_import::NoUnassignedImport),    ]
 }

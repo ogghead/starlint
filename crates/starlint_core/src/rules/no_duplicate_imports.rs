@@ -5,21 +5,21 @@
 
 use std::collections::HashMap;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags duplicate import declarations from the same module.
 #[derive(Debug)]
 pub struct NoDuplicateImports;
 
-impl NativeRule for NoDuplicateImports {
+impl LintRule for NoDuplicateImports {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-duplicate-imports".to_owned(),
@@ -29,32 +29,37 @@ impl NativeRule for NoDuplicateImports {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Program])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Program])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Program(program) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Program(program) = node else {
             return;
         };
 
+        // Collect import data upfront to avoid borrow conflicts
+        let imports: Vec<(String, Span)> = program
+            .body
+            .iter()
+            .filter_map(|&stmt_id| {
+                let import = ctx.node(stmt_id)?.as_import_declaration()?;
+                Some((
+                    import.source.clone(),
+                    Span::new(import.span.start, import.span.end),
+                ))
+            })
+            .collect();
+
         // Map module source → first import span
         let mut seen: HashMap<String, Span> = HashMap::new();
-
-        // Collect duplicates first to avoid borrow conflict with ctx
         let mut duplicates: Vec<(String, Span, Span)> = Vec::new();
 
-        for stmt in &program.body {
-            let oxc_ast::ast::Statement::ImportDeclaration(import) = stmt else {
-                continue;
-            };
-            let source_str = import.source.value.as_str();
-            let import_span = Span::new(import.span.start, import.span.end);
-
-            if let Some(&first_span) = seen.get(source_str) {
-                duplicates.push((source_str.to_owned(), first_span, import_span));
+        for (source_str, import_span) in &imports {
+            if let Some(&first_span) = seen.get(source_str.as_str()) {
+                duplicates.push((source_str.clone(), first_span, *import_span));
             } else {
-                seen.insert(source_str.to_owned(), import_span);
+                seen.insert(source_str.clone(), *import_span);
             }
         }
 
@@ -88,22 +93,12 @@ impl NativeRule for NoDuplicateImports {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.mjs")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDuplicateImports)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.mjs"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDuplicateImports)];
+        lint_source(source, "test.mjs", &rules)
     }
 
     #[test]

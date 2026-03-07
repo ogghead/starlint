@@ -3,19 +3,19 @@
 //! Require `default` case in `switch` statements. A switch without a
 //! default case may silently ignore unexpected values.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `switch` statements that lack a `default` case.
 #[derive(Debug)]
 pub struct DefaultCase;
 
-impl NativeRule for DefaultCase {
+impl LintRule for DefaultCase {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "default-case".to_owned(),
@@ -25,16 +25,20 @@ impl NativeRule for DefaultCase {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::SwitchStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::SwitchStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::SwitchStatement(switch) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::SwitchStatement(switch) = node else {
             return;
         };
 
-        let has_default = switch.cases.iter().any(|c| c.test.is_none());
+        let has_default = switch.cases.iter().any(|&case_id| {
+            ctx.node(case_id)
+                .and_then(|n| n.as_switch_case())
+                .is_some_and(|c| c.test.is_none())
+        });
 
         if !has_default {
             // Check for a "no default" comment in the last case
@@ -77,22 +81,12 @@ impl NativeRule for DefaultCase {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(DefaultCase)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DefaultCase)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

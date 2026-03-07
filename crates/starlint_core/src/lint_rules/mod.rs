@@ -252,6 +252,17 @@ pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(rules::no_useless_backreference::NoUselessBackreference),
         Box::new(rules::prefer_node_protocol::PreferNodeProtocol),
         Box::new(rules::vitest::no_import_node_test::NoImportNodeTest),
+        Box::new(rules::default_case::DefaultCase),
+        Box::new(rules::default_case_last::DefaultCaseLast),
+        Box::new(rules::import::no_self_import::NoSelfImport),
+        Box::new(rules::max_params::MaxParams::new()),
+        Box::new(rules::no_duplicate_case::NoDuplicateCase),
+        Box::new(rules::no_duplicate_imports::NoDuplicateImports),
+        Box::new(rules::no_sequences::NoSequences),
+        Box::new(rules::no_useless_rename::NoUselessRename),
+        Box::new(rules::no_useless_switch_case::NoUselessSwitchCase),
+        Box::new(rules::require_await::RequireAwait),
+        Box::new(rules::require_yield::RequireYield),
     ]
 }
 
@@ -492,4 +503,15 @@ pub const MIGRATED_RULE_NAMES: &[&str] = &[
     "no-useless-backreference",
     "prefer-node-protocol",
     "vitest/no-import-node-test",
+    "default-case",
+    "default-case-last",
+    "import/no-self-import",
+    "max-params",
+    "no-duplicate-case",
+    "no-duplicate-imports",
+    "no-sequences",
+    "no-useless-rename",
+    "no-useless-switch-case",
+    "require-await",
+    "require-yield",
 ];

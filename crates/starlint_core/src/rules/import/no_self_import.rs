@@ -6,21 +6,21 @@
 //! This is a limited implementation — it checks if the import source
 //! matches the file's own name without full path resolution.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use crate::fix_builder::FixBuilder;
 use crate::fix_utils;
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags imports that appear to reference the current file.
 #[derive(Debug)]
 pub struct NoSelfImport;
 
-impl NativeRule for NoSelfImport {
+impl LintRule for NoSelfImport {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/no-self-import".to_owned(),
@@ -30,16 +30,16 @@ impl NativeRule for NoSelfImport {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ImportDeclaration(import) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let source_value = import.source.value.as_str();
+        let source_value = import.source.as_str();
 
         // Only check relative imports
         if !source_value.starts_with("./") && !source_value.starts_with("../") {
@@ -89,36 +89,26 @@ impl NativeRule for NoSelfImport {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint_with_path(
         source: &str,
-        path: &Path,
+        path: &str,
     ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoSelfImport)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSelfImport)];
+        lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_self_import() {
-        let diags = lint_with_path(r#"import foo from "./test";"#, Path::new("test.ts"));
+        let diags = lint_with_path(r#"import foo from "./test";"#, "test.ts");
         assert_eq!(diags.len(), 1, "self-import should be flagged");
     }
 
     #[test]
     fn test_allows_different_module() {
-        let diags = lint_with_path(r#"import foo from "./other";"#, Path::new("test.ts"));
+        let diags = lint_with_path(r#"import foo from "./other";"#, "test.ts");
         assert!(
             diags.is_empty(),
             "import of different module should not be flagged"
@@ -127,7 +117,7 @@ mod tests {
 
     #[test]
     fn test_allows_package_import() {
-        let diags = lint_with_path(r#"import foo from "lodash";"#, Path::new("test.ts"));
+        let diags = lint_with_path(r#"import foo from "lodash";"#, "test.ts");
         assert!(diags.is_empty(), "package import should not be flagged");
     }
 }

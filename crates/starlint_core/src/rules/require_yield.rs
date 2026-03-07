@@ -3,19 +3,19 @@
 //! Require generator functions to contain at least one `yield` expression.
 //! A generator function with no `yield` is likely a mistake.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags generator functions that contain no `yield` expressions.
 #[derive(Debug)]
 pub struct RequireYield;
 
-impl NativeRule for RequireYield {
+impl LintRule for RequireYield {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "require-yield".to_owned(),
@@ -25,33 +25,36 @@ impl NativeRule for RequireYield {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::Function])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::Function])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::Function(func) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::Function(func) = node else {
             return;
         };
 
         // Only check generator functions
-        if !func.generator {
+        if !func.is_generator {
             return;
         }
 
-        // Check if the function body contains a yield expression
-        let Some(body) = &func.body else {
+        // Get the body span to check for yield
+        let Some(resolved_body) = func.body.and_then(|body_id| ctx.node(body_id)) else {
             return;
         };
 
+        let bspan = resolved_body.span();
+
         // Walk the statements looking for yield expressions
-        let has_yield = source_contains_yield(ctx.source_text(), body.span.start, body.span.end);
+        let has_yield = source_contains_yield(ctx.source_text(), bspan.start, bspan.end);
 
         if !has_yield {
             let name = func
                 .id
-                .as_ref()
-                .map_or("(anonymous)", |id| id.name.as_str());
+                .and_then(|id| ctx.node(id))
+                .and_then(|n| n.as_binding_identifier())
+                .map_or("(anonymous)", |bi| bi.name.as_str());
             ctx.report(Diagnostic {
                 rule_name: "require-yield".to_owned(),
                 message: format!("Generator function '{name}' requires a yield expression"),
@@ -78,22 +81,12 @@ fn source_contains_yield(source: &str, start: u32, end: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RequireYield)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RequireYield)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

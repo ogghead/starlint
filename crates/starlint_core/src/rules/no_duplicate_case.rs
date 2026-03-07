@@ -6,20 +6,19 @@
 
 use std::collections::HashSet;
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-use oxc_span::GetSpan;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `switch` statements with duplicate `case` labels.
 #[derive(Debug)]
 pub struct NoDuplicateCase;
 
-impl NativeRule for NoDuplicateCase {
+impl LintRule for NoDuplicateCase {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-duplicate-case".to_owned(),
@@ -29,28 +28,41 @@ impl NativeRule for NoDuplicateCase {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::SwitchStatement])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::SwitchStatement])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::SwitchStatement(switch) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::SwitchStatement(switch) = node else {
             return;
         };
 
+        // Collect case info: (case_span, test_span, test_source_text)
+        // We resolve NodeIds upfront to avoid borrow conflicts later
+        let cases_info: Vec<(Span, Option<Span>)> = switch
+            .cases
+            .iter()
+            .filter_map(|&case_id| {
+                let case = ctx.node(case_id)?.as_switch_case()?;
+                let case_span = Span::new(case.span.start, case.span.end);
+                let test_span = case.test.and_then(|test_id| {
+                    let ts = ctx.node(test_id)?.span();
+                    Some(Span::new(ts.start, ts.end))
+                });
+                Some((case_span, test_span))
+            })
+            .collect();
+
         let mut seen = HashSet::new();
 
-        for case in &switch.cases {
-            let Some(test) = &case.test else {
+        for &(case_span, maybe_test_span) in &cases_info {
+            let Some(test_span) = maybe_test_span else {
                 // `default:` has no test expression
                 continue;
             };
 
             // Use the source text of the test expression as the key for
-            // duplicate detection. This handles identifiers, literals, and
-            // simple expressions. More complex equivalence checking (e.g.
-            // `1+2` vs `3`) is intentionally not done.
-            let test_span = test.span();
+            // duplicate detection.
             let start = usize::try_from(test_span.start).unwrap_or(0);
             let end = usize::try_from(test_span.end).unwrap_or(0);
             let Some(source_slice) = ctx.source_text().get(start..end) else {
@@ -64,7 +76,7 @@ impl NativeRule for NoDuplicateCase {
                     kind: FixKind::SafeFix,
                     message: "Remove duplicate case clause".to_owned(),
                     edits: vec![Edit {
-                        span: Span::new(case.span.start, case.span.end),
+                        span: case_span,
                         replacement: String::new(),
                     }],
                     is_snippet: false,
@@ -72,7 +84,7 @@ impl NativeRule for NoDuplicateCase {
                 ctx.report(Diagnostic {
                     rule_name: "no-duplicate-case".to_owned(),
                     message: format!("Duplicate case label `{key}`"),
-                    span: Span::new(test_span.start, test_span.end),
+                    span: test_span,
                     severity: Severity::Error,
                     help: None,
                     fix,
@@ -85,22 +97,12 @@ impl NativeRule for NoDuplicateCase {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoDuplicateCase)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDuplicateCase)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
