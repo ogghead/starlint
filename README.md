@@ -4,9 +4,9 @@ A fast, Rust-based JavaScript/TypeScript linter with first-class WASM plugin sup
 
 ## Features
 
-- **Fast**: Built on [oxc](https://oxc.rs) for parsing, with single-pass AST traversal
+- **Fast**: Custom parser with flat indexed AST, single-pass traversal, and lightweight scope analysis
 - **WASM Plugins**: Write lint rules in Rust (or any language targeting WASM) using the Component Model
-- **Native Rules**: High-performance rules that operate directly on the oxc AST
+- **Native Rules**: High-performance rules that operate directly on the AST
 - **Parallel**: File-level parallelism via rayon
 - **Configurable**: `starlint.toml` with rule severity overrides and file pattern overrides
 

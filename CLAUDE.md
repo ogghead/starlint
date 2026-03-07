@@ -30,8 +30,11 @@ crates/
   starlint_cli/           # CLI binary (clap, orchestration)
   starlint_core/          # Linter engine (parse, traverse, dispatch, diagnostics)
   starlint_config/        # Config file loading (starlint.toml)
+  starlint_ast/           # Flat indexed AST types (NodeId-based)
+  starlint_parser/        # Custom JS/TS/JSX/TSX parser → AstTree
+  starlint_scope/         # Lightweight scope analysis (symbols, references, scopes)
   starlint_lsp/           # LSP server (tower-lsp, diagnostics, code actions)
-  starlint_plugin_sdk/    # Shared types for plugins (no oxc dependency)
+  starlint_plugin_sdk/    # Shared types for plugins
   starlint_wasm_host/     # WASM runtime (wasmtime, bridge, loader)
 editors/
   vscode/                 # VS Code extension (language client)
@@ -44,10 +47,12 @@ wit/
 ```
 starlint_cli → starlint_core, starlint_config, starlint_wasm_host, starlint_lsp, tokio
 starlint_lsp → starlint_core, starlint_config, starlint_wasm_host, tower-lsp, tokio
-starlint_core → oxc_*, starlint_plugin_sdk, starlint_config
+starlint_core → starlint_ast, starlint_parser, starlint_scope, starlint_plugin_sdk, starlint_config
+starlint_scope → starlint_ast
+starlint_parser → starlint_ast
 starlint_config → toml, serde
-starlint_wasm_host → starlint_plugin_sdk, starlint_core, wasmtime, oxc_ast, oxc_ast_visit
-starlint_plugin_sdk → serde (NO oxc dependency)
+starlint_wasm_host → starlint_plugin_sdk, starlint_core, wasmtime
+starlint_plugin_sdk → serde
 ```
 
 ### Data Flow
@@ -55,17 +60,18 @@ starlint_plugin_sdk → serde (NO oxc dependency)
 1. CLI args parsed (clap) → `Cli` struct
 2. Config resolved (walk up dirs for `starlint.toml`)
 3. `file_discovery` walks dirs, filters by extension → file list
-4. Per file (parallel via rayon): `Allocator` → `parser::parse_file()` → `Program`
-5. Single-pass AST traversal → dispatch to native rules via `AstKind` match
-6. Node collection → serialize for WASM plugins → call plugins
-7. Merge all diagnostics → format (pretty/json/compact) → exit code
+4. Per file (parallel via rayon): `starlint_parser::parse()` → `AstTree`
+5. If semantic rules active: `starlint_scope::build_scope_data(&tree)` → `ScopeData`
+6. Single-pass AST traversal → dispatch to rules via `AstNodeType` match
+7. Node collection → serialize for WASM plugins → call plugins
+8. Merge all diagnostics → format (pretty/json/compact) → exit code
 
 ### Key Design Decisions
 
-- **Dual rule system**: Native Rust rules (direct oxc AST) + WASM plugins (simplified stable AST)
-- **Single-pass traversal**: Rules receive `AstKind` via `enter_node` — miss is free
+- **Custom parser + flat AST**: `starlint_parser` produces a `NodeId`-indexed `AstTree` — no arena allocation, no lifetime constraints
+- **Lightweight scope analysis**: `starlint_scope` builds scope tree, symbol table, and reference tracking in two passes over `AstTree`
+- **Single-pass traversal**: Rules receive `AstNodeType` via type-filtered dispatch — miss is free
 - **Interest-based filtering**: WASM plugins declare which node types they need
-- **Per-file `Allocator`**: oxc's arena allocation requires allocator to outlive AST
 - **Parallel processing**: rayon for file-level parallelism
 - **Batched WASM calls**: One `lint-file` call per file per plugin (not per-node)
 
