@@ -511,7 +511,7 @@ fn fix_idempotent_no_extra_bind() {
 
 #[test]
 fn fix_idempotent_escape_case() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(rules::escape_case::EscapeCase)],
         r"var s = '\xff';",
         "escape_case",

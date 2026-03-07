@@ -5,16 +5,15 @@
 //! "number", "string", "function", "symbol", "bigint". Any other comparison
 //! is almost certainly a typo.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{Expression, UnaryOperator};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::operator::UnaryOperator;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Valid return values from the `typeof` operator.
 const VALID_TYPEOF_VALUES: &[&str] = &[
@@ -32,7 +31,7 @@ const VALID_TYPEOF_VALUES: &[&str] = &[
 #[derive(Debug)]
 pub struct ValidTypeof;
 
-impl NativeRule for ValidTypeof {
+impl LintRule for ValidTypeof {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "valid-typeof".to_owned(),
@@ -42,12 +41,12 @@ impl NativeRule for ValidTypeof {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
@@ -57,56 +56,59 @@ impl NativeRule for ValidTypeof {
         }
 
         // Check both orderings: typeof x === "..." and "..." === typeof x
-        if is_typeof(&expr.left) {
-            check_typeof_value(&expr.right, expr.span, ctx);
-        } else if is_typeof(&expr.right) {
-            check_typeof_value(&expr.left, expr.span, ctx);
+        if is_typeof(ctx, expr.left) {
+            check_typeof_value(ctx, expr.right, expr.span);
+        } else if is_typeof(ctx, expr.right) {
+            check_typeof_value(ctx, expr.left, expr.span);
         }
     }
 }
 
-/// Check whether an expression is a `typeof` unary expression.
-fn is_typeof(expr: &Expression<'_>) -> bool {
-    matches!(expr, Expression::UnaryExpression(u) if u.operator == UnaryOperator::Typeof)
+/// Check whether a node is a `typeof` unary expression.
+fn is_typeof(ctx: &LintContext<'_>, id: NodeId) -> bool {
+    matches!(
+        ctx.node(id),
+        Some(AstNode::UnaryExpression(u)) if u.operator == UnaryOperator::Typeof
+    )
 }
 
 /// If the other side of the comparison is a string literal, check it's a valid typeof value.
 fn check_typeof_value(
-    expr: &Expression<'_>,
-    full_span: oxc_span::Span,
-    ctx: &mut NativeLintContext<'_>,
+    ctx: &mut LintContext<'_>,
+    id: NodeId,
+    full_span: starlint_ast::types::Span,
 ) {
-    let Expression::StringLiteral(lit) = expr else {
+    let Some(AstNode::StringLiteral(lit)) = ctx.node(id) else {
         return;
     };
 
     let value = lit.value.as_str();
-    if !VALID_TYPEOF_VALUES.contains(&value) {
-        let suggestion = closest_typeof_value(value);
-        let fix = suggestion.map(|suggested| {
-            let lit_span = lit.span();
-            let replacement = format!("\"{suggested}\"");
-            Fix {
-                kind: FixKind::SafeFix,
-                message: format!("Replace with `\"{suggested}\"`"),
-                edits: vec![Edit {
-                    span: Span::new(lit_span.start, lit_span.end),
-                    replacement,
-                }],
-                is_snippet: false,
-            }
-        });
-        let help = suggestion.map(|s| format!("Did you mean `\"{s}\"`?"));
-        ctx.report(Diagnostic {
-            rule_name: "valid-typeof".to_owned(),
-            message: format!("Invalid typeof comparison value `\"{value}\"`"),
-            span: Span::new(full_span.start, full_span.end),
-            severity: Severity::Error,
-            help,
-            fix,
-            labels: vec![],
-        });
+    if VALID_TYPEOF_VALUES.contains(&value) {
+        return;
     }
+
+    let suggestion = closest_typeof_value(value);
+    let fix = suggestion.map(|suggested| {
+        Fix {
+            kind: FixKind::SafeFix,
+            message: format!("Replace with `\"{suggested}\"`"),
+            edits: vec![Edit {
+                span: Span::new(lit.span.start, lit.span.end),
+                replacement: format!("\"{suggested}\""),
+            }],
+            is_snippet: false,
+        }
+    });
+    let help = suggestion.map(|s| format!("Did you mean `\"{s}\"`?"));
+    ctx.report(Diagnostic {
+        rule_name: "valid-typeof".to_owned(),
+        message: format!("Invalid typeof comparison value `\"{value}\"`"),
+        span: Span::new(full_span.start, full_span.end),
+        severity: Severity::Error,
+        help,
+        fix,
+        labels: vec![],
+    });
 }
 
 /// Find the closest valid typeof value using simple edit distance.
@@ -151,22 +153,12 @@ fn edit_distance(a: &str, b: &str) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ValidTypeof)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ValidTypeof)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

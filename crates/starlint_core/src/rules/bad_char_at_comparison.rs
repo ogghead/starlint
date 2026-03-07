@@ -4,20 +4,20 @@
 //! `.charAt()` always returns a single character (or empty string), so
 //! comparing it to a multi-character string is always false.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::Expression;
-use oxc_ast::ast_kind::AstType;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `.charAt()` compared to a multi-character string.
 #[derive(Debug)]
 pub struct BadCharAtComparison;
 
-impl NativeRule for BadCharAtComparison {
+impl LintRule for BadCharAtComparison {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "bad-char-at-comparison".to_owned(),
@@ -27,12 +27,12 @@ impl NativeRule for BadCharAtComparison {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::BinaryExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::BinaryExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::BinaryExpression(expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::BinaryExpression(expr) = node else {
             return;
         };
 
@@ -41,21 +41,12 @@ impl NativeRule for BadCharAtComparison {
         }
 
         // Check left.charAt() == "multi-char" or "multi-char" == right.charAt()
-        let flagged = (is_char_at_call(&expr.left) && is_multi_char_string(&expr.right))
-            || (is_multi_char_string(&expr.left) && is_char_at_call(&expr.right));
+        let flagged = (is_char_at_call(ctx, expr.left)
+            && is_multi_char_string(ctx, expr.right))
+            || (is_multi_char_string(ctx, expr.left)
+                && is_char_at_call(ctx, expr.right));
 
         if flagged {
-            // Fix: replace the entire comparison with `false`
-            let fix = Some(Fix {
-                kind: FixKind::SafeFix,
-                message: "Replace with `false`".to_owned(),
-                edits: vec![Edit {
-                    span: Span::new(expr.span.start, expr.span.end),
-                    replacement: "false".to_owned(),
-                }],
-                is_snippet: false,
-            });
-
             ctx.report(Diagnostic {
                 rule_name: "bad-char-at-comparison".to_owned(),
                 message: "`.charAt()` returns a single character — comparing to a multi-character \
@@ -64,51 +55,45 @@ impl NativeRule for BadCharAtComparison {
                 span: Span::new(expr.span.start, expr.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix,
+                fix: Some(Fix {
+                    kind: FixKind::SafeFix,
+                    message: "Replace with `false`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(expr.span.start, expr.span.end),
+                        replacement: "false".to_owned(),
+                    }],
+                    is_snippet: false,
+                }),
                 labels: vec![],
             });
         }
     }
 }
 
-/// Check if an expression is a `.charAt()` call.
-fn is_char_at_call(expr: &Expression<'_>) -> bool {
+/// Check if a node is a `.charAt()` call.
+fn is_char_at_call(ctx: &LintContext<'_>, id: NodeId) -> bool {
+    let Some(AstNode::CallExpression(call)) = ctx.node(id) else {
+        return false;
+    };
     matches!(
-        expr,
-        Expression::CallExpression(call) if matches!(
-            &call.callee,
-            Expression::StaticMemberExpression(member) if member.property.name.as_str() == "charAt"
-        )
+        ctx.node(call.callee),
+        Some(AstNode::StaticMemberExpression(member)) if member.property == "charAt"
     )
 }
 
-/// Check if an expression is a string literal with more than one character.
-fn is_multi_char_string(expr: &Expression<'_>) -> bool {
-    matches!(
-        expr,
-        Expression::StringLiteral(s) if s.value.len() > 1
-    )
+/// Check if a node is a string literal with more than one character.
+fn is_multi_char_string(ctx: &LintContext<'_>, id: NodeId) -> bool {
+    matches!(ctx.node(id), Some(AstNode::StringLiteral(s)) if s.value.len() > 1)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(BadCharAtComparison)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BadCharAtComparison)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

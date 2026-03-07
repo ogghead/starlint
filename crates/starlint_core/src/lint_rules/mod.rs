@@ -59,6 +59,15 @@ pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(rules::no_new_wrappers::NoNewWrappers),
         Box::new(rules::no_useless_concat::NoUselessConcat),
         Box::new(rules::no_useless_escape::NoUselessEscape),
+        // Batch 6
+        Box::new(rules::bad_char_at_comparison::BadCharAtComparison),
+        Box::new(rules::bad_replace_all_arg::BadReplaceAllArg),
+        Box::new(rules::consistent_empty_array_spread::ConsistentEmptyArraySpread),
+        Box::new(rules::error_message::ErrorMessage),
+        Box::new(rules::escape_case::EscapeCase),
+        Box::new(rules::func_names::FuncNames),
+        Box::new(rules::func_style::FuncStyle),
+        Box::new(rules::valid_typeof::ValidTypeof),
     ]
 }
 
@@ -105,4 +114,13 @@ pub const MIGRATED_RULE_NAMES: &[&str] = &[
     "no-new-wrappers",
     "no-useless-concat",
     "no-useless-escape",
+    // Batch 6
+    "bad-char-at-comparison",
+    "bad-replace-all-arg",
+    "consistent-empty-array-spread",
+    "error-message",
+    "escape-case",
+    "func-names",
+    "func-style",
+    "valid-typeof",
 ];

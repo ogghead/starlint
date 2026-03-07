@@ -4,31 +4,20 @@
 //! Patterns like `[...arr, ...[]]` or `[...[]]` are useless — the empty
 //! spread contributes no elements.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast::{ArrayExpressionElement, Expression};
-use oxc_ast::ast_kind::AstType;
-
-use oxc_span::GetSpan;
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags spreading an empty array literal inside an array expression.
 #[derive(Debug)]
 pub struct ConsistentEmptyArraySpread;
 
-/// Check whether a spread element's argument is an empty array literal.
-fn is_empty_array_spread(element: &ArrayExpressionElement<'_>) -> bool {
-    let ArrayExpressionElement::SpreadElement(spread) = element else {
-        return false;
-    };
-
-    matches!(&spread.argument, Expression::ArrayExpression(arr) if arr.elements.is_empty())
-}
-
-impl NativeRule for ConsistentEmptyArraySpread {
+impl LintRule for ConsistentEmptyArraySpread {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "consistent-empty-array-spread".to_owned(),
@@ -38,33 +27,45 @@ impl NativeRule for ConsistentEmptyArraySpread {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ArrayExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ArrayExpression])
     }
 
-    #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ArrayExpression(arr) = kind else {
+    #[allow(clippy::as_conversions)]
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ArrayExpression(arr) = node else {
             return;
         };
 
-        let has_empty_spread = arr.elements.iter().any(is_empty_array_spread);
+        let has_empty_spread = arr
+            .elements
+            .iter()
+            .any(|&el_id| is_empty_array_spread(ctx, el_id));
 
-        if has_empty_spread {
-            // Build fix: reconstruct array without empty spreads
-            let source = ctx.source_text();
-            let non_empty: Vec<&str> = arr
-                .elements
-                .iter()
-                .filter(|el| !is_empty_array_spread(el))
-                .filter_map(|el| {
-                    let s = el.span();
-                    source.get(s.start as usize..s.end as usize)
-                })
-                .collect();
-            let replacement = format!("[{}]", non_empty.join(", "));
+        if !has_empty_spread {
+            return;
+        }
 
-            let fix = Some(Fix {
+        // Build fix: reconstruct array without empty spreads
+        let source = ctx.source_text();
+        let non_empty: Vec<&str> = arr
+            .elements
+            .iter()
+            .filter(|&&el_id| !is_empty_array_spread(ctx, el_id))
+            .filter_map(|&el_id| {
+                let s = ctx.node(el_id)?.span();
+                source.get(s.start as usize..s.end as usize)
+            })
+            .collect();
+        let replacement = format!("[{}]", non_empty.join(", "));
+
+        ctx.report(Diagnostic {
+            rule_name: "consistent-empty-array-spread".to_owned(),
+            message: "Spreading an empty array literal is unnecessary".to_owned(),
+            span: Span::new(arr.span.start, arr.span.end),
+            severity: Severity::Warning,
+            help: Some("Remove the empty array spread".to_owned()),
+            fix: Some(Fix {
                 kind: FixKind::SafeFix,
                 message: "Remove empty array spread".to_owned(),
                 edits: vec![Edit {
@@ -72,40 +73,31 @@ impl NativeRule for ConsistentEmptyArraySpread {
                     replacement,
                 }],
                 is_snippet: false,
-            });
-
-            ctx.report(Diagnostic {
-                rule_name: "consistent-empty-array-spread".to_owned(),
-                message: "Spreading an empty array literal is unnecessary".to_owned(),
-                span: Span::new(arr.span.start, arr.span.end),
-                severity: Severity::Warning,
-                help: Some("Remove the empty array spread".to_owned()),
-                fix,
-                labels: vec![],
-            });
-        }
+            }),
+            labels: vec![],
+        });
     }
+}
+
+/// Check whether a node is a spread element with an empty array argument.
+fn is_empty_array_spread(ctx: &LintContext<'_>, id: NodeId) -> bool {
+    let Some(AstNode::SpreadElement(spread)) = ctx.node(id) else {
+        return false;
+    };
+    matches!(
+        ctx.node(spread.argument),
+        Some(AstNode::ArrayExpression(arr)) if arr.elements.is_empty()
+    )
 }
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentEmptyArraySpread)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentEmptyArraySpread)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]
