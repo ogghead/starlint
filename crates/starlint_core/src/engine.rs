@@ -1,6 +1,8 @@
 //! Lint engine: orchestrates parsing, traversal, and diagnostic collection.
 //!
-//! [`LintSession`] holds the resolved rule set and lints files in parallel.
+//! [`LintSession`] holds the resolved plugin set and lints files in parallel.
+//! All rule providers — native Rust rules and WASM plugins alike — implement
+//! the [`Plugin`](crate::plugin::Plugin) trait.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -11,9 +13,9 @@ use starlint_parser::ParseOptions;
 use crate::diagnostic::OutputFormat;
 use crate::error::LintError;
 use crate::lint_rule::LintRule;
+use crate::lint_rule_plugin::LintRulePlugin;
 use crate::overrides::OverrideSet;
-use crate::plugin::PluginHost;
-use crate::traversal::{LintDispatchTable, traverse_ast_tree};
+use crate::plugin::{FileContext, Plugin};
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
 
 /// Diagnostics collected for a single file.
@@ -29,13 +31,11 @@ pub struct FileDiagnostics {
 
 /// A configured lint session.
 ///
-/// Holds the set of active rules, optional plugin host, and severity
-/// overrides from config. Lints files in parallel.
+/// Holds the set of active plugins and severity overrides from config.
+/// Lints files in parallel.
 pub struct LintSession {
-    /// Active lint rules.
-    rules: Vec<Box<dyn LintRule>>,
-    /// Optional external plugin host (e.g., WASM).
-    plugin_host: Option<Box<dyn PluginHost>>,
+    /// All active plugins (native rule bundles and WASM plugins alike).
+    plugins: Vec<Box<dyn Plugin>>,
     /// Output format.
     output_format: OutputFormat,
     /// Severity overrides from config (rule name → configured severity).
@@ -44,46 +44,30 @@ pub struct LintSession {
     override_set: OverrideSet,
     /// Rules loaded but disabled by default (only active via file-pattern overrides).
     disabled_rules: HashSet<String>,
-    /// Pre-computed: whether any active rule needs semantic analysis.
+    /// Pre-computed: whether any plugin needs scope analysis.
     needs_semantic: bool,
-    /// Pre-built dispatch table mapping `AstNodeType` → rule indices.
-    dispatch_table: LintDispatchTable,
-    /// Indices of rules that only run via `run_once` (no traversal).
-    run_once_indices: Vec<usize>,
 }
 
 impl LintSession {
-    /// Create a new lint session.
+    /// Create a new lint session from a set of plugins.
     #[must_use]
-    pub fn new(rules: Vec<Box<dyn LintRule>>, output_format: OutputFormat) -> Self {
-        let needs_semantic = rules.iter().any(|r| r.needs_semantic());
-
-        // Pre-compute traversal vs run_once partitions.
-        let traversal_indices: Vec<usize> = rules
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| r.needs_traversal())
-            .map(|(i, _)| i)
-            .collect();
-        let run_once_indices: Vec<usize> = rules
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| !r.needs_traversal())
-            .map(|(i, _)| i)
-            .collect();
-        let dispatch_table = LintDispatchTable::build_from_indices(&rules, &traversal_indices);
-
+    pub fn new(plugins: Vec<Box<dyn Plugin>>, output_format: OutputFormat) -> Self {
+        let needs_semantic = plugins.iter().any(|p| p.needs_scope_analysis());
         Self {
-            rules,
-            plugin_host: None,
+            plugins,
             output_format,
             severity_overrides: HashMap::new(),
             override_set: OverrideSet::empty(),
             disabled_rules: HashSet::new(),
             needs_semantic,
-            dispatch_table,
-            run_once_indices,
         }
+    }
+
+    /// Convenience constructor: wrap native [`LintRule`]s as a single plugin.
+    #[must_use]
+    pub fn from_rules(rules: Vec<Box<dyn LintRule>>, output_format: OutputFormat) -> Self {
+        let plugin: Box<dyn Plugin> = Box::new(LintRulePlugin::new(rules));
+        Self::new(vec![plugin], output_format)
     }
 
     /// Set severity overrides from config.
@@ -93,10 +77,12 @@ impl LintSession {
         self
     }
 
-    /// Set the plugin host for external plugins (WASM, etc.).
+    /// Add additional plugins (e.g. WASM plugins).
     #[must_use]
-    pub fn with_plugin_host(mut self, host: Box<dyn PluginHost>) -> Self {
-        self.plugin_host = Some(host);
+    pub fn with_plugins(mut self, plugins: Vec<Box<dyn Plugin>>) -> Self {
+        self.plugins.extend(plugins);
+        // Recompute needs_semantic since new plugins may require it.
+        self.needs_semantic = self.plugins.iter().any(|p| p.needs_scope_analysis());
         self
     }
 
@@ -161,7 +147,7 @@ impl LintSession {
             };
         }
 
-        // Fast path: parse with the custom parser directly into AstTree (no copy).
+        // Parse with the custom parser directly into AstTree.
         let options = ParseOptions::from_path(file_path);
         let parse_result = starlint_parser::parse(source_text, options);
 
@@ -171,30 +157,30 @@ impl LintSession {
 
         let tree = parse_result.tree;
 
-        // Plugin host now receives the AstTree directly — no oxc needed.
-        let mut plugin_diags = self
-            .plugin_host
-            .as_ref()
-            .map(|host| host.lint_file(file_path, source_text, &tree))
-            .unwrap_or_default();
+        // Build scope analysis if any plugin needs it.
+        let scope_data = self
+            .needs_semantic
+            .then(|| starlint_scope::build_scope_data(&tree));
 
-        // Build scope analysis if any rule needs it — no oxc double-parse.
-        let scope_data =
-            self.needs_semantic.then(|| starlint_scope::build_scope_data(&tree));
+        let extension = file_path
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or("");
 
-        // Traverse the custom-parsed AstTree with lint rules.
-        let mut diagnostics = traverse_ast_tree(
-            &tree,
-            &self.rules,
-            &self.dispatch_table,
-            &self.run_once_indices,
-            source_text,
+        let ctx = FileContext {
             file_path,
-            scope_data.as_ref(),
-        );
+            source_text,
+            extension,
+            tree: &tree,
+            scope_data: scope_data.as_ref(),
+        };
 
-        // Merge plugin diagnostics.
-        diagnostics.append(&mut plugin_diags);
+        // Dispatch to all plugins uniformly.
+        let mut diagnostics: Vec<Diagnostic> = self
+            .plugins
+            .iter()
+            .flat_map(|plugin| plugin.lint_file(&ctx))
+            .collect();
 
         // Apply severity overrides from config.
         if !self.severity_overrides.is_empty() {
@@ -259,6 +245,16 @@ mod tests {
     }
 
     #[test]
+    fn test_lint_session_from_rules() {
+        let session = LintSession::from_rules(vec![], OutputFormat::Pretty);
+        let result = session.lint_single_file(Path::new("test.js"), "debugger;");
+        assert!(
+            result.diagnostics.is_empty(),
+            "no rules should produce no diagnostics"
+        );
+    }
+
+    #[test]
     fn test_lint_single_file_parse_error() {
         let session = LintSession::new(vec![], OutputFormat::Pretty);
         // parse_file returns Err only for unsupported file extensions.
@@ -285,7 +281,7 @@ mod tests {
         std::fs::write(&file_b, "'use strict';").ok();
 
         let lint_rules = crate::lint_rules::all_lint_rules();
-        let session = LintSession::new(lint_rules, OutputFormat::Pretty);
+        let session = LintSession::from_rules(lint_rules, OutputFormat::Pretty);
         let results = session.lint_files(&[file_a.clone(), file_b.clone()]);
 
         // File a has debugger statement -> should have diagnostics.

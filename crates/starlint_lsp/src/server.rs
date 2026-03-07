@@ -92,7 +92,7 @@ impl Backend {
             tracing::info!("LSP: {} rule(s) enabled", configured.rules.len());
 
             let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);
-            let mut session = LintSession::new(configured.rules, OutputFormat::Pretty)
+            let mut session = LintSession::from_rules(configured.rules, OutputFormat::Pretty)
                 .with_severity_overrides(configured.severity_overrides)
                 .with_override_set(override_set)
                 .with_disabled_rules(configured.disabled_rules);
@@ -101,8 +101,9 @@ impl Backend {
             if !active_builtins.is_empty() || !config.plugins.is_empty() {
                 match build_plugin_host(&config.plugins, &active_builtins) {
                     Ok(host) => {
-                        tracing::info!("LSP: loaded {} WASM plugin(s)", host.plugin_count());
-                        session = session.with_plugin_host(Box::new(host));
+                        let plugins = host.into_plugins();
+                        tracing::info!("LSP: loaded {} WASM plugin(s)", plugins.len());
+                        session = session.with_plugins(plugins);
                     }
                     Err(err) => {
                         tracing::warn!("LSP: failed to load WASM plugins: {err}");

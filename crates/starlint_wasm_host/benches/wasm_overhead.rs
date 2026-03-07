@@ -22,7 +22,6 @@ use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_ma
 use starlint_ast::tree::AstTree;
 use starlint_parser::ParseOptions;
 
-use starlint_core::plugin::PluginHost;
 use starlint_wasm_host::runtime::{ResourceLimits, WasmPluginHost};
 
 /// Parse source text into an `AstTree` using the custom parser.

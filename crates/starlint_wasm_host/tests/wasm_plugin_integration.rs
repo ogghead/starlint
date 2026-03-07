@@ -16,7 +16,6 @@ use std::path::Path;
 use std::collections::HashSet;
 
 use starlint_ast::tree::AstTree;
-use starlint_core::plugin::PluginHost;
 use starlint_parser::ParseOptions;
 use starlint_wasm_host::runtime::{ResourceLimits, WasmPluginHost};
 

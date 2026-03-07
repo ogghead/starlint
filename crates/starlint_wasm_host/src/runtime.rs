@@ -1,9 +1,9 @@
 //! WASM runtime using wasmtime.
 //!
 //! Manages the wasmtime engine, store, and plugin instances.
-//! [`WasmPluginHost`] loads WASM component plugins and implements
-//! [`PluginHost`](starlint_core::plugin::PluginHost) for integration
-//! with the lint engine.
+//! [`WasmPluginHost`] loads WASM component plugins and produces
+//! [`Plugin`](starlint_core::Plugin) instances for integration with
+//! the lint engine via [`into_plugins`](WasmPluginHost::into_plugins).
 //!
 //! Supports two plugin ABIs:
 //! - **v1** (`linter-plugin` world): Simplified AST nodes via `node-batch`, no fix support.
@@ -70,6 +70,7 @@ pub(crate) mod bindings_v2 {
 }
 
 /// Resource limits for WASM plugins.
+#[derive(Clone, Copy)]
 pub struct ResourceLimits {
     /// Maximum fuel (instruction count) per file per plugin.
     pub fuel_per_file: u64,
@@ -100,9 +101,9 @@ mod host {
     use wasmtime::component::{Component, Linker};
     use wasmtime::{Engine, Store, StoreLimits, StoreLimitsBuilder};
 
-    use starlint_core::plugin::PluginHost;
+    use starlint_core::plugin::{FileContext as CoreFileContext, Plugin};
     use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Label, Severity, Span};
-    use starlint_plugin_sdk::rule::FixKind;
+    use starlint_plugin_sdk::rule::{Category as SdkCategory, FixKind, RuleMeta as SdkRuleMeta};
 
     use super::ResourceLimits;
     use super::bindings::LinterPluginPre;
@@ -142,6 +143,10 @@ mod host {
         name: String,
         /// Plugin configuration JSON (applied per-file in the same store as linting).
         config_json: String,
+        /// Cached rule metadata (queried once at load time).
+        cached_rules: Vec<SdkRuleMeta>,
+        /// Raw file-pattern strings (for [`Plugin::file_patterns`]).
+        raw_file_patterns: Vec<String>,
     }
 
     /// WASM plugin host powered by wasmtime.
@@ -291,12 +296,14 @@ mod host {
             plugin_name: &str,
             config_json: &str,
         ) -> Result<(), WasmError> {
-            let (interests, file_patterns, _rules) =
+            let (interests, file_patterns, wit_rules, raw_file_patterns) =
                 query_plugin_metadata_v1(&pre, &self.engine, plugin_name, &self.limits)?;
 
             if !config_json.is_empty() {
                 validate_config_v1(&pre, &self.engine, plugin_name, config_json, &self.limits)?;
             }
+
+            let cached_rules = wit_rules.into_iter().map(wit_rule_meta_v1_to_sdk).collect();
 
             self.plugins.push(LoadedPlugin {
                 pre: PluginPre::V1(pre),
@@ -304,6 +311,8 @@ mod host {
                 file_patterns,
                 name: plugin_name.to_owned(),
                 config_json: config_json.to_owned(),
+                cached_rules,
+                raw_file_patterns,
             });
 
             Ok(())
@@ -316,12 +325,14 @@ mod host {
             plugin_name: &str,
             config_json: &str,
         ) -> Result<(), WasmError> {
-            let file_patterns =
+            let (file_patterns, wit_rules, raw_file_patterns) =
                 query_plugin_metadata_v2(&pre, &self.engine, plugin_name, &self.limits)?;
 
             if !config_json.is_empty() {
                 validate_config_v2(&pre, &self.engine, plugin_name, config_json, &self.limits)?;
             }
+
+            let cached_rules = wit_rules.into_iter().map(wit_rule_meta_v2_to_sdk).collect();
 
             self.plugins.push(LoadedPlugin {
                 pre: PluginPre::V2(pre),
@@ -329,6 +340,8 @@ mod host {
                 file_patterns,
                 name: plugin_name.to_owned(),
                 config_json: config_json.to_owned(),
+                cached_rules,
+                raw_file_patterns,
             });
 
             Ok(())
@@ -408,16 +421,107 @@ mod host {
 
             all_diagnostics
         }
-    }
 
-    impl PluginHost for WasmPluginHost {
-        fn lint_file(
+        /// Lint a single file with all loaded plugins.
+        ///
+        /// Convenience method that delegates to the internal linting pipeline.
+        /// Prefer [`into_plugins`](Self::into_plugins) for integration with
+        /// the unified [`Plugin`] system.
+        pub fn lint_file(
             &self,
             file_path: &Path,
             source_text: &str,
             tree: &AstTree,
         ) -> Vec<Diagnostic> {
             self.lint_file_internal(file_path, source_text, tree)
+        }
+
+        /// Consume the host, producing individual [`Plugin`] instances.
+        ///
+        /// Each loaded WASM plugin becomes a separate `Box<dyn Plugin>` that
+        /// can be added to the engine's plugin set alongside native rules.
+        pub fn into_plugins(self) -> Vec<Box<dyn Plugin>> {
+            let engine = self.engine;
+            let limits = self.limits;
+            self.plugins
+                .into_iter()
+                .map(|plugin| -> Box<dyn Plugin> {
+                    Box::new(WasmPlugin {
+                        plugin,
+                        engine: engine.clone(),
+                        limits,
+                    })
+                })
+                .collect()
+        }
+    }
+
+    /// A single WASM plugin implementing the unified [`Plugin`] trait.
+    ///
+    /// Created by [`WasmPluginHost::into_plugins`] after loading is complete.
+    /// Each instance wraps one WASM component (v1 or v2) and can lint files
+    /// independently.
+    pub struct WasmPlugin {
+        /// The loaded plugin state (pre-instantiated component + cached metadata).
+        plugin: LoadedPlugin,
+        /// Wasmtime engine (shared, cheap clone via Arc).
+        engine: Engine,
+        /// Resource limits for per-file stores.
+        limits: ResourceLimits,
+    }
+
+    impl Plugin for WasmPlugin {
+        fn rules(&self) -> Vec<SdkRuleMeta> {
+            self.plugin.cached_rules.clone()
+        }
+
+        fn lint_file(&self, ctx: &CoreFileContext<'_>) -> Vec<Diagnostic> {
+            let result = match &self.plugin.pre {
+                PluginPre::V1(_) => lint_with_plugin_v1(
+                    &self.plugin,
+                    &self.engine,
+                    &self.limits,
+                    ctx.file_path,
+                    ctx.source_text,
+                    ctx.tree,
+                ),
+                PluginPre::V2(_) => lint_with_plugin_v2(
+                    &self.plugin,
+                    &self.engine,
+                    &self.limits,
+                    ctx.file_path,
+                    ctx.source_text,
+                    ctx.tree,
+                ),
+            };
+
+            match result {
+                Ok(diags) => diags,
+                Err(err) => {
+                    tracing::warn!(
+                        "plugin '{}' failed on {}: {err}",
+                        self.plugin.name,
+                        ctx.file_path.display()
+                    );
+                    Vec::new()
+                }
+            }
+        }
+
+        fn file_patterns(&self) -> Vec<String> {
+            self.plugin.raw_file_patterns.clone()
+        }
+
+        fn needs_scope_analysis(&self) -> bool {
+            false
+        }
+
+        fn configure(&mut self, config: &str) -> Vec<String> {
+            // WASM plugins are configured during loading via WasmPluginHost.
+            if config.is_empty() {
+                return vec![];
+            }
+            vec!["WASM plugins must be configured at load time".to_owned()]
         }
     }
 
@@ -434,12 +538,23 @@ mod host {
     // ---- v1 helpers ----
 
     /// Query a v1 plugin's rules, node interests, and file patterns using a temporary store.
+    ///
+    /// Returns `(interests, compiled_glob_set, wit_rules, raw_file_patterns)`.
+    #[allow(clippy::type_complexity)]
     fn query_plugin_metadata_v1(
         pre: &LinterPluginPre<HostData>,
         engine: &Engine,
         plugin_name: &str,
         limits: &ResourceLimits,
-    ) -> Result<(NodeInterest, Option<GlobSet>, Vec<wit::RuleMeta>), WasmError> {
+    ) -> Result<
+        (
+            NodeInterest,
+            Option<GlobSet>,
+            Vec<wit::RuleMeta>,
+            Vec<String>,
+        ),
+        WasmError,
+    > {
         let mut store = create_store(engine, limits);
         let instance = pre
             .instantiate(&mut store)
@@ -476,7 +591,7 @@ mod host {
         let interests = wit_interests_to_bridge(interests_wit);
         let file_patterns = compile_file_patterns(&file_patterns_raw, plugin_name);
 
-        Ok((interests, file_patterns, rules))
+        Ok((interests, file_patterns, rules, file_patterns_raw))
     }
 
     /// Validate v1 plugin config eagerly.
@@ -594,12 +709,14 @@ mod host {
     /// Query a v2 plugin's rules and file patterns using a temporary store.
     ///
     /// v2 plugins don't declare node interests — they receive the full AST tree.
+    /// Returns `(compiled_glob_set, wit_rules, raw_file_patterns)`.
+    #[allow(clippy::type_complexity)]
     fn query_plugin_metadata_v2(
         pre: &LinterPluginV2Pre<HostData>,
         engine: &Engine,
         plugin_name: &str,
         limits: &ResourceLimits,
-    ) -> Result<Option<GlobSet>, WasmError> {
+    ) -> Result<(Option<GlobSet>, Vec<wit_v2::RuleMeta>, Vec<String>), WasmError> {
         let mut store = create_store(engine, limits);
         let instance = pre
             .instantiate(&mut store)
@@ -610,6 +727,13 @@ mod host {
 
         let guest = instance.starlint_plugin_plugin_v2();
 
+        let rules = guest
+            .call_get_rules(&mut store)
+            .map_err(|err| WasmError::RuntimeError {
+                plugin_name: plugin_name.to_owned(),
+                reason: err.to_string(),
+            })?;
+
         let file_patterns_raw =
             guest
                 .call_get_file_patterns(&mut store)
@@ -618,7 +742,9 @@ mod host {
                     reason: err.to_string(),
                 })?;
 
-        Ok(compile_file_patterns(&file_patterns_raw, plugin_name))
+        let file_patterns = compile_file_patterns(&file_patterns_raw, plugin_name);
+
+        Ok((file_patterns, rules, file_patterns_raw))
     }
 
     /// Validate v2 plugin config eagerly.
@@ -943,6 +1069,27 @@ mod host {
         }
     }
 
+    /// Convert a v1 WIT `RuleMeta` to an SDK `RuleMeta`.
+    fn wit_rule_meta_v1_to_sdk(meta: wit::RuleMeta) -> SdkRuleMeta {
+        SdkRuleMeta {
+            name: meta.name,
+            description: meta.description,
+            category: wit_category_v1_to_sdk(meta.category),
+            default_severity: wit_severity_to_sdk(meta.default_severity),
+        }
+    }
+
+    /// Convert a v1 WIT `Category` to an SDK `Category`.
+    fn wit_category_v1_to_sdk(cat: wit::Category) -> SdkCategory {
+        match cat {
+            wit::Category::Correctness => SdkCategory::Correctness,
+            wit::Category::Style => SdkCategory::Style,
+            wit::Category::Performance => SdkCategory::Performance,
+            wit::Category::Suggestion => SdkCategory::Suggestion,
+            wit::Category::Custom => SdkCategory::Custom("custom".to_owned()),
+        }
+    }
+
     /// Convert a v1 WIT `LintDiagnostic` to an SDK `Diagnostic` (no fix support).
     fn wit_diagnostic_v1_to_sdk(diag: wit::LintDiagnostic) -> Diagnostic {
         Diagnostic {
@@ -957,6 +1104,27 @@ mod host {
     }
 
     // ---- v2 type conversion functions ----
+
+    /// Convert a v2 WIT `RuleMeta` to an SDK `RuleMeta`.
+    fn wit_rule_meta_v2_to_sdk(meta: wit_v2::RuleMeta) -> SdkRuleMeta {
+        SdkRuleMeta {
+            name: meta.name,
+            description: meta.description,
+            category: wit_category_v2_to_sdk(meta.category),
+            default_severity: wit_v2_severity_to_sdk(meta.default_severity),
+        }
+    }
+
+    /// Convert a v2 WIT `Category` to an SDK `Category`.
+    fn wit_category_v2_to_sdk(cat: wit_v2::Category) -> SdkCategory {
+        match cat {
+            wit_v2::Category::Correctness => SdkCategory::Correctness,
+            wit_v2::Category::Style => SdkCategory::Style,
+            wit_v2::Category::Performance => SdkCategory::Performance,
+            wit_v2::Category::Suggestion => SdkCategory::Suggestion,
+            wit_v2::Category::Custom => SdkCategory::Custom("custom".to_owned()),
+        }
+    }
 
     /// Convert a v2 WIT `LintDiagnosticV2` to an SDK `Diagnostic` (with fix + labels).
     fn wit_diagnostic_v2_to_sdk(diag: wit_v2::LintDiagnosticV2) -> Diagnostic {
@@ -1021,7 +1189,7 @@ mod host {
 }
 
 #[cfg(feature = "wasm")]
-pub use host::WasmPluginHost;
+pub use host::{WasmPlugin, WasmPluginHost};
 
 #[cfg(test)]
 mod tests {

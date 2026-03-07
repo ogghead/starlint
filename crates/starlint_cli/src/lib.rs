@@ -109,7 +109,7 @@ pub fn run() -> miette::Result<ExitStatus> {
     let configured = rules_for_config(&config.rules, &config.overrides, &active_builtins);
     tracing::debug!("enabled {} rule(s)", configured.rules.len());
     let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);
-    let mut session = LintSession::new(configured.rules, output_format)
+    let mut session = LintSession::from_rules(configured.rules, output_format)
         .with_severity_overrides(configured.severity_overrides)
         .with_override_set(override_set)
         .with_disabled_rules(configured.disabled_rules);
@@ -120,8 +120,9 @@ pub fn run() -> miette::Result<ExitStatus> {
     if !args.no_plugins && (!active_builtins.is_empty() || !config.plugins.is_empty()) {
         match build_plugin_host(&config.plugins, &active_builtins) {
             Ok(host) => {
-                tracing::debug!("loaded {} WASM plugin(s)", host.plugin_count());
-                session = session.with_plugin_host(Box::new(host));
+                let plugins = host.into_plugins();
+                tracing::debug!("loaded {} WASM plugin(s)", plugins.len());
+                session = session.with_plugins(plugins);
             }
             Err(err) => {
                 eprintln!("warning: failed to initialize WASM plugins: {err}");
