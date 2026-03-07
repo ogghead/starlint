@@ -7,13 +7,13 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags modules with a single named export and no default export.
 #[derive(Debug)]
 pub struct PreferDefaultExport;
 
-impl NativeRule for PreferDefaultExport {
+impl LintRule for PreferDefaultExport {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "import/prefer-default-export".to_owned(),
@@ -28,7 +28,7 @@ impl NativeRule for PreferDefaultExport {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let finding: Option<(u32, u32)> = {
             let source = ctx.source_text();
 
@@ -91,22 +91,12 @@ impl NativeRule for PreferDefaultExport {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferDefaultExport)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferDefaultExport)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

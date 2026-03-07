@@ -14,13 +14,13 @@ use std::collections::HashMap;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags overloaded function signatures that are not adjacent.
 #[derive(Debug)]
 pub struct AdjacentOverloadSignatures;
 
-impl NativeRule for AdjacentOverloadSignatures {
+impl LintRule for AdjacentOverloadSignatures {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/adjacent-overload-signatures".to_owned(),
@@ -34,7 +34,7 @@ impl NativeRule for AdjacentOverloadSignatures {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
         let violations = find_non_adjacent_overloads(source);
 
@@ -179,23 +179,13 @@ fn extract_function_name(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(AdjacentOverloadSignatures)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(AdjacentOverloadSignatures)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

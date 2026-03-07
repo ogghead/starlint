@@ -36,24 +36,5 @@ pub(crate) fn trim_jsdoc_line(line: &str) -> &str {
 /// Return all `JSDoc` rules.
 #[must_use]
 pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
-    vec![
-        Box::new(check_access::CheckAccess),
-        Box::new(check_param_names::CheckParamNames),
-        Box::new(check_property_names::CheckPropertyNames),
-        Box::new(check_tag_names::CheckTagNames),
-        Box::new(check_types::CheckTypes),
-        Box::new(check_values::CheckValues),
-        Box::new(empty_tags::EmptyTags),
-        Box::new(implements_on_classes::ImplementsOnClasses),
-        Box::new(match_description::MatchDescription),
-        Box::new(match_name::MatchName),
-        Box::new(no_defaults::NoDefaults),
-        Box::new(no_multi_asterisks::NoMultiAsterisks),
-        Box::new(no_restricted_syntax::NoRestrictedSyntax),
-        Box::new(require_description::RequireDescription),
-        Box::new(require_param::RequireParam),
-        Box::new(require_param_description::RequireParamDescription),
-        Box::new(require_param_type::RequireParamType),
-        Box::new(require_returns::RequireReturns),
-    ]
+    vec![]
 }

@@ -10,14 +10,14 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags variable declarations where generic type arguments appear on the
 /// type annotation rather than on the constructor call.
 #[derive(Debug)]
 pub struct ConsistentGenericConstructors;
 
-impl NativeRule for ConsistentGenericConstructors {
+impl LintRule for ConsistentGenericConstructors {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/consistent-generic-constructors".to_owned(),
@@ -33,7 +33,7 @@ impl NativeRule for ConsistentGenericConstructors {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let findings = find_inconsistent_generics(ctx.source_text());
 
         // Collect fix data upfront to avoid borrow conflict with ctx
@@ -207,23 +207,13 @@ fn build_generic_constructor_fix(line: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentGenericConstructors)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentGenericConstructors)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

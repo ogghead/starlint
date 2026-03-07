@@ -8,7 +8,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "vitest/hoisted-apis-on-top";
@@ -17,7 +17,7 @@ const RULE_NAME: &str = "vitest/hoisted-apis-on-top";
 #[derive(Debug)]
 pub struct HoistedApisOnTop;
 
-impl NativeRule for HoistedApisOnTop {
+impl LintRule for HoistedApisOnTop {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -31,7 +31,7 @@ impl NativeRule for HoistedApisOnTop {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let violations = find_misplaced_hoisted(ctx.source_text());
 
         for span in violations {
@@ -91,22 +91,12 @@ fn find_misplaced_hoisted(source: &str) -> Vec<Span> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(HoistedApisOnTop)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.test.ts"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(HoistedApisOnTop)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -7,7 +7,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// File name suffixes that qualify as barrel files.
 const BARREL_SUFFIXES: &[&str] = &[
@@ -67,7 +67,7 @@ fn is_barrel_source(source: &str) -> bool {
     has_statements
 }
 
-impl NativeRule for NoBarrelFile {
+impl LintRule for NoBarrelFile {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-barrel-file".to_owned(),
@@ -81,7 +81,7 @@ impl NativeRule for NoBarrelFile {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         // Only flag index files
         if !is_index_file(ctx.file_path()) {
             return;
@@ -108,26 +108,14 @@ impl NativeRule for NoBarrelFile {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
     fn lint_with_path(
         source: &str,
         path: &str,
     ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        let file_path = Path::new(path);
-        if let Ok(parsed) = parse_file(&allocator, source, file_path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoBarrelFile)];
-            traverse_and_lint(&parsed.program, &rules, source, file_path)
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoBarrelFile)];
+        lint_source(source, path, &rules)
     }
 
     #[test]

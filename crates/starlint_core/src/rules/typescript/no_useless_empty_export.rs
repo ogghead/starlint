@@ -8,7 +8,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/no-useless-empty-export";
@@ -18,7 +18,7 @@ const RULE_NAME: &str = "typescript/no-useless-empty-export";
 #[derive(Debug)]
 pub struct NoUselessEmptyExport;
 
-impl NativeRule for NoUselessEmptyExport {
+impl LintRule for NoUselessEmptyExport {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -33,7 +33,7 @@ impl NativeRule for NoUselessEmptyExport {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
         let empty_exports = find_empty_exports(source);
 
@@ -201,23 +201,13 @@ fn is_empty_braces(s: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUselessEmptyExport)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessEmptyExport)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

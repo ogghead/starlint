@@ -6,13 +6,13 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags comments that appear on the same line as code.
 #[derive(Debug)]
 pub struct NoInlineComments;
 
-impl NativeRule for NoInlineComments {
+impl LintRule for NoInlineComments {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-inline-comments".to_owned(),
@@ -26,7 +26,7 @@ impl NativeRule for NoInlineComments {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         // Collect violations first to avoid borrow conflict with ctx
         let violations: Vec<(u32, u32)> = {
             let source = ctx.source_text();
@@ -158,22 +158,12 @@ fn find_inline_comment(line: &str) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoInlineComments)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInlineComments)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

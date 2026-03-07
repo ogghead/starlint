@@ -6,7 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags comments containing warning terms.
 #[derive(Debug)]
@@ -15,7 +15,7 @@ pub struct NoWarningComments;
 /// Default warning terms to flag.
 const WARNING_TERMS: &[&str] = &["todo", "fixme", "hack"];
 
-impl NativeRule for NoWarningComments {
+impl LintRule for NoWarningComments {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-warning-comments".to_owned(),
@@ -25,7 +25,7 @@ impl NativeRule for NoWarningComments {
         }
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
         let findings = find_warning_comments(source);
 
@@ -146,23 +146,13 @@ fn check_comment(source: &str, start: usize, end: usize, results: &mut Vec<(Stri
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoWarningComments)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoWarningComments)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

@@ -464,7 +464,7 @@ fn fix_idempotent_no_extra_label() {
 
 #[test]
 fn fix_idempotent_no_irregular_whitespace() {
-    assert_fix_idempotent(
+    assert_fix_idempotent_lint(
         vec![Box::new(
             rules::no_irregular_whitespace::NoIrregularWhitespace,
         )],

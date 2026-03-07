@@ -7,13 +7,13 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `tslint:disable` and `tslint:enable` comments in source text.
 #[derive(Debug)]
 pub struct BanTslintComment;
 
-impl NativeRule for BanTslintComment {
+impl LintRule for BanTslintComment {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/ban-tslint-comment".to_owned(),
@@ -27,7 +27,7 @@ impl NativeRule for BanTslintComment {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let findings = find_tslint_directives(ctx.source_text());
 
         // Collect all fix data upfront to avoid borrow conflict with ctx
@@ -136,23 +136,13 @@ fn is_inside_comment(source: &str, pos: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(BanTslintComment)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BanTslintComment)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

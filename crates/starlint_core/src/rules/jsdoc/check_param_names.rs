@@ -5,7 +5,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 #[derive(Debug)]
 pub struct CheckParamNames;
@@ -86,7 +86,7 @@ fn extract_fn_params(source: &str, search_after: usize) -> Vec<String> {
     vec![]
 }
 
-impl NativeRule for CheckParamNames {
+impl LintRule for CheckParamNames {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "jsdoc/check-param-names".to_owned(),
@@ -100,7 +100,7 @@ impl NativeRule for CheckParamNames {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text().to_owned();
 
         let mut pos = 0;
@@ -143,22 +143,12 @@ impl NativeRule for CheckParamNames {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(CheckParamNames)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(CheckParamNames)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

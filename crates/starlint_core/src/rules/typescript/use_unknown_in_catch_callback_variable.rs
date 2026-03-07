@@ -8,14 +8,14 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `.catch()` callbacks whose parameter is typed as something other
 /// than `unknown`.
 #[derive(Debug)]
 pub struct UseUnknownInCatchCallbackVariable;
 
-impl NativeRule for UseUnknownInCatchCallbackVariable {
+impl LintRule for UseUnknownInCatchCallbackVariable {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/use-unknown-in-catch-callback-variable".to_owned(),
@@ -30,7 +30,7 @@ impl NativeRule for UseUnknownInCatchCallbackVariable {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let findings = find_bad_catch_params(ctx.source_text());
 
         for (type_name, start, end) in findings {
@@ -136,23 +136,13 @@ fn extract_typed_param(source: &str, start: usize) -> Option<(String, usize, usi
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(UseUnknownInCatchCallbackVariable)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(UseUnknownInCatchCallbackVariable)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

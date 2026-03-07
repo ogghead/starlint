@@ -6,7 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "storybook/context-in-play-function";
@@ -15,7 +15,7 @@ const RULE_NAME: &str = "storybook/context-in-play-function";
 #[derive(Debug)]
 pub struct ContextInPlayFunction;
 
-impl NativeRule for ContextInPlayFunction {
+impl LintRule for ContextInPlayFunction {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -29,7 +29,7 @@ impl NativeRule for ContextInPlayFunction {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let file_name = ctx.file_path().to_string_lossy();
         if !file_name.contains(".stories.") && !file_name.contains(".story.") {
             return;
@@ -61,27 +61,12 @@ impl NativeRule for ContextInPlayFunction {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("Button.stories.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ContextInPlayFunction)];
-            traverse_and_lint(
-                &parsed.program,
-                &rules,
-                source,
-                Path::new("Button.stories.tsx"),
-            )
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ContextInPlayFunction)];
+        lint_source(source, "Button.stories.tsx", &rules)
     }
 
     #[test]
@@ -98,14 +83,9 @@ mod tests {
 
     #[test]
     fn test_ignores_non_story_files() {
-        let allocator = Allocator::default();
         let source = "Primary.play();";
-        let diags = if let Ok(parsed) = parse_file(&allocator, source, Path::new("utils.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ContextInPlayFunction)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("utils.ts"))
-        } else {
-            vec![]
-        };
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ContextInPlayFunction)];
+        let diags = lint_source(source, "utils.ts", &rules);
         assert!(diags.is_empty(), "should ignore non-story files");
     }
 }

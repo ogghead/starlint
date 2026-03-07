@@ -6,7 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "storybook/no-uninstalled-addons";
@@ -18,7 +18,7 @@ const ADDON_PREFIXES: &[&str] = &["@storybook/addon-", "storybook-addon-"];
 #[derive(Debug)]
 pub struct NoUninstalledAddons;
 
-impl NativeRule for NoUninstalledAddons {
+impl LintRule for NoUninstalledAddons {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -32,7 +32,7 @@ impl NativeRule for NoUninstalledAddons {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let file_name = ctx.file_path().to_string_lossy();
 
         // This rule applies to storybook config files (main.js/ts) or story files
@@ -83,32 +83,21 @@ impl NativeRule for NoUninstalledAddons {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
     fn lint_with_path(
         source: &str,
-        path: &Path,
+        path: &str,
     ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoUninstalledAddons)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUninstalledAddons)];
+        lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_addon_in_config() {
         let diags = lint_with_path(
             "module.exports = { addons: ['@storybook/addon-essentials'] };",
-            Path::new(".storybook/main.ts"),
+            ".storybook/main.ts",
         );
         assert_eq!(diags.len(), 1, "should flag addon reference in config");
     }
@@ -117,7 +106,7 @@ mod tests {
     fn test_ignores_non_config_files() {
         let diags = lint_with_path(
             "const addons = ['@storybook/addon-essentials'];",
-            Path::new("Button.stories.tsx"),
+            "Button.stories.tsx",
         );
         assert!(diags.is_empty(), "should ignore non-config files");
     }
@@ -126,7 +115,7 @@ mod tests {
     fn test_allows_no_addons() {
         let diags = lint_with_path(
             "module.exports = { stories: ['../src/**/*.stories.@(js|jsx|ts|tsx)'] };",
-            Path::new(".storybook/main.ts"),
+            ".storybook/main.ts",
         );
         assert!(diags.is_empty(), "should allow config without addons");
     }

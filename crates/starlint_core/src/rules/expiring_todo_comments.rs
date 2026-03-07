@@ -7,7 +7,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Cutoff year -- dates before this date are considered expired.
 const EXPIRY_YEAR: u32 = 2026;
@@ -22,7 +22,7 @@ const EXPIRY_DAY: u32 = 27;
 #[derive(Debug)]
 pub struct ExpiringTodoComments;
 
-impl NativeRule for ExpiringTodoComments {
+impl LintRule for ExpiringTodoComments {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "expiring-todo-comments".to_owned(),
@@ -36,7 +36,7 @@ impl NativeRule for ExpiringTodoComments {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let diagnostics = {
             let source = ctx.source_text();
             let findings = find_expired_todos(source);
@@ -270,23 +270,13 @@ const fn is_expired(year: u32, month: u32, day: u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ExpiringTodoComments)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ExpiringTodoComments)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

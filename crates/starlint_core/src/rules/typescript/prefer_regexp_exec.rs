@@ -17,13 +17,13 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags `.match(/regex/)` calls where `RegExp.exec()` would be preferred.
 #[derive(Debug)]
 pub struct PreferRegexpExec;
 
-impl NativeRule for PreferRegexpExec {
+impl LintRule for PreferRegexpExec {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/prefer-regexp-exec".to_owned(),
@@ -38,7 +38,7 @@ impl NativeRule for PreferRegexpExec {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
         let findings = find_match_without_global(source);
 
@@ -161,23 +161,13 @@ fn find_regex_end_and_flags(source: &str, start: usize) -> Option<(usize, &str)>
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferRegexpExec)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferRegexpExec)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

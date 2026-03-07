@@ -6,7 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Default maximum lines per file.
 const DEFAULT_MAX: u32 = 300;
@@ -31,7 +31,7 @@ impl Default for MaxLines {
     }
 }
 
-impl NativeRule for MaxLines {
+impl LintRule for MaxLines {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "max-lines".to_owned(),
@@ -52,7 +52,7 @@ impl NativeRule for MaxLines {
         Ok(())
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
         let raw_count = u32::try_from(source.lines().count()).unwrap_or(0);
         // Account for trailing newline (lines() strips it)
@@ -82,22 +82,12 @@ impl NativeRule for MaxLines {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint_with_max(source: &str, max: u32) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MaxLines { max })];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint_with_max(source: &str, max: u32) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MaxLines { max })];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

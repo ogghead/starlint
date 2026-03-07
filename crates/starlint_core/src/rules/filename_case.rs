@@ -8,7 +8,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags filenames that do not follow kebab-case convention.
 #[derive(Debug)]
@@ -30,7 +30,7 @@ fn is_kebab_case(stem: &str) -> bool {
         .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
 }
 
-impl NativeRule for FilenameCase {
+impl LintRule for FilenameCase {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "filename-case".to_owned(),
@@ -44,7 +44,7 @@ impl NativeRule for FilenameCase {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let file_path = ctx.file_path();
         let Some(stem_os) = file_path.file_stem() else {
             return;
@@ -79,35 +79,21 @@ impl NativeRule for FilenameCase {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(FilenameCase)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(FilenameCase)];
+        lint_source(source, "test.js", &rules)
     }
 
     fn lint_with_path(
         source: &str,
         path: &str,
     ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new(path)) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(FilenameCase)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new(path))
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(FilenameCase)];
+        lint_source(source, path, &rules)
     }
 
     #[test]

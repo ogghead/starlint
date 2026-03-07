@@ -35,13 +35,11 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(inline_script_id::InlineScriptId),
         Box::new(next_script_for_ga::NextScriptForGa),
         Box::new(no_assign_module_variable::NoAssignModuleVariable),
-        Box::new(no_async_client_component::NoAsyncClientComponent),
         Box::new(
             no_before_interactive_script_outside_document::NoBeforeInteractiveScriptOutsideDocument,
         ),
         Box::new(no_css_tags::NoCssTags),
         Box::new(no_document_import_in_page::NoDocumentImportInPage),
-        Box::new(no_duplicate_head::NoDuplicateHead),
         Box::new(no_head_element::NoHeadElement),
         Box::new(no_head_import_in_document::NoHeadImportInDocument),
         Box::new(no_html_link_for_pages::NoHtmlLinkForPages),
@@ -51,7 +49,6 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(no_styled_jsx_in_document::NoStyledJsxInDocument),
         Box::new(no_sync_scripts::NoSyncScripts),
         Box::new(no_title_in_document_head::NoTitleInDocumentHead),
-        Box::new(no_typos::NoTypos),
         Box::new(no_unwanted_polyfillio::NoUnwantedPolyfillio),
     ]
 }

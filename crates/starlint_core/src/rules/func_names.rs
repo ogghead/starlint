@@ -56,6 +56,7 @@ impl LintRule for FuncNames {
 mod tests {
     use super::*;
     use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
         let rules: Vec<Box<dyn LintRule>> = vec![Box::new(FuncNames)];

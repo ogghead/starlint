@@ -94,6 +94,7 @@ fn is_empty_array_spread(ctx: &LintContext<'_>, id: NodeId) -> bool {
 mod tests {
     use super::*;
     use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
 
     fn lint(source: &str) -> Vec<Diagnostic> {
         let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentEmptyArraySpread)];

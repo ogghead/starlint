@@ -6,7 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Scan source text for exported function declarations that use `this`.
 ///
@@ -160,7 +160,7 @@ fn source_contains_this(source: &str) -> bool {
     false
 }
 
-impl NativeRule for NoThisInExportedFunction {
+impl LintRule for NoThisInExportedFunction {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-this-in-exported-function".to_owned(),
@@ -174,7 +174,7 @@ impl NativeRule for NoThisInExportedFunction {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let flagged_spans = find_exported_functions_with_this(ctx.source_text());
 
         for span in flagged_spans {
@@ -193,22 +193,12 @@ impl NativeRule for NoThisInExportedFunction {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoThisInExportedFunction)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoThisInExportedFunction)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

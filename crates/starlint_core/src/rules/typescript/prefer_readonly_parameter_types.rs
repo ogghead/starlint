@@ -12,7 +12,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/prefer-readonly-parameter-types";
@@ -22,7 +22,7 @@ const RULE_NAME: &str = "typescript/prefer-readonly-parameter-types";
 #[derive(Debug)]
 pub struct PreferReadonlyParameterTypes;
 
-impl NativeRule for PreferReadonlyParameterTypes {
+impl LintRule for PreferReadonlyParameterTypes {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -36,7 +36,7 @@ impl NativeRule for PreferReadonlyParameterTypes {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
         let violations = find_mutable_array_params(source);
 
@@ -183,23 +183,13 @@ fn is_return_type_context(source: &str, pos: usize) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(PreferReadonlyParameterTypes)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferReadonlyParameterTypes)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

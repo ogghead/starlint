@@ -6,7 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "vue/html-closing-bracket-newline";
@@ -15,7 +15,7 @@ const RULE_NAME: &str = "vue/html-closing-bracket-newline";
 #[derive(Debug)]
 pub struct HtmlClosingBracketNewline;
 
-impl NativeRule for HtmlClosingBracketNewline {
+impl LintRule for HtmlClosingBracketNewline {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -29,7 +29,7 @@ impl NativeRule for HtmlClosingBracketNewline {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text().to_owned();
 
         // Find template-like opening tags that span multiple lines
@@ -95,22 +95,12 @@ impl NativeRule for HtmlClosingBracketNewline {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(HtmlClosingBracketNewline)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(HtmlClosingBracketNewline)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

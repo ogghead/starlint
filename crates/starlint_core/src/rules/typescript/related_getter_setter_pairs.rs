@@ -8,13 +8,13 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags getter/setter declarations that lack a matching counterpart.
 #[derive(Debug)]
 pub struct RelatedGetterSetterPairs;
 
-impl NativeRule for RelatedGetterSetterPairs {
+impl LintRule for RelatedGetterSetterPairs {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "typescript/related-getter-setter-pairs".to_owned(),
@@ -29,7 +29,7 @@ impl NativeRule for RelatedGetterSetterPairs {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let findings = find_unpaired_accessors(ctx.source_text());
 
         for (kind, name, start, end) in findings {
@@ -161,23 +161,13 @@ fn extract_accessor_name(rest: &str) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
     /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(RelatedGetterSetterPairs)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.ts"))
-        } else {
-            vec![]
-        }
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RelatedGetterSetterPairs)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

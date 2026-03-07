@@ -3,13 +3,13 @@
 //! Do not import testing-library directly in stories, use `@storybook/test`.
 //! Matches `ImportDeclaration` for `@testing-library/`.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Rule name constant.
 const RULE_NAME: &str = "storybook/use-storybook-testing-library";
@@ -18,7 +18,7 @@ const RULE_NAME: &str = "storybook/use-storybook-testing-library";
 #[derive(Debug)]
 pub struct UseStorybookTestingLibrary;
 
-impl NativeRule for UseStorybookTestingLibrary {
+impl LintRule for UseStorybookTestingLibrary {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -30,22 +30,44 @@ impl NativeRule for UseStorybookTestingLibrary {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ImportDeclaration])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ImportDeclaration])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         let file_name = ctx.file_path().to_string_lossy();
         if !file_name.contains(".stories.") && !file_name.contains(".story.") {
             return;
         }
 
-        let AstKind::ImportDeclaration(import) = kind else {
+        let AstNode::ImportDeclaration(import) = node else {
             return;
         };
 
-        let source_value = import.source.value.as_str();
-        if source_value.starts_with("@testing-library/") {
+        if import.source.starts_with("@testing-library/") {
+            // Find the source string position in the import declaration to target the fix
+            let source_text = ctx.source_text();
+            let span_start = usize::try_from(import.span.start).unwrap_or(0);
+            let span_end = usize::try_from(import.span.end).unwrap_or(0);
+            let import_text = source_text.get(span_start..span_end).unwrap_or("");
+            // Find the quoted source in the import text
+            let fix = import_text.find(&import.source).map(|offset| {
+                let abs_start = import
+                    .span
+                    .start
+                    .saturating_add(u32::try_from(offset).unwrap_or(0));
+                let abs_end =
+                    abs_start.saturating_add(u32::try_from(import.source.len()).unwrap_or(0));
+                Fix {
+                    kind: FixKind::SuggestionFix,
+                    message: "Replace import source with `@storybook/test`".to_owned(),
+                    edits: vec![Edit {
+                        span: Span::new(abs_start, abs_end),
+                        replacement: "@storybook/test".to_owned(),
+                    }],
+                    is_snippet: false,
+                }
+            });
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "Import from `@storybook/test` instead of `@testing-library/` directly"
@@ -53,18 +75,7 @@ impl NativeRule for UseStorybookTestingLibrary {
                 span: Span::new(import.span.start, import.span.end),
                 severity: Severity::Warning,
                 help: None,
-                fix: Some(Fix {
-                    kind: FixKind::SuggestionFix,
-                    message: "Replace import source with `@storybook/test`".to_owned(),
-                    edits: vec![Edit {
-                        span: Span::new(
-                            import.source.span.start.saturating_add(1),
-                            import.source.span.end.saturating_sub(1),
-                        ),
-                        replacement: "@storybook/test".to_owned(),
-                    }],
-                    is_snippet: false,
-                }),
+                fix,
                 labels: vec![],
             });
         }
@@ -73,27 +84,12 @@ impl NativeRule for UseStorybookTestingLibrary {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("Button.stories.ts")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(UseStorybookTestingLibrary)];
-            traverse_and_lint(
-                &parsed.program,
-                &rules,
-                source,
-                Path::new("Button.stories.ts"),
-            )
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(UseStorybookTestingLibrary)];
+        lint_source(source, "Button.stories.ts", &rules)
     }
 
     #[test]

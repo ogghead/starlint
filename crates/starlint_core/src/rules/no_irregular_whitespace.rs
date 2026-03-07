@@ -7,7 +7,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Irregular whitespace characters to detect.
 const IRREGULAR_WHITESPACE: &[char] = &[
@@ -35,7 +35,7 @@ const IRREGULAR_WHITESPACE: &[char] = &[
 #[derive(Debug)]
 pub struct NoIrregularWhitespace;
 
-impl NativeRule for NoIrregularWhitespace {
+impl LintRule for NoIrregularWhitespace {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-irregular-whitespace".to_owned(),
@@ -49,7 +49,7 @@ impl NativeRule for NoIrregularWhitespace {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         // Collect findings first to avoid borrow conflict with ctx
         let findings: Vec<(u32, u32, char)> = {
             let source = ctx.source_text();
@@ -96,22 +96,12 @@ impl NativeRule for NoIrregularWhitespace {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoIrregularWhitespace)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoIrregularWhitespace)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

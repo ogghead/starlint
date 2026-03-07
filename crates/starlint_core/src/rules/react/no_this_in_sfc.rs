@@ -2,13 +2,13 @@
 //!
 //! Warn when `this` is used in a stateless functional component.
 
-use oxc_ast::AstKind;
-use oxc_ast::ast_kind::AstType;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
+use starlint_ast::node::AstNode;
+use starlint_ast::node_type::AstNodeType;
+use starlint_ast::types::NodeId;
 
 /// Flags `this` expressions that appear inside arrow functions or regular
 /// functions (not class methods) that contain JSX, indicating a likely
@@ -36,7 +36,7 @@ fn region_has_jsx(source_bytes: &[u8], start: usize, end: usize) -> bool {
     false
 }
 
-impl NativeRule for NoThisInSfc {
+impl LintRule for NoThisInSfc {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "react/no-this-in-sfc".to_owned(),
@@ -46,12 +46,12 @@ impl NativeRule for NoThisInSfc {
         }
     }
 
-    fn run_on_kinds(&self) -> Option<&'static [AstType]> {
-        Some(&[AstType::ThisExpression])
+    fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+        Some(&[AstNodeType::ThisExpression])
     }
 
-    fn run(&self, kind: &AstKind<'_>, ctx: &mut NativeLintContext<'_>) {
-        let AstKind::ThisExpression(this_expr) = kind else {
+    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+        let AstNode::ThisExpression(this_expr) = node else {
             return;
         };
 
@@ -104,22 +104,12 @@ impl NativeRule for NoThisInSfc {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.tsx")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoThisInSfc)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.tsx"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoThisInSfc)];
+        lint_source(source, "test.tsx", &rules)
     }
 
     #[test]

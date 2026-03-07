@@ -7,7 +7,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "vitest/consistent-test-filename";
@@ -19,7 +19,7 @@ const TEST_PATTERNS: &[&str] = &[".test.", ".spec."];
 #[derive(Debug)]
 pub struct ConsistentTestFilename;
 
-impl NativeRule for ConsistentTestFilename {
+impl LintRule for ConsistentTestFilename {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -34,7 +34,7 @@ impl NativeRule for ConsistentTestFilename {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let file_path = ctx.file_path();
 
         // Only check files that look like they belong in a test directory
@@ -88,31 +88,22 @@ impl NativeRule for ConsistentTestFilename {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
 
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
+    use crate::lint_rule::lint_source;
 
     fn lint_with_path(
         source: &str,
-        path: &Path,
+        path: &str,
     ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(ConsistentTestFilename)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentTestFilename)];
+        lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_test_code_without_convention() {
         let source = r#"test("works", () => { expect(1).toBe(1); });"#;
-        let diags = lint_with_path(source, Path::new("utils.ts"));
+        let diags = lint_with_path(source, "utils.ts");
         assert_eq!(
             diags.len(),
             1,
@@ -123,7 +114,7 @@ mod tests {
     #[test]
     fn test_allows_test_file_convention() {
         let source = r#"test("works", () => { expect(1).toBe(1); });"#;
-        let diags = lint_with_path(source, Path::new("utils.test.ts"));
+        let diags = lint_with_path(source, "utils.test.ts");
         assert!(
             diags.is_empty(),
             "file with .test. in name should not be flagged"
@@ -133,7 +124,7 @@ mod tests {
     #[test]
     fn test_allows_spec_file_convention() {
         let source = r#"describe("utils", () => { it("works", () => {}); });"#;
-        let diags = lint_with_path(source, Path::new("utils.spec.ts"));
+        let diags = lint_with_path(source, "utils.spec.ts");
         assert!(
             diags.is_empty(),
             "file with .spec. in name should not be flagged"

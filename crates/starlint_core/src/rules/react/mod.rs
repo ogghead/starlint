@@ -73,7 +73,6 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(iframe_missing_sandbox::IframeMissingSandbox),
         Box::new(jsx_boolean_value::JsxBooleanValue),
         Box::new(jsx_curly_brace_presence::JsxCurlyBracePresence),
-        Box::new(jsx_filename_extension::JsxFilenameExtension),
         Box::new(jsx_fragments::JsxFragments),
         Box::new(jsx_handler_names::JsxHandlerNames),
         Box::new(jsx_key::JsxKey),
@@ -110,10 +109,5 @@ pub fn category_rules() -> Vec<Box<dyn NativeRule>> {
         Box::new(state_in_constructor::StateInConstructor),
         Box::new(style_prop_object::StylePropObject),
         Box::new(void_dom_elements_no_children::VoidDomElementsNoChildren),
-        Box::new(jsx_no_comment_textnodes::JsxNoCommentTextnodes),
-        Box::new(jsx_props_no_spreading::JsxPropsNoSpreading),
-        Box::new(no_this_in_sfc::NoThisInSfc),
-        Box::new(no_unescaped_entities::NoUnescapedEntities),
-        Box::new(react_in_jsx_scope::ReactInJsxScope),
     ]
 }

@@ -6,13 +6,13 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Flags files that contain no meaningful code.
 #[derive(Debug)]
 pub struct NoEmptyFile;
 
-impl NativeRule for NoEmptyFile {
+impl LintRule for NoEmptyFile {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-empty-file".to_owned(),
@@ -26,7 +26,7 @@ impl NativeRule for NoEmptyFile {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let is_empty = {
             let source = ctx.source_text();
             // A file is "empty" if it only contains whitespace, comments,
@@ -87,22 +87,12 @@ fn is_only_comments(source: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, Path::new("test.js")) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(NoEmptyFile)];
-            traverse_and_lint(&parsed.program, &rules, source, Path::new("test.js"))
-        } else {
-            vec![]
-        }
+    use crate::lint_rule::lint_source;
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    fn lint(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoEmptyFile)];
+        lint_source(source, "test.js", &rules)
     }
 
     #[test]

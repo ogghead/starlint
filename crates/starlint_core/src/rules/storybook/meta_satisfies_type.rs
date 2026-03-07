@@ -6,7 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
-use crate::rule::{NativeLintContext, NativeRule};
+use crate::lint_rule::{LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "storybook/meta-satisfies-type";
@@ -15,7 +15,7 @@ const RULE_NAME: &str = "storybook/meta-satisfies-type";
 #[derive(Debug)]
 pub struct MetaSatisfiesType;
 
-impl NativeRule for MetaSatisfiesType {
+impl LintRule for MetaSatisfiesType {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -29,7 +29,7 @@ impl NativeRule for MetaSatisfiesType {
         false
     }
 
-    fn run_once(&self, ctx: &mut NativeLintContext<'_>) {
+    fn run_once(&self, ctx: &mut LintContext<'_>) {
         let file_name = ctx.file_path().to_string_lossy();
         if !file_name.contains(".stories.") && !file_name.contains(".story.") {
             return;
@@ -72,32 +72,21 @@ impl NativeRule for MetaSatisfiesType {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
-
-    use oxc_allocator::Allocator;
-
     use super::*;
-    use crate::parser::parse_file;
-    use crate::traversal::traverse_and_lint;
-
+    use crate::lint_rule::lint_source;
     fn lint_with_path(
         source: &str,
-        path: &Path,
+        path: &str,
     ) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let allocator = Allocator::default();
-        if let Ok(parsed) = parse_file(&allocator, source, path) {
-            let rules: Vec<Box<dyn NativeRule>> = vec![Box::new(MetaSatisfiesType)];
-            traverse_and_lint(&parsed.program, &rules, source, path)
-        } else {
-            vec![]
-        }
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MetaSatisfiesType)];
+        lint_source(source, path, &rules)
     }
 
     #[test]
     fn test_flags_missing_satisfies() {
         let diags = lint_with_path(
             "export default { title: 'Button', component: Button };",
-            Path::new("Button.stories.ts"),
+            "Button.stories.ts",
         );
         assert_eq!(diags.len(), 1, "should flag meta without satisfies");
     }
@@ -106,17 +95,14 @@ mod tests {
     fn test_allows_satisfies_meta() {
         let diags = lint_with_path(
             "export default { title: 'Button', component: Button } satisfies Meta;",
-            Path::new("Button.stories.ts"),
+            "Button.stories.ts",
         );
         assert!(diags.is_empty(), "should allow meta with satisfies");
     }
 
     #[test]
     fn test_ignores_js_files() {
-        let diags = lint_with_path(
-            "export default { title: 'Button' };",
-            Path::new("Button.stories.js"),
-        );
+        let diags = lint_with_path("export default { title: 'Button' };", "Button.stories.js");
         assert!(
             diags.is_empty(),
             "should ignore JS files (satisfies is TS-only)"

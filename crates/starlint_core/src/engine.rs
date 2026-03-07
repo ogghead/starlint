@@ -320,8 +320,9 @@ mod tests {
         // Use a minimal valid statement that shouldn't trigger any rules.
         std::fs::write(&file_b, "'use strict';").ok();
 
-        let rules = crate::rules::all_rules();
-        let session = LintSession::new(rules, OutputFormat::Pretty);
+        let native_rules = crate::rules::all_rules();
+        let lint_rules = crate::lint_rules::all_lint_rules();
+        let session = LintSession::new_dual(native_rules, lint_rules, OutputFormat::Pretty);
         let results = session.lint_files(&[file_a.clone(), file_b.clone()]);
 
         // File a has debugger statement -> should have diagnostics.
