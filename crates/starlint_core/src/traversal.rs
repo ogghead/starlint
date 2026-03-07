@@ -6,11 +6,10 @@
 
 use std::path::Path;
 
-use oxc_semantic::Semantic;
-
 use starlint_ast::node_type::{AST_NODE_TYPE_COUNT, AstNodeType};
 use starlint_ast::tree::AstTree;
 use starlint_ast::types::NodeId;
+use starlint_scope::ScopeData;
 
 use crate::lint_rule::{LintContext, LintRule};
 use starlint_plugin_sdk::diagnostic::Diagnostic;
@@ -82,7 +81,7 @@ pub fn traverse_ast_tree(
     run_once_indices: &[usize],
     source_text: &str,
     file_path: &Path,
-    semantic: Option<&Semantic<'_>>,
+    scope_data: Option<&ScopeData>,
 ) -> Vec<Diagnostic> {
     // Per-file active-rule bitmask.
     let active: Vec<bool> = rules
@@ -95,8 +94,8 @@ pub fn traverse_ast_tree(
     // Build per-node dispatch lists (resolving indices + active mask).
     let has_traversal = active.iter().any(|&a| a);
     if has_traversal {
-        let mut ctx = match semantic {
-            Some(sem) => LintContext::with_semantic(tree, source_text, file_path, sem),
+        let mut ctx = match scope_data {
+            Some(sd) => LintContext::with_scope_data(tree, source_text, file_path, sd),
             None => LintContext::new(tree, source_text, file_path),
         };
 
@@ -108,8 +107,8 @@ pub fn traverse_ast_tree(
 
     // Run run_once for rules that only need file-level checks.
     if !run_once_indices.is_empty() {
-        let mut ctx = match semantic {
-            Some(sem) => LintContext::with_semantic(tree, source_text, file_path, sem),
+        let mut ctx = match scope_data {
+            Some(sd) => LintContext::with_scope_data(tree, source_text, file_path, sd),
             None => LintContext::new(tree, source_text, file_path),
         };
         for &idx in run_once_indices {

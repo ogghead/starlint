@@ -5,7 +5,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use oxc_allocator::Allocator;
 use rayon::prelude::*;
 use starlint_parser::ParseOptions;
 
@@ -13,7 +12,6 @@ use crate::diagnostic::OutputFormat;
 use crate::error::LintError;
 use crate::lint_rule::LintRule;
 use crate::overrides::OverrideSet;
-use crate::parser::{build_semantic, parse_file};
 use crate::plugin::PluginHost;
 use crate::traversal::{LintDispatchTable, traverse_ast_tree};
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
@@ -180,28 +178,9 @@ impl LintSession {
             .map(|host| host.lint_file(file_path, source_text, &tree))
             .unwrap_or_default();
 
-        // If semantic analysis is needed, parse again with oxc (slow path).
-        // Only ~2% of files trigger semantic rules in practice.
-        let allocator = Allocator::default();
-
-        let semantic = if self.needs_semantic {
-            match parse_file(&allocator, source_text, file_path) {
-                Ok(parsed) => {
-                    let program = allocator.alloc(parsed.program);
-                    Some(build_semantic(program))
-                }
-                Err(err) => {
-                    tracing::warn!("{err}");
-                    return FileDiagnostics {
-                        path: file_path.to_path_buf(),
-                        source_text: source_text.to_owned(),
-                        diagnostics: vec![err.into_diagnostic()],
-                    };
-                }
-            }
-        } else {
-            None
-        };
+        // Build scope analysis if any rule needs it — no oxc double-parse.
+        let scope_data =
+            self.needs_semantic.then(|| starlint_scope::build_scope_data(&tree));
 
         // Traverse the custom-parsed AstTree with lint rules.
         let mut diagnostics = traverse_ast_tree(
@@ -211,7 +190,7 @@ impl LintSession {
             &self.run_once_indices,
             source_text,
             file_path,
-            semantic.as_ref(),
+            scope_data.as_ref(),
         );
 
         // Merge plugin diagnostics.

@@ -40,11 +40,9 @@ impl LintRule for NoRedeclare {
             return;
         };
 
-        let Some(semantic) = ctx.semantic() else {
+        let Some(scope_data) = ctx.scope_data() else {
             return;
         };
-
-        let scoping = semantic.scoping();
 
         for &declarator_id in &*decl.declarations {
             let pattern_id = match ctx.node(declarator_id) {
@@ -65,14 +63,14 @@ impl LintRule for NoRedeclare {
                     continue;
                 };
 
-                // Check for redeclarations via the semantic redeclare list
-                let redeclarations = scoping.symbol_redeclarations(symbol_id);
+                // Check for redeclarations via the scope data
+                let redeclarations = scope_data.symbol_redeclarations(symbol_id);
                 if !redeclarations.is_empty() {
                     // Only report on the redeclaration, not the original
                     // The original declaration's span will differ from the redecl spans
                     for respan in redeclarations {
                         let new_name = format!("{name}_2");
-                        let respan_sdk = Span::new(respan.span.start, respan.span.end);
+                        let respan_sdk = Span::new(respan.start, respan.end);
                         let fix = FixBuilder::new(
                             format!("Rename to `{new_name}`"),
                             FixKind::SuggestionFix,

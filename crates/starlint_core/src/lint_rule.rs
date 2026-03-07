@@ -8,8 +8,6 @@
 use std::fmt::Debug;
 use std::path::Path;
 
-use oxc_semantic::{Semantic, SymbolId};
-
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::tree::AstTree;
@@ -51,9 +49,9 @@ pub trait LintRule: Debug + Send + Sync {
 
     /// Whether this rule requires semantic analysis (scope tree, symbol table).
     ///
-    /// Return `true` to indicate that the rule needs access to [`Semantic`] data
-    /// via [`LintContext::semantic()`]. When any active rule returns `true`,
-    /// the engine runs a semantic pre-pass before traversal.
+    /// Return `true` to indicate that the rule needs access to [`ScopeData`]
+    /// via [`LintContext::scope_data()`]. When any active rule returns `true`,
+    /// the engine runs scope analysis before traversal.
     fn needs_semantic(&self) -> bool {
         false
     }
@@ -95,7 +93,7 @@ pub trait LintRule: Debug + Send + Sync {
 /// Context provided to [`LintRule`] implementations during linting.
 ///
 /// Provides access to the [`AstTree`], source text, file path, optional
-/// semantic analysis data, and a method to report diagnostics.
+/// scope analysis data, and a method to report diagnostics.
 pub struct LintContext<'a> {
     /// The flat-indexed AST tree.
     tree: &'a AstTree,
@@ -105,35 +103,35 @@ pub struct LintContext<'a> {
     file_path: &'a Path,
     /// Accumulated diagnostics.
     diagnostics: Vec<Diagnostic>,
-    /// Optional semantic analysis (scope tree, symbol table, node ancestry).
-    semantic: Option<&'a Semantic<'a>>,
+    /// Optional scope analysis (scope tree, symbol table, reference tracking).
+    scope_data: Option<&'a starlint_scope::ScopeData>,
 }
 
 impl<'a> LintContext<'a> {
-    /// Create a new lint context without semantic analysis.
+    /// Create a new lint context without scope analysis.
     pub const fn new(tree: &'a AstTree, source_text: &'a str, file_path: &'a Path) -> Self {
         Self {
             tree,
             source_text,
             file_path,
             diagnostics: Vec::new(),
-            semantic: None,
+            scope_data: None,
         }
     }
 
-    /// Create a new lint context with semantic analysis data.
-    pub const fn with_semantic(
+    /// Create a new lint context with scope analysis data.
+    pub const fn with_scope_data(
         tree: &'a AstTree,
         source_text: &'a str,
         file_path: &'a Path,
-        semantic: &'a Semantic<'a>,
+        scope_data: &'a starlint_scope::ScopeData,
     ) -> Self {
         Self {
             tree,
             source_text,
             file_path,
             diagnostics: Vec::new(),
-            semantic: Some(semantic),
+            scope_data: Some(scope_data),
         }
     }
 
@@ -155,10 +153,10 @@ impl<'a> LintContext<'a> {
         self.tree.parent(id)
     }
 
-    /// Get the semantic analysis data, if available.
+    /// Get the scope analysis data, if available.
     #[must_use]
-    pub const fn semantic(&self) -> Option<&'a Semantic<'a>> {
-        self.semantic
+    pub const fn scope_data(&self) -> Option<&'a starlint_scope::ScopeData> {
+        self.scope_data
     }
 
     /// Get the source text of the file being linted.
@@ -178,19 +176,17 @@ impl<'a> LintContext<'a> {
         self.diagnostics.push(diagnostic);
     }
 
-    /// Resolve a [`SymbolId`] for a binding at the given span.
+    /// Resolve a [`SymbolId`](starlint_scope::SymbolId) for a binding at the
+    /// given span.
     ///
-    /// Iterates over all symbols in the semantic model and returns the first
-    /// whose declaration span matches. Returns `None` when semantic analysis
-    /// is unavailable or no matching symbol is found.
+    /// Returns `None` when scope analysis is unavailable or no matching
+    /// symbol is found.
     #[must_use]
-    pub fn resolve_symbol_id(&self, span: starlint_ast::types::Span) -> Option<SymbolId> {
-        let semantic = self.semantic?;
-        let scoping = semantic.scoping();
-        let target = oxc_span::Span::new(span.start, span.end);
-        scoping
-            .symbol_ids()
-            .find(|&sid| scoping.symbol_span(sid) == target)
+    pub fn resolve_symbol_id(
+        &self,
+        span: starlint_ast::types::Span,
+    ) -> Option<starlint_scope::SymbolId> {
+        self.scope_data?.symbol_by_span(span)
     }
 
     /// Check whether a reference at the given span is resolved to a local
@@ -200,26 +196,22 @@ impl<'a> LintContext<'a> {
     /// of them has a span matching `span`. If a matching unresolved reference
     /// is found the reference is NOT resolved; otherwise it IS resolved.
     ///
-    /// Returns `true` (conservatively assumes resolved) when semantic analysis
+    /// Returns `true` (conservatively assumes resolved) when scope analysis
     /// is unavailable.
     #[must_use]
     pub fn is_reference_resolved_at(&self, name: &str, span: starlint_ast::types::Span) -> bool {
-        let Some(semantic) = self.semantic else {
+        let Some(scope_data) = self.scope_data else {
             return true;
         };
-        let scoping = semantic.scoping();
-        let ident = oxc_span::Ident::from(name);
-        let target = oxc_span::Span::new(span.start, span.end);
 
-        let Some(ref_ids) = scoping.root_unresolved_references().get(&ident) else {
+        let Some(unresolved) = scope_data.root_unresolved_references().get(name) else {
             // Name has no unresolved references at all — it is resolved.
             return true;
         };
 
-        // Check whether any of the unresolved reference IDs match this span.
-        for &ref_id in ref_ids {
-            let reference = scoping.get_reference(ref_id);
-            if semantic.reference_span(reference) == target {
+        // Check whether any of the unresolved references match this span.
+        for uref in unresolved {
+            if uref.span.start == span.start && uref.span.end == span.end {
                 // Found an unresolved reference at this exact span.
                 return false;
             }
@@ -276,20 +268,9 @@ pub fn lint_source(source: &str, file_path: &str, rules: &[Box<dyn LintRule>]) -
     let options = ParseOptions::from_path(path);
     let tree = starlint_parser::parse(source, options).tree;
 
-    // Semantic analysis: fall back to oxc for the ~2% of rules that need it.
-    // Allocator must outlive Semantic<'a>, so declare it at this scope.
-    let allocator = oxc_allocator::Allocator::default();
+    // Scope analysis via starlint_scope (no oxc needed).
     let needs_semantic = rules.iter().any(|r| r.needs_semantic());
-    let semantic = if needs_semantic {
-        use crate::parser::{build_semantic, parse_file};
-
-        parse_file(&allocator, source, path).ok().map(|parsed| {
-            let program = allocator.alloc(parsed.program);
-            build_semantic(program)
-        })
-    } else {
-        None
-    };
+    let scope_data = needs_semantic.then(|| starlint_scope::build_scope_data(&tree));
 
     let traversal_indices: Vec<usize> = rules
         .iter()
@@ -311,7 +292,7 @@ pub fn lint_source(source: &str, file_path: &str, rules: &[Box<dyn LintRule>]) -
         &run_once_indices,
         source,
         path,
-        semantic.as_ref(),
+        scope_data.as_ref(),
     )
 }
 

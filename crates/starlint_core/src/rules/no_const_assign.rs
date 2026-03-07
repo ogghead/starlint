@@ -3,10 +3,9 @@
 //! Disallow reassignment of `const` variables. Modifying a constant after
 //! declaration causes a runtime error.
 
-use oxc_semantic::SymbolFlags;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_scope::SymbolFlags;
 
 use crate::fix_builder::FixBuilder;
 use crate::lint_rule::{LintContext, LintRule};
@@ -46,11 +45,9 @@ impl LintRule for NoConstAssign {
             return;
         }
 
-        let Some(semantic) = ctx.semantic() else {
+        let Some(scope_data) = ctx.scope_data() else {
             return;
         };
-
-        let scoping = semantic.scoping();
 
         for &declarator_id in &*decl.declarations {
             let pattern_id = match ctx.node(declarator_id) {
@@ -71,15 +68,16 @@ impl LintRule for NoConstAssign {
                     continue;
                 };
 
-                let flags = scoping.symbol_flags(symbol_id);
-                if !flags.contains(SymbolFlags::ConstVariable) {
+                let flags = scope_data.symbol_flags(symbol_id);
+                if !flags.contains(SymbolFlags::CONST_VARIABLE) {
                     continue;
                 }
 
                 // Check if any reference to this symbol is a write
-                let has_write = scoping
+                let has_write = scope_data
                     .get_resolved_references(symbol_id)
-                    .any(oxc_semantic::Reference::is_write);
+                    .iter()
+                    .any(|r| r.flags.is_write());
 
                 if has_write {
                     // Suggest changing `const` to `let` so reassignment is valid.

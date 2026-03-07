@@ -28,7 +28,7 @@ impl LintRule for NoUselessPromiseResolveReject {
     }
 
     fn needs_semantic(&self) -> bool {
-        true
+        false
     }
 
     fn run_on_types(&self) -> Option<&'static [AstNodeType]> {

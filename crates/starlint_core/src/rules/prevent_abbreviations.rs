@@ -103,8 +103,8 @@ impl LintRule for PreventAbbreviations {
             // With semantic, rename declaration + all references.
             // Without semantic, fall back to renaming only the declaration.
             let fix = match ctx.resolve_symbol_id(ident.span).and_then(|symbol_id| {
-                let sem = ctx.semantic()?;
-                let edits = fix_utils::rename_symbol_edits(sem, symbol_id, expansion, decl_span);
+                let sd = ctx.scope_data()?;
+                let edits = fix_utils::rename_symbol_edits(sd, symbol_id, expansion, decl_span);
                 FixBuilder::new(format!("Rename to `{expansion}`"), FixKind::SuggestionFix)
                     .edits(edits)
                     .build()

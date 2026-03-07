@@ -3,11 +3,9 @@
 //! Disallow reassignment of imported bindings. Import bindings are
 //! read-only; attempting to reassign them throws a runtime error.
 
-use oxc_semantic::SymbolFlags;
-use oxc_span::Ident;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
+use starlint_scope::SymbolFlags;
 
 use crate::lint_rule::{LintContext, LintRule};
 use starlint_ast::node::AstNode;
@@ -45,11 +43,9 @@ impl LintRule for NoImportAssign {
             return;
         }
 
-        let Some(semantic) = ctx.semantic() else {
+        let Some(scope_data) = ctx.scope_data() else {
             return;
         };
-
-        let scoping = semantic.scoping();
 
         for &spec_id in &*import.specifiers {
             // Resolve the specifier node to get the local binding name
@@ -64,21 +60,21 @@ impl LintRule for NoImportAssign {
             };
 
             // Find the symbol by name in the root scope
-            let root_scope = scoping.root_scope_id();
-            let ident = Ident::from(local_name.as_str());
-            let Some(symbol_id) = scoping.get_binding(root_scope, ident) else {
+            let root_scope = scope_data.root_scope_id();
+            let Some(symbol_id) = scope_data.get_binding(root_scope, &local_name) else {
                 continue;
             };
 
-            let flags = scoping.symbol_flags(symbol_id);
-            if !flags.contains(SymbolFlags::Import) {
+            let flags = scope_data.symbol_flags(symbol_id);
+            if !flags.contains(SymbolFlags::IMPORT) {
                 continue;
             }
 
             // Check if any reference to this symbol is a write
-            let has_write = scoping
+            let has_write = scope_data
                 .get_resolved_references(symbol_id)
-                .any(oxc_semantic::Reference::is_write);
+                .iter()
+                .any(|r| r.flags.is_write());
 
             if has_write {
                 ctx.report(Diagnostic {

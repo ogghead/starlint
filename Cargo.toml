@@ -32,14 +32,6 @@ ignore = "0.4"
 # Parallelism
 rayon = "1.10"
 
-# Parsing (oxc)
-oxc_allocator = "0.116"
-oxc_ast = "0.116"
-oxc_ast_visit = "0.116"
-oxc_parser = "0.116"
-oxc_semantic = "0.116"
-oxc_span = "0.116"
-
 # WASM runtime
 wasmtime = { version = "42", features = ["component-model", "winch"] }
 
@@ -53,6 +45,7 @@ starlint_core = { path = "crates/starlint_core" }
 starlint_config = { path = "crates/starlint_config" }
 starlint_parser = { path = "crates/starlint_parser" }
 starlint_plugin_sdk = { path = "crates/starlint_plugin_sdk" }
+starlint_scope = { path = "crates/starlint_scope" }
 starlint_wasm_host = { path = "crates/starlint_wasm_host" }
 starlint_lsp = { path = "crates/starlint_lsp" }
 

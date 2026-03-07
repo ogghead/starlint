@@ -45,11 +45,9 @@ impl LintRule for NoUseBeforeDefine {
             return;
         }
 
-        let Some(semantic) = ctx.semantic() else {
+        let Some(scope_data) = ctx.scope_data() else {
             return;
         };
-
-        let scoping = semantic.scoping();
 
         for &declarator_id in &*decl.declarations {
             let pattern_id = match ctx.node(declarator_id) {
@@ -71,13 +69,12 @@ impl LintRule for NoUseBeforeDefine {
                 };
 
                 // Check if any reference to this symbol comes before the declaration
-                for reference in scoping.get_resolved_references(symbol_id) {
-                    let ref_span = semantic.reference_span(reference);
-                    if ref_span.start < span.start {
+                for reference in scope_data.get_resolved_references(symbol_id) {
+                    if reference.span.start < span.start {
                         ctx.report(Diagnostic {
                             rule_name: "no-use-before-define".to_owned(),
                             message: format!("'{name}' is used before it is defined"),
-                            span: Span::new(ref_span.start, ref_span.end),
+                            span: Span::new(reference.span.start, reference.span.end),
                             severity: Severity::Warning,
                             help: None,
                             fix: None,

@@ -4,8 +4,6 @@
 //! outer scope. Shadowing can lead to confusion about which variable is
 //! being referenced.
 
-use oxc_span::Ident;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
@@ -44,11 +42,9 @@ impl LintRule for NoShadow {
             return;
         };
 
-        let Some(semantic) = ctx.semantic() else {
+        let Some(scope_data) = ctx.scope_data() else {
             return;
         };
-
-        let scoping = semantic.scoping();
 
         for &declarator_id in &*decl.declarations {
             let pattern_id = match ctx.node(declarator_id) {
@@ -70,19 +66,18 @@ impl LintRule for NoShadow {
                 };
 
                 // Get the scope of this binding
-                let binding_scope = scoping.symbol_scope_id(symbol_id);
+                let binding_scope = scope_data.symbol_scope_id(symbol_id);
 
                 // Walk up parent scopes looking for a same-named binding
-                let ident = Ident::from(name.as_str());
-                let mut current_scope = scoping.scope_parent_id(binding_scope);
+                let mut current_scope = scope_data.scope_parent_id(binding_scope);
 
                 while let Some(scope_id) = current_scope {
-                    if scoping.get_binding(scope_id, ident).is_some() {
+                    if scope_data.get_binding(scope_id, name).is_some() {
                         let decl_span = Span::new(span.start, span.end);
                         let new_name = format!("{name}_inner");
                         let fix = {
                             let edits = fix_utils::rename_symbol_edits(
-                                semantic, symbol_id, &new_name, decl_span,
+                                scope_data, symbol_id, &new_name, decl_span,
                             );
                             FixBuilder::new(
                                 format!("Rename to `{new_name}`"),
@@ -103,7 +98,7 @@ impl LintRule for NoShadow {
                         break;
                     }
 
-                    current_scope = scoping.scope_parent_id(scope_id);
+                    current_scope = scope_data.scope_parent_id(scope_id);
                 }
             }
         }

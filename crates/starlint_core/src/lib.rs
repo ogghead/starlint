@@ -14,7 +14,6 @@ pub mod fix_utils;
 pub mod lint_rule;
 pub mod lint_rules;
 pub mod overrides;
-pub mod parser;
 pub mod plugin;
 pub mod rules;
 pub mod traversal;

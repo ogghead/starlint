@@ -3,10 +3,9 @@
 //! Disallow reassignment of function declarations. Reassigning a function
 //! declaration is almost always a mistake.
 
-use oxc_semantic::SymbolFlags;
-
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
+use starlint_scope::SymbolFlags;
 
 use crate::fix_builder::FixBuilder;
 use crate::lint_rule::{LintContext, LintRule};
@@ -62,22 +61,21 @@ impl LintRule for NoFuncAssign {
             return;
         };
 
-        let Some(semantic) = ctx.semantic() else {
+        let Some(scope_data) = ctx.scope_data() else {
             return;
         };
 
-        let scoping = semantic.scoping();
-
         // Check that this symbol has the Function flag
-        let flags = scoping.symbol_flags(symbol_id);
-        if !flags.contains(SymbolFlags::Function) {
+        let flags = scope_data.symbol_flags(symbol_id);
+        if !flags.contains(SymbolFlags::FUNCTION) {
             return;
         }
 
         // Check if any reference to this symbol is a write
-        let has_write = scoping
+        let has_write = scope_data
             .get_resolved_references(symbol_id)
-            .any(oxc_semantic::Reference::is_write);
+            .iter()
+            .any(|r| r.flags.is_write());
 
         if has_write {
             // Suggest converting function declaration to a `let` variable

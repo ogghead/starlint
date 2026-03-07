@@ -45,11 +45,9 @@ impl LintRule for PreferConst {
             return;
         }
 
-        let Some(semantic) = ctx.semantic() else {
+        let Some(scope_data) = ctx.scope_data() else {
             return;
         };
-
-        let scoping = semantic.scoping();
 
         // Check every declarator: each must have an initializer, and none of
         // its bindings may be written to after declaration.
@@ -79,9 +77,10 @@ impl LintRule for PreferConst {
                     return true;
                 };
                 // Check for write references to this symbol
-                !scoping
+                !scope_data
                     .get_resolved_references(symbol_id)
-                    .any(oxc_semantic::Reference::is_write)
+                    .iter()
+                    .any(|r| r.flags.is_write())
             })
         });
 

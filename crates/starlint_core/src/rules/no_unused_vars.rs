@@ -48,11 +48,9 @@ impl LintRule for NoUnusedVars {
             // Still check var, but be more lenient
         }
 
-        let Some(semantic) = ctx.semantic() else {
+        let Some(scope_data) = ctx.scope_data() else {
             return;
         };
-
-        let scoping = semantic.scoping();
 
         // Collect unused binding info (name, span) and count totals to decide
         // whether the entire declaration can be deleted.
@@ -79,9 +77,10 @@ impl LintRule for NoUnusedVars {
                 };
 
                 // Check if any reference to this symbol is a read
-                let has_read = scoping
+                let has_read = scope_data
                     .get_resolved_references(symbol_id)
-                    .any(oxc_semantic::Reference::is_read);
+                    .iter()
+                    .any(|r| r.flags.is_read());
 
                 if !has_read {
                     unused_infos.push((

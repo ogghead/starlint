@@ -55,16 +55,22 @@ threads = 4
 
 #[test]
 fn test_parse_valid_typescript() {
-    let allocator = oxc_allocator::Allocator::default();
     let source = "export const hello: string = 'world';";
-    let result = starlint_core::parser::parse_file(&allocator, source, Path::new("test.ts"));
-    assert!(result.is_ok(), "valid TypeScript should parse");
+    let options = starlint_parser::ParseOptions::from_path(Path::new("test.ts"));
+    let result = starlint_parser::parse(source, options);
+    assert!(
+        !result.tree.is_empty(),
+        "valid TypeScript should parse to non-empty tree"
+    );
 }
 
 #[test]
 fn test_parse_valid_jsx() {
-    let allocator = oxc_allocator::Allocator::default();
     let source = "const App = () => <div>Hello</div>;";
-    let result = starlint_core::parser::parse_file(&allocator, source, Path::new("test.jsx"));
-    assert!(result.is_ok(), "valid JSX should parse");
+    let options = starlint_parser::ParseOptions::from_path(Path::new("test.jsx"));
+    let result = starlint_parser::parse(source, options);
+    assert!(
+        !result.tree.is_empty(),
+        "valid JSX should parse to non-empty tree"
+    );
 }

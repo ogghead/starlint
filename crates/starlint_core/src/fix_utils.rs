@@ -193,24 +193,12 @@ pub fn jsx_attr_insert_offset(source: &str, opening_span: Span) -> u32 {
 /// conflicts in target scopes).
 #[must_use]
 pub fn rename_symbol_edits(
-    semantic: &oxc_semantic::Semantic<'_>,
-    symbol_id: oxc_semantic::SymbolId,
+    scope_data: &starlint_scope::ScopeData,
+    symbol_id: starlint_scope::SymbolId,
     new_name: &str,
     decl_span: Span,
 ) -> Vec<Edit> {
-    let mut edits = Vec::new();
-
-    // Edit for the declaration site.
-    edits.push(replace(decl_span, new_name));
-
-    // Edit for each resolved reference.
-    let scoping = semantic.scoping();
-    for reference in scoping.get_resolved_references(symbol_id) {
-        let ref_span = semantic.reference_span(reference);
-        edits.push(replace(Span::new(ref_span.start, ref_span.end), new_name));
-    }
-
-    edits
+    scope_data.rename_symbol_edits(symbol_id, new_name, decl_span)
 }
 
 // ── Import utilities ─────────────────────────────────────────────────

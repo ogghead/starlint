@@ -11,18 +11,13 @@ description = "Core linting engine for starlint"
 starlint_ast = { workspace = true }
 starlint_parser = { workspace = true }
 starlint_plugin_sdk = { workspace = true }
+starlint_scope = { workspace = true }
 starlint_config = { workspace = true }
 
 miette = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 serde_json = { workspace = true }
-
-oxc_allocator = { workspace = true }
-oxc_ast = { workspace = true }
-oxc_parser = { workspace = true }
-oxc_semantic = { workspace = true }
-oxc_span = { workspace = true }
 
 globset = { workspace = true }
 ignore = { workspace = true }
