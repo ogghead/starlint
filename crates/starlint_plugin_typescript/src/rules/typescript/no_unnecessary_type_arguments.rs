@@ -39,6 +39,14 @@ impl LintRule for NoUnnecessaryTypeArguments {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        // Rule only fires when there are generic type parameter defaults to check
+        source_text.contains("= ")
+            && (source_text.contains("type ")
+                || source_text.contains("interface ")
+                || source_text.contains("class "))
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

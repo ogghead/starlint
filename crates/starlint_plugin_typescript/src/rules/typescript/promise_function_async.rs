@@ -28,6 +28,10 @@ impl LintRule for PromiseFunctionAsync {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains(": Promise<")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

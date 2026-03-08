@@ -267,8 +267,13 @@ struct LineIndex {
 
 impl LineIndex {
     /// Build a line index from source text.
+    ///
+    /// Pre-counts newlines to allocate the right capacity up front,
+    /// avoiding repeated reallocation.
     fn new(source: &str) -> Self {
-        let mut line_starts = vec![0u32];
+        let newline_count = bytecount(source.as_bytes(), b'\n');
+        let mut line_starts = Vec::with_capacity(newline_count.saturating_add(1));
+        line_starts.push(0u32);
         for (i, byte) in source.bytes().enumerate() {
             if byte == b'\n' {
                 let offset = u32::try_from(i).unwrap_or(u32::MAX);
@@ -280,8 +285,8 @@ impl LineIndex {
 
     /// Convert a byte offset to 1-based (line, column).
     ///
-    /// Column is measured in UTF-8 characters (not bytes) from the start of the line,
-    /// matching the previous `offset_to_line_col` behavior.
+    /// Column is measured in UTF-8 characters (not bytes) from the start of the line.
+    /// Uses a fast path when the slice is all ASCII (byte count == char count).
     #[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit platforms
     fn offset_to_line_col(&self, source: &str, offset: u32) -> (usize, usize) {
         // Binary search for the line containing this offset.
@@ -291,19 +296,30 @@ impl LineIndex {
         };
         let line_start = self.line_starts.get(line_idx).copied().unwrap_or(0);
 
-        // Count characters (not bytes) from line start to offset for the column.
         let start = line_start as usize;
         let end = (offset as usize).min(source.len());
         let col = if start <= end {
-            source
-                .get(start..end)
-                .map_or(1, |slice| slice.chars().count().saturating_add(1))
+            source.get(start..end).map_or(1, |slice| {
+                // Fast path: if byte length == char count, the slice is ASCII-only.
+                // Most JS/TS source is ASCII, so this avoids the expensive char iteration.
+                if slice.is_ascii() {
+                    slice.len().saturating_add(1)
+                } else {
+                    slice.chars().count().saturating_add(1)
+                }
+            })
         } else {
             1
         };
 
         (line_idx.saturating_add(1), col)
     }
+}
+
+/// Count occurrences of a byte in a slice.
+#[allow(clippy::naive_bytecount)] // Avoiding extra dependency; compiler auto-vectorizes this
+fn bytecount(haystack: &[u8], needle: u8) -> usize {
+    haystack.iter().filter(|&&b| b == needle).count()
 }
 
 #[cfg(test)]

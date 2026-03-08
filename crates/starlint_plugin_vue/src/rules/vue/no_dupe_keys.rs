@@ -87,6 +87,12 @@ impl LintRule for NoDupeKeys {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("data")
+            || source_text.contains("computed")
+            || source_text.contains("methods")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

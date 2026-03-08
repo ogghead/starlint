@@ -29,6 +29,12 @@ impl LintRule for NoConditionalTests {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("it(")
+            || source_text.contains("test(")
+            || source_text.contains("describe(")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

@@ -50,48 +50,59 @@ impl LintRule for NoComponentOptionsTypo {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        TYPO_MAP.iter().any(|(typo, _)| source_text.contains(typo))
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }
 
     fn run_once(&self, ctx: &mut LintContext<'_>) {
-        let source = ctx.source_text().to_owned();
+        let violations: Vec<(&str, &str, u32, u32)> = {
+            let source = ctx.source_text();
+            let mut found = Vec::new();
+            for &(typo, correction) in TYPO_MAP {
+                let mut search_pos = 0;
+                while let Some(offset) = source.get(search_pos..).and_then(|s| s.find(typo)) {
+                    let abs_pos = search_pos.saturating_add(offset);
 
-        for &(typo, correction) in TYPO_MAP {
-            let mut search_pos = 0;
-            while let Some(offset) = source.get(search_pos..).and_then(|s| s.find(typo)) {
-                let abs_pos = search_pos.saturating_add(offset);
+                    // Verify it looks like a property key (followed by `:` or `(`)
+                    let after = source
+                        .get(abs_pos.saturating_add(typo.len())..)
+                        .unwrap_or_default()
+                        .trim_start();
 
-                // Verify it looks like a property key (followed by `:` or `(`)
-                let after = source
-                    .get(abs_pos.saturating_add(typo.len())..)
-                    .unwrap_or_default()
-                    .trim_start();
+                    if after.starts_with(':') || after.starts_with('(') {
+                        let start = u32::try_from(abs_pos).unwrap_or(0);
+                        let end = start.saturating_add(u32::try_from(typo.len()).unwrap_or(0));
+                        found.push((typo, correction, start, end));
+                    }
 
-                if after.starts_with(':') || after.starts_with('(') {
-                    let start = u32::try_from(abs_pos).unwrap_or(0);
-                    let end = start.saturating_add(u32::try_from(typo.len()).unwrap_or(0));
-                    ctx.report(Diagnostic {
-                        rule_name: RULE_NAME.to_owned(),
-                        message: format!("Possible typo `{typo}` — did you mean `{correction}`?"),
-                        span: Span::new(start, end),
-                        severity: Severity::Warning,
-                        help: None,
-                        fix: Some(Fix {
-                            kind: FixKind::SafeFix,
-                            message: format!("Rename to `{correction}`"),
-                            edits: vec![Edit {
-                                span: Span::new(start, end),
-                                replacement: (*correction).to_owned(),
-                            }],
-                            is_snippet: false,
-                        }),
-                        labels: vec![],
-                    });
+                    search_pos = abs_pos.saturating_add(typo.len());
                 }
-
-                search_pos = abs_pos.saturating_add(typo.len());
             }
+            found
+        };
+
+        for (typo, correction, start, end) in violations {
+            ctx.report(Diagnostic {
+                rule_name: RULE_NAME.to_owned(),
+                message: format!("Possible typo `{typo}` — did you mean `{correction}`?"),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: Some(Fix {
+                    kind: FixKind::SafeFix,
+                    message: format!("Rename to `{correction}`"),
+                    edits: vec![Edit {
+                        span: Span::new(start, end),
+                        replacement: (*correction).to_owned(),
+                    }],
+                    is_snippet: false,
+                }),
+                labels: vec![],
+            });
         }
     }
 }

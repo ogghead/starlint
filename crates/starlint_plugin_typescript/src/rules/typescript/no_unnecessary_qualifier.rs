@@ -25,6 +25,10 @@ impl LintRule for NoUnnecessaryQualifier {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("namespace ") || source_text.contains("module ")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

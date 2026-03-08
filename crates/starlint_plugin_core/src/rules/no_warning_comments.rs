@@ -25,6 +25,11 @@ impl LintRule for NoWarningComments {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        let lower = source_text.to_ascii_lowercase();
+        lower.contains("todo") || lower.contains("fixme") || lower.contains("hack")
+    }
+
     fn run_once(&self, ctx: &mut LintContext<'_>) {
         let source = ctx.source_text();
         let findings = find_warning_comments(source);

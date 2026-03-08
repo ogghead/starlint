@@ -23,48 +23,60 @@ impl LintRule for ExportsLast {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("export ")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }
 
     fn run_once(&self, ctx: &mut LintContext<'_>) {
-        let source = ctx.source_text().to_owned();
+        let violations: Vec<(u32, u32)> = {
+            let source = ctx.source_text();
+            let mut found = Vec::new();
 
-        // Track the last export line and look for non-export statements after it.
-        let mut last_export_line: Option<usize> = None;
-        let mut byte_offset: usize = 0;
+            // Track the last export line and look for non-export statements after it.
+            let mut last_export_line: Option<usize> = None;
+            let mut byte_offset: usize = 0;
 
-        for (line_idx, line) in source.lines().enumerate() {
-            let trimmed = line.trim();
+            for (line_idx, line) in source.lines().enumerate() {
+                let trimmed = line.trim();
 
-            // Skip empty lines and comments
-            if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*") {
-                byte_offset = byte_offset.saturating_add(line.len()).saturating_add(1);
-                continue;
-            }
-
-            let is_export = trimmed.starts_with("export ") || trimmed.starts_with("export{");
-
-            if is_export {
-                last_export_line = Some(line_idx);
-            } else if let Some(last) = last_export_line {
-                // Non-export statement after an export
-                if line_idx > last {
-                    let start = u32::try_from(byte_offset).unwrap_or(0);
-                    let end = start.saturating_add(u32::try_from(line.len()).unwrap_or(0));
-                    ctx.report(Diagnostic {
-                        rule_name: "import/exports-last".to_owned(),
-                        message: "Non-export statement found after an export — move all exports to the end of the file".to_owned(),
-                        span: Span::new(start, end),
-                        severity: Severity::Warning,
-                        help: None,
-                        fix: None,
-                        labels: vec![],
-                    });
+                // Skip empty lines and comments
+                if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*") {
+                    byte_offset = byte_offset.saturating_add(line.len()).saturating_add(1);
+                    continue;
                 }
-            }
 
-            byte_offset = byte_offset.saturating_add(line.len()).saturating_add(1);
+                let is_export = trimmed.starts_with("export ") || trimmed.starts_with("export{");
+
+                if is_export {
+                    last_export_line = Some(line_idx);
+                } else if let Some(last) = last_export_line {
+                    // Non-export statement after an export
+                    if line_idx > last {
+                        let start = u32::try_from(byte_offset).unwrap_or(0);
+                        let end = start.saturating_add(u32::try_from(line.len()).unwrap_or(0));
+                        found.push((start, end));
+                    }
+                }
+
+                byte_offset = byte_offset.saturating_add(line.len()).saturating_add(1);
+            }
+            found
+        };
+
+        for (start, end) in violations {
+            ctx.report(Diagnostic {
+                rule_name: "import/exports-last".to_owned(),
+                message: "Non-export statement found after an export — move all exports to the end of the file".to_owned(),
+                span: Span::new(start, end),
+                severity: Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            });
         }
     }
 }

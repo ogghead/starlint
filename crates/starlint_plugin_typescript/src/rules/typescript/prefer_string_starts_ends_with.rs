@@ -33,6 +33,14 @@ impl LintRule for PreferStringStartsEndsWith {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains(".indexOf(")
+            || source_text.contains(".charAt(")
+            || source_text.contains("[0]")
+            || source_text.contains(".slice(")
+            || source_text.contains(".substring(")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

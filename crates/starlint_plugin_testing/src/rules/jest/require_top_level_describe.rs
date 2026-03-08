@@ -24,6 +24,10 @@ impl LintRule for RequireTopLevelDescribe {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("it(") || source_text.contains("test(")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }
@@ -31,38 +35,7 @@ impl LintRule for RequireTopLevelDescribe {
     fn run_once(&self, ctx: &mut LintContext<'_>) {
         let violations = {
             let source = ctx.source_text();
-            let test_patterns = ["it(", "test("];
-            let mut violations: Vec<(String, Span)> = Vec::new();
-
-            for pattern in &test_patterns {
-                let mut search_start: usize = 0;
-
-                while let Some(pos) = source.get(search_start..).and_then(|s| s.find(pattern)) {
-                    let abs_pos = search_start.saturating_add(pos);
-
-                    let is_word_boundary = abs_pos == 0
-                        || source
-                            .as_bytes()
-                            .get(abs_pos.saturating_sub(1))
-                            .is_none_or(|b| !b.is_ascii_alphanumeric() && *b != b'_' && *b != b'$');
-
-                    if is_word_boundary && !is_inside_describe(source, abs_pos) {
-                        let name_len = pattern.len().saturating_sub(1);
-                        let start_u32 = u32::try_from(abs_pos).unwrap_or(0);
-                        let end_u32 =
-                            start_u32.saturating_add(u32::try_from(name_len).unwrap_or(0));
-                        let msg = format!(
-                            "`{}` should be inside a `describe` block",
-                            pattern.get(..name_len).unwrap_or(pattern),
-                        );
-                        violations.push((msg, Span::new(start_u32, end_u32)));
-                    }
-
-                    search_start = abs_pos.saturating_add(pattern.len());
-                }
-            }
-
-            violations
+            find_top_level_tests(source)
         };
 
         for (msg, span) in &violations {
@@ -79,46 +52,94 @@ impl LintRule for RequireTopLevelDescribe {
     }
 }
 
-/// Check if a position is inside a `describe` block by counting brace nesting.
-fn is_inside_describe(source: &str, pos: usize) -> bool {
-    let before = source.get(..pos).unwrap_or("");
-    let needle = "describe(";
+/// Single forward pass: track describe nesting via brace depth stack.
+///
+/// Previous implementation was O(m×n) — for each `it(`/`test(` match it
+/// re-scanned all previous `describe(` blocks to check nesting.
+/// This implementation is O(n) — single scan through the source.
+fn find_top_level_tests(source: &str) -> Vec<(String, Span)> {
+    #[derive(Clone, Copy)]
+    enum TestKeyword {
+        Describe,
+        It,
+        Test,
+    }
 
-    let mut search_from: usize = 0;
+    let describe_needle = "describe(";
+    let it_needle = "it(";
+    let test_needle = "test(";
+    let mut violations: Vec<(String, Span)> = Vec::new();
 
-    while let Some(desc_pos) = before.get(search_from..).and_then(|s| s.find(needle)) {
-        let abs_desc_pos = search_from.saturating_add(desc_pos);
+    let mut positions: Vec<(usize, TestKeyword)> = Vec::new();
 
-        // Ensure word boundary
-        let is_word_boundary = abs_desc_pos == 0
-            || before
-                .as_bytes()
-                .get(abs_desc_pos.saturating_sub(1))
-                .is_none_or(|b| !b.is_ascii_alphanumeric() && *b != b'_' && *b != b'$');
+    for needle_info in &[
+        (describe_needle, TestKeyword::Describe),
+        (it_needle, TestKeyword::It),
+        (test_needle, TestKeyword::Test),
+    ] {
+        let (needle, kind) = needle_info;
+        let mut search_start: usize = 0;
+        while let Some(offset) = source.get(search_start..).and_then(|s| s.find(needle)) {
+            let abs_pos = search_start.saturating_add(offset);
+            let is_word_boundary = abs_pos == 0
+                || source
+                    .as_bytes()
+                    .get(abs_pos.saturating_sub(1))
+                    .is_none_or(|b| !b.is_ascii_alphanumeric() && *b != b'_' && *b != b'$');
+            if is_word_boundary {
+                positions.push((abs_pos, *kind));
+            }
+            search_start = abs_pos.saturating_add(needle.len());
+        }
+    }
+    positions.sort_unstable_by_key(|&(pos, _)| pos);
 
-        if is_word_boundary {
-            let after_desc = abs_desc_pos.saturating_add(needle.len());
+    // Forward pass: count braces and track describe nesting.
+    let mut describe_stack: Vec<usize> = Vec::new();
+    let mut brace_depth: usize = 0;
+    let mut kw_idx: usize = 0;
 
-            // Find the opening brace of the describe callback
-            if let Some(brace_offset) = source.get(after_desc..pos).and_then(|s| s.find('{')) {
-                let brace_pos = after_desc.saturating_add(brace_offset);
-
-                if brace_pos < pos {
-                    let between = source.get(brace_pos..pos).unwrap_or("");
-                    let open_count = between.chars().filter(|c| *c == '{').count();
-                    let close_count = between.chars().filter(|c| *c == '}').count();
-
-                    if open_count > close_count {
-                        return true;
-                    }
-                }
+    for (i, ch) in source.chars().enumerate() {
+        if ch == '{' {
+            brace_depth = brace_depth.saturating_add(1);
+        } else if ch == '}' {
+            brace_depth = brace_depth.saturating_sub(1);
+            while describe_stack.last().is_some_and(|&d| d == brace_depth) {
+                describe_stack.pop();
             }
         }
 
-        search_from = abs_desc_pos.saturating_add(needle.len());
+        while kw_idx < positions.len() && positions.get(kw_idx).is_some_and(|&(p, _)| p == i) {
+            if let Some(&(pos, kind)) = positions.get(kw_idx) {
+                match kind {
+                    TestKeyword::Describe => {
+                        describe_stack.push(brace_depth);
+                    }
+                    TestKeyword::It => {
+                        if describe_stack.is_empty() {
+                            let start_u32 = u32::try_from(pos).unwrap_or(0);
+                            violations.push((
+                                "`it` should be inside a `describe` block".to_owned(),
+                                Span::new(start_u32, start_u32.saturating_add(2)),
+                            ));
+                        }
+                    }
+                    TestKeyword::Test => {
+                        if describe_stack.is_empty() {
+                            let start_u32 = u32::try_from(pos).unwrap_or(0);
+                            violations.push((
+                                "`test` should be inside a `describe` block".to_owned(),
+                                Span::new(start_u32, start_u32.saturating_add(4)),
+                            ));
+                        }
+                    }
+                }
+            }
+            kw_idx = kw_idx.saturating_add(1);
+        }
     }
 
-    false
+    violations
 }
 
 #[cfg(test)]

@@ -26,6 +26,14 @@ impl LintRule for NoRefObjectReactivityLoss {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("ref(")
+            || source_text.contains("computed(")
+            || source_text.contains("toRef(")
+            || source_text.contains("reactive(")
+            || source_text.contains("toRefs(")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

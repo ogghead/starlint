@@ -50,37 +50,57 @@ impl LintRule for NoMultiComp {
         let _ = (node, ctx);
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        // All class component patterns contain "Component" as a substring
+        source_text.contains("Component")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }
 
     fn run_once(&self, ctx: &mut LintContext<'_>) {
-        let source = ctx.source_text();
+        let violations: Vec<u32> = {
+            let source = ctx.source_text();
 
-        // Simplified heuristic: count patterns that look like component definitions.
-        // Count function/class declarations that likely return JSX.
-        // We look for multiple occurrences of common component patterns.
-        let mut component_count = 0u32;
-        let mut last_span_start = 0u32;
+            let mut component_count = 0u32;
+            let mut last_span_start = 0u32;
 
-        // Count class components (classes extending Component/PureComponent)
-        for (idx, _) in source
-            .match_indices("extends Component")
-            .chain(source.match_indices("extends React.Component"))
-            .chain(source.match_indices("extends PureComponent"))
-            .chain(source.match_indices("extends React.PureComponent"))
-        {
-            component_count = component_count.saturating_add(1);
-            if component_count > 1 {
-                last_span_start = u32::try_from(idx).unwrap_or(0);
+            // Single pass: collect all match positions into a vec, then count
+            let mut positions: Vec<usize> = Vec::new();
+            for (idx, _) in source.match_indices("extends Component") {
+                positions.push(idx);
             }
-        }
+            for (idx, _) in source.match_indices("extends React.Component") {
+                positions.push(idx);
+            }
+            for (idx, _) in source.match_indices("extends PureComponent") {
+                positions.push(idx);
+            }
+            for (idx, _) in source.match_indices("extends React.PureComponent") {
+                positions.push(idx);
+            }
+            positions.sort_unstable();
 
-        if component_count > 1 {
+            for idx in positions {
+                component_count = component_count.saturating_add(1);
+                if component_count > 1 {
+                    last_span_start = u32::try_from(idx).unwrap_or(0);
+                }
+            }
+
+            if component_count > 1 {
+                vec![last_span_start]
+            } else {
+                vec![]
+            }
+        };
+
+        for start in violations {
             ctx.report(Diagnostic {
                 rule_name: "react/no-multi-comp".to_owned(),
                 message: "Declare only one React component per file".to_owned(),
-                span: Span::new(last_span_start, last_span_start.saturating_add(1)),
+                span: Span::new(start, start.saturating_add(1)),
                 severity: Severity::Warning,
                 help: None,
                 fix: None,

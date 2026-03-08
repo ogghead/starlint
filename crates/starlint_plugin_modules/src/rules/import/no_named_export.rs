@@ -22,6 +22,10 @@ impl LintRule for NoNamedExport {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("export ")
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }
@@ -29,18 +33,14 @@ impl LintRule for NoNamedExport {
     fn run_once(&self, ctx: &mut LintContext<'_>) {
         let findings: Vec<(u32, u32)> = {
             let source = ctx.source_text();
-            source
-                .lines()
-                .enumerate()
-                .filter_map(|(idx, line)| {
-                    let trimmed = line.trim();
+            let mut found = Vec::new();
+            let mut byte_offset: usize = 0;
 
-                    // Skip default exports and re-exports
-                    if trimmed.starts_with("export default ") {
-                        return None;
-                    }
+            for line in source.lines() {
+                let trimmed = line.trim();
 
-                    // Detect named exports
+                // Skip default exports and re-exports
+                if !trimmed.starts_with("export default ") {
                     let is_named_export = trimmed.starts_with("export {")
                         || trimmed.starts_with("export const ")
                         || trimmed.starts_with("export function ")
@@ -52,19 +52,17 @@ impl LintRule for NoNamedExport {
                         || trimmed.starts_with("export type ")
                         || trimmed.starts_with("export async function ");
 
-                    is_named_export.then(|| {
-                        let line_offset = source
-                            .lines()
-                            .take(idx)
-                            .map(|l| l.len().saturating_add(1))
-                            .sum::<usize>();
-                        let start = u32::try_from(line_offset).unwrap_or(0);
+                    if is_named_export {
+                        let start = u32::try_from(byte_offset).unwrap_or(0);
                         let end =
-                            u32::try_from(line_offset.saturating_add(trimmed.len())).unwrap_or(0);
-                        (start, end)
-                    })
-                })
-                .collect()
+                            u32::try_from(byte_offset.saturating_add(trimmed.len())).unwrap_or(0);
+                        found.push((start, end));
+                    }
+                }
+
+                byte_offset = byte_offset.saturating_add(line.len()).saturating_add(1);
+            }
+            found
         };
 
         for (start, end) in findings {
