@@ -192,7 +192,8 @@ echo "╠═══════════════════════�
 echo "║  Warmup: $WARMUP    Min runs: $MIN_RUNS                        ║"
 echo "╚══════════════════════════════════════════════════════════╝"
 
-rm -f "$RESULTS_DIR/file-counts.txt"
+# Append file counts (don't wipe — multiple run.sh invocations may contribute)
+touch "$RESULTS_DIR/file-counts.txt"
 
 CORPORA=(express date-fns grafana)
 
