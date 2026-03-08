@@ -69,6 +69,29 @@ impl LintDispatchTable {
 
         table
     }
+
+    /// Build a per-file filtered dispatch table containing only active rules.
+    ///
+    /// Eliminates per-node active-checking overhead in the traversal hot path
+    /// by pre-filtering rule indices against the active mask once per file.
+    fn filtered(&self, active: &[bool]) -> Self {
+        let is_active = |idx: &usize| active.get(*idx).copied().unwrap_or(false);
+
+        Self {
+            enter: self
+                .enter
+                .iter()
+                .map(|v| v.iter().copied().filter(is_active).collect())
+                .collect(),
+            leave: self
+                .leave
+                .iter()
+                .map(|v| v.iter().copied().filter(is_active).collect())
+                .collect(),
+            enter_all: self.enter_all.iter().copied().filter(is_active).collect(),
+            leave_all: self.leave_all.iter().copied().filter(is_active).collect(),
+        }
+    }
 }
 
 /// Traverse an [`AstTree`] and dispatch to [`LintRule`]s using a pre-built table.
@@ -83,7 +106,7 @@ pub fn traverse_ast_tree(
     file_path: &Path,
     scope_data: Option<&ScopeData>,
 ) -> Vec<Diagnostic> {
-    // Per-file active-rule bitmask.
+    // Per-file active-rule mask.
     let active: Vec<bool> = rules
         .iter()
         .map(|r| r.should_run_on_file(source_text, file_path))
@@ -91,21 +114,27 @@ pub fn traverse_ast_tree(
 
     let mut all_diagnostics = Vec::new();
 
-    // Build per-node dispatch lists (resolving indices + active mask).
-    let has_traversal = active.iter().any(|&a| a);
+    // Build a per-file filtered dispatch table containing only active rules.
+    // This eliminates per-node active-checking in the traversal hot path.
+    let filtered = table.filtered(&active);
+    let has_traversal = !filtered.enter_all.is_empty()
+        || !filtered.leave_all.is_empty()
+        || filtered.enter.iter().any(|v| !v.is_empty())
+        || filtered.leave.iter().any(|v| !v.is_empty());
+
     if has_traversal {
         let mut ctx = match scope_data {
             Some(sd) => LintContext::with_scope_data(tree, source_text, file_path, sd),
             None => LintContext::new(tree, source_text, file_path),
         };
 
-        // Walk the tree in pre-order (same order as nodes Vec).
-        walk_and_dispatch(tree, rules, table, &active, &mut ctx);
+        // Walk the tree in pre-order — the filtered table has no inactive rules.
+        walk_and_dispatch(tree, rules, &filtered, &mut ctx);
 
         all_diagnostics.extend(ctx.into_diagnostics());
     }
 
-    // Run run_once for rules that only need file-level checks.
+    // Run run_once for active rules that only need file-level checks.
     if !run_once_indices.is_empty() {
         let mut ctx = match scope_data {
             Some(sd) => LintContext::with_scope_data(tree, source_text, file_path, sd),
@@ -129,19 +158,20 @@ fn walk_and_dispatch(
     tree: &AstTree,
     rules: &[Box<dyn LintRule>],
     table: &LintDispatchTable,
-    active: &[bool],
     ctx: &mut LintContext<'_>,
 ) {
-    walk_node_recursive(tree, NodeId::ROOT, rules, table, active, ctx);
+    walk_node_recursive(tree, NodeId::ROOT, rules, table, ctx);
 }
 
 /// Recursively walk a node and its children, dispatching enter/leave.
+///
+/// The dispatch table is pre-filtered to contain only active rules,
+/// so no per-node active-checking is needed in this hot path.
 fn walk_node_recursive(
     tree: &AstTree,
     node_id: NodeId,
     rules: &[Box<dyn LintRule>],
     table: &LintDispatchTable,
-    active: &[bool],
     ctx: &mut LintContext<'_>,
 ) {
     let Some(node) = tree.get(node_id) else {
@@ -150,44 +180,36 @@ fn walk_node_recursive(
     let node_type = AstNodeType::from(node);
     let ty_index = node_type.index();
 
-    // Enter dispatch.
+    // Enter dispatch — table is pre-filtered, no active check needed.
     if let Some(targeted) = table.enter.get(ty_index) {
         for &idx in targeted {
-            if active.get(idx).copied().unwrap_or(false) {
-                if let Some(rule) = rules.get(idx) {
-                    rule.run(node_id, node, ctx);
-                }
-            }
-        }
-    }
-    for &idx in &table.enter_all {
-        if active.get(idx).copied().unwrap_or(false) {
             if let Some(rule) = rules.get(idx) {
                 rule.run(node_id, node, ctx);
             }
         }
     }
+    for &idx in &table.enter_all {
+        if let Some(rule) = rules.get(idx) {
+            rule.run(node_id, node, ctx);
+        }
+    }
 
     // Visit children.
     for &child_id in tree.children(node_id) {
-        walk_node_recursive(tree, child_id, rules, table, active, ctx);
+        walk_node_recursive(tree, child_id, rules, table, ctx);
     }
 
-    // Leave dispatch.
+    // Leave dispatch — table is pre-filtered, no active check needed.
     if let Some(targeted) = table.leave.get(ty_index) {
         for &idx in targeted {
-            if active.get(idx).copied().unwrap_or(false) {
-                if let Some(rule) = rules.get(idx) {
-                    rule.leave(node_id, node, ctx);
-                }
+            if let Some(rule) = rules.get(idx) {
+                rule.leave(node_id, node, ctx);
             }
         }
     }
     for &idx in &table.leave_all {
-        if active.get(idx).copied().unwrap_or(false) {
-            if let Some(rule) = rules.get(idx) {
-                rule.leave(node_id, node, ctx);
-            }
+        if let Some(rule) = rules.get(idx) {
+            rule.leave(node_id, node, ctx);
         }
     }
 }

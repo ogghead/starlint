@@ -5,6 +5,7 @@
 use std::fmt::Write;
 use std::path::Path;
 
+use serde::Serialize;
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
 
 /// Output format for diagnostics.
@@ -142,7 +143,36 @@ fn format_json(diagnostics: &[Diagnostic], file_path: &Path) -> String {
     String::from_utf8(output).unwrap_or_default()
 }
 
+/// Lightweight struct for direct JSON serialization without intermediate `Value`.
+#[derive(Serialize)]
+struct JsonDiagnostic<'a> {
+    /// File path.
+    file: &'a str,
+    /// Rule name.
+    rule: &'a str,
+    /// Diagnostic message.
+    message: &'a str,
+    /// Severity level.
+    severity: &'a Severity,
+    /// Source span.
+    span: JsonSpan,
+    /// Optional help text.
+    help: Option<&'a str>,
+}
+
+/// Span serialization helper.
+#[derive(Serialize)]
+struct JsonSpan {
+    /// Start byte offset.
+    start: u32,
+    /// End byte offset.
+    end: u32,
+}
+
 /// Write diagnostics as newline-delimited JSON directly to a writer.
+///
+/// Serializes directly from a typed struct instead of building an intermediate
+/// `serde_json::Value`, avoiding per-diagnostic allocation overhead.
 fn write_json(
     writer: &mut impl std::io::Write,
     diagnostics: &[Diagnostic],
@@ -153,14 +183,17 @@ fn write_json(
         if i > 0 {
             writeln!(writer)?;
         }
-        let entry = serde_json::json!({
-            "file": file_str,
-            "rule": diag.rule_name,
-            "message": diag.message,
-            "severity": diag.severity,
-            "span": { "start": diag.span.start, "end": diag.span.end },
-            "help": diag.help,
-        });
+        let entry = JsonDiagnostic {
+            file: &file_str,
+            rule: &diag.rule_name,
+            message: &diag.message,
+            severity: &diag.severity,
+            span: JsonSpan {
+                start: diag.span.start,
+                end: diag.span.end,
+            },
+            help: diag.help.as_deref(),
+        };
         match serde_json::to_writer(&mut *writer, &entry) {
             Ok(()) => {}
             Err(err) => {
