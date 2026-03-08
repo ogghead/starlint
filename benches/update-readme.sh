@@ -107,7 +107,7 @@ get_file_count() {
     local corpus="$1"
     local counts_file="$RESULTS_DIR/file-counts.txt"
     if [ -f "$counts_file" ]; then
-        grep "^$corpus " "$counts_file" 2>/dev/null | awk '{print $2}' || echo "?"
+        grep "^$corpus " "$counts_file" 2>/dev/null | head -1 | awk '{print $2}' || echo "?"
     else
         echo "?"
     fi
