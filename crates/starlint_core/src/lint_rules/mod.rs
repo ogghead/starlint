@@ -3,11 +3,6 @@
 //! Rules are organized into named plugin bundles. Each bundle provides
 //! a factory function returning its rules.
 
-pub mod eqeqeq;
-pub mod no_debugger;
-pub mod no_empty;
-pub mod no_var;
-
 use crate::lint_rule::LintRule;
 
 /// Return all unified [`LintRule`] implementations across all bundles.
@@ -529,10 +524,10 @@ pub fn storybook_rules() -> Vec<Box<dyn LintRule>> {
 #[allow(clippy::too_many_lines)]
 pub fn core_rules() -> Vec<Box<dyn LintRule>> {
     vec![
-        Box::new(eqeqeq::Eqeqeq),
-        Box::new(no_debugger::NoDebugger),
-        Box::new(no_empty::NoEmpty),
-        Box::new(no_var::NoVar),
+        Box::new(crate::rules::eqeqeq::Eqeqeq),
+        Box::new(crate::rules::no_debugger::NoDebugger),
+        Box::new(crate::rules::no_empty::NoEmpty),
+        Box::new(crate::rules::no_var::NoVar),
         Box::new(crate::rules::accessor_pairs::AccessorPairs),
         Box::new(crate::rules::approx_constant::ApproxConstant),
         Box::new(crate::rules::array_callback_return::ArrayCallbackReturn),

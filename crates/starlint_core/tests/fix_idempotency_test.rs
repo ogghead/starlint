@@ -11,7 +11,6 @@ use starlint_core::engine::LintSession;
 use starlint_core::fix::apply_fixes;
 use starlint_core::lint_rule::LintRule;
 use starlint_core::lint_rule_plugin::LintRulePlugin;
-use starlint_core::lint_rules;
 use starlint_core::plugin::Plugin;
 use starlint_core::rules;
 
@@ -106,7 +105,7 @@ fn assert_fix_idempotent(rules: Vec<Box<dyn LintRule>>, source: &str, label: &st
 #[test]
 fn fix_idempotent_no_debugger() {
     assert_fix_idempotent(
-        vec![Box::new(lint_rules::no_debugger::NoDebugger)],
+        vec![Box::new(rules::no_debugger::NoDebugger)],
         "debugger;\nconst x = 1;\ndebugger;",
         "no_debugger",
     );
@@ -200,7 +199,7 @@ fn fix_idempotent_prefer_string_trim_start_end() {
 #[test]
 fn fix_idempotent_no_empty() {
     assert_fix_idempotent(
-        vec![Box::new(lint_rules::no_empty::NoEmpty)],
+        vec![Box::new(rules::no_empty::NoEmpty)],
         "try { doSomething(); } catch (e) {}",
         "no_empty",
     );
@@ -260,7 +259,7 @@ fn fix_idempotent_new_for_builtins() {
 #[test]
 fn fix_idempotent_eqeqeq() {
     assert_fix_idempotent(
-        vec![Box::new(lint_rules::eqeqeq::Eqeqeq)],
+        vec![Box::new(rules::eqeqeq::Eqeqeq)],
         "if (a == b && c != d) {}",
         "eqeqeq",
     );
@@ -269,7 +268,7 @@ fn fix_idempotent_eqeqeq() {
 #[test]
 fn fix_idempotent_no_var() {
     assert_fix_idempotent(
-        vec![Box::new(lint_rules::no_var::NoVar)],
+        vec![Box::new(rules::no_var::NoVar)],
         "var x = 1;\nvar y = 2;",
         "no_var",
     );
@@ -732,10 +731,10 @@ fn fix_idempotent_no_new_buffer() {
 #[test]
 fn fix_idempotent_combined_multi_rule() {
     let lint_rules: Vec<Box<dyn LintRule>> = vec![
-        Box::new(lint_rules::no_debugger::NoDebugger),
+        Box::new(rules::no_debugger::NoDebugger),
         Box::new(rules::no_extra_semi::NoExtraSemi),
-        Box::new(lint_rules::eqeqeq::Eqeqeq),
-        Box::new(lint_rules::no_var::NoVar),
+        Box::new(rules::eqeqeq::Eqeqeq),
+        Box::new(rules::no_var::NoVar),
         Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
         Box::new(rules::no_zero_fractions::NoZeroFractions),
     ];
