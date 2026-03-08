@@ -65,6 +65,7 @@ jobs:
           set +e
           RAYON_NUM_THREADS=2 flamegraph \
             --ignore-status \
+            --post-process "tee flamegraph.txt" \
             -o flamegraph.svg \
             -- target/release/starlint \
                --config benches/configs/starlint-default.toml \
@@ -72,29 +73,38 @@ jobs:
           exit_code=$?
           set -e
           if [ -f flamegraph.svg ] && [ -s flamegraph.svg ]; then
-            echo "Flamegraph size: $(du -h flamegraph.svg | cut -f1)"
+            echo "Flamegraph SVG size: $(du -h flamegraph.svg | cut -f1)"
           else
             echo "::error::flamegraph.svg not generated (flamegraph exit code: $exit_code)"
             exit 1
           fi
+          if [ -f flamegraph.txt ] && [ -s flamegraph.txt ]; then
+            echo "Collapsed stacks size: $(du -h flamegraph.txt | cut -f1)"
+            echo "Top 10 hottest stacks:"
+            sort -t' ' -k2 -rn flamegraph.txt | head -10
+          fi
 
-      - name: Upload flamegraph artifact
+      - name: Upload flamegraph artifacts
         uses: actions/upload-artifact@v7
         with:
           name: flamegraph-${{ github.sha }}
-          path: flamegraph.svg
+          path: |
+            flamegraph.svg
+            flamegraph.txt
           retention-days: 90
 
       - name: Publish flamegraph to assets branch
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Save SVG outside the working tree before resetting
+          # Save files outside the working tree before resetting
           cp flamegraph.svg /tmp/flamegraph.svg
-          # Create orphan branch with only the SVG
+          cp flamegraph.txt /tmp/flamegraph.txt
+          # Create orphan branch with flamegraph assets
           git checkout --orphan flamegraph-assets-tmp
           git rm -rf .
           cp /tmp/flamegraph.svg flamegraph.svg
-          git add flamegraph.svg
+          cp /tmp/flamegraph.txt flamegraph.txt
+          git add flamegraph.svg flamegraph.txt
           git commit -m "Update flamegraph from ${{ github.sha }}"
           git push origin flamegraph-assets-tmp:flamegraph-assets --force
