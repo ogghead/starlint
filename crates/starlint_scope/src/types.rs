@@ -1,5 +1,7 @@
 //! Core types for scope analysis.
 
+use std::sync::Arc;
+
 use starlint_ast::types::Span;
 
 /// Index into the symbol table.
@@ -99,8 +101,8 @@ impl ReferenceFlags {
 /// Information about a single symbol (declared binding).
 #[derive(Debug)]
 pub struct SymbolInfo {
-    /// The binding's name.
-    pub name: String,
+    /// The binding's name (reference-counted to share with scope bindings map).
+    pub name: Arc<str>,
     /// Span of the declaration site.
     pub span: Span,
     /// Which scope this symbol belongs to.

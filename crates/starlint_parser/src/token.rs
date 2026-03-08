@@ -1,7 +1,7 @@
 //! Token types produced by the lexer.
 
 /// A single token produced by the lexer.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Token {
     /// The kind of token.
     pub kind: TokenKind,

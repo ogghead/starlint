@@ -130,7 +130,7 @@ impl<'a> Parser<'a> {
 
     /// Advance to the next token, returning the consumed token.
     pub(crate) fn bump(&mut self) -> Token {
-        let token = self.current.clone();
+        let token = self.current;
         self.prev_end = token.end;
         self.current = self.lexer.next_token();
         token

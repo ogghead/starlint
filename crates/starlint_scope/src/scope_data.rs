@@ -1,6 +1,7 @@
 //! The main query struct for scope analysis results.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use starlint_ast::types::{NodeId, Span};
 use starlint_plugin_sdk::diagnostic::Span as DiagSpan;
@@ -15,7 +16,7 @@ pub struct ScopeInfo {
     /// AST node that created this scope.
     pub node_id: NodeId,
     /// Bindings declared in this scope (name → symbol ID).
-    pub bindings: HashMap<String, SymbolId>,
+    pub bindings: HashMap<Arc<str>, SymbolId>,
 }
 
 /// Result of scope analysis on an `AstTree`.
@@ -32,7 +33,7 @@ pub struct ScopeData {
     /// Resolved references per symbol, indexed by `SymbolId`.
     pub(crate) resolved_refs: Vec<Vec<ReferenceInfo>>,
     /// Unresolved references by name.
-    pub(crate) unresolved: HashMap<String, Vec<UnresolvedRef>>,
+    pub(crate) unresolved: HashMap<Arc<str>, Vec<UnresolvedRef>>,
     /// Span-to-symbol lookup for `symbol_by_span`.
     pub(crate) span_to_symbol: HashMap<(u32, u32), SymbolId>,
 }
@@ -146,7 +147,7 @@ impl ScopeData {
 
     /// Get the map of unresolved references.
     #[must_use]
-    pub const fn root_unresolved_references(&self) -> &HashMap<String, Vec<UnresolvedRef>> {
+    pub const fn root_unresolved_references(&self) -> &HashMap<Arc<str>, Vec<UnresolvedRef>> {
         &self.unresolved
     }
 

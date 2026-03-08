@@ -1,9 +1,11 @@
 //! Two-pass scope builder that produces [`ScopeData`] from an [`AstTree`].
 //!
-//! **Pass 1**: Walk the tree collecting declarations and building the scope tree.
+//! **Pass 1**: Walk the tree collecting declarations, building the scope tree,
+//! and recording write targets (assignment/update/for-in/for-of).
 //! **Pass 2**: Walk again resolving identifier references against the scope chain.
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use starlint_ast::node::AstNode;
 use starlint_ast::operator::{AssignmentOperator, VariableDeclarationKind};
@@ -35,9 +37,13 @@ struct ScopeBuilder<'a> {
     /// Resolved references per symbol.
     resolved_refs: Vec<Vec<ReferenceInfo>>,
     /// Unresolved references by name.
-    unresolved: HashMap<String, Vec<UnresolvedRef>>,
+    unresolved: HashMap<Arc<str>, Vec<UnresolvedRef>>,
     /// Span-to-symbol lookup.
     span_to_symbol: HashMap<(u32, u32), SymbolId>,
+    /// Fast `NodeId` → `ScopeId` lookup (populated during scope creation).
+    node_to_scope: HashMap<NodeId, ScopeId>,
+    /// Write targets collected during pass 1 (avoids a separate traversal).
+    write_targets: HashMap<NodeId, ReferenceFlags>,
 }
 
 impl<'a> ScopeBuilder<'a> {
@@ -50,6 +56,8 @@ impl<'a> ScopeBuilder<'a> {
             resolved_refs: Vec::new(),
             unresolved: HashMap::new(),
             span_to_symbol: HashMap::new(),
+            node_to_scope: HashMap::new(),
+            write_targets: HashMap::new(),
         }
     }
 
@@ -136,50 +144,37 @@ impl<'a> ScopeBuilder<'a> {
                         );
                     }
                 }
-                _ => {}
-            }
-        }
-    }
-
-    /// Pre-compute a map from `NodeId` to `ReferenceFlags` for write targets.
-    ///
-    /// The parser's speculative parsing can produce incorrect parent pointers
-    /// for assignment LHS (e.g., `x` in `x = 2` may have parent=Program
-    /// instead of parent=AssignmentExpression). So instead of trusting parent
-    /// pointers, we scan all write-producing nodes and record their targets.
-    fn build_write_target_map(&self) -> HashMap<NodeId, ReferenceFlags> {
-        let mut map = HashMap::new();
-        for (_node_id, node) in self.tree.iter() {
-            match node {
+                // Collect write targets in the same traversal (avoids a
+                // separate pass over the tree).
                 AstNode::AssignmentExpression(assign) => {
                     let flags = if assign.operator == AssignmentOperator::Assign {
                         ReferenceFlags::WRITE
                     } else {
                         ReferenceFlags::READ_WRITE
                     };
-                    map.insert(assign.left, flags);
+                    self.write_targets.insert(assign.left, flags);
                 }
                 AstNode::UpdateExpression(update) => {
-                    map.insert(update.argument, ReferenceFlags::READ_WRITE);
+                    self.write_targets
+                        .insert(update.argument, ReferenceFlags::READ_WRITE);
                 }
                 AstNode::ForInStatement(f) => {
-                    map.insert(f.left, ReferenceFlags::WRITE);
+                    self.write_targets.insert(f.left, ReferenceFlags::WRITE);
                 }
                 AstNode::ForOfStatement(f) => {
-                    map.insert(f.left, ReferenceFlags::WRITE);
+                    self.write_targets.insert(f.left, ReferenceFlags::WRITE);
                 }
                 _ => {}
             }
         }
-        map
     }
 
     /// Pass 2: Resolve all identifier references.
+    ///
+    /// Write targets were already collected during pass 1, so this pass only
+    /// needs to rebuild the scope stack and resolve references.
     #[allow(clippy::indexing_slicing)]
     fn pass2_resolve_references(&mut self) {
-        // Pre-compute write targets so we don't rely on parent pointers.
-        let write_targets = self.build_write_target_map();
-        // Rebuild scope stack to track which scope we're in.
         let mut scope_stack: Vec<(ScopeId, u32)> = Vec::new();
 
         for (node_id, node) in self.tree.iter() {
@@ -205,7 +200,8 @@ impl<'a> ScopeBuilder<'a> {
             // Resolve identifier references.
             if let AstNode::IdentifierReference(ident) = node {
                 let current_scope = scope_stack.last().map(|&(id, _)| id);
-                let flags = write_targets
+                let flags = self
+                    .write_targets
                     .get(&node_id)
                     .copied()
                     .unwrap_or(ReferenceFlags::READ);
@@ -221,7 +217,7 @@ impl<'a> ScopeBuilder<'a> {
                     } else {
                         // Unresolved reference.
                         self.unresolved
-                            .entry(ident.name.clone())
+                            .entry(Arc::from(ident.name.as_str()))
                             .or_default()
                             .push(UnresolvedRef { span: ident.span });
                     }
@@ -239,6 +235,7 @@ impl<'a> ScopeBuilder<'a> {
             node_id,
             bindings: HashMap::new(),
         });
+        self.node_to_scope.insert(node_id, id);
         id
     }
 
@@ -260,17 +257,17 @@ impl<'a> ScopeBuilder<'a> {
         }
 
         let id = SymbolId(self.symbols.len() as u32);
+        // Allocate the name string once and share via Arc between symbol and scope bindings.
+        let name_arc: Arc<str> = Arc::from(name);
         self.symbols.push(SymbolInfo {
-            name: name.to_owned(),
+            name: Arc::clone(&name_arc),
             span,
             scope_id,
             flags,
             redeclarations: Vec::new(),
         });
         self.resolved_refs.push(Vec::new());
-        self.scopes[scope_id.index()]
-            .bindings
-            .insert(name.to_owned(), id);
+        self.scopes[scope_id.index()].bindings.insert(name_arc, id);
         self.span_to_symbol.insert((span.start, span.end), id);
     }
 
@@ -353,13 +350,9 @@ impl<'a> ScopeBuilder<'a> {
         None
     }
 
-    /// Find the scope created for a specific AST node.
+    /// Find the scope created for a specific AST node (O(1) lookup).
     fn find_scope_by_node(&self, node_id: NodeId) -> Option<ScopeId> {
-        #[allow(clippy::as_conversions, clippy::cast_possible_truncation)]
-        self.scopes
-            .iter()
-            .position(|s| s.node_id == node_id)
-            .map(|i| ScopeId(i as u32))
+        self.node_to_scope.get(&node_id).copied()
     }
 
     /// Consume the builder and produce `ScopeData`.
@@ -420,7 +413,7 @@ mod tests {
     fn test_var_declaration() {
         let data = build_from_source("var x = 1;");
         assert_eq!(data.symbols.len(), 1);
-        assert_eq!(data.symbols[0].name, "x");
+        assert_eq!(&*data.symbols[0].name, "x");
         assert!(data.symbols[0].flags.contains(super::SymbolFlags::VAR));
     }
 
@@ -439,7 +432,7 @@ mod tests {
     #[test]
     fn test_function_declaration() {
         let data = build_from_source("function foo() {}");
-        let foo = data.symbols.iter().find(|s| s.name == "foo");
+        let foo = data.symbols.iter().find(|s| *s.name == *"foo");
         assert!(foo.is_some(), "should have symbol 'foo'");
         assert!(
             foo.unwrap().flags.contains(super::SymbolFlags::FUNCTION),
@@ -460,7 +453,7 @@ mod tests {
     #[test]
     fn test_write_reference() {
         let data = build_from_source("let x = 1; x = 2;");
-        let x_sym = data.symbols.iter().position(|s| s.name == "x").unwrap();
+        let x_sym = data.symbols.iter().position(|s| *s.name == *"x").unwrap();
         let x_id = super::SymbolId(x_sym as u32);
         let refs = data.get_resolved_references(x_id);
         assert_eq!(refs.len(), 1, "x should have 1 reference (the assignment)");
@@ -479,7 +472,7 @@ mod tests {
     #[test]
     fn test_var_hoisting() {
         let data = build_from_source("function foo() { if (true) { var x = 1; } }");
-        let x = data.symbols.iter().find(|s| s.name == "x").unwrap();
+        let x = data.symbols.iter().find(|s| *s.name == *"x").unwrap();
         let x_scope = x.scope_id;
         assert_ne!(x_scope, super::ScopeId(0), "x should not be in root scope");
     }
@@ -487,7 +480,7 @@ mod tests {
     #[test]
     fn test_scope_chain_resolution() {
         let data = build_from_source("const x = 1; function foo() { return x; }");
-        let x_sym = data.symbols.iter().position(|s| s.name == "x").unwrap();
+        let x_sym = data.symbols.iter().position(|s| *s.name == *"x").unwrap();
         let x_id = super::SymbolId(x_sym as u32);
         let refs = data.get_resolved_references(x_id);
         assert_eq!(refs.len(), 1, "x should be referenced from inside foo");
@@ -496,7 +489,7 @@ mod tests {
     #[test]
     fn test_shadowing() {
         let data = build_from_source("const x = 1; function foo() { const x = 2; }");
-        let x_symbols: Vec<_> = data.symbols.iter().filter(|s| s.name == "x").collect();
+        let x_symbols: Vec<_> = data.symbols.iter().filter(|s| *s.name == *"x").collect();
         assert_eq!(x_symbols.len(), 2, "should have 2 symbols named x");
         assert_ne!(
             x_symbols[0].scope_id, x_symbols[1].scope_id,
@@ -507,7 +500,7 @@ mod tests {
     #[test]
     fn test_import_binding() {
         let data = build_from_source("import { foo } from 'bar'; foo();");
-        let foo = data.symbols.iter().find(|s| s.name == "foo");
+        let foo = data.symbols.iter().find(|s| *s.name == *"foo");
         assert!(foo.is_some(), "should have import symbol");
         assert!(
             foo.unwrap().flags.contains(super::SymbolFlags::IMPORT),
@@ -518,14 +511,14 @@ mod tests {
     #[test]
     fn test_redeclaration() {
         let data = build_from_source("var x = 1; var x = 2;");
-        let x = data.symbols.iter().find(|s| s.name == "x").unwrap();
+        let x = data.symbols.iter().find(|s| *s.name == *"x").unwrap();
         assert_eq!(x.redeclarations.len(), 1, "should have 1 redeclaration");
     }
 
     #[test]
     fn test_compound_assignment() {
         let data = build_from_source("let x = 1; x += 2;");
-        let x_sym = data.symbols.iter().position(|s| s.name == "x").unwrap();
+        let x_sym = data.symbols.iter().position(|s| *s.name == *"x").unwrap();
         let x_id = super::SymbolId(x_sym as u32);
         let refs = data.get_resolved_references(x_id);
         assert_eq!(refs.len(), 1);
@@ -536,7 +529,7 @@ mod tests {
     #[test]
     fn test_catch_clause_param() {
         let data = build_from_source("try {} catch (e) { console.log(e); }");
-        let e = data.symbols.iter().find(|s| s.name == "e");
+        let e = data.symbols.iter().find(|s| *s.name == *"e");
         assert!(e.is_some(), "should have catch param");
         assert!(
             e.unwrap()
@@ -549,7 +542,7 @@ mod tests {
     #[test]
     fn test_function_params() {
         let data = build_from_source("function foo(a, b) { return a + b; }");
-        let a = data.symbols.iter().find(|s| s.name == "a");
+        let a = data.symbols.iter().find(|s| *s.name == *"a");
         assert!(a.is_some());
         assert!(
             a.unwrap()
@@ -564,7 +557,7 @@ mod tests {
         use starlint_plugin_sdk::diagnostic::Span as DiagSpan;
 
         let data = build_from_source("const btn = 1; console.log(btn);");
-        let btn_sym = data.symbols.iter().position(|s| s.name == "btn").unwrap();
+        let btn_sym = data.symbols.iter().position(|s| *s.name == *"btn").unwrap();
         let btn_id = super::SymbolId(btn_sym as u32);
         let decl_span = data.symbol_span(btn_id);
         let edits = data.rename_symbol_edits(
@@ -582,7 +575,7 @@ mod tests {
     #[test]
     fn test_function_write_reference() {
         let data = build_from_source("function foo() {} foo = bar;");
-        let foo = data.symbols.iter().find(|s| s.name == "foo").unwrap();
+        let foo = data.symbols.iter().find(|s| *s.name == *"foo").unwrap();
         assert!(
             foo.flags.contains(super::SymbolFlags::FUNCTION),
             "foo should have FUNCTION flag, got {:?}",

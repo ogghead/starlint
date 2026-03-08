@@ -870,8 +870,8 @@ impl Parser<'_> {
                 self.push(
                     AstNode::RegExpLiteral(RegExpLiteralNode {
                         span: Span::new(start, tok.end),
-                        pattern,
-                        flags,
+                        pattern: pattern.to_owned(),
+                        flags: flags.to_owned(),
                     }),
                     parent,
                 )
@@ -1471,25 +1471,36 @@ impl Parser<'_> {
 
 // --- Utility functions ---
 
+/// Strip numeric separators (`_`) only when present, avoiding allocation for
+/// the common case where no separators exist.
+fn strip_separators(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.contains('_') {
+        std::borrow::Cow::Owned(s.replace('_', ""))
+    } else {
+        std::borrow::Cow::Borrowed(s)
+    }
+}
+
 /// Parse a numeric string to f64.
 fn parse_number(text: &str) -> f64 {
     if text.starts_with("0x") || text.starts_with("0X") {
         #[allow(clippy::as_conversions)]
-        let without_prefix = text.get(2..).unwrap_or_default().replace('_', "");
+        let without_prefix = strip_separators(text.get(2..).unwrap_or_default());
         return u64::from_str_radix(&without_prefix, 16).map_or(f64::NAN, |v| v as f64);
     }
     if text.starts_with("0o") || text.starts_with("0O") {
         #[allow(clippy::as_conversions)]
-        let without_prefix = text.get(2..).unwrap_or_default().replace('_', "");
+        let without_prefix = strip_separators(text.get(2..).unwrap_or_default());
         return u64::from_str_radix(&without_prefix, 8).map_or(f64::NAN, |v| v as f64);
     }
     if text.starts_with("0b") || text.starts_with("0B") {
         #[allow(clippy::as_conversions)]
-        let without_prefix = text.get(2..).unwrap_or_default().replace('_', "");
+        let without_prefix = strip_separators(text.get(2..).unwrap_or_default());
         return u64::from_str_radix(&without_prefix, 2).map_or(f64::NAN, |v| v as f64);
     }
-    // Strip BigInt suffix and separators
-    let cleaned = text.trim_end_matches('n').replace('_', "");
+    // Strip BigInt suffix and separators.
+    let trimmed = text.trim_end_matches('n');
+    let cleaned = strip_separators(trimmed);
     cleaned.parse::<f64>().unwrap_or(f64::NAN)
 }
 
@@ -1524,18 +1535,15 @@ fn unescape_string(s: &str) -> String {
     result
 }
 
-/// Parse a regex literal `/pattern/flags`.
-fn parse_regex(raw: &str) -> (String, String) {
+/// Parse a regex literal `/pattern/flags`, returning slices into the raw text.
+fn parse_regex(raw: &str) -> (&str, &str) {
     // Find the last `/` that terminates the pattern
     if let Some(last_slash) = raw.rfind('/') {
         if last_slash > 0 {
-            let pattern = raw.get(1..last_slash).unwrap_or_default().to_owned();
-            let flags = raw
-                .get(last_slash.saturating_add(1)..)
-                .unwrap_or_default()
-                .to_owned();
+            let pattern = raw.get(1..last_slash).unwrap_or_default();
+            let flags = raw.get(last_slash.saturating_add(1)..).unwrap_or_default();
             return (pattern, flags);
         }
     }
-    (raw.to_owned(), String::new())
+    (raw, "")
 }
