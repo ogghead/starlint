@@ -199,4 +199,44 @@ mod tests {
         let diags = lint(source);
         assert_eq!(diags.len(), 1, "duplicate default export should be flagged");
     }
+
+    // --- TypeScript declaration export tests ---
+
+    fn lint_ts(source: &str) -> Vec<Diagnostic> {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ExportRule)];
+        lint_source(source, "test.ts", &rules)
+    }
+
+    #[test]
+    fn test_flags_duplicate_exported_enum() {
+        let source = "export enum Foo { A }\nexport enum Foo { B }";
+        let diags = lint_ts(source);
+        assert_eq!(
+            diags.len(),
+            1,
+            "duplicate exported enum declaration should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_duplicate_exported_interface() {
+        let source = "export interface Foo { x: number }\nexport interface Foo { y: string }";
+        let diags = lint_ts(source);
+        assert_eq!(
+            diags.len(),
+            1,
+            "duplicate exported interface declaration should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_duplicate_exported_type_alias() {
+        let source = "export type Foo = string;\nexport type Foo = number;";
+        let diags = lint_ts(source);
+        assert_eq!(
+            diags.len(),
+            1,
+            "duplicate exported type alias declaration should be flagged"
+        );
+    }
 }

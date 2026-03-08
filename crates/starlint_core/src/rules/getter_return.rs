@@ -208,4 +208,42 @@ mod tests {
             "setter without return should not be flagged"
         );
     }
+
+    #[test]
+    fn test_allows_getter_with_return_in_try() {
+        let diags = lint("class Foo { get bar() { try { return 1; } catch(e) {} } }");
+        assert!(
+            diags.is_empty(),
+            "getter with return in try block should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_getter_with_return_in_if_else() {
+        let diags = lint("class Foo { get bar() { if(x) { return 1; } else { return 2; } } }");
+        assert!(
+            diags.is_empty(),
+            "getter with return in both if and else branches should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_object_getter_with_return_in_if_else() {
+        let diags = lint("var obj = { get foo() { if(x) { return 1; } else { return 2; } } };");
+        assert!(
+            diags.is_empty(),
+            "object getter with return in both if and else branches should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_object_getter_with_return_in_if_only() {
+        // The rule checks for the *existence* of a return, not exhaustive path coverage.
+        // A return in one branch is sufficient to pass the check.
+        let diags = lint("var obj = { get foo() { if(x) { return 1; } } };");
+        assert!(
+            diags.is_empty(),
+            "object getter with return in if branch should not be flagged (existence check)"
+        );
+    }
 }

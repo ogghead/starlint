@@ -88,4 +88,108 @@ mod tests {
             "should return defaults when no config file exists"
         );
     }
+
+    #[test]
+    fn test_load_config_nonexistent_file() {
+        let result = load_config(Path::new("/nonexistent/starlint.toml"));
+        assert!(result.is_err(), "loading a nonexistent file should fail");
+        assert!(
+            matches!(result, Err(ConfigError::ReadFailed { .. })),
+            "nonexistent file should produce ReadFailed error"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use)] // Test cleanup is best-effort
+    fn test_load_config_invalid_toml() {
+        let dir = std::env::temp_dir().join("starlint_test_invalid_toml");
+        let _ = std::fs::create_dir_all(&dir);
+        let config_path = dir.join("starlint.toml");
+        let _ = std::fs::write(&config_path, "not valid {{{{ toml content %%%");
+
+        let result = load_config(&config_path);
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(result.is_err(), "invalid TOML content should fail to parse");
+        assert!(
+            matches!(result, Err(ConfigError::ParseFailed { .. })),
+            "invalid TOML should produce ParseFailed error"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use)] // Test cleanup is best-effort
+    fn test_load_config_valid_toml() {
+        let dir = std::env::temp_dir().join("starlint_test_valid_toml");
+        let _ = std::fs::create_dir_all(&dir);
+        let config_path = dir.join("starlint.toml");
+        let _ = std::fs::write(
+            &config_path,
+            r#"
+[rules]
+"no-debugger" = "error"
+"#,
+        );
+
+        let result = load_config(&config_path);
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(result.is_ok(), "valid TOML config should load successfully");
+        if let Ok(cfg) = result {
+            assert_eq!(
+                cfg.rules.len(),
+                1,
+                "loaded config should contain the one rule declared in the TOML"
+            );
+        }
+    }
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use)] // Test cleanup is best-effort
+    fn test_find_config_file_in_current_dir() {
+        let dir = std::env::temp_dir().join("starlint_test_find_current");
+        let _ = std::fs::create_dir_all(&dir);
+        let config_path = dir.join("starlint.toml");
+        let _ = std::fs::write(&config_path, "");
+
+        let result = find_config_file(&dir);
+
+        let _ = std::fs::remove_dir_all(&dir);
+
+        assert!(
+            result.is_some(),
+            "should find starlint.toml in the start directory"
+        );
+        assert_eq!(
+            result.as_deref(),
+            Some(config_path.as_path()),
+            "returned path should match the config file in the directory"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use)] // Test cleanup is best-effort
+    fn test_find_config_file_in_parent_dir() {
+        let parent = std::env::temp_dir().join("starlint_test_find_parent");
+        let child = parent.join("subdir");
+        let _ = std::fs::create_dir_all(&child);
+        let config_path = parent.join("starlint.toml");
+        let _ = std::fs::write(&config_path, "");
+
+        let result = find_config_file(&child);
+
+        let _ = std::fs::remove_dir_all(&parent);
+
+        assert!(
+            result.is_some(),
+            "should find starlint.toml by walking up from subdirectory"
+        );
+        assert_eq!(
+            result.as_deref(),
+            Some(config_path.as_path()),
+            "returned path should point to the config file in the parent directory"
+        );
+    }
 }

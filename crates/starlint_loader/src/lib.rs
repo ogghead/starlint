@@ -265,3 +265,316 @@ fn apply_rule_config(
         disabled_rules,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    #[allow(clippy::wildcard_imports)]
+    use super::*;
+
+    use starlint_config::{DetailedRuleConfig, Override, PluginEntry};
+
+    #[test]
+    fn test_load_plugins_default_config() {
+        let config = Config::default();
+        let loaded = load_plugins(&config);
+        assert!(
+            !loaded.plugins.is_empty(),
+            "default config should load native plugins"
+        );
+        assert!(
+            loaded.severity_overrides.is_empty(),
+            "default config should have no severity overrides"
+        );
+        assert!(
+            loaded.disabled_rules.is_empty(),
+            "default config should have no disabled rules"
+        );
+    }
+
+    #[test]
+    fn test_load_plugins_explicit_core_only() {
+        let mut config = Config::default();
+        config
+            .plugins
+            .insert("core".to_owned(), PluginEntry::Toggle(true));
+        let loaded = load_plugins(&config);
+        assert!(
+            !loaded.plugins.is_empty(),
+            "core plugin should produce rules"
+        );
+        // Core plugin should have fewer rules than all plugins combined.
+        let all_count: usize = native_plugin_registry()
+            .into_iter()
+            .map(|np| (np.factory)().len())
+            .sum();
+        let core_count = native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map_or(0, |np| (np.factory)().len());
+        assert!(
+            core_count < all_count,
+            "core rules should be a subset of all rules"
+        );
+    }
+
+    #[test]
+    fn test_load_plugins_disabled_plugin_skipped() {
+        let mut config = Config::default();
+        config
+            .plugins
+            .insert("core".to_owned(), PluginEntry::Toggle(false));
+        let loaded = load_plugins(&config);
+        assert!(
+            loaded.plugins.is_empty(),
+            "disabled plugin should produce no rules"
+        );
+    }
+
+    #[test]
+    fn test_load_plugins_unknown_plugin_skipped() {
+        let mut config = Config::default();
+        config
+            .plugins
+            .insert("nonexistent-plugin".to_owned(), PluginEntry::Toggle(true));
+        let loaded = load_plugins(&config);
+        assert!(
+            loaded.plugins.is_empty(),
+            "unknown plugin should produce no rules"
+        );
+    }
+
+    #[test]
+    fn test_apply_rule_config_empty_config() {
+        let rules = starlint_core::rules::native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map(|np| (np.factory)())
+            .unwrap_or_default();
+        let initial_count = rules.len();
+        let applied = apply_rule_config(rules, &HashMap::new(), &[]);
+        assert_eq!(
+            applied.rules.len(),
+            initial_count,
+            "empty config should return all rules"
+        );
+        assert!(
+            applied.severity_overrides.is_empty(),
+            "empty config should have no severity overrides"
+        );
+        assert!(
+            applied.disabled_rules.is_empty(),
+            "empty config should have no disabled rules"
+        );
+    }
+
+    #[test]
+    fn test_apply_rule_config_severity_override() {
+        let rules = starlint_core::rules::native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map(|np| (np.factory)())
+            .unwrap_or_default();
+        // Find a rule that defaults to "warn" and set it to "error".
+        let mut rule_configs = HashMap::new();
+        rule_configs.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("warn".to_owned()),
+        );
+        let applied = apply_rule_config(rules, &rule_configs, &[]);
+        // Only no-debugger should be enabled (explicit list mode).
+        assert_eq!(
+            applied.rules.len(),
+            1,
+            "should only enable explicitly listed rules"
+        );
+        // no-debugger defaults to Error, setting to warn should produce an override.
+        assert!(
+            applied.severity_overrides.contains_key("no-debugger"),
+            "should have severity override for no-debugger"
+        );
+        assert_eq!(
+            applied.severity_overrides.get("no-debugger").copied(),
+            Some(Severity::Warning),
+            "severity override should be Warning"
+        );
+    }
+
+    #[test]
+    fn test_apply_rule_config_off_disables() {
+        let rules = starlint_core::rules::native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map(|np| (np.factory)())
+            .unwrap_or_default();
+        let mut rule_configs = HashMap::new();
+        rule_configs.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("off".to_owned()),
+        );
+        let applied = apply_rule_config(rules, &rule_configs, &[]);
+        assert!(
+            applied.rules.is_empty(),
+            "rule set to 'off' with no overrides should be excluded"
+        );
+    }
+
+    #[test]
+    fn test_apply_rule_config_off_with_override_keeps_disabled() {
+        let rules = starlint_core::rules::native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map(|np| (np.factory)())
+            .unwrap_or_default();
+        let mut rule_configs = HashMap::new();
+        rule_configs.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("off".to_owned()),
+        );
+        let overrides = vec![Override {
+            files: vec!["**/*.test.js".to_owned()],
+            rules: {
+                let mut m = HashMap::new();
+                m.insert(
+                    "no-debugger".to_owned(),
+                    RuleConfig::Severity("error".to_owned()),
+                );
+                m
+            },
+        }];
+        let applied = apply_rule_config(rules, &rule_configs, &overrides);
+        assert_eq!(
+            applied.rules.len(),
+            1,
+            "rule turned off but in override should still be loaded"
+        );
+        assert!(
+            applied.disabled_rules.contains("no-debugger"),
+            "rule should be in disabled set"
+        );
+    }
+
+    #[test]
+    fn test_apply_rule_config_glob_pattern() {
+        let rules = starlint_core::rules::native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "modules")
+            .map(|np| (np.factory)())
+            .unwrap_or_default();
+        let mut rule_configs = HashMap::new();
+        rule_configs.insert("node/*".to_owned(), RuleConfig::Severity("warn".to_owned()));
+        let applied = apply_rule_config(rules, &rule_configs, &[]);
+        assert!(
+            !applied.rules.is_empty(),
+            "glob pattern should match node/ prefixed rules"
+        );
+        for meta in applied.rules.iter().map(|r| r.meta()) {
+            assert!(
+                meta.name.starts_with("node/"),
+                "only node/ prefixed rules should be enabled, got: {}",
+                meta.name
+            );
+        }
+    }
+
+    #[test]
+    fn test_apply_rule_config_detailed_with_options() {
+        let rules = starlint_core::rules::native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map(|np| (np.factory)())
+            .unwrap_or_default();
+        let mut rule_configs = HashMap::new();
+        rule_configs.insert(
+            "no-console".to_owned(),
+            RuleConfig::Detailed(DetailedRuleConfig {
+                severity: "error".to_owned(),
+                options: HashMap::new(),
+            }),
+        );
+        let applied = apply_rule_config(rules, &rule_configs, &[]);
+        assert_eq!(
+            applied.rules.len(),
+            1,
+            "should enable one rule with detailed config"
+        );
+    }
+
+    #[test]
+    fn test_apply_rule_config_invalid_severity() {
+        let rules = starlint_core::rules::native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map(|np| (np.factory)())
+            .unwrap_or_default();
+        let mut rule_configs = HashMap::new();
+        rule_configs.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("invalid-severity".to_owned()),
+        );
+        let applied = apply_rule_config(rules, &rule_configs, &[]);
+        assert!(
+            applied.rules.is_empty(),
+            "invalid severity should not enable any rules"
+        );
+    }
+
+    #[test]
+    fn test_apply_rule_config_not_in_base_not_in_override() {
+        let rules = starlint_core::rules::native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map(|np| (np.factory)())
+            .unwrap_or_default();
+        // Config only mentions a rule that doesn't exist in the rule set.
+        let mut rule_configs = HashMap::new();
+        rule_configs.insert(
+            "nonexistent-rule".to_owned(),
+            RuleConfig::Severity("error".to_owned()),
+        );
+        let applied = apply_rule_config(rules, &rule_configs, &[]);
+        assert!(
+            applied.rules.is_empty(),
+            "rules not in config should be excluded"
+        );
+    }
+
+    #[test]
+    fn test_load_plugins_with_severity_override() {
+        let mut config = Config::default();
+        config
+            .plugins
+            .insert("core".to_owned(), PluginEntry::Toggle(true));
+        config.rules.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("warn".to_owned()),
+        );
+        let loaded = load_plugins(&config);
+        assert!(
+            loaded.severity_overrides.contains_key("no-debugger"),
+            "should have severity override from config"
+        );
+    }
+
+    #[test]
+    fn test_load_plugins_multiple_native_plugins() {
+        let mut config = Config::default();
+        config
+            .plugins
+            .insert("core".to_owned(), PluginEntry::Toggle(true));
+        config
+            .plugins
+            .insert("react".to_owned(), PluginEntry::Toggle(true));
+        let loaded = load_plugins(&config);
+        assert!(!loaded.plugins.is_empty(), "multiple plugins should load");
+        // Should have rules from both plugins.
+        let total_rules: usize = loaded.plugins.iter().map(|p| p.rules().len()).sum();
+        let core_count = native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == "core")
+            .map_or(0, |np| (np.factory)().len());
+        assert!(
+            total_rules > core_count,
+            "multiple plugins should have more rules than core alone"
+        );
+    }
+}

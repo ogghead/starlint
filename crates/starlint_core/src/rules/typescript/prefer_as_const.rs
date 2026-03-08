@@ -205,4 +205,71 @@ mod tests {
             "assertion to a different type should not be flagged"
         );
     }
+
+    // --- TSTypeAssertion (angle bracket syntax) tests ---
+
+    #[test]
+    fn test_flags_angle_bracket_string_assertion() {
+        let diags = lint(r#"let x = <"hello">"hello";"#);
+        assert_eq!(
+            diags.len(),
+            1,
+            "angle bracket string literal self-assertion should be flagged"
+        );
+        let fix = diags.first().and_then(|d| d.fix.as_ref());
+        assert!(
+            fix.is_some(),
+            "angle bracket string assertion should provide a fix"
+        );
+    }
+
+    #[test]
+    fn test_flags_angle_bracket_numeric_assertion() {
+        let diags = lint("let x = <42>42;");
+        assert_eq!(
+            diags.len(),
+            1,
+            "angle bracket numeric literal self-assertion should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_angle_bracket_boolean_assertion() {
+        let diags = lint("let x = <true>true;");
+        assert_eq!(
+            diags.len(),
+            1,
+            "angle bracket boolean literal self-assertion should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_as_boolean_false_assertion() {
+        let diags = lint("let x = false as false;");
+        assert_eq!(
+            diags.len(),
+            1,
+            "boolean false asserted to its own type should be flagged"
+        );
+    }
+
+    // --- Valid cases (should NOT be flagged) ---
+
+    #[test]
+    fn test_allows_as_const_string() {
+        let diags = lint(r#"let x = "hello" as const;"#);
+        assert!(
+            diags.is_empty(),
+            "`as const` on string should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_angle_bracket_const() {
+        let diags = lint(r#"let x = <const>"hello";"#);
+        assert!(
+            diags.is_empty(),
+            "angle bracket const assertion should not be flagged"
+        );
+    }
 }

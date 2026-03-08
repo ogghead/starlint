@@ -229,4 +229,44 @@ mod tests {
             "label on block statement should not be flagged by this rule"
         );
     }
+
+    #[test]
+    fn test_flags_label_on_for_in() {
+        let diags = lint("loop: for (let x in obj) { break loop; }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "unnecessary label on for-in loop should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_label_on_for_of() {
+        let diags = lint("loop: for (let x of arr) { break loop; }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "unnecessary label on for-of loop should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_label_on_while_continue() {
+        let diags = lint("loop: while(true) { continue loop; }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "unnecessary label on while loop with continue should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_label_on_do_while() {
+        let diags = lint("loop: do { break loop; } while(true);");
+        assert_eq!(
+            diags.len(),
+            1,
+            "unnecessary label on do-while loop should be flagged"
+        );
+    }
 }

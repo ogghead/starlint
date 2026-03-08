@@ -486,9 +486,10 @@ fn node_children(node: &AstNode) -> Vec<NodeId> {
 mod tests {
     use super::AstTree;
     use crate::node::{
-        AstNode, BlockStatementNode, DebuggerStatementNode, ExpressionStatementNode,
-        IdentifierReferenceNode, ProgramNode,
+        AstNode, BlockStatementNode, DebuggerStatementNode, EmptyStatementNode,
+        ExpressionStatementNode, IdentifierReferenceNode, ProgramNode,
     };
+    use crate::node_type::AstNodeType;
     use crate::types::{NodeId, Span};
 
     /// Build a minimal tree: `Program` > `BlockStatement` > `ExpressionStatement` > `IdentifierReference`.
@@ -534,6 +535,24 @@ mod tests {
 
         tree
     }
+
+    /// Helper: create a program node with no body.
+    fn make_program_node(span: Span) -> AstNode {
+        AstNode::Program(ProgramNode {
+            span,
+            is_module: false,
+            body: Box::new([]),
+        })
+    }
+
+    /// Helper: create an empty-statement node.
+    fn make_empty_stmt(span: Span) -> AstNode {
+        AstNode::EmptyStatement(EmptyStatementNode { span })
+    }
+
+    // -----------------------------------------------------------------------
+    // Existing tests
+    // -----------------------------------------------------------------------
 
     #[test]
     fn tree_basics() {
@@ -605,6 +624,656 @@ mod tests {
         assert!(
             tree.children(NodeId::ROOT).is_empty(),
             "debugger has no children"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // New comprehensive tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn empty_tree_properties() {
+        let tree = AstTree::new();
+        assert!(tree.is_empty(), "new tree should be empty");
+        assert_eq!(tree.len(), 0, "new tree should have 0 nodes");
+        assert!(
+            tree.node(NodeId::ROOT).is_none(),
+            "new tree should have no root node"
+        );
+        assert!(
+            tree.parent(NodeId::ROOT).is_none(),
+            "new tree should have no parent for root"
+        );
+        assert!(
+            tree.children(NodeId::ROOT).is_empty(),
+            "new tree should have empty children for root"
+        );
+        assert!(
+            tree.node_type(NodeId::ROOT).is_none(),
+            "new tree should have no node type for root"
+        );
+        assert!(
+            tree.span(NodeId::ROOT).is_none(),
+            "new tree should have no span for root"
+        );
+        assert_eq!(
+            tree.next_id(),
+            NodeId(0),
+            "next_id on empty tree should be 0"
+        );
+        assert_eq!(
+            tree.iter().count(),
+            0,
+            "iter on empty tree should yield nothing"
+        );
+    }
+
+    #[test]
+    fn single_node_tree() {
+        let mut tree = AstTree::new();
+        let id = tree.push(make_program_node(Span::new(0, 100)), None);
+
+        assert_eq!(id, NodeId(0), "first node should be at index 0");
+        assert_eq!(tree.len(), 1, "tree should have 1 node");
+        assert!(!tree.is_empty(), "tree should not be empty after push");
+
+        // The single node is both root and leaf.
+        assert!(
+            tree.node(id).is_some(),
+            "should be able to retrieve the single node"
+        );
+        assert!(tree.parent(id).is_none(), "root node should have no parent");
+        assert!(
+            tree.children(id).is_empty(),
+            "root with no pushed children should have empty children"
+        );
+    }
+
+    #[test]
+    fn parent_child_relationship() {
+        let mut tree = AstTree::new();
+        let root_id = tree.push(make_program_node(Span::new(0, 50)), None);
+        let child_id = tree.push(make_empty_stmt(Span::new(0, 1)), Some(root_id));
+
+        assert_eq!(
+            tree.parent(child_id),
+            Some(root_id),
+            "child should report root as parent"
+        );
+        assert_eq!(
+            tree.children(root_id),
+            &[child_id],
+            "root should have one child"
+        );
+        assert!(
+            tree.children(child_id).is_empty(),
+            "child (leaf) should have no children"
+        );
+    }
+
+    #[test]
+    fn multiple_children() {
+        let mut tree = AstTree::new();
+        let root_id = tree.push(make_program_node(Span::new(0, 100)), None);
+        let c1 = tree.push(make_empty_stmt(Span::new(0, 1)), Some(root_id));
+        let c2 = tree.push(make_empty_stmt(Span::new(2, 3)), Some(root_id));
+        let c3 = tree.push(make_empty_stmt(Span::new(4, 5)), Some(root_id));
+
+        assert_eq!(
+            tree.children(root_id),
+            &[c1, c2, c3],
+            "root should have three children in insertion order"
+        );
+        for child in &[c1, c2, c3] {
+            assert_eq!(
+                tree.parent(*child),
+                Some(root_id),
+                "each child should have root as parent"
+            );
+        }
+    }
+
+    #[test]
+    fn get_and_node_are_equivalent() {
+        let mut tree = AstTree::new();
+        let id = tree.push(make_empty_stmt(Span::new(0, 1)), None);
+
+        let via_get = tree.get(id);
+        let via_node = tree.node(id);
+        assert!(via_get.is_some(), "get should return Some for valid id");
+        assert!(via_node.is_some(), "node should return Some for valid id");
+
+        // Both should return the same span (proving they're the same node).
+        assert_eq!(
+            via_get.map(AstNode::span),
+            via_node.map(AstNode::span),
+            "get() and node() should return identical nodes"
+        );
+    }
+
+    #[test]
+    fn node_type_returns_correct_variant() {
+        let mut tree = AstTree::new();
+        let prog_id = tree.push(make_program_node(Span::new(0, 100)), None);
+        let empty_id = tree.push(make_empty_stmt(Span::new(0, 1)), Some(prog_id));
+        let dbg_id = tree.push(
+            AstNode::DebuggerStatement(DebuggerStatementNode {
+                span: Span::new(2, 10),
+            }),
+            Some(prog_id),
+        );
+
+        assert_eq!(
+            tree.node_type(prog_id),
+            Some(AstNodeType::Program),
+            "program node should have Program type"
+        );
+        assert_eq!(
+            tree.node_type(empty_id),
+            Some(AstNodeType::EmptyStatement),
+            "empty statement should have EmptyStatement type"
+        );
+        assert_eq!(
+            tree.node_type(dbg_id),
+            Some(AstNodeType::DebuggerStatement),
+            "debugger statement should have DebuggerStatement type"
+        );
+    }
+
+    #[test]
+    fn node_type_returns_none_for_invalid_id() {
+        let tree = AstTree::new();
+        assert!(
+            tree.node_type(NodeId(999)).is_none(),
+            "node_type should return None for out-of-bounds id"
+        );
+    }
+
+    #[test]
+    fn out_of_bounds_access_returns_none() {
+        let mut tree = AstTree::new();
+        tree.push(make_empty_stmt(Span::new(0, 1)), None);
+
+        assert!(
+            tree.node(NodeId(999)).is_none(),
+            "node() should return None for large out-of-bounds id"
+        );
+        assert!(
+            tree.get(NodeId(999)).is_none(),
+            "get() should return None for large out-of-bounds id"
+        );
+        assert!(
+            tree.parent(NodeId(999)).is_none(),
+            "parent() should return None for out-of-bounds id"
+        );
+        assert!(
+            tree.span(NodeId(999)).is_none(),
+            "span() should return None for out-of-bounds id"
+        );
+        assert!(
+            tree.children(NodeId(999)).is_empty(),
+            "children() should return empty slice for out-of-bounds id"
+        );
+    }
+
+    #[test]
+    fn next_id_increments_after_push() {
+        let mut tree = AstTree::new();
+        assert_eq!(
+            tree.next_id(),
+            NodeId(0),
+            "next_id should be 0 before any push"
+        );
+
+        tree.push(make_empty_stmt(Span::new(0, 1)), None);
+        assert_eq!(
+            tree.next_id(),
+            NodeId(1),
+            "next_id should be 1 after first push"
+        );
+
+        tree.push(make_empty_stmt(Span::new(2, 3)), Some(NodeId(0)));
+        assert_eq!(
+            tree.next_id(),
+            NodeId(2),
+            "next_id should be 2 after second push"
+        );
+
+        tree.push(make_empty_stmt(Span::new(4, 5)), Some(NodeId(0)));
+        assert_eq!(
+            tree.next_id(),
+            NodeId(3),
+            "next_id should be 3 after third push"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::indexing_slicing)]
+    fn iter_returns_all_nodes_in_order() {
+        let mut tree = AstTree::new();
+        let id0 = tree.push(make_program_node(Span::new(0, 100)), None);
+        let id1 = tree.push(make_empty_stmt(Span::new(0, 1)), Some(id0));
+        let id2 = tree.push(make_empty_stmt(Span::new(2, 3)), Some(id0));
+
+        let collected: Vec<(NodeId, &AstNode)> = tree.iter().collect();
+        assert_eq!(collected.len(), 3, "iter should yield 3 nodes");
+
+        assert_eq!(collected[0].0, id0, "first iter element should have id 0");
+        assert_eq!(collected[1].0, id1, "second iter element should have id 1");
+        assert_eq!(collected[2].0, id2, "third iter element should have id 2");
+
+        // Verify the types match what we pushed.
+        assert_eq!(
+            AstNodeType::from(collected[0].1),
+            AstNodeType::Program,
+            "first node should be a Program"
+        );
+        assert_eq!(
+            AstNodeType::from(collected[1].1),
+            AstNodeType::EmptyStatement,
+            "second node should be an EmptyStatement"
+        );
+        assert_eq!(
+            AstNodeType::from(collected[2].1),
+            AstNodeType::EmptyStatement,
+            "third node should be an EmptyStatement"
+        );
+    }
+
+    #[test]
+    fn iter_empty_tree() {
+        let tree = AstTree::new();
+        assert_eq!(
+            tree.iter().count(),
+            0,
+            "iter on empty tree should yield no elements"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::panic)]
+    fn serialization_roundtrip() {
+        let tree = make_test_tree();
+        let Ok(json) = serde_json::to_string(&tree) else {
+            panic!("tree should serialize to JSON without error");
+        };
+        let Ok(mut deserialized) = serde_json::from_str::<AstTree>(&json) else {
+            panic!("tree should deserialize from JSON without error");
+        };
+
+        assert_eq!(
+            deserialized.len(),
+            tree.len(),
+            "deserialized tree should have same number of nodes"
+        );
+
+        // Children index is serde(skip), so it should be empty after deserialization.
+        assert!(
+            deserialized.children(NodeId::ROOT).is_empty(),
+            "children should be empty after deserialization (serde skip)"
+        );
+
+        // Rebuild children index and verify it matches.
+        deserialized.rebuild_children_index();
+        assert_eq!(
+            deserialized.children(NodeId::ROOT),
+            tree.children(NodeId::ROOT),
+            "rebuilt children should match original for root"
+        );
+        assert_eq!(
+            deserialized.children(NodeId(1)),
+            tree.children(NodeId(1)),
+            "rebuilt children should match original for block"
+        );
+        assert_eq!(
+            deserialized.children(NodeId(2)),
+            tree.children(NodeId(2)),
+            "rebuilt children should match original for expr_stmt"
+        );
+    }
+
+    #[test]
+    fn rebuild_children_index_restores_relationships() {
+        let mut tree = AstTree::new();
+        let root = tree.push(make_program_node(Span::new(0, 50)), None);
+        let c1 = tree.push(make_empty_stmt(Span::new(0, 1)), Some(root));
+        let c2 = tree.push(make_empty_stmt(Span::new(2, 3)), Some(root));
+        let gc = tree.push(make_empty_stmt(Span::new(0, 1)), Some(c1));
+
+        // Snapshot the expected children.
+        let root_children: Vec<NodeId> = tree.children(root).to_vec();
+        let c1_children: Vec<NodeId> = tree.children(c1).to_vec();
+        let c2_children: Vec<NodeId> = tree.children(c2).to_vec();
+
+        // Rebuild and verify.
+        tree.rebuild_children_index();
+
+        assert_eq!(
+            tree.children(root),
+            root_children.as_slice(),
+            "root children should be restored after rebuild"
+        );
+        assert_eq!(
+            tree.children(c1),
+            c1_children.as_slice(),
+            "c1 children should be restored after rebuild"
+        );
+        assert_eq!(
+            tree.children(c2),
+            c2_children.as_slice(),
+            "c2 children should be restored after rebuild"
+        );
+        assert!(
+            tree.children(gc).is_empty(),
+            "grandchild (leaf) should have no children after rebuild"
+        );
+    }
+
+    #[test]
+    fn with_capacity_creates_empty_tree() {
+        let tree = AstTree::with_capacity(100);
+        assert!(tree.is_empty(), "with_capacity tree should be empty");
+        assert_eq!(tree.len(), 0, "with_capacity tree should have 0 nodes");
+        assert_eq!(
+            tree.next_id(),
+            NodeId(0),
+            "with_capacity tree next_id should be 0"
+        );
+    }
+
+    #[test]
+    fn default_creates_empty_tree() {
+        let tree = AstTree::default();
+        assert!(tree.is_empty(), "default tree should be empty");
+        assert_eq!(tree.len(), 0, "default tree should have 0 nodes");
+    }
+
+    #[test]
+    fn reserve_and_set() {
+        let mut tree = AstTree::new();
+        let reserved_id = tree.reserve(None);
+
+        // Reserved slot should exist as Unknown.
+        assert_eq!(tree.len(), 1, "tree should have 1 node after reserve");
+        assert_eq!(
+            tree.node_type(reserved_id),
+            Some(AstNodeType::Unknown),
+            "reserved slot should be Unknown"
+        );
+
+        // Replace it with a real node.
+        tree.set(reserved_id, make_program_node(Span::new(0, 100)));
+        assert_eq!(
+            tree.node_type(reserved_id),
+            Some(AstNodeType::Program),
+            "after set, node should be Program"
+        );
+        assert_eq!(
+            tree.span(reserved_id),
+            Some(Span::new(0, 100)),
+            "after set, span should match"
+        );
+    }
+
+    #[test]
+    fn reserve_preserves_parent_child() {
+        let mut tree = AstTree::new();
+        let root = tree.push(make_program_node(Span::new(0, 100)), None);
+        let reserved = tree.reserve(Some(root));
+
+        assert_eq!(
+            tree.parent(reserved),
+            Some(root),
+            "reserved node should have correct parent"
+        );
+        assert_eq!(
+            tree.children(root),
+            &[reserved],
+            "parent should list reserved node as child"
+        );
+
+        // Set should not alter parent-child relationships.
+        tree.set(reserved, make_empty_stmt(Span::new(0, 1)));
+        assert_eq!(
+            tree.parent(reserved),
+            Some(root),
+            "parent should be unchanged after set"
+        );
+        assert_eq!(
+            tree.children(root),
+            &[reserved],
+            "children should be unchanged after set"
+        );
+    }
+
+    #[test]
+    fn ancestors_of_root_is_empty() {
+        let mut tree = AstTree::new();
+        tree.push(make_program_node(Span::new(0, 50)), None);
+
+        let ancestors = tree.ancestors(NodeId::ROOT);
+        assert!(ancestors.is_empty(), "root should have no ancestors");
+    }
+
+    #[test]
+    fn ancestors_of_invalid_id_is_empty() {
+        let tree = AstTree::new();
+        let ancestors = tree.ancestors(NodeId(999));
+        assert!(
+            ancestors.is_empty(),
+            "ancestors of invalid node should be empty"
+        );
+    }
+
+    #[test]
+    fn ancestors_chain_depth_three() {
+        let mut tree = AstTree::new();
+        let root = tree.push(make_program_node(Span::new(0, 100)), None);
+        let mid = tree.push(make_empty_stmt(Span::new(0, 1)), Some(root));
+        let leaf = tree.push(make_empty_stmt(Span::new(0, 1)), Some(mid));
+
+        let ancestors = tree.ancestors(leaf);
+        assert_eq!(
+            ancestors,
+            vec![mid, root],
+            "leaf ancestors should be [mid, root]"
+        );
+    }
+
+    #[test]
+    fn nodes_slice_access() {
+        let tree = make_test_tree();
+        let nodes = tree.nodes();
+        assert_eq!(
+            nodes.len(),
+            4,
+            "nodes() slice should have same length as len()"
+        );
+        let first = nodes.first();
+        assert!(first.is_some(), "nodes slice should have a first element");
+        assert_eq!(
+            first.map(AstNodeType::from),
+            Some(AstNodeType::Program),
+            "first node in slice should be Program"
+        );
+    }
+
+    #[test]
+    fn parents_slice_access() {
+        let tree = make_test_tree();
+        let parents = tree.parents();
+        assert_eq!(
+            parents.len(),
+            4,
+            "parents() slice should have same length as len()"
+        );
+        let first_parent = parents.first().copied().flatten();
+        assert!(first_parent.is_none(), "root node parent should be None");
+        let second_parent = parents.get(1).copied().flatten();
+        assert_eq!(
+            second_parent,
+            Some(NodeId::ROOT),
+            "second node parent should be root"
+        );
+    }
+
+    #[test]
+    fn span_returns_correct_values() {
+        let mut tree = AstTree::new();
+        let id = tree.push(make_empty_stmt(Span::new(10, 20)), None);
+        assert_eq!(
+            tree.span(id),
+            Some(Span::new(10, 20)),
+            "span should return the node's span"
+        );
+    }
+
+    #[test]
+    fn span_returns_none_for_invalid_id() {
+        let tree = AstTree::new();
+        assert!(
+            tree.span(NodeId(42)).is_none(),
+            "span should return None for invalid id"
+        );
+    }
+
+    #[test]
+    fn push_returns_sequential_ids() {
+        let mut tree = AstTree::new();
+        let id0 = tree.push(make_empty_stmt(Span::new(0, 1)), None);
+        let id1 = tree.push(make_empty_stmt(Span::new(1, 2)), Some(id0));
+        let id2 = tree.push(make_empty_stmt(Span::new(2, 3)), Some(id0));
+        let id3 = tree.push(make_empty_stmt(Span::new(3, 4)), Some(id1));
+
+        assert_eq!(id0, NodeId(0), "first push should return id 0");
+        assert_eq!(id1, NodeId(1), "second push should return id 1");
+        assert_eq!(id2, NodeId(2), "third push should return id 2");
+        assert_eq!(id3, NodeId(3), "fourth push should return id 3");
+    }
+
+    #[test]
+    fn deep_tree_structure() {
+        // Build a chain: root -> c1 -> c2 -> c3 -> c4.
+        let mut tree = AstTree::new();
+        let root = tree.push(make_program_node(Span::new(0, 100)), None);
+        let c1 = tree.push(make_empty_stmt(Span::new(0, 1)), Some(root));
+        let c2 = tree.push(make_empty_stmt(Span::new(0, 1)), Some(c1));
+        let c3 = tree.push(make_empty_stmt(Span::new(0, 1)), Some(c2));
+        let c4 = tree.push(make_empty_stmt(Span::new(0, 1)), Some(c3));
+
+        // Verify the chain via parent.
+        assert_eq!(tree.parent(c4), Some(c3), "c4 parent should be c3");
+        assert_eq!(tree.parent(c3), Some(c2), "c3 parent should be c2");
+        assert_eq!(tree.parent(c2), Some(c1), "c2 parent should be c1");
+
+        // Verify ancestors from the leaf.
+        let ancestors = tree.ancestors(c4);
+        assert_eq!(
+            ancestors,
+            vec![c3, c2, c1, root],
+            "ancestors from c4 should be [c3, c2, c1, root]"
+        );
+
+        // Each intermediate node should have exactly one child.
+        assert_eq!(tree.children(root), &[c1], "root should have one child: c1");
+        assert_eq!(tree.children(c1), &[c2], "c1 should have one child: c2");
+        assert_eq!(tree.children(c3), &[c4], "c3 should have one child: c4");
+        assert!(
+            tree.children(c4).is_empty(),
+            "leaf node c4 should have no children"
+        );
+    }
+
+    #[test]
+    fn push_with_invalid_parent_does_not_panic() {
+        // Pushing a node with a parent ID that doesn't exist yet should not
+        // crash; the parent-child link just won't be recorded.
+        let mut tree = AstTree::new();
+        let id = tree.push(make_empty_stmt(Span::new(0, 1)), Some(NodeId(999)));
+        assert_eq!(tree.len(), 1, "node should still be added");
+        assert_eq!(
+            tree.parent(id),
+            Some(NodeId(999)),
+            "parent should be stored even if invalid"
+        );
+    }
+
+    #[test]
+    fn iter_matches_len() {
+        let tree = make_test_tree();
+        assert_eq!(
+            tree.iter().count(),
+            tree.len(),
+            "iter count should equal len"
+        );
+    }
+
+    #[test]
+    fn children_of_invalid_id_returns_empty_slice() {
+        let tree = AstTree::new();
+        assert!(
+            tree.children(NodeId(0)).is_empty(),
+            "children of non-existent id 0 should be empty"
+        );
+        assert!(
+            tree.children(NodeId(u32::MAX)).is_empty(),
+            "children of max id should be empty"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::panic)]
+    fn serialization_preserves_parent_links() {
+        let tree = make_test_tree();
+        let Ok(json) = serde_json::to_string(&tree) else {
+            panic!("serialization should succeed");
+        };
+        let Ok(deserialized): Result<AstTree, _> = serde_json::from_str(&json) else {
+            panic!("deserialization should succeed");
+        };
+
+        // Parent links are serialized (not skipped).
+        assert_eq!(
+            deserialized.parent(NodeId(1)),
+            tree.parent(NodeId(1)),
+            "parent links should survive serialization roundtrip"
+        );
+        assert_eq!(
+            deserialized.parent(NodeId(3)),
+            tree.parent(NodeId(3)),
+            "nested parent link should survive serialization roundtrip"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::panic)]
+    fn serialization_preserves_node_types() {
+        let tree = make_test_tree();
+        let Ok(json) = serde_json::to_string(&tree) else {
+            panic!("serialization should succeed");
+        };
+        let Ok(deserialized): Result<AstTree, _> = serde_json::from_str(&json) else {
+            panic!("deserialization should succeed");
+        };
+
+        for (id, node) in tree.iter() {
+            let original_type = AstNodeType::from(node);
+            let deser_type = deserialized.node_type(id);
+            assert_eq!(
+                deser_type,
+                Some(original_type),
+                "node type at id {id:?} should survive roundtrip"
+            );
+        }
+    }
+
+    #[test]
+    fn rebuild_children_index_on_empty_tree() {
+        let mut tree = AstTree::new();
+        tree.rebuild_children_index();
+        assert!(
+            tree.is_empty(),
+            "rebuilding empty tree should keep it empty"
         );
     }
 }

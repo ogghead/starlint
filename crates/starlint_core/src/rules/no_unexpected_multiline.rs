@@ -144,4 +144,33 @@ mod tests {
         let diags = lint("var a = 1;\nvar b = 2;");
         assert!(diags.is_empty(), "normal code should not be flagged");
     }
+
+    #[test]
+    fn test_flags_multiline_call_expression() {
+        let diags = lint("var x = foo\n(1 || 2).baz();");
+        assert_eq!(
+            diags.len(),
+            1,
+            "function call on next line without semicolon should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_tagged_template_on_next_line() {
+        let diags = lint("let x = tag\n`hello`;");
+        assert_eq!(
+            diags.len(),
+            1,
+            "tagged template literal on next line should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_semicolon_before_paren_on_next_line() {
+        let diags = lint("var x = foo;\n(1 || 2).baz();");
+        assert!(
+            diags.is_empty(),
+            "semicolon before newline and paren should not be flagged"
+        );
+    }
 }

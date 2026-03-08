@@ -2219,25 +2219,1172 @@ pub struct UnknownNode {
 
 #[cfg(test)]
 mod tests {
-    use super::{AstNode, DebuggerStatementNode};
-    use crate::types::Span;
+    #[allow(clippy::wildcard_imports)]
+    use super::*;
+    use crate::operator::VariableDeclarationKind;
+    use crate::types::{NodeId, Span};
+
+    // -----------------------------------------------------------------------
+    // Helper constructors for representative node types
+    // -----------------------------------------------------------------------
+
+    fn make_program() -> AstNode {
+        AstNode::Program(ProgramNode {
+            span: Span::new(0, 100),
+            is_module: true,
+            body: Box::new([]),
+        })
+    }
+
+    fn make_if_statement() -> AstNode {
+        AstNode::IfStatement(IfStatementNode {
+            span: Span::new(5, 50),
+            test: NodeId(1),
+            consequent: NodeId(2),
+            alternate: None,
+        })
+    }
+
+    fn make_call_expression() -> AstNode {
+        AstNode::CallExpression(CallExpressionNode {
+            span: Span::new(10, 30),
+            callee: NodeId(1),
+            arguments: Box::new([NodeId(2), NodeId(3)]),
+            optional: false,
+        })
+    }
+
+    fn make_string_literal() -> AstNode {
+        AstNode::StringLiteral(StringLiteralNode {
+            span: Span::new(0, 7),
+            value: String::from("hello"),
+        })
+    }
+
+    fn make_variable_declaration() -> AstNode {
+        AstNode::VariableDeclaration(VariableDeclarationNode {
+            span: Span::new(0, 20),
+            kind: VariableDeclarationKind::Const,
+            declarations: Box::new([NodeId(1)]),
+        })
+    }
+
+    fn make_function() -> AstNode {
+        AstNode::Function(FunctionNode {
+            span: Span::new(0, 40),
+            id: Some(NodeId(1)),
+            type_parameters: Box::new([]),
+            params: Box::new([]),
+            return_type: None,
+            body: Some(NodeId(2)),
+            is_async: false,
+            is_generator: false,
+            is_declare: false,
+        })
+    }
+
+    fn make_jsx_element() -> AstNode {
+        AstNode::JSXElement(JSXElementNode {
+            span: Span::new(0, 25),
+            opening_element: NodeId(1),
+            children: Box::new([]),
+        })
+    }
+
+    fn make_ts_interface_declaration() -> AstNode {
+        AstNode::TSInterfaceDeclaration(TSInterfaceDeclarationNode {
+            span: Span::new(0, 35),
+            id: NodeId(1),
+            body: Box::new([]),
+        })
+    }
+
+    fn make_identifier_reference() -> AstNode {
+        AstNode::IdentifierReference(IdentifierReferenceNode {
+            span: Span::new(0, 3),
+            name: String::from("foo"),
+        })
+    }
+
+    fn make_numeric_literal() -> AstNode {
+        AstNode::NumericLiteral(NumericLiteralNode {
+            span: Span::new(0, 2),
+            value: 42.0,
+            raw: String::from("42"),
+        })
+    }
+
+    fn make_boolean_literal() -> AstNode {
+        AstNode::BooleanLiteral(BooleanLiteralNode {
+            span: Span::new(0, 4),
+            value: true,
+        })
+    }
+
+    fn make_null_literal() -> AstNode {
+        AstNode::NullLiteral(NullLiteralNode {
+            span: Span::new(0, 4),
+        })
+    }
+
+    fn make_regexp_literal() -> AstNode {
+        AstNode::RegExpLiteral(RegExpLiteralNode {
+            span: Span::new(0, 6),
+            pattern: String::from("abc"),
+            flags: String::from("g"),
+        })
+    }
+
+    fn make_class() -> AstNode {
+        AstNode::Class(ClassNode {
+            span: Span::new(0, 30),
+            id: Some(NodeId(1)),
+            super_class: None,
+            body: Box::new([]),
+            is_declare: false,
+            is_abstract: false,
+        })
+    }
+
+    fn make_import_declaration() -> AstNode {
+        AstNode::ImportDeclaration(ImportDeclarationNode {
+            span: Span::new(0, 25),
+            source: String::from("./mod"),
+            source_span: Span::new(15, 22),
+            specifiers: Box::new([]),
+            import_kind_is_type: false,
+        })
+    }
+
+    fn make_ts_enum_declaration() -> AstNode {
+        AstNode::TSEnumDeclaration(TSEnumDeclarationNode {
+            span: Span::new(0, 20),
+            id: NodeId(1),
+            members: Box::new([]),
+            is_const: false,
+            is_declare: false,
+        })
+    }
+
+    fn make_template_literal() -> AstNode {
+        AstNode::TemplateLiteral(TemplateLiteralNode {
+            span: Span::new(0, 15),
+            quasis: Box::new([String::from("hello "), String::new()]),
+            expressions: Box::new([NodeId(1)]),
+        })
+    }
+
+    fn make_debugger_statement() -> AstNode {
+        AstNode::DebuggerStatement(DebuggerStatementNode {
+            span: Span::new(10, 18),
+        })
+    }
+
+    fn make_empty_statement() -> AstNode {
+        AstNode::EmptyStatement(EmptyStatementNode {
+            span: Span::new(0, 1),
+        })
+    }
+
+    fn make_this_expression() -> AstNode {
+        AstNode::ThisExpression(ThisExpressionNode {
+            span: Span::new(0, 4),
+        })
+    }
+
+    fn make_ts_as_expression() -> AstNode {
+        AstNode::TSAsExpression(TSAsExpressionNode {
+            span: Span::new(0, 12),
+            expression: NodeId(1),
+        })
+    }
+
+    fn make_export_named_declaration() -> AstNode {
+        AstNode::ExportNamedDeclaration(ExportNamedDeclarationNode {
+            span: Span::new(0, 30),
+            declaration: None,
+            specifiers: Box::new([]),
+            source: None,
+        })
+    }
+
+    fn make_export_default_declaration() -> AstNode {
+        AstNode::ExportDefaultDeclaration(ExportDefaultDeclarationNode {
+            span: Span::new(0, 25),
+            declaration: NodeId(1),
+        })
+    }
+
+    fn make_export_all_declaration() -> AstNode {
+        AstNode::ExportAllDeclaration(ExportAllDeclarationNode {
+            span: Span::new(0, 20),
+            source: String::from("./mod"),
+            exported: None,
+        })
+    }
+
+    fn make_ts_type_alias_declaration() -> AstNode {
+        AstNode::TSTypeAliasDeclaration(TSTypeAliasDeclarationNode {
+            span: Span::new(0, 18),
+            id: NodeId(1),
+            type_parameters: Box::new([]),
+            type_annotation: None,
+        })
+    }
+
+    fn make_ts_module_declaration() -> AstNode {
+        AstNode::TSModuleDeclaration(TSModuleDeclarationNode {
+            span: Span::new(0, 22),
+            id: NodeId(1),
+            body: None,
+            is_declare: true,
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // span() tests
+    // -----------------------------------------------------------------------
 
     #[test]
-    fn ast_node_span() {
-        let node = AstNode::DebuggerStatement(DebuggerStatementNode {
-            span: Span::new(10, 18),
-        });
-        assert_eq!(node.span(), Span::new(10, 18), "span should match");
+    fn span_returns_correct_span_for_program() {
+        let node = make_program();
+        assert_eq!(
+            node.span(),
+            Span::new(0, 100),
+            "Program span should be (0, 100)"
+        );
     }
 
     #[test]
-    fn ast_node_serde_roundtrip() {
-        let node = AstNode::DebuggerStatement(DebuggerStatementNode {
-            span: Span::new(0, 8),
+    fn span_returns_correct_span_for_if_statement() {
+        let node = make_if_statement();
+        assert_eq!(
+            node.span(),
+            Span::new(5, 50),
+            "IfStatement span should be (5, 50)"
+        );
+    }
+
+    #[test]
+    fn span_returns_correct_span_for_call_expression() {
+        let node = make_call_expression();
+        assert_eq!(
+            node.span(),
+            Span::new(10, 30),
+            "CallExpression span should be (10, 30)"
+        );
+    }
+
+    #[test]
+    fn span_returns_correct_span_for_string_literal() {
+        let node = make_string_literal();
+        assert_eq!(
+            node.span(),
+            Span::new(0, 7),
+            "StringLiteral span should be (0, 7)"
+        );
+    }
+
+    #[test]
+    fn span_returns_correct_span_for_debugger_statement() {
+        let node = make_debugger_statement();
+        assert_eq!(
+            node.span(),
+            Span::new(10, 18),
+            "DebuggerStatement span should be (10, 18)"
+        );
+    }
+
+    #[test]
+    fn span_returns_correct_span_for_jsx_element() {
+        let node = make_jsx_element();
+        assert_eq!(
+            node.span(),
+            Span::new(0, 25),
+            "JSXElement span should be (0, 25)"
+        );
+    }
+
+    #[test]
+    fn span_returns_correct_span_for_ts_interface() {
+        let node = make_ts_interface_declaration();
+        assert_eq!(
+            node.span(),
+            Span::new(0, 35),
+            "TSInterfaceDeclaration span should be (0, 35)"
+        );
+    }
+
+    #[test]
+    fn span_returns_correct_span_for_unknown() {
+        let node = AstNode::Unknown(UnknownNode {
+            span: Span::new(99, 200),
         });
+        assert_eq!(
+            node.span(),
+            Span::new(99, 200),
+            "Unknown span should be (99, 200)"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // as_*() positive tests — verify matching getter returns Some
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn as_program_returns_some_for_program_node() {
+        let node = make_program();
+        assert!(
+            node.as_program().is_some(),
+            "as_program should return Some for Program variant"
+        );
+    }
+
+    #[test]
+    fn as_if_statement_returns_some_for_if_statement_node() {
+        let node = make_if_statement();
+        assert!(
+            node.as_if_statement().is_some(),
+            "as_if_statement should return Some for IfStatement variant"
+        );
+    }
+
+    #[test]
+    fn as_call_expression_returns_some_for_call_expression_node() {
+        let node = make_call_expression();
+        assert!(
+            node.as_call_expression().is_some(),
+            "as_call_expression should return Some for CallExpression variant"
+        );
+    }
+
+    #[test]
+    fn as_string_literal_returns_some_for_string_literal_node() {
+        let node = make_string_literal();
+        assert!(
+            node.as_string_literal().is_some(),
+            "as_string_literal should return Some for StringLiteral variant"
+        );
+    }
+
+    #[test]
+    fn as_variable_declaration_returns_some_for_variable_declaration_node() {
+        let node = make_variable_declaration();
+        assert!(
+            node.as_variable_declaration().is_some(),
+            "as_variable_declaration should return Some for VariableDeclaration variant"
+        );
+    }
+
+    #[test]
+    fn as_function_returns_some_for_function_node() {
+        let node = make_function();
+        assert!(
+            node.as_function().is_some(),
+            "as_function should return Some for Function variant"
+        );
+    }
+
+    #[test]
+    fn as_jsx_element_returns_some_for_jsx_element_node() {
+        let node = make_jsx_element();
+        assert!(
+            node.as_jsx_element().is_some(),
+            "as_jsx_element should return Some for JSXElement variant"
+        );
+    }
+
+    #[test]
+    fn as_ts_interface_declaration_returns_some_for_ts_interface_node() {
+        let node = make_ts_interface_declaration();
+        assert!(
+            node.as_ts_interface_declaration().is_some(),
+            "as_ts_interface_declaration should return Some for TSInterfaceDeclaration variant"
+        );
+    }
+
+    #[test]
+    fn as_identifier_reference_returns_some_for_identifier_reference_node() {
+        let node = make_identifier_reference();
+        assert!(
+            node.as_identifier_reference().is_some(),
+            "as_identifier_reference should return Some for IdentifierReference variant"
+        );
+    }
+
+    #[test]
+    fn as_class_returns_some_for_class_node() {
+        let node = make_class();
+        assert!(
+            node.as_class().is_some(),
+            "as_class should return Some for Class variant"
+        );
+    }
+
+    #[test]
+    fn as_import_declaration_returns_some_for_import_declaration_node() {
+        let node = make_import_declaration();
+        assert!(
+            node.as_import_declaration().is_some(),
+            "as_import_declaration should return Some for ImportDeclaration variant"
+        );
+    }
+
+    #[test]
+    fn as_ts_enum_declaration_returns_some_for_ts_enum_node() {
+        let node = make_ts_enum_declaration();
+        assert!(
+            node.as_ts_enum_declaration().is_some(),
+            "as_ts_enum_declaration should return Some for TSEnumDeclaration variant"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // as_*() positive tests — verify the returned reference has correct data
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn as_program_returns_correct_inner_data() {
+        let node = make_program();
+        let inner = node.as_program();
+        assert!(inner.is_some(), "as_program should return Some");
+        if let Some(prog) = inner {
+            assert!(prog.is_module, "ProgramNode.is_module should be true");
+            assert!(prog.body.is_empty(), "ProgramNode.body should be empty");
+        }
+    }
+
+    #[test]
+    fn as_string_literal_returns_correct_value() {
+        let node = make_string_literal();
+        let maybe_lit = node.as_string_literal();
+        assert!(
+            maybe_lit.is_some(),
+            "as_string_literal should return Some for StringLiteral variant"
+        );
+        #[allow(clippy::unwrap_used)]
+        let lit = maybe_lit.unwrap();
+        assert_eq!(
+            lit.value, "hello",
+            "StringLiteralNode.value should be 'hello'"
+        );
+    }
+
+    #[test]
+    fn as_call_expression_returns_correct_arguments_count() {
+        let node = make_call_expression();
+        let maybe_call = node.as_call_expression();
+        assert!(
+            maybe_call.is_some(),
+            "as_call_expression should return Some for CallExpression variant"
+        );
+        #[allow(clippy::unwrap_used)]
+        let call = maybe_call.unwrap();
+        assert_eq!(
+            call.arguments.len(),
+            2,
+            "CallExpressionNode should have 2 arguments"
+        );
+        assert!(
+            !call.optional,
+            "CallExpressionNode.optional should be false"
+        );
+    }
+
+    #[test]
+    fn as_identifier_reference_returns_correct_name() {
+        let node = make_identifier_reference();
+        let maybe_id = node.as_identifier_reference();
+        assert!(
+            maybe_id.is_some(),
+            "as_identifier_reference should return Some for IdentifierReference variant"
+        );
+        #[allow(clippy::unwrap_used)]
+        let ident = maybe_id.unwrap();
+        assert_eq!(
+            ident.name, "foo",
+            "IdentifierReferenceNode.name should be 'foo'"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // as_*() negative tests — mismatched getters return None
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn as_getters_return_none_for_non_matching_variants() {
+        let program = make_program();
+
+        assert!(
+            program.as_if_statement().is_none(),
+            "as_if_statement should return None for Program variant"
+        );
+        assert!(
+            program.as_call_expression().is_none(),
+            "as_call_expression should return None for Program variant"
+        );
+        assert!(
+            program.as_string_literal().is_none(),
+            "as_string_literal should return None for Program variant"
+        );
+        assert!(
+            program.as_variable_declaration().is_none(),
+            "as_variable_declaration should return None for Program variant"
+        );
+        assert!(
+            program.as_function().is_none(),
+            "as_function should return None for Program variant"
+        );
+        assert!(
+            program.as_jsx_element().is_none(),
+            "as_jsx_element should return None for Program variant"
+        );
+        assert!(
+            program.as_ts_interface_declaration().is_none(),
+            "as_ts_interface_declaration should return None for Program variant"
+        );
+        assert!(
+            program.as_class().is_none(),
+            "as_class should return None for Program variant"
+        );
+        assert!(
+            program.as_import_declaration().is_none(),
+            "as_import_declaration should return None for Program variant"
+        );
+        assert!(
+            program.as_identifier_reference().is_none(),
+            "as_identifier_reference should return None for Program variant"
+        );
+    }
+
+    #[test]
+    fn as_program_returns_none_for_expression_variant() {
+        let call = make_call_expression();
+        assert!(
+            call.as_program().is_none(),
+            "as_program should return None for CallExpression variant"
+        );
+    }
+
+    #[test]
+    fn as_statement_getters_return_none_for_expression_variant() {
+        let str_lit = make_string_literal();
+
+        assert!(
+            str_lit.as_if_statement().is_none(),
+            "as_if_statement should return None for StringLiteral variant"
+        );
+        assert!(
+            str_lit.as_block_statement().is_none(),
+            "as_block_statement should return None for StringLiteral variant"
+        );
+        assert!(
+            str_lit.as_return_statement().is_none(),
+            "as_return_statement should return None for StringLiteral variant"
+        );
+        assert!(
+            str_lit.as_debugger_statement().is_none(),
+            "as_debugger_statement should return None for StringLiteral variant"
+        );
+    }
+
+    #[test]
+    fn as_jsx_getters_return_none_for_non_jsx_variant() {
+        let func = make_function();
+
+        assert!(
+            func.as_jsx_element().is_none(),
+            "as_jsx_element should return None for Function variant"
+        );
+        assert!(
+            func.as_jsx_opening_element().is_none(),
+            "as_jsx_opening_element should return None for Function variant"
+        );
+        assert!(
+            func.as_jsx_fragment().is_none(),
+            "as_jsx_fragment should return None for Function variant"
+        );
+        assert!(
+            func.as_jsx_attribute().is_none(),
+            "as_jsx_attribute should return None for Function variant"
+        );
+        assert!(
+            func.as_jsx_text().is_none(),
+            "as_jsx_text should return None for Function variant"
+        );
+    }
+
+    #[test]
+    fn as_ts_getters_return_none_for_non_ts_variant() {
+        let if_stmt = make_if_statement();
+
+        assert!(
+            if_stmt.as_ts_type_alias_declaration().is_none(),
+            "as_ts_type_alias_declaration should return None for IfStatement variant"
+        );
+        assert!(
+            if_stmt.as_ts_interface_declaration().is_none(),
+            "as_ts_interface_declaration should return None for IfStatement variant"
+        );
+        assert!(
+            if_stmt.as_ts_enum_declaration().is_none(),
+            "as_ts_enum_declaration should return None for IfStatement variant"
+        );
+        assert!(
+            if_stmt.as_ts_as_expression().is_none(),
+            "as_ts_as_expression should return None for IfStatement variant"
+        );
+        assert!(
+            if_stmt.as_ts_non_null_expression().is_none(),
+            "as_ts_non_null_expression should return None for IfStatement variant"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // is_expression() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_expression_returns_true_for_call_expression() {
+        assert!(
+            make_call_expression().is_expression(),
+            "CallExpression should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_true_for_string_literal() {
+        assert!(
+            make_string_literal().is_expression(),
+            "StringLiteral should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_true_for_identifier_reference() {
+        assert!(
+            make_identifier_reference().is_expression(),
+            "IdentifierReference should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_true_for_this_expression() {
+        assert!(
+            make_this_expression().is_expression(),
+            "ThisExpression should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_true_for_ts_as_expression() {
+        assert!(
+            make_ts_as_expression().is_expression(),
+            "TSAsExpression should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_true_for_numeric_literal() {
+        assert!(
+            make_numeric_literal().is_expression(),
+            "NumericLiteral should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_true_for_boolean_literal() {
+        assert!(
+            make_boolean_literal().is_expression(),
+            "BooleanLiteral should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_true_for_null_literal() {
+        assert!(
+            make_null_literal().is_expression(),
+            "NullLiteral should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_true_for_template_literal() {
+        assert!(
+            make_template_literal().is_expression(),
+            "TemplateLiteral should be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_false_for_program() {
+        assert!(
+            !make_program().is_expression(),
+            "Program should not be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_false_for_if_statement() {
+        assert!(
+            !make_if_statement().is_expression(),
+            "IfStatement should not be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_false_for_variable_declaration() {
+        assert!(
+            !make_variable_declaration().is_expression(),
+            "VariableDeclaration should not be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_false_for_jsx_element() {
+        assert!(
+            !make_jsx_element().is_expression(),
+            "JSXElement should not be an expression"
+        );
+    }
+
+    #[test]
+    fn is_expression_returns_false_for_import_declaration() {
+        assert!(
+            !make_import_declaration().is_expression(),
+            "ImportDeclaration should not be an expression"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // is_statement() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_statement_returns_true_for_if_statement() {
+        assert!(
+            make_if_statement().is_statement(),
+            "IfStatement should be a statement"
+        );
+    }
+
+    #[test]
+    fn is_statement_returns_true_for_debugger_statement() {
+        assert!(
+            make_debugger_statement().is_statement(),
+            "DebuggerStatement should be a statement"
+        );
+    }
+
+    #[test]
+    fn is_statement_returns_true_for_empty_statement() {
+        assert!(
+            make_empty_statement().is_statement(),
+            "EmptyStatement should be a statement"
+        );
+    }
+
+    #[test]
+    fn is_statement_returns_false_for_program() {
+        assert!(
+            !make_program().is_statement(),
+            "Program should not be a statement"
+        );
+    }
+
+    #[test]
+    fn is_statement_returns_false_for_call_expression() {
+        assert!(
+            !make_call_expression().is_statement(),
+            "CallExpression should not be a statement"
+        );
+    }
+
+    #[test]
+    fn is_statement_returns_false_for_variable_declaration() {
+        assert!(
+            !make_variable_declaration().is_statement(),
+            "VariableDeclaration should not be a statement"
+        );
+    }
+
+    #[test]
+    fn is_statement_returns_false_for_class() {
+        assert!(
+            !make_class().is_statement(),
+            "Class should not be a statement"
+        );
+    }
+
+    #[test]
+    fn is_statement_returns_false_for_jsx_element() {
+        assert!(
+            !make_jsx_element().is_statement(),
+            "JSXElement should not be a statement"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // is_literal() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_literal_returns_true_for_string_literal() {
+        assert!(
+            make_string_literal().is_literal(),
+            "StringLiteral should be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_true_for_numeric_literal() {
+        assert!(
+            make_numeric_literal().is_literal(),
+            "NumericLiteral should be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_true_for_boolean_literal() {
+        assert!(
+            make_boolean_literal().is_literal(),
+            "BooleanLiteral should be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_true_for_null_literal() {
+        assert!(
+            make_null_literal().is_literal(),
+            "NullLiteral should be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_true_for_regexp_literal() {
+        assert!(
+            make_regexp_literal().is_literal(),
+            "RegExpLiteral should be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_true_for_template_literal() {
+        assert!(
+            make_template_literal().is_literal(),
+            "TemplateLiteral should be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_false_for_identifier_reference() {
+        assert!(
+            !make_identifier_reference().is_literal(),
+            "IdentifierReference should not be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_false_for_call_expression() {
+        assert!(
+            !make_call_expression().is_literal(),
+            "CallExpression should not be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_false_for_program() {
+        assert!(
+            !make_program().is_literal(),
+            "Program should not be a literal"
+        );
+    }
+
+    #[test]
+    fn is_literal_returns_false_for_if_statement() {
+        assert!(
+            !make_if_statement().is_literal(),
+            "IfStatement should not be a literal"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // is_declaration() tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_declaration_returns_true_for_variable_declaration() {
+        assert!(
+            make_variable_declaration().is_declaration(),
+            "VariableDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_function() {
+        assert!(
+            make_function().is_declaration(),
+            "Function should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_class() {
+        assert!(
+            make_class().is_declaration(),
+            "Class should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_import_declaration() {
+        assert!(
+            make_import_declaration().is_declaration(),
+            "ImportDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_export_named_declaration() {
+        assert!(
+            make_export_named_declaration().is_declaration(),
+            "ExportNamedDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_export_default_declaration() {
+        assert!(
+            make_export_default_declaration().is_declaration(),
+            "ExportDefaultDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_export_all_declaration() {
+        assert!(
+            make_export_all_declaration().is_declaration(),
+            "ExportAllDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_ts_type_alias_declaration() {
+        assert!(
+            make_ts_type_alias_declaration().is_declaration(),
+            "TSTypeAliasDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_ts_interface_declaration() {
+        assert!(
+            make_ts_interface_declaration().is_declaration(),
+            "TSInterfaceDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_ts_enum_declaration() {
+        assert!(
+            make_ts_enum_declaration().is_declaration(),
+            "TSEnumDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_true_for_ts_module_declaration() {
+        assert!(
+            make_ts_module_declaration().is_declaration(),
+            "TSModuleDeclaration should be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_false_for_call_expression() {
+        assert!(
+            !make_call_expression().is_declaration(),
+            "CallExpression should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_false_for_if_statement() {
+        assert!(
+            !make_if_statement().is_declaration(),
+            "IfStatement should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_false_for_string_literal() {
+        assert!(
+            !make_string_literal().is_declaration(),
+            "StringLiteral should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_false_for_program() {
+        assert!(
+            !make_program().is_declaration(),
+            "Program should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn is_declaration_returns_false_for_jsx_element() {
+        assert!(
+            !make_jsx_element().is_declaration(),
+            "JSXElement should not be a declaration"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Category exclusivity tests — verify a node is in exactly one category
+    // (or none, for nodes like Program, patterns, etc.)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn categories_are_exclusive_for_if_statement() {
+        let node = make_if_statement();
+        assert!(node.is_statement(), "IfStatement should be a statement");
+        assert!(
+            !node.is_expression(),
+            "IfStatement should not be an expression"
+        );
+        assert!(!node.is_literal(), "IfStatement should not be a literal");
+        assert!(
+            !node.is_declaration(),
+            "IfStatement should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn categories_are_exclusive_for_call_expression() {
+        let node = make_call_expression();
+        assert!(
+            node.is_expression(),
+            "CallExpression should be an expression"
+        );
+        assert!(
+            !node.is_statement(),
+            "CallExpression should not be a statement"
+        );
+        assert!(!node.is_literal(), "CallExpression should not be a literal");
+        assert!(
+            !node.is_declaration(),
+            "CallExpression should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn string_literal_is_both_expression_and_literal() {
+        let node = make_string_literal();
+        assert!(
+            node.is_expression(),
+            "StringLiteral should be an expression"
+        );
+        assert!(node.is_literal(), "StringLiteral should be a literal");
+        assert!(
+            !node.is_statement(),
+            "StringLiteral should not be a statement"
+        );
+        assert!(
+            !node.is_declaration(),
+            "StringLiteral should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn program_is_in_no_category() {
+        let node = make_program();
+        assert!(!node.is_expression(), "Program should not be an expression");
+        assert!(!node.is_statement(), "Program should not be a statement");
+        assert!(!node.is_literal(), "Program should not be a literal");
+        assert!(
+            !node.is_declaration(),
+            "Program should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn jsx_element_is_in_no_predicate_category() {
+        let node = make_jsx_element();
+        assert!(
+            !node.is_expression(),
+            "JSXElement should not be an expression"
+        );
+        assert!(!node.is_statement(), "JSXElement should not be a statement");
+        assert!(!node.is_literal(), "JSXElement should not be a literal");
+        assert!(
+            !node.is_declaration(),
+            "JSXElement should not be a declaration"
+        );
+    }
+
+    #[test]
+    fn variable_declaration_is_declaration_only() {
+        let node = make_variable_declaration();
+        assert!(
+            node.is_declaration(),
+            "VariableDeclaration should be a declaration"
+        );
+        assert!(
+            !node.is_expression(),
+            "VariableDeclaration should not be an expression"
+        );
+        assert!(
+            !node.is_statement(),
+            "VariableDeclaration should not be a statement"
+        );
+        assert!(
+            !node.is_literal(),
+            "VariableDeclaration should not be a literal"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Serde roundtrip tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn serde_roundtrip_debugger_statement() {
+        let node = make_debugger_statement();
         let json = serde_json::to_string(&node);
-        assert!(json.is_ok(), "should serialize");
+        assert!(json.is_ok(), "DebuggerStatement should serialize");
         let back: Result<AstNode, _> = serde_json::from_str(json.as_deref().unwrap_or(""));
-        assert!(back.is_ok(), "should deserialize");
+        assert!(back.is_ok(), "DebuggerStatement should deserialize");
+    }
+
+    #[test]
+    fn serde_roundtrip_program_preserves_span() {
+        let node = make_program();
+        let json = serde_json::to_string(&node);
+        assert!(json.is_ok(), "Program should serialize");
+        let back: Result<AstNode, _> = serde_json::from_str(json.as_deref().unwrap_or(""));
+        assert!(back.is_ok(), "Program should deserialize");
+        if let Ok(deserialized) = back {
+            assert_eq!(
+                deserialized.span(),
+                Span::new(0, 100),
+                "Deserialized Program span should match original"
+            );
+        }
+    }
+
+    #[test]
+    fn serde_roundtrip_call_expression_preserves_data() {
+        let node = make_call_expression();
+        let json = serde_json::to_string(&node);
+        assert!(json.is_ok(), "CallExpression should serialize");
+        let back: Result<AstNode, _> = serde_json::from_str(json.as_deref().unwrap_or(""));
+        assert!(back.is_ok(), "CallExpression should deserialize");
+        if let Ok(deserialized) = back {
+            assert!(
+                deserialized.as_call_expression().is_some(),
+                "Deserialized node should still be CallExpression"
+            );
+        }
     }
 }

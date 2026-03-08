@@ -219,4 +219,69 @@ mod tests {
             "label A used in nested break should not be flagged"
         );
     }
+
+    #[test]
+    fn test_allows_label_used_in_do_while() {
+        let diags = lint("A: do { break A; } while (true);");
+        assert!(
+            diags.is_empty(),
+            "label A used in break inside do-while should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_label_used_in_for_in() {
+        let diags = lint("A: for (let x in obj) { break A; }");
+        assert!(
+            diags.is_empty(),
+            "label A used in break inside for-in should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_label_used_in_for_of() {
+        let diags = lint("A: for (let x of arr) { break A; }");
+        assert!(
+            diags.is_empty(),
+            "label A used in break inside for-of should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_label_used_in_switch() {
+        let diags = lint("A: switch(x) { case 1: break A; }");
+        assert!(
+            diags.is_empty(),
+            "label A used in break inside switch should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_allows_label_used_in_try() {
+        let diags = lint("A: try { break A; } catch(e) {}");
+        assert!(
+            diags.is_empty(),
+            "label A used in break inside try should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_unused_label_do_while() {
+        let diags = lint("A: do { break; } while (true);");
+        assert_eq!(
+            diags.len(),
+            1,
+            "label A with unlabeled break in do-while should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_unused_label_switch() {
+        let diags = lint("A: switch(x) { case 1: break; }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "label A with unlabeled break in switch should be flagged"
+        );
+    }
 }

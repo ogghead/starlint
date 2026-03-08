@@ -234,6 +234,38 @@ mod tests {
     #[test]
     fn test_allows_normal_string() {
         let diags = lint(r"var s = 'hello';");
-        assert!(diags.is_empty());
+        assert!(
+            diags.is_empty(),
+            "normal string without escapes should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_lowercase_braced_unicode_escape() {
+        let diags = lint(r"var s = '\u{1f600}';");
+        assert_eq!(
+            diags.len(),
+            1,
+            "lowercase hex in braced unicode escape should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_multiple_lowercase_escapes() {
+        let diags = lint(r"var s = '\xff\u00ff';");
+        assert_eq!(
+            diags.len(),
+            1,
+            "string with multiple lowercase escapes should produce one diagnostic"
+        );
+    }
+
+    #[test]
+    fn test_allows_uppercase_braced_unicode_escape() {
+        let diags = lint(r"var s = '\u{1F600}';");
+        assert!(
+            diags.is_empty(),
+            "uppercase hex in braced unicode escape should not be flagged"
+        );
     }
 }
