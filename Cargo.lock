@@ -2215,6 +2215,7 @@ version = "0.1.0"
 dependencies = [
  "pretty_assertions",
  "serde_json",
+ "smallvec",
  "starlint_ast",
  "starlint_parser",
  "starlint_plugin_sdk",

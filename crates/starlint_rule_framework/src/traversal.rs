@@ -6,6 +6,7 @@
 
 use std::path::Path;
 
+use smallvec::SmallVec;
 use starlint_ast::node_type::{AST_NODE_TYPE_COUNT, AstNodeType};
 use starlint_ast::tree::AstTree;
 use starlint_ast::types::NodeId;
@@ -14,29 +15,38 @@ use starlint_scope::ScopeData;
 use crate::lint_rule::{LintContext, LintRule};
 use starlint_plugin_sdk::diagnostic::Diagnostic;
 
+/// Inline capacity for per-node-type rule index lists.
+///
+/// Most node types have 0–3 interested rules; 4 covers the common case
+/// without heap allocation.
+const DISPATCH_INLINE_CAP: usize = 4;
+
+/// A small list of rule indices — inlined for up to [`DISPATCH_INLINE_CAP`] entries.
+type RuleIndices = SmallVec<[usize; DISPATCH_INLINE_CAP]>;
+
 /// Maps [`AstNodeType`] discriminants to the rule indices that handle them.
 ///
 /// Built once from rule interest declarations. Rules that return `None` from
 /// [`LintRule::run_on_types`] go into the wildcard list and receive every node.
 pub struct LintDispatchTable {
     /// Per-AstNodeType rule indices for enter. Index = `AstNodeType as usize`.
-    enter: Vec<Vec<usize>>,
+    enter: Vec<RuleIndices>,
     /// Per-AstNodeType rule indices for leave.
-    leave: Vec<Vec<usize>>,
+    leave: Vec<RuleIndices>,
     /// Rules that receive ALL nodes on enter (wildcard).
-    enter_all: Vec<usize>,
+    enter_all: RuleIndices,
     /// Rules that receive ALL nodes on leave.
-    leave_all: Vec<usize>,
+    leave_all: RuleIndices,
 }
 
 impl LintDispatchTable {
     /// Build the dispatch table from a set of rules with their original indices.
     pub fn build_from_indices(rules: &[Box<dyn LintRule>], traversal_indices: &[usize]) -> Self {
         let mut table = Self {
-            enter: vec![Vec::new(); AST_NODE_TYPE_COUNT],
-            leave: vec![Vec::new(); AST_NODE_TYPE_COUNT],
-            enter_all: Vec::new(),
-            leave_all: Vec::new(),
+            enter: (0..AST_NODE_TYPE_COUNT).map(|_| SmallVec::new()).collect(),
+            leave: (0..AST_NODE_TYPE_COUNT).map(|_| SmallVec::new()).collect(),
+            enter_all: SmallVec::new(),
+            leave_all: SmallVec::new(),
         };
 
         for &idx in traversal_indices {
