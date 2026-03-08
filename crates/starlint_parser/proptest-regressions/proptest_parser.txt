@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 64d4dc312ed0d51fea8d1f249e6e0e5621e4cb49a5211f43291f18516a9a3f26 # shrinks to source = "class * ; ", options = ParseOptions { jsx: false, typescript: false, module: false }

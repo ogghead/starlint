@@ -1007,9 +1007,12 @@ impl Parser<'_> {
             .at(TokenKind::LBrace)
             .then(|| self.parse_function_body(Some(func_id)));
 
+        // During error recovery start may exceed prev_end (e.g. at EOF);
+        // clamp so the span is always valid.
         let end = body
             .and_then(|id| self.tree.span(id))
-            .map_or(self.prev_end, |s| s.end);
+            .map_or(self.prev_end, |s| s.end)
+            .max(start);
 
         self.tree.set(
             func_id,
@@ -1048,9 +1051,12 @@ impl Parser<'_> {
             .at(TokenKind::LBrace)
             .then(|| self.parse_function_body(Some(func_id)));
 
+        // During error recovery start may exceed prev_end (e.g. at EOF);
+        // clamp so the span is always valid.
         let end = body
             .and_then(|id| self.tree.span(id))
-            .map_or(self.prev_end, |s| s.end);
+            .map_or(self.prev_end, |s| s.end)
+            .max(start);
 
         self.tree.set(
             func_id,
