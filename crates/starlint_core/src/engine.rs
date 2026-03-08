@@ -12,8 +12,6 @@ use starlint_parser::ParseOptions;
 
 use crate::diagnostic::OutputFormat;
 use crate::error::LintError;
-use crate::lint_rule::LintRule;
-use crate::lint_rule_plugin::LintRulePlugin;
 use crate::overrides::OverrideSet;
 use crate::plugin::{FileContext, Plugin};
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
@@ -63,26 +61,10 @@ impl LintSession {
         }
     }
 
-    /// Convenience constructor: wrap native [`LintRule`]s as a single plugin.
-    #[must_use]
-    pub fn from_rules(rules: Vec<Box<dyn LintRule>>, output_format: OutputFormat) -> Self {
-        let plugin: Box<dyn Plugin> = Box::new(LintRulePlugin::new(rules));
-        Self::new(vec![plugin], output_format)
-    }
-
     /// Set severity overrides from config.
     #[must_use]
     pub fn with_severity_overrides(mut self, overrides: HashMap<String, Severity>) -> Self {
         self.severity_overrides = overrides;
-        self
-    }
-
-    /// Add additional plugins (e.g. WASM plugins).
-    #[must_use]
-    pub fn with_plugins(mut self, plugins: Vec<Box<dyn Plugin>>) -> Self {
-        self.plugins.extend(plugins);
-        // Recompute needs_semantic since new plugins may require it.
-        self.needs_semantic = self.plugins.iter().any(|p| p.needs_scope_analysis());
         self
     }
 
@@ -233,6 +215,7 @@ impl LintSession {
 mod tests {
     #[allow(clippy::wildcard_imports)]
     use super::*;
+    use crate::lint_rule_plugin::LintRulePlugin;
 
     #[test]
     fn test_lint_session_no_rules() {
@@ -245,8 +228,9 @@ mod tests {
     }
 
     #[test]
-    fn test_lint_session_from_rules() {
-        let session = LintSession::from_rules(vec![], OutputFormat::Pretty);
+    fn test_lint_session_empty_plugin() {
+        let plugin: Box<dyn Plugin> = Box::new(LintRulePlugin::new(vec![]));
+        let session = LintSession::new(vec![plugin], OutputFormat::Pretty);
         let result = session.lint_single_file(Path::new("test.js"), "debugger;");
         assert!(
             result.diagnostics.is_empty(),
@@ -281,7 +265,8 @@ mod tests {
         std::fs::write(&file_b, "'use strict';").ok();
 
         let lint_rules = crate::lint_rules::all_lint_rules();
-        let session = LintSession::from_rules(lint_rules, OutputFormat::Pretty);
+        let plugin: Box<dyn Plugin> = Box::new(LintRulePlugin::new(lint_rules));
+        let session = LintSession::new(vec![plugin], OutputFormat::Pretty);
         let results = session.lint_files(&[file_a.clone(), file_b.clone()]);
 
         // File a has debugger statement -> should have diagnostics.

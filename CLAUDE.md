@@ -35,7 +35,8 @@ crates/
   starlint_scope/         # Lightweight scope analysis (symbols, references, scopes)
   starlint_lsp/           # LSP server (tower-lsp, diagnostics, code actions)
   starlint_plugin_sdk/    # Shared types for plugins
-  starlint_wasm_host/     # WASM runtime (wasmtime, bridge, loader)
+  starlint_loader/        # Plugin loader (resolves native + WASM plugins from config)
+  starlint_wasm_host/     # WASM runtime (wasmtime, bridge)
 editors/
   vscode/                 # VS Code extension (language client)
 wit/
@@ -45,8 +46,9 @@ wit/
 ### Crate Dependency Graph
 
 ```
-starlint_cli → starlint_core, starlint_config, starlint_wasm_host, starlint_lsp, tokio
-starlint_lsp → starlint_core, starlint_config, starlint_wasm_host, tower-lsp, tokio
+starlint_cli → starlint_core, starlint_config, starlint_loader, starlint_lsp, starlint_plugin_sdk, tokio
+starlint_lsp → starlint_core, starlint_config, starlint_loader, starlint_plugin_sdk, tower-lsp, tokio
+starlint_loader → starlint_core, starlint_config, starlint_plugin_sdk, starlint_wasm_host (feature-gated)
 starlint_core → starlint_ast, starlint_parser, starlint_scope, starlint_plugin_sdk, starlint_config
 starlint_scope → starlint_ast
 starlint_parser → starlint_ast
@@ -67,7 +69,7 @@ starlint_plugin_sdk → serde
 
 ### Key Design Decisions
 
-- **Unified Plugin trait**: Native rules and WASM plugins implement the same `Plugin` trait. Native rules use Rust types directly (zero serialization); WASM plugins serialize across the boundary.
+- **Unified Plugin architecture**: All rules live in named plugin bundles. Native and WASM plugins implement the same `Plugin` trait. Config uses a single `[plugins]` section — whether a plugin runs as native Rust or WASM is an internal detail. The unified loader in `starlint_loader` handles resolution.
 - **Custom parser + flat AST**: `starlint_parser` produces a `NodeId`-indexed `AstTree` — no arena allocation, no lifetime constraints
 - **Lightweight scope analysis**: `starlint_scope` builds scope tree, symbol table, and reference tracking in two passes over `AstTree`
 - **Single-pass traversal**: Native rules receive `AstNodeType` via type-filtered dispatch inside `LintRulePlugin` — miss is free

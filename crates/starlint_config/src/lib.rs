@@ -21,23 +21,23 @@ pub struct Config {
     #[serde(default)]
     pub settings: Settings,
 
-    /// Plugin declarations.
-    #[serde(default)]
-    pub plugins: Vec<PluginDeclaration>,
-
-    /// Builtin plugin toggles (category name -> enabled).
+    /// Unified plugin declarations.
     ///
-    /// When a builtin plugin is enabled, its corresponding native rules are
-    /// excluded from `all_rules()` and the bundled WASM plugin is loaded instead.
+    /// Each entry maps a plugin name to its configuration. Plugins can be
+    /// toggled with a simple boolean or configured with a path and options:
     ///
     /// ```toml
-    /// [builtin_plugins]
-    /// storybook = true
-    /// testing = true    # jest + vitest
-    /// react = true      # react + jsx_a11y + react_perf
+    /// [plugins]
+    /// core = true
+    /// react = true
+    /// typescript = false
+    /// custom = { path = "./plugins/custom.wasm" }
     /// ```
+    ///
+    /// When the `[plugins]` section is absent or empty, all built-in plugins
+    /// are enabled by default.
     #[serde(default)]
-    pub builtin_plugins: HashMap<String, bool>,
+    pub plugins: HashMap<String, PluginEntry>,
 
     /// Rule configurations: rule name -> severity or detailed config.
     #[serde(default)]
@@ -59,13 +59,56 @@ pub struct Settings {
     pub threads: usize,
 }
 
-/// A plugin declaration in config.
+/// Configuration for a single plugin.
+///
+/// Supports two forms:
+/// - Simple toggle: `react = true` / `react = false`
+/// - Detailed: `custom = { path = "./plugin.wasm", enabled = true }`
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginDeclaration {
-    /// Plugin name (used as prefix for its rules).
-    pub name: String,
-    /// Path to the WASM plugin file.
-    pub path: PathBuf,
+#[serde(untagged)]
+pub enum PluginEntry {
+    /// Simple boolean toggle.
+    Toggle(bool),
+    /// Detailed plugin configuration with optional path.
+    Detailed(PluginDetail),
+}
+
+impl PluginEntry {
+    /// Whether this plugin is enabled.
+    #[must_use]
+    pub const fn is_enabled(&self) -> bool {
+        match self {
+            Self::Toggle(enabled) => *enabled,
+            Self::Detailed(detail) => detail.enabled,
+        }
+    }
+
+    /// Optional path to a WASM plugin file.
+    #[must_use]
+    pub const fn path(&self) -> Option<&PathBuf> {
+        match self {
+            Self::Toggle(_) => None,
+            Self::Detailed(detail) => detail.path.as_ref(),
+        }
+    }
+}
+
+/// Detailed plugin configuration.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginDetail {
+    /// Path to a WASM plugin file. When absent, the plugin is resolved
+    /// from the built-in registry.
+    #[serde(default)]
+    pub path: Option<PathBuf>,
+
+    /// Whether this plugin is enabled.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+/// Default value for `enabled` field in `PluginDetail` (true).
+const fn default_true() -> bool {
+    true
 }
 
 /// Configuration for a single rule.
@@ -128,14 +171,76 @@ mod tests {
     }
 
     #[test]
-    fn test_config_deserialize_with_plugin() {
+    fn test_config_deserialize_with_plugin_toggle() {
+        let toml_str = r"
+[plugins]
+react = true
+storybook = false
+";
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(
+            result.is_ok(),
+            "config with plugin toggles should deserialize"
+        );
+        if let Ok(cfg) = result {
+            assert_eq!(cfg.plugins.len(), 2);
+            assert!(
+                cfg.plugins
+                    .get("react")
+                    .is_some_and(PluginEntry::is_enabled)
+            );
+            assert!(
+                !cfg.plugins
+                    .get("storybook")
+                    .is_some_and(PluginEntry::is_enabled)
+            );
+        }
+    }
+
+    #[test]
+    fn test_config_deserialize_with_plugin_path() {
         let toml_str = r#"
-[[plugins]]
-name = "storybook"
-path = "./plugins/storybook.wasm"
+[plugins]
+custom = { path = "./plugins/custom.wasm" }
 "#;
         let result: Result<Config, _> = toml::from_str(toml_str);
-        assert!(result.is_ok(), "config with plugin should deserialize");
+        assert!(result.is_ok(), "config with plugin path should deserialize");
+        if let Ok(cfg) = result {
+            assert!(
+                cfg.plugins
+                    .get("custom")
+                    .is_some_and(PluginEntry::is_enabled),
+                "plugin with path should default to enabled"
+            );
+            assert!(
+                cfg.plugins
+                    .get("custom")
+                    .and_then(PluginEntry::path)
+                    .is_some(),
+                "plugin should have path"
+            );
+        }
+    }
+
+    #[test]
+    fn test_config_deserialize_with_plugin_disabled() {
+        let toml_str = r#"
+[plugins]
+custom = { path = "./plugins/custom.wasm", enabled = false }
+"#;
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(
+            result.is_ok(),
+            "config with disabled plugin should deserialize"
+        );
+        if let Ok(cfg) = result {
+            assert!(
+                !cfg.plugins
+                    .get("custom")
+                    .is_some_and(PluginEntry::is_enabled),
+                "plugin should be disabled"
+            );
+        }
     }
 
     #[test]
@@ -152,32 +257,43 @@ files = ["**/*.stories.tsx"]
     }
 
     #[test]
-    fn test_config_deserialize_with_builtin_plugins() {
-        let toml_str = r"
-[builtin_plugins]
-storybook = true
-testing = true
-react = false
-";
-        let result: Result<Config, _> = toml::from_str(toml_str);
-        assert!(result.is_ok(), "should parse builtin_plugins");
-        if let Ok(cfg) = result {
-            assert_eq!(cfg.builtin_plugins.len(), 3);
-            assert_eq!(cfg.builtin_plugins.get("storybook"), Some(&true));
-            assert_eq!(cfg.builtin_plugins.get("testing"), Some(&true));
-            assert_eq!(cfg.builtin_plugins.get("react"), Some(&false));
-        }
-    }
-
-    #[test]
-    fn test_config_builtin_plugins_default_empty() {
+    fn test_config_plugins_default_empty() {
         let toml_str = "";
         let result: Result<Config, _> = toml::from_str(toml_str);
         assert!(result.is_ok(), "should parse empty config");
         if let Ok(cfg) = result {
+            assert!(cfg.plugins.is_empty(), "plugins should default to empty");
+        }
+    }
+
+    #[test]
+    fn test_config_mixed_plugins() {
+        let toml_str = r#"
+[plugins]
+core = true
+react = true
+typescript = false
+custom = { path = "./plugins/custom.wasm" }
+"#;
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_ok(), "mixed plugin config should deserialize");
+        if let Ok(cfg) = result {
+            assert_eq!(cfg.plugins.len(), 4);
+            assert!(cfg.plugins.get("core").is_some_and(PluginEntry::is_enabled));
             assert!(
-                cfg.builtin_plugins.is_empty(),
-                "builtin_plugins should default to empty"
+                cfg.plugins
+                    .get("react")
+                    .is_some_and(PluginEntry::is_enabled)
+            );
+            assert!(
+                !cfg.plugins
+                    .get("typescript")
+                    .is_some_and(PluginEntry::is_enabled)
+            );
+            assert!(
+                cfg.plugins
+                    .get("custom")
+                    .is_some_and(PluginEntry::is_enabled)
             );
         }
     }

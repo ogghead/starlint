@@ -1916,8 +1916,9 @@ dependencies = [
  "serde_json",
  "starlint_config",
  "starlint_core",
+ "starlint_loader",
  "starlint_lsp",
- "starlint_wasm_host",
+ "starlint_plugin_sdk",
  "thiserror 2.0.18",
  "tokio",
  "tracing",
@@ -1959,6 +1960,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "starlint_loader"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "starlint_config",
+ "starlint_core",
+ "starlint_plugin_sdk",
+ "starlint_wasm_host",
+ "tracing",
+]
+
+[[package]]
 name = "starlint_lsp"
 version = "0.1.0"
 dependencies = [
@@ -1967,8 +1980,8 @@ dependencies = [
  "serde_json",
  "starlint_config",
  "starlint_core",
+ "starlint_loader",
  "starlint_plugin_sdk",
- "starlint_wasm_host",
  "tokio",
  "tower-lsp",
  "tracing",

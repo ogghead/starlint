@@ -156,20 +156,6 @@ mod host {
             })
         }
 
-        /// Create a host with default limits and load plugins from `(path, config_json)` pairs.
-        ///
-        /// Convenience constructor that replaces the duplicated `build_plugin_host`
-        /// logic in CLI and LSP.
-        pub fn with_plugins(
-            plugins: &[(&Path, &str)],
-        ) -> std::result::Result<Self, Box<dyn std::error::Error>> {
-            let mut host = Self::new(ResourceLimits::default())?;
-            for &(path, config_json) in plugins {
-                host.load_plugin(path, config_json)?;
-            }
-            Ok(host)
-        }
-
         /// Load a WASM component plugin from disk.
         ///
         /// Compiles the component, pre-instantiates it, and caches metadata

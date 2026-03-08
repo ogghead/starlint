@@ -41,10 +41,6 @@ pub struct Cli {
     #[arg(long, default_value = "0")]
     pub threads: usize,
 
-    /// Skip WASM plugins.
-    #[arg(long)]
-    pub no_plugins: bool,
-
     /// Print timing information.
     #[arg(long)]
     pub timing: bool,

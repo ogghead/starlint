@@ -25,7 +25,6 @@ use tower_lsp::{Client, LanguageServer};
 use starlint_config::resolve::{find_config_file, load_config};
 use starlint_core::diagnostic::OutputFormat;
 use starlint_core::engine::LintSession;
-use starlint_core::rules::rules_for_config;
 
 use crate::convert;
 use crate::document::{CachedFix, DocumentState};
@@ -82,36 +81,14 @@ impl Backend {
                 })
                 .unwrap_or_default();
 
-            let active_builtins: std::collections::HashSet<String> = config
-                .builtin_plugins
-                .iter()
-                .filter(|(_, enabled)| **enabled)
-                .map(|(name, _)| name.clone())
-                .collect();
-            let configured = rules_for_config(&config.rules, &config.overrides, &active_builtins);
-            tracing::info!("LSP: {} rule(s) enabled", configured.rules.len());
+            let loaded = starlint_loader::load_plugins(&config);
+            tracing::info!("LSP: loaded {} plugin(s)", loaded.plugins.len());
 
             let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);
-            let mut session = LintSession::from_rules(configured.rules, OutputFormat::Pretty)
-                .with_severity_overrides(configured.severity_overrides)
+            LintSession::new(loaded.plugins, OutputFormat::Pretty)
+                .with_severity_overrides(loaded.severity_overrides)
                 .with_override_set(override_set)
-                .with_disabled_rules(configured.disabled_rules);
-
-            // Load WASM plugins: builtin plugins + explicit [[plugins]] declarations.
-            if !active_builtins.is_empty() || !config.plugins.is_empty() {
-                match build_plugin_host(&config.plugins, &active_builtins) {
-                    Ok(host) => {
-                        let plugins = host.into_plugins();
-                        tracing::info!("LSP: loaded {} WASM plugin(s)", plugins.len());
-                        session = session.with_plugins(plugins);
-                    }
-                    Err(err) => {
-                        tracing::warn!("LSP: failed to load WASM plugins: {err}");
-                    }
-                }
-            }
-
-            session
+                .with_disabled_rules(loaded.disabled_rules)
         });
 
         match tokio::time::timeout(REBUILD_TIMEOUT, task).await {
@@ -170,21 +147,6 @@ impl Backend {
             .publish_diagnostics(uri.clone(), lsp_diagnostics, Some(version))
             .await;
     }
-}
-
-/// Build a WASM plugin host with builtin and explicit plugins.
-fn build_plugin_host(
-    plugins: &[starlint_config::PluginDeclaration],
-    active_builtins: &std::collections::HashSet<String>,
-) -> std::result::Result<starlint_wasm_host::runtime::WasmPluginHost, Box<dyn std::error::Error>> {
-    let mut host = starlint_wasm_host::runtime::WasmPluginHost::new(
-        starlint_wasm_host::runtime::ResourceLimits::default(),
-    )?;
-    host.load_builtins(active_builtins)?;
-    for p in plugins {
-        host.load_plugin(&p.path, "")?;
-    }
-    Ok(host)
 }
 
 /// Convert a `Url` to a `PathBuf`, falling back to the URL path on error.

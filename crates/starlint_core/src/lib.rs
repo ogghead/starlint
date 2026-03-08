@@ -17,8 +17,7 @@ pub mod lint_rules;
 pub mod overrides;
 pub mod plugin;
 pub mod rules;
-pub mod traversal;
+pub(crate) mod traversal;
 
 pub use engine::{FileDiagnostics, LintSession};
 pub use plugin::{FileContext, Plugin};
-pub use starlint_plugin_sdk;

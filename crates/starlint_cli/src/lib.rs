@@ -17,9 +17,9 @@ use starlint_core::diagnostic::OutputFormat;
 use starlint_core::engine::{FileDiagnostics, LintSession};
 use starlint_core::file_discovery::discover_files;
 use starlint_core::fix::apply_fixes;
-use starlint_core::rules::{all_rule_metas, rules_for_config};
-use starlint_core::starlint_plugin_sdk::diagnostic::Severity;
-use starlint_core::starlint_plugin_sdk::rule::FixKind;
+use starlint_core::rules::all_rule_metas;
+use starlint_plugin_sdk::diagnostic::Severity;
+use starlint_plugin_sdk::rule::FixKind;
 
 /// Result of running the linter, used to determine process exit code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,38 +98,16 @@ pub fn run() -> miette::Result<ExitStatus> {
 
     tracing::debug!("found {} files to lint", files.len());
 
-    // Build lint session with rules from config.
+    // Load all plugins (native + WASM) through unified loader.
     let setup_start = Instant::now();
-    let active_builtins: std::collections::HashSet<String> = config
-        .builtin_plugins
-        .iter()
-        .filter(|(_, enabled)| **enabled)
-        .map(|(name, _)| name.clone())
-        .collect();
-    let configured = rules_for_config(&config.rules, &config.overrides, &active_builtins);
-    tracing::debug!("enabled {} rule(s)", configured.rules.len());
+    let loaded = starlint_loader::load_plugins(&config);
+    tracing::debug!("loaded {} plugin(s)", loaded.plugins.len());
     let override_set = starlint_core::overrides::OverrideSet::compile(&config.overrides);
-    let mut session = LintSession::from_rules(configured.rules, output_format)
-        .with_severity_overrides(configured.severity_overrides)
+    let session = LintSession::new(loaded.plugins, output_format)
+        .with_severity_overrides(loaded.severity_overrides)
         .with_override_set(override_set)
-        .with_disabled_rules(configured.disabled_rules);
-    let rules_elapsed = setup_start.elapsed();
-
-    // Load WASM plugins: builtin plugins + explicit [[plugins]] declarations.
-    let wasm_start = Instant::now();
-    if !args.no_plugins && (!active_builtins.is_empty() || !config.plugins.is_empty()) {
-        match build_plugin_host(&config.plugins, &active_builtins) {
-            Ok(host) => {
-                let plugins = host.into_plugins();
-                tracing::debug!("loaded {} WASM plugin(s)", plugins.len());
-                session = session.with_plugins(plugins);
-            }
-            Err(err) => {
-                eprintln!("warning: failed to initialize WASM plugins: {err}");
-            }
-        }
-    }
-    let wasm_elapsed = wasm_start.elapsed();
+        .with_disabled_rules(loaded.disabled_rules);
+    let setup_elapsed = setup_start.elapsed();
 
     // Lint files.
     let lint_start = Instant::now();
@@ -148,8 +126,7 @@ pub fn run() -> miette::Result<ExitStatus> {
         print_timing_detailed(
             &total_start,
             &discover_elapsed,
-            &rules_elapsed,
-            &wasm_elapsed,
+            &setup_elapsed,
             &lint_elapsed,
             &report_elapsed,
             files.len(),
@@ -282,9 +259,9 @@ fn apply_fixes_to_files(
 ///
 /// Reads `fix.kind` directly from each diagnostic's fix — no metadata lookup needed.
 fn filter_fixable_diags(
-    diagnostics: &[starlint_core::starlint_plugin_sdk::diagnostic::Diagnostic],
+    diagnostics: &[starlint_plugin_sdk::diagnostic::Diagnostic],
     include_dangerous: bool,
-) -> Vec<starlint_core::starlint_plugin_sdk::diagnostic::Diagnostic> {
+) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
     diagnostics
         .iter()
         .filter(|d| {
@@ -345,12 +322,10 @@ fn report_diagnostics(
 
 /// Print detailed timing information to stderr.
 #[allow(clippy::print_stderr)] // Timing is metadata, goes to stderr
-#[allow(clippy::too_many_arguments)]
 fn print_timing_detailed(
     total_start: &Instant,
     discover_elapsed: &std::time::Duration,
-    rules_elapsed: &std::time::Duration,
-    wasm_elapsed: &std::time::Duration,
+    setup_elapsed: &std::time::Duration,
     lint_elapsed: &std::time::Duration,
     report_elapsed: &std::time::Duration,
     file_count: usize,
@@ -364,33 +339,14 @@ fn print_timing_detailed(
         0.0
     };
     eprintln!(
-        "timing: discovery {:.1}ms, rules {:.1}ms, wasm-init {:.1}ms, lint {:.1}ms, report {:.1}ms, total {:.1}ms ({:.0} files/s)",
+        "timing: discovery {:.1}ms, plugins {:.1}ms, lint {:.1}ms, report {:.1}ms, total {:.1}ms ({:.0} files/s)",
         discover_elapsed.as_secs_f64() * 1000.0,
-        rules_elapsed.as_secs_f64() * 1000.0,
-        wasm_elapsed.as_secs_f64() * 1000.0,
+        setup_elapsed.as_secs_f64() * 1000.0,
         lint_elapsed.as_secs_f64() * 1000.0,
         report_elapsed.as_secs_f64() * 1000.0,
         total_secs * 1000.0,
         files_per_sec,
     );
-}
-
-/// Build a WASM plugin host with builtin and explicit plugins.
-///
-/// Loads active builtin plugins (embedded WASM) first, then any explicit
-/// `[[plugins]]` declarations from the config file.
-fn build_plugin_host(
-    plugins: &[starlint_config::PluginDeclaration],
-    active_builtins: &std::collections::HashSet<String>,
-) -> std::result::Result<starlint_wasm_host::runtime::WasmPluginHost, Box<dyn std::error::Error>> {
-    let mut host = starlint_wasm_host::runtime::WasmPluginHost::new(
-        starlint_wasm_host::runtime::ResourceLimits::default(),
-    )?;
-    host.load_builtins(active_builtins)?;
-    for p in plugins {
-        host.load_plugin(&p.path, "")?;
-    }
-    Ok(host)
 }
 
 /// Atomic counter for unique temp file names within a process.
@@ -423,23 +379,22 @@ fn run_init() -> Result<(), error::CliError> {
 [settings]
 threads = 0  # 0 = auto-detect
 
-# Enable bundled WASM plugins to replace native framework rules.
-# When enabled, native rules for that category are excluded automatically.
-# [builtin_plugins]
-# react = true       # react + jsx-a11y + react-perf
-# testing = true     # jest + vitest
-# typescript = true  # typescript
-# storybook = true
-# modules = true     # import + node + promise
-# nextjs = true
-# vue = true
-# jsdoc = true
+# Plugins provide lint rules. All built-in plugins are enabled by default
+# when this section is omitted. List plugins explicitly to control which
+# are active:
+# [plugins]
+# core = true          # General JS/TS rules
+# react = true         # React + JSX A11y + React Perf
+# typescript = true    # TypeScript rules
+# testing = true       # Jest + Vitest
+# modules = true       # Import + Node + Promise
+# nextjs = true        # Next.js rules
+# vue = true           # Vue rules
+# jsdoc = true         # JSDoc rules
+# storybook = true     # Storybook rules
+# custom = { path = "./plugins/my-plugin.wasm" }  # External WASM
 
-# External WASM plugins (loaded from disk).
-# [[plugins]]
-# name = "my-plugin"
-# path = "./plugins/my-plugin.wasm"
-
+# Per-rule severity overrides.
 # Note: Adding any rule here disables all other built-in rules not listed.
 # To keep all defaults, leave the [rules] section empty.
 [rules]
@@ -503,10 +458,8 @@ fn run_lsp() -> miette::Result<ExitStatus> {
 }
 
 /// Human-readable label for a rule category.
-const fn category_label(
-    category: &starlint_core::starlint_plugin_sdk::rule::Category,
-) -> &'static str {
-    use starlint_core::starlint_plugin_sdk::rule::Category;
+const fn category_label(category: &starlint_plugin_sdk::rule::Category) -> &'static str {
+    use starlint_plugin_sdk::rule::Category;
     match category {
         Category::Correctness => "correctness",
         Category::Style => "style",

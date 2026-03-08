@@ -14,8 +14,9 @@ path = "src/main.rs"
 [dependencies]
 starlint_core = { workspace = true }
 starlint_config = { workspace = true }
-starlint_wasm_host = { workspace = true }
+starlint_loader = { workspace = true }
 starlint_lsp = { workspace = true }
+starlint_plugin_sdk = { workspace = true }
 
 tokio = { workspace = true }
 miette = { workspace = true }

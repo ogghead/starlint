@@ -1,9 +1,8 @@
 //! Built-in native lint rules and rule registry.
 //!
-//! All rules are registered in [`all_rules`]. The [`rules_for_config`] function
-//! filters and configures rules based on a rule config map.
-
-pub(crate) mod category_guard;
+//! Rules are organized into named plugin bundles via [`native_plugin_registry`].
+//! The unified plugin loader in `starlint_loader` handles
+//! config-based filtering and severity overrides.
 
 pub mod accessor_pairs;
 pub mod approx_constant;
@@ -347,83 +346,86 @@ pub mod typescript;
 pub mod vitest;
 pub mod vue;
 
-use std::collections::{HashMap, HashSet};
-
 use starlint_plugin_sdk::diagnostic::Severity;
 use starlint_plugin_sdk::rule::RuleMeta;
 
 use crate::lint_rule::LintRule;
 
 // ---------------------------------------------------------------------------
-// Category-level file predicates
+// Native plugin registry
 // ---------------------------------------------------------------------------
 
-/// Test-runner files (jest / vitest): skip unless the source contains test globals.
-#[allow(dead_code)]
-fn is_test_file(source: &str, _path: &std::path::Path) -> bool {
-    source.contains("describe(")
-        || source.contains("test(")
-        || source.contains("it(")
-        || source.contains("expect(")
+/// A named group of native lint rules that functions as a plugin.
+pub struct NativePlugin {
+    /// Plugin name (e.g., "core", "react", "typescript").
+    pub name: &'static str,
+    /// Factory function returning all rules in this bundle.
+    pub factory: fn() -> Vec<Box<dyn LintRule>>,
 }
 
-/// `JSDoc`-annotated files: skip unless the source contains a `JSDoc` comment opener.
-#[allow(dead_code)]
-fn is_jsdoc_file(source: &str, _path: &std::path::Path) -> bool {
-    source.contains("/**")
-}
-
-/// JSX files: skip unless the source contains JSX syntax.
-#[allow(dead_code)]
-fn is_jsx_file(source: &str, _path: &std::path::Path) -> bool {
-    // Fast heuristic: JSX always uses `<` followed by an uppercase letter or
-    // a lowercase tag name. Checking for `<` alone would match `<` in
-    // comparisons, but combined with the file going through the JSX parser
-    // path (tsx/jsx extensions), this is sufficient.
-    source.contains("jsx") || source.contains("JSX") || source.contains("React")
-}
-
-/// Next.js files: skip unless the source references Next.js-specific APIs.
-#[allow(dead_code)]
-fn is_nextjs_file(source: &str, _path: &std::path::Path) -> bool {
-    source.contains("next/")
-        || source.contains("getServerSideProps")
-        || source.contains("getStaticProps")
-        || source.contains("getStaticPaths")
-}
-
-/// Storybook story files: skip unless the path or source matches story patterns.
-#[allow(dead_code)]
-fn is_storybook_file(source: &str, path: &std::path::Path) -> bool {
-    let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-    file_name.contains(".stories.")
-        || file_name.contains(".story.")
-        || source.contains("@storybook")
-}
-
-/// Vue files: skip unless the source uses Vue APIs.
-#[allow(dead_code)]
-fn is_vue_file(source: &str, _path: &std::path::Path) -> bool {
-    source.contains("defineComponent") || source.contains("createApp") || source.contains("vue")
-}
-
-/// Mapping from builtin plugin name to the rule‐name prefixes it replaces.
+/// All built-in native plugin bundles.
 ///
-/// When a builtin plugin is active, rules whose names start with any of these
-/// prefixes are excluded from the active rule set.
-const BUILTIN_PLUGIN_PREFIXES: &[(&str, &[&str])] = &[
-    ("storybook", &["storybook/"]),
-    ("testing", &["jest/", "vitest/"]),
-    ("react", &["react/", "jsx-a11y/", "react-perf/"]),
-    ("nextjs", &["nextjs/"]),
-    ("vue", &["vue/"]),
-    ("import", &["import/"]),
-    ("node", &["node/"]),
-    ("promise", &["promise/"]),
-    ("modules", &["import/", "node/", "promise/"]),
-    ("jsdoc", &["jsdoc/"]),
-    ("typescript", &["typescript/"]),
-];
+/// Each bundle corresponds to a named plugin in the config:
+/// ```toml
+/// [plugins]
+/// core = true
+/// react = true
+/// ```
+#[must_use]
+pub fn native_plugin_registry() -> Vec<NativePlugin> {
+    vec![
+        NativePlugin {
+            name: "core",
+            factory: crate::lint_rules::core_rules,
+        },
+        NativePlugin {
+            name: "react",
+            factory: || {
+                let mut rules = crate::lint_rules::react_rules();
+                rules.extend(crate::lint_rules::jsx_a11y_rules());
+                rules.extend(crate::lint_rules::react_perf_rules());
+                rules
+            },
+        },
+        NativePlugin {
+            name: "typescript",
+            factory: crate::lint_rules::typescript_rules,
+        },
+        NativePlugin {
+            name: "testing",
+            factory: || {
+                let mut rules = crate::lint_rules::jest_rules();
+                rules.extend(crate::lint_rules::vitest_rules());
+                rules
+            },
+        },
+        NativePlugin {
+            name: "modules",
+            factory: || {
+                let mut rules = crate::lint_rules::import_rules();
+                rules.extend(crate::lint_rules::node_rules());
+                rules.extend(crate::lint_rules::promise_rules());
+                rules
+            },
+        },
+        NativePlugin {
+            name: "nextjs",
+            factory: crate::lint_rules::nextjs_rules,
+        },
+        NativePlugin {
+            name: "vue",
+            factory: crate::lint_rules::vue_rules,
+        },
+        NativePlugin {
+            name: "jsdoc",
+            factory: crate::lint_rules::jsdoc_rules,
+        },
+        NativePlugin {
+            name: "storybook",
+            factory: crate::lint_rules::storybook_rules,
+        },
+    ]
+}
 
 /// Return metadata for all built-in rules.
 #[must_use]
@@ -446,166 +448,6 @@ pub fn parse_severity(s: &str) -> Result<Option<Severity>, String> {
         _ => Err(format!(
             "unknown severity `{s}`; expected \"error\", \"warn\", or \"off\""
         )),
-    }
-}
-
-/// Rules and their configured severity overrides.
-pub struct ConfiguredRules {
-    /// Enabled lint rules.
-    pub rules: Vec<Box<dyn LintRule>>,
-    /// Severity overrides from config (rule name → configured severity).
-    pub severity_overrides: HashMap<String, Severity>,
-    /// Rules loaded but disabled by default (only active via file-pattern overrides).
-    pub disabled_rules: HashSet<String>,
-}
-
-/// Build a rule set from config, including rules referenced in overrides.
-///
-/// If `rule_configs` is empty, returns all rules with their default severity.
-/// Otherwise, **only** enables rules that appear in `rule_configs` or
-/// `override_configs` (unless "off" in base and not in overrides).
-///
-/// Rules referenced only in overrides are loaded but added to
-/// [`ConfiguredRules::disabled_rules`] — their diagnostics are suppressed
-/// by default and only activated for files matching an override pattern.
-///
-/// `active_builtins` lists builtin plugin names whose corresponding rules
-/// should be excluded (they will be handled by the WASM plugin instead).
-///
-/// Configured severities are returned in [`ConfiguredRules::severity_overrides`]
-/// so the engine can apply them to diagnostics.
-#[must_use]
-pub fn rules_for_config<S: ::std::hash::BuildHasher, S2: ::std::hash::BuildHasher>(
-    rule_configs: &HashMap<String, starlint_config::RuleConfig, S>,
-    override_configs: &[starlint_config::Override],
-    active_builtins: &HashSet<String, S2>,
-) -> ConfiguredRules {
-    // Collect rule names referenced in any override block.
-    let override_rule_names: HashSet<String> = override_configs
-        .iter()
-        .flat_map(|ov| ov.rules.keys().cloned())
-        .collect();
-
-    // Collect prefixes to exclude based on active builtin plugins.
-    let excluded_prefixes: Vec<&str> = if active_builtins.is_empty() {
-        Vec::new()
-    } else {
-        BUILTIN_PLUGIN_PREFIXES
-            .iter()
-            .filter(|(name, _)| active_builtins.contains(*name))
-            .flat_map(|(_, prefixes)| prefixes.iter().copied())
-            .collect()
-    };
-
-    // Get all available lint rules, excluding those handled by builtin plugins.
-    let available: Vec<Box<dyn LintRule>> = crate::lint_rules::all_lint_rules()
-        .into_iter()
-        .filter(|rule| {
-            let name = rule.meta().name;
-            !excluded_prefixes
-                .iter()
-                .any(|prefix| name.starts_with(prefix))
-        })
-        .collect();
-
-    if rule_configs.is_empty() {
-        return ConfiguredRules {
-            rules: available,
-            severity_overrides: HashMap::new(),
-            disabled_rules: HashSet::new(),
-        };
-    }
-
-    let mut enabled: Vec<Box<dyn LintRule>> = Vec::new();
-    let mut severity_overrides: HashMap<String, Severity> = HashMap::new();
-    let mut disabled_rules: HashSet<String> = HashSet::new();
-
-    // Separate configs into exact matches and glob patterns (e.g. "typescript/*").
-    let mut glob_configs: Vec<(&str, &starlint_config::RuleConfig)> = Vec::new();
-    for (key, config) in rule_configs {
-        if let Some(prefix) = key.strip_suffix("/*") {
-            glob_configs.push((prefix, config));
-        }
-    }
-
-    for mut rule in available {
-        let meta = rule.meta();
-        // Exact match takes priority; fall back to glob pattern.
-        let in_base = rule_configs.get(&meta.name).or_else(|| {
-            meta.name.split_once('/').and_then(|(prefix, _)| {
-                glob_configs
-                    .iter()
-                    .find(|(p, _)| *p == prefix)
-                    .map(|(_, config)| *config)
-            })
-        });
-        let in_overrides = override_rule_names.contains(&meta.name);
-
-        match in_base {
-            Some(config) => match config {
-                starlint_config::RuleConfig::Severity(sev) => match parse_severity(sev) {
-                    Ok(Some(severity)) => {
-                        if severity != meta.default_severity {
-                            severity_overrides.insert(meta.name, severity);
-                        }
-                        enabled.push(rule);
-                    }
-                    Ok(None) => {
-                        // "off" in base config — load only if referenced in overrides
-                        if in_overrides {
-                            disabled_rules.insert(meta.name);
-                            enabled.push(rule);
-                        }
-                    }
-                    Err(err) => {
-                        tracing::warn!("rule `{}`: {err}", meta.name);
-                    }
-                },
-                starlint_config::RuleConfig::Detailed(detailed) => {
-                    match parse_severity(&detailed.severity) {
-                        Ok(Some(severity)) => {
-                            if severity != meta.default_severity {
-                                severity_overrides.insert(meta.name.clone(), severity);
-                            }
-                            let options_value = serde_json::Value::Object(
-                                detailed
-                                    .options
-                                    .iter()
-                                    .map(|(k, v)| (k.clone(), v.clone()))
-                                    .collect(),
-                            );
-                            if let Err(err) = rule.configure(&options_value) {
-                                tracing::warn!("failed to configure rule `{}`: {err}", meta.name);
-                            }
-                            enabled.push(rule);
-                        }
-                        Ok(None) => {
-                            // "off" in base config — load only if referenced in overrides
-                            if in_overrides {
-                                disabled_rules.insert(meta.name);
-                                enabled.push(rule);
-                            }
-                        }
-                        Err(err) => {
-                            tracing::warn!("rule `{}`: {err}", meta.name);
-                        }
-                    }
-                }
-            },
-            None => {
-                // Not in base config — load as disabled if referenced in overrides
-                if in_overrides {
-                    disabled_rules.insert(meta.name);
-                    enabled.push(rule);
-                }
-            }
-        }
-    }
-
-    ConfiguredRules {
-        rules: enabled,
-        severity_overrides,
-        disabled_rules,
     }
 }
 
@@ -659,166 +501,16 @@ mod tests {
     }
 
     #[test]
-    fn test_rules_for_empty_config() {
-        let configs = HashMap::new();
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert!(
-            configured.rules.len() >= 2,
-            "empty config should return all default rules"
-        );
-        assert!(
-            configured.severity_overrides.is_empty(),
-            "empty config should have no severity overrides"
-        );
-    }
-
-    #[test]
-    fn test_rules_for_config_filters() {
-        let configs = HashMap::new();
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert!(
-            configured
-                .rules
-                .iter()
-                .any(|r| r.meta().name == "for-direction"),
-            "rules should contain for-direction"
-        );
-    }
-
-    #[test]
-    fn test_rules_for_config_off() {
-        let mut configs = HashMap::new();
-        configs.insert(
-            "for-direction".to_owned(),
-            starlint_config::RuleConfig::Severity("off".to_owned()),
-        );
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert!(
-            !configured
-                .rules
-                .iter()
-                .any(|r| r.meta().name == "for-direction"),
-            "rule set to 'off' should not be enabled"
-        );
-    }
-
-    #[test]
-    fn test_severity_override_applied() {
-        let mut configs = HashMap::new();
-        configs.insert(
-            "for-direction".to_owned(),
-            starlint_config::RuleConfig::Severity("warn".to_owned()),
-        );
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert!(
-            configured
-                .rules
-                .iter()
-                .any(|r| r.meta().name == "for-direction"),
-            "rules should contain for-direction"
-        );
-        assert!(
-            configured.severity_overrides.contains_key("for-direction"),
-            "severity override should be applied for for-direction"
-        );
-    }
-
-    #[test]
-    fn test_no_override_when_severity_matches_default() {
-        let mut configs = HashMap::new();
-        // for-direction default is Error, so setting "error" should not create an override
-        configs.insert(
-            "for-direction".to_owned(),
-            starlint_config::RuleConfig::Severity("error".to_owned()),
-        );
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert!(
-            configured.severity_overrides.is_empty(),
-            "no override when severity matches default"
-        );
-    }
-
-    #[test]
-    fn test_empty_overrides_no_disabled_rules() {
-        let configs = HashMap::new();
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert!(
-            configured.disabled_rules.is_empty(),
-            "empty overrides should produce no disabled rules"
-        );
-    }
-
-    #[test]
-    fn test_override_only_rule_loaded_as_disabled() {
-        let rules = crate::lint_rules::all_lint_rules();
-        let names: Vec<String> = rules.iter().map(|r| r.meta().name).collect();
-        assert!(
-            names.contains(&"for-direction".to_owned()),
-            "rules should contain for-direction"
-        );
-        assert!(
-            names.contains(&"no-console".to_owned()),
-            "rules should contain no-console"
-        );
-    }
-
-    #[test]
-    fn test_off_rule_loaded_when_in_override() {
-        let rules = crate::lint_rules::all_lint_rules();
-        assert!(
-            rules.iter().any(|r| r.meta().name == "for-direction"),
-            "rules should contain for-direction"
-        );
-    }
-
-    #[test]
-    fn test_off_rule_skipped_when_not_in_override() {
-        // Base: for-direction = "off", no overrides reference it
-        let mut configs = HashMap::new();
-        configs.insert(
-            "for-direction".to_owned(),
-            starlint_config::RuleConfig::Severity("off".to_owned()),
-        );
-        let configured = rules_for_config(&configs, &[], &HashSet::new());
-        assert!(
-            !configured
-                .rules
-                .iter()
-                .any(|r| r.meta().name == "for-direction"),
-            "off rule with no override should be skipped"
-        );
-    }
-
-    #[test]
-    fn test_glob_config_enables_category() {
+    fn test_all_rules_contain_prefixed_rules() {
         let rules = crate::lint_rules::all_lint_rules();
         let names: Vec<String> = rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.iter().any(|n| n.starts_with("node/")),
             "rules should contain node/ prefixed rules"
         );
-    }
-
-    #[test]
-    fn test_exact_match_overrides_glob() {
-        let rules = crate::lint_rules::all_lint_rules();
-        let names: Vec<String> = rules.iter().map(|r| r.meta().name).collect();
         assert!(
             names.contains(&"node/global-require".to_owned()),
             "rules should contain node/global-require"
-        );
-        assert!(
-            names.contains(&"node/no-process-env".to_owned()),
-            "rules should contain node/no-process-env"
-        );
-    }
-
-    #[test]
-    fn test_prefixed_rules_in_all_rules() {
-        let rules = crate::lint_rules::all_lint_rules();
-        assert!(
-            rules.iter().any(|r| r.meta().name == "node/global-require"),
-            "should include prefixed node rules"
         );
     }
 
@@ -832,24 +524,15 @@ mod tests {
     }
 
     #[test]
-    fn test_rules_for_config_excludes_builtin_prefixes() {
-        let configs = HashMap::new();
-        let mut active = HashSet::new();
-        active.insert("react".to_owned());
-        let configured = rules_for_config(&configs, &[], &active);
-        assert!(
-            !configured
-                .rules
-                .iter()
-                .any(|r| r.meta().name.starts_with("react/")),
-            "react/ rules should be excluded when react builtin is active"
-        );
-        assert!(
-            !configured
-                .rules
-                .iter()
-                .any(|r| r.meta().name.starts_with("jsx-a11y/")),
-            "jsx-a11y/ rules should be excluded when react builtin is active"
+    fn test_native_plugin_registry_covers_all_rules() {
+        let registry_count: usize = native_plugin_registry()
+            .into_iter()
+            .map(|np| (np.factory)().len())
+            .sum();
+        let all_count = crate::lint_rules::all_lint_rules().len();
+        assert_eq!(
+            registry_count, all_count,
+            "native plugin registry should cover all rules"
         );
     }
 }
