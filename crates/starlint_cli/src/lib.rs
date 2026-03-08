@@ -276,35 +276,66 @@ fn filter_fixable_diags(
 }
 
 /// Format diagnostics for output to stdout and count errors/warnings.
+///
+/// Formatting is parallelized across files using rayon, then results are
+/// printed sequentially to maintain deterministic output order.
 #[allow(clippy::print_stdout, clippy::print_stderr)]
 fn report_diagnostics(
     results: &[FileDiagnostics],
     output_format: OutputFormat,
 ) -> DiagnosticCounts {
+    use rayon::prelude::*;
+
+    /// Per-file formatted output and severity counts.
+    struct FileReport {
+        /// Formatted diagnostic text for this file.
+        output: String,
+        /// Number of error-severity diagnostics.
+        errors: usize,
+        /// Number of warning-severity diagnostics.
+        warnings: usize,
+    }
+
+    // Format all files in parallel — this is the expensive part.
+    let reports: Vec<FileReport> = results
+        .par_iter()
+        .map(|result| {
+            let output = starlint_core::diagnostic::format_diagnostics(
+                &result.diagnostics,
+                &result.source_text,
+                &result.path,
+                output_format,
+            );
+            let mut errors = 0usize;
+            let mut warnings = 0usize;
+            for diag in &result.diagnostics {
+                match diag.severity {
+                    Severity::Error => {
+                        errors = errors.saturating_add(1);
+                    }
+                    Severity::Warning => {
+                        warnings = warnings.saturating_add(1);
+                    }
+                    Severity::Suggestion => {}
+                }
+            }
+            FileReport {
+                output,
+                errors,
+                warnings,
+            }
+        })
+        .collect();
+
+    // Print sequentially to preserve file order and avoid interleaving.
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
-
-    for result in results {
-        let output = starlint_core::diagnostic::format_diagnostics(
-            &result.diagnostics,
-            &result.source_text,
-            &result.path,
-            output_format,
-        );
-        if !output.is_empty() {
-            print!("{output}");
+    for report in &reports {
+        if !report.output.is_empty() {
+            print!("{}", report.output);
         }
-        for diag in &result.diagnostics {
-            match diag.severity {
-                Severity::Error => {
-                    total_errors = total_errors.saturating_add(1);
-                }
-                Severity::Warning => {
-                    total_warnings = total_warnings.saturating_add(1);
-                }
-                Severity::Suggestion => {}
-            }
-        }
+        total_errors = total_errors.saturating_add(report.errors);
+        total_warnings = total_warnings.saturating_add(report.warnings);
     }
 
     if total_errors > 0 || total_warnings > 0 {
