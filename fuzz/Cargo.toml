@@ -1,0 +1,30 @@
+[package]
+name = "starlint-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+starlint_parser = { path = "../crates/starlint_parser" }
+starlint_scope = { path = "../crates/starlint_scope" }
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "fuzz_parse"
+path = "fuzz_targets/fuzz_parse.rs"
+doc = false
+
+[[bin]]
+name = "fuzz_parse_scope"
+path = "fuzz_targets/fuzz_parse_scope.rs"
+doc = false
+
+[profile.release]
+opt-level = 3
+debug = true

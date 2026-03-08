@@ -13,6 +13,7 @@ starlint_plugin_sdk = { workspace = true }
 
 [dev-dependencies]
 starlint_parser = { workspace = true }
+proptest = { workspace = true }
 
 [lints]
 workspace = true

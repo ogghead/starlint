@@ -23,6 +23,9 @@ pub mod lexer;
 pub mod parser;
 pub mod token;
 
+#[cfg(test)]
+mod proptest_parser;
+
 use error::ParseError;
 use starlint_ast::AstTree;
 

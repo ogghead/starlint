@@ -18,6 +18,10 @@ Rust workspace (edition 2024, rustc 1.85+, stable channel). A fast JS/TS linter 
 | `cargo llvm-cov nextest --workspace` | Coverage (text summary) |
 | `cargo llvm-cov nextest --workspace --html --open` | Coverage in browser |
 | `cargo llvm-cov nextest --workspace --fail-under-lines 90` | Enforce coverage floor (hard minimum) |
+| `cargo test -p starlint_parser proptest` | Run parser property tests |
+| `cargo test -p starlint_scope proptest` | Run scope property tests |
+| `cargo fuzz run fuzz_parse` | Fuzz the parser (requires nightly + cargo-fuzz) |
+| `cargo fuzz run fuzz_parse_scope` | Fuzz parser → scope pipeline |
 
 ### Coverage Policy
 

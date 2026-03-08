@@ -7,6 +7,9 @@ pub mod builder;
 pub mod scope_data;
 pub mod types;
 
+#[cfg(test)]
+mod proptest_scope;
+
 pub use builder::build as build_scope_data;
 pub use scope_data::ScopeData;
 pub use types::{ReferenceFlags, ReferenceInfo, ScopeId, SymbolFlags, SymbolId, UnresolvedRef};
