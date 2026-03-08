@@ -88,6 +88,8 @@ pub enum OutputFormatArg {
     Json,
     /// Compact single-line output.
     Compact,
+    /// Count-only: suppress diagnostic output, print only summary.
+    Count,
 }
 
 #[cfg(test)]

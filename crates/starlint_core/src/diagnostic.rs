@@ -17,6 +17,8 @@ pub enum OutputFormat {
     Json,
     /// Compact single-line format.
     Compact,
+    /// Count-only mode: no diagnostic output, just summary counts.
+    Count,
 }
 
 /// Format a collection of diagnostics for a single file.
@@ -31,6 +33,26 @@ pub fn format_diagnostics(
         OutputFormat::Pretty => format_pretty(diagnostics, source_text, file_path),
         OutputFormat::Json => format_json(diagnostics, file_path),
         OutputFormat::Compact => format_compact(diagnostics, file_path),
+        OutputFormat::Count => String::new(),
+    }
+}
+
+/// Write diagnostics for a single file directly to a writer.
+///
+/// Avoids building an intermediate `String` — formats directly into the writer.
+/// For [`OutputFormat::Count`], this is a no-op.
+pub fn write_diagnostics(
+    writer: &mut impl std::io::Write,
+    diagnostics: &[Diagnostic],
+    source_text: &str,
+    file_path: &Path,
+    format: OutputFormat,
+) -> std::io::Result<()> {
+    match format {
+        OutputFormat::Pretty => write_pretty(writer, diagnostics, source_text, file_path),
+        OutputFormat::Json => write_json(writer, diagnostics, file_path),
+        OutputFormat::Compact => write_compact(writer, diagnostics, file_path),
+        OutputFormat::Count => Ok(()),
     }
 }
 
@@ -70,24 +92,77 @@ fn format_pretty(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path
     output
 }
 
+/// Write diagnostics in human-readable form directly to a writer.
+fn write_pretty(
+    writer: &mut impl std::io::Write,
+    diagnostics: &[Diagnostic],
+    source_text: &str,
+    file_path: &Path,
+) -> std::io::Result<()> {
+    let index = LineIndex::new(source_text);
+
+    for diag in diagnostics {
+        let (line, col) = index.offset_to_line_col(source_text, diag.span.start);
+        let severity_str = match diag.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+            Severity::Suggestion => "suggestion",
+        };
+
+        writeln!(
+            writer,
+            "  {severity_str}[{rule}]: {message}",
+            rule = diag.rule_name,
+            message = diag.message,
+        )?;
+        writeln!(
+            writer,
+            "    --> {path}:{line}:{col}",
+            path = file_path.display(),
+        )?;
+
+        if let Some(help) = &diag.help {
+            writeln!(writer, "    help: {help}")?;
+        }
+
+        writeln!(writer)?;
+    }
+
+    Ok(())
+}
+
 /// Format diagnostics as newline-delimited JSON (NDJSON).
 ///
 /// Each diagnostic is emitted as a standalone JSON object on its own line,
 /// rather than wrapped in a JSON array. This is compatible with tools like
 /// `jq` and line-oriented log processors.
 fn format_json(diagnostics: &[Diagnostic], file_path: &Path) -> String {
-    let mut entries = Vec::new();
-    for diag in diagnostics {
+    let mut output = Vec::new();
+    write_json(&mut output, diagnostics, file_path).ok();
+    String::from_utf8(output).unwrap_or_default()
+}
+
+/// Write diagnostics as newline-delimited JSON directly to a writer.
+fn write_json(
+    writer: &mut impl std::io::Write,
+    diagnostics: &[Diagnostic],
+    file_path: &Path,
+) -> std::io::Result<()> {
+    let file_str = file_path.display().to_string();
+    for (i, diag) in diagnostics.iter().enumerate() {
+        if i > 0 {
+            writeln!(writer)?;
+        }
         let entry = serde_json::json!({
-            "file": file_path.display().to_string(),
+            "file": file_str,
             "rule": diag.rule_name,
             "message": diag.message,
             "severity": diag.severity,
             "span": { "start": diag.span.start, "end": diag.span.end },
             "help": diag.help,
         });
-        match serde_json::to_string(&entry) {
-            Ok(json_str) => entries.push(json_str),
+        match serde_json::to_writer(&mut *writer, &entry) {
+            Ok(()) => {}
             Err(err) => {
                 tracing::warn!(
                     "failed to serialize diagnostic for rule '{}': {err}",
@@ -96,7 +171,7 @@ fn format_json(diagnostics: &[Diagnostic], file_path: &Path) -> String {
             }
         }
     }
-    entries.join("\n")
+    Ok(())
 }
 
 /// Format diagnostics in compact single-line form.
@@ -121,6 +196,32 @@ fn format_compact(diagnostics: &[Diagnostic], file_path: &Path) -> String {
         );
     }
     output
+}
+
+/// Write diagnostics in compact single-line form directly to a writer.
+fn write_compact(
+    writer: &mut impl std::io::Write,
+    diagnostics: &[Diagnostic],
+    file_path: &Path,
+) -> std::io::Result<()> {
+    for diag in diagnostics {
+        let severity_char = match diag.severity {
+            Severity::Error => 'E',
+            Severity::Warning => 'W',
+            Severity::Suggestion => 'S',
+        };
+        writeln!(
+            writer,
+            "{path}:{start}-{end} {sev} [{rule}] {message}",
+            path = file_path.display(),
+            start = diag.span.start,
+            end = diag.span.end,
+            sev = severity_char,
+            rule = diag.rule_name,
+            message = diag.message,
+        )?;
+    }
+    Ok(())
 }
 
 /// Pre-computed index of newline byte offsets for O(log N) line/column lookups.

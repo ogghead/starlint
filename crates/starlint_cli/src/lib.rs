@@ -62,6 +62,7 @@ pub fn run() -> miette::Result<ExitStatus> {
         OutputFormatArg::Pretty => OutputFormat::Pretty,
         OutputFormatArg::Json => OutputFormat::Json,
         OutputFormatArg::Compact => OutputFormat::Compact,
+        OutputFormatArg::Count => OutputFormat::Count,
     };
 
     // Determine fix mode from command or flags.
@@ -276,10 +277,11 @@ fn filter_fixable_diags(
         .collect()
 }
 
-/// Format diagnostics for output to stdout and count errors/warnings.
+/// Count errors/warnings and write diagnostics to stdout.
 ///
-/// Formatting is parallelized across files using rayon, then results are
-/// printed sequentially to maintain deterministic output order.
+/// Counting is parallelized across files. Formatting streams directly to
+/// stdout per-file (no intermediate `String` buffer). For `Count` mode,
+/// formatting is skipped entirely — only the summary line is printed.
 #[allow(clippy::print_stdout, clippy::print_stderr)]
 fn report_diagnostics(
     results: &[FileDiagnostics],
@@ -287,26 +289,10 @@ fn report_diagnostics(
 ) -> DiagnosticCounts {
     use rayon::prelude::*;
 
-    /// Per-file formatted output and severity counts.
-    struct FileReport {
-        /// Formatted diagnostic text for this file.
-        output: String,
-        /// Number of error-severity diagnostics.
-        errors: usize,
-        /// Number of warning-severity diagnostics.
-        warnings: usize,
-    }
-
-    // Format all files in parallel — this is the expensive part.
-    let reports: Vec<FileReport> = results
+    // Phase 1: Count severities in parallel (cheap — no formatting).
+    let (total_errors, total_warnings) = results
         .par_iter()
         .map(|result| {
-            let output = starlint_core::diagnostic::format_diagnostics(
-                &result.diagnostics,
-                &result.source_text,
-                &result.path,
-                output_format,
-            );
             let mut errors = 0usize;
             let mut warnings = 0usize;
             for diag in &result.diagnostics {
@@ -320,30 +306,30 @@ fn report_diagnostics(
                     Severity::Suggestion => {}
                 }
             }
-            FileReport {
-                output,
-                errors,
-                warnings,
-            }
+            (errors, warnings)
         })
-        .collect();
+        .reduce(
+            || (0, 0),
+            |(e1, w1), (e2, w2)| (e1.saturating_add(e2), w1.saturating_add(w2)),
+        );
 
-    // Write sequentially with a buffered stdout to minimize syscalls.
-    let stdout = std::io::stdout();
-    let mut writer = std::io::BufWriter::new(stdout.lock());
-    let mut total_errors = 0usize;
-    let mut total_warnings = 0usize;
-    for report in &reports {
-        if !report.output.is_empty() {
+    // Phase 2: Format and write sequentially (skip entirely for Count mode).
+    if output_format != OutputFormat::Count {
+        let stdout = std::io::stdout();
+        let mut writer = std::io::BufWriter::new(stdout.lock());
+        for result in results {
             #[allow(clippy::let_underscore_must_use)]
-            let _ = writer.write_all(report.output.as_bytes());
+            let _ = starlint_core::diagnostic::write_diagnostics(
+                &mut writer,
+                &result.diagnostics,
+                &result.source_text,
+                &result.path,
+                output_format,
+            );
         }
-        total_errors = total_errors.saturating_add(report.errors);
-        total_warnings = total_warnings.saturating_add(report.warnings);
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = writer.flush();
     }
-    #[allow(clippy::let_underscore_must_use)]
-    let _ = writer.flush();
-    drop(writer);
 
     if total_errors > 0 || total_warnings > 0 {
         eprintln!(
