@@ -804,7 +804,9 @@ pub fn core_rules() -> Vec<Box<dyn LintRule>> {
 pub fn react_rules() -> Vec<Box<dyn LintRule>> {
     vec![
         Box::new(self::react::button_has_type::ButtonHasType),
-        Box::new(self::react::checked_requires_onchange_or_readonly::CheckedRequiresOnchangeOrReadonly),
+        Box::new(
+            self::react::checked_requires_onchange_or_readonly::CheckedRequiresOnchangeOrReadonly,
+        ),
         Box::new(self::react::display_name::DisplayName),
         Box::new(self::react::exhaustive_deps::ExhaustiveDeps),
         Box::new(self::react::forbid_dom_props::ForbidDomProps),
@@ -837,7 +839,9 @@ pub fn react_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(self::react::no_find_dom_node::NoFindDomNode),
         Box::new(self::react::no_is_mounted::NoIsMounted),
         Box::new(self::react::no_multi_comp::NoMultiComp),
-        Box::new(self::react::no_redundant_should_component_update::NoRedundantShouldComponentUpdate),
+        Box::new(
+            self::react::no_redundant_should_component_update::NoRedundantShouldComponentUpdate,
+        ),
         Box::new(self::react::no_render_return_value::NoRenderReturnValue),
         Box::new(self::react::no_set_state::NoSetState),
         Box::new(self::react::no_string_refs::NoStringRefs),
@@ -867,7 +871,9 @@ pub fn jsx_a11y_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(self::jsx_a11y::anchor_ambiguous_text::AnchorAmbiguousText),
         Box::new(self::jsx_a11y::anchor_has_content::AnchorHasContent),
         Box::new(self::jsx_a11y::anchor_is_valid::AnchorIsValid),
-        Box::new(self::jsx_a11y::aria_activedescendant_has_tabindex::AriaActivedescendantHasTabindex),
+        Box::new(
+            self::jsx_a11y::aria_activedescendant_has_tabindex::AriaActivedescendantHasTabindex,
+        ),
         Box::new(self::jsx_a11y::aria_props::AriaProps),
         Box::new(self::jsx_a11y::aria_proptypes::AriaProptypes),
         Box::new(self::jsx_a11y::aria_role::AriaRole),
@@ -1046,9 +1052,7 @@ pub fn jest_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(self::jest::no_standalone_expect::NoStandaloneExpect),
         Box::new(self::jest::no_test_prefixes::NoTestPrefixes),
         Box::new(self::jest::no_test_return_statement::NoTestReturnStatement),
-        Box::new(
-            self::jest::no_unneeded_async_expect_function::NoUnneededAsyncExpectFunction,
-        ),
+        Box::new(self::jest::no_unneeded_async_expect_function::NoUnneededAsyncExpectFunction),
         Box::new(self::jest::no_untyped_mock_factory::NoUntypedMockFactory),
         Box::new(self::jest::padding_around_test_blocks::PaddingAroundTestBlocks),
         Box::new(self::jest::prefer_called_with::PreferCalledWith),
@@ -1109,9 +1113,7 @@ pub fn vitest_rules() -> Vec<Box<dyn LintRule>> {
 #[allow(clippy::too_many_lines)]
 pub fn import_rules() -> Vec<Box<dyn LintRule>> {
     vec![
-        Box::new(
-            self::import::consistent_type_specifier_style::ConsistentTypeSpecifierStyle,
-        ),
+        Box::new(self::import::consistent_type_specifier_style::ConsistentTypeSpecifierStyle),
         Box::new(self::import::default::DefaultExport),
         Box::new(self::import::export::ExportRule),
         Box::new(self::import::exports_last::ExportsLast),
@@ -1219,9 +1221,7 @@ pub fn nextjs_rules() -> Vec<Box<dyn LintRule>> {
 #[allow(clippy::too_many_lines)]
 pub fn vue_rules() -> Vec<Box<dyn LintRule>> {
     vec![
-        Box::new(
-            self::vue::component_definition_name_casing::ComponentDefinitionNameCasing,
-        ),
+        Box::new(self::vue::component_definition_name_casing::ComponentDefinitionNameCasing),
         Box::new(self::vue::custom_event_name_casing::CustomEventNameCasing),
         Box::new(self::vue::html_closing_bracket_newline::HtmlClosingBracketNewline),
         Box::new(self::vue::html_self_closing::HtmlSelfClosing),
@@ -1286,9 +1286,7 @@ pub fn storybook_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(self::storybook::prefer_pascal_case::PreferPascalCase),
         Box::new(self::storybook::story_exports::StoryExports),
         Box::new(self::storybook::use_storybook_expect::UseStorybookExpect),
-        Box::new(
-            self::storybook::use_storybook_testing_library::UseStorybookTestingLibrary,
-        ),
+        Box::new(self::storybook::use_storybook_testing_library::UseStorybookTestingLibrary),
     ]
 }
 

@@ -1,19 +1,51 @@
-#!/usr/bin/env sh
-# bd-shim v2
-# bd-hooks-version: 0.56.1
+#!/usr/bin/env bash
+# starlint pre-commit hook
 #
-# bd (beads) pre-commit hook — thin shim
-#
-# Delegates to 'bd hooks run pre-commit' which contains the actual hook
-# logic. This pattern ensures hook behavior is always in sync with the
-# installed bd version — no manual updates needed.
+# Runs the same checks as CI (format, clippy, machete, tests) to catch
+# failures before they reach the remote. Skip with: git commit --no-verify
+set -euo pipefail
 
-# Check if bd is available
-if ! command -v bd >/dev/null 2>&1; then
-    echo "Warning: bd command not found in PATH, skipping pre-commit hook" >&2
-    echo "  Install bd: brew install beads" >&2
-    echo "  Or add bd to your PATH" >&2
-    exit 0
+echo "pre-commit: running checks..."
+
+# ── Format check ─────────────────────────────────────────────────────────────
+echo "  [1/4] cargo fmt --check"
+if ! cargo fmt --all -- --check; then
+    echo ""
+    echo "ERROR: formatting check failed. Run 'cargo fmt --all' and retry." >&2
+    exit 1
 fi
 
-exec bd hooks run pre-commit "$@"
+# ── Clippy ───────────────────────────────────────────────────────────────────
+echo "  [2/4] cargo clippy"
+if ! cargo clippy --workspace --all-targets -- -D warnings; then
+    echo ""
+    echo "ERROR: clippy found warnings. Fix them and retry." >&2
+    exit 1
+fi
+
+# ── Unused dependencies ─────────────────────────────────────────────────────
+if command -v cargo-machete >/dev/null 2>&1; then
+    echo "  [3/4] cargo machete"
+    if ! cargo machete; then
+        echo ""
+        echo "ERROR: unused dependencies found. Remove them and retry." >&2
+        exit 1
+    fi
+else
+    echo "  [3/4] cargo machete (skipped — not installed)"
+fi
+
+# ── Tests ────────────────────────────────────────────────────────────────────
+echo "  [4/4] cargo test"
+if ! cargo test --workspace; then
+    echo ""
+    echo "ERROR: tests failed. Fix them and retry." >&2
+    exit 1
+fi
+
+echo "pre-commit: all checks passed."
+
+# ── Beads hook (issue tracking) ──────────────────────────────────────────────
+if command -v bd >/dev/null 2>&1; then
+    bd hooks run pre-commit "$@" || true
+fi

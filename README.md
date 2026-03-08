@@ -4,13 +4,13 @@ A fast, Rust-based JavaScript/TypeScript linter with first-class WASM plugin sup
 
 ## Features
 
-- **Fast**: Hand-written recursive descent parser, flat indexed AST, single-pass traversal
-- **700+ rules**: Covers JS, TS, React, Next.js, Vue, Jest, Vitest, JSDoc, Storybook, and more
+- **Fast**: Hand-written recursive descent parser, flat indexed AST, single-pass traversal, streaming output
+- **696 rules**: Covers JS, TS, React, Next.js, Vue, Jest, Vitest, JSDoc, Storybook, and more
 - **WASM plugins**: Write lint rules in Rust (or any language targeting WASM) using the Component Model
-- **Auto-fix**: Safe and dangerous fix categories with `--fix` and `--fix-dangerous`
+- **Auto-fix**: Safe and dangerous fix categories with `--fix` and `--fix-dangerous`, multi-pass convergence
 - **Parallel**: File-level parallelism via rayon
-- **LSP**: Built-in language server for editor integration
-- **Configurable**: `starlint.toml` with rule severity overrides and file pattern overrides
+- **LSP**: Built-in language server for editor integration (VS Code extension included)
+- **Configurable**: `starlint.toml` with rule severity overrides, file pattern overrides, and per-plugin control
 
 ## Benchmarks
 
@@ -103,60 +103,74 @@ files = ["**/*.stories.tsx"]
 
 ```
 crates/
-  starlint_cli/         CLI binary (clap, orchestration)
-  starlint_core/        Linter engine (traversal, rule dispatch, diagnostics)
-  starlint_config/      Config file loading (starlint.toml)
-  starlint_parser/      Hand-written JS/TS/JSX recursive descent parser
-  starlint_ast/         Flat indexed AST (no oxc dependency, serializable)
-  starlint_scope/       Lightweight scope analysis (symbol table, scope tree)
-  starlint_plugin_sdk/  Shared types for plugins (diagnostics, fixes, metadata)
-  starlint_wasm_host/   WASM plugin host (wasmtime component model)
-  starlint_lsp/         LSP server (tower-lsp)
+  starlint_cli/         CLI binary (clap, orchestration, fix application)
+  starlint_core/        Linter engine (traversal, rule dispatch, diagnostics, overrides)
+  starlint_config/      Config file loading and resolution (starlint.toml)
+  starlint_loader/      Unified plugin loader (resolves native + WASM from config)
+  starlint_parser/      Hand-written JS/TS/JSX/TSX recursive descent parser
+  starlint_ast/         Flat indexed AST (NodeId-based, no lifetimes, serializable)
+  starlint_scope/       Lightweight scope analysis (symbol table, scope tree, references)
+  starlint_plugin_sdk/  Shared types for plugins (rules, diagnostics, fixes, metadata)
+  starlint_wasm_host/   WASM plugin host (wasmtime component model, sandboxed)
+  starlint_lsp/         LSP server (tower-lsp, diagnostics, code actions)
 editors/
-  vscode/               VS Code extension
+  vscode/               VS Code extension (language client)
 wit/
-  plugin.wit            WIT interface for WASM plugins
+  plugin.wit            WIT interface definition for WASM plugins
 examples/
-  plugins/              10 example WASM plugins
+  plugins/              Example WASM plugins
 ```
 
 ### Data Flow
 
 ```
-CLI args → config resolution → file discovery
-                                    │
-                        ┌───────────┴───────────┐
-                        │   per-file (parallel)  │
-                        │                        │
-                        │  parse → AstTree       │
-                        │  scope analysis (opt)  │
-                        │         │              │
-                        │    ┌────┴────┐         │
-                        │    │         │         │
-                        │  native   WASM         │
-                        │  rules    plugins      │
-                        │    │         │         │
-                        │    └────┬────┘         │
-                        │    diagnostics         │
-                        └───────────┬────────────┘
-                                    │
-                        format (pretty/json/compact) → exit code
+CLI args → config resolution → plugin loading (starlint_loader)
+                                         │
+                                         ▼
+                              file discovery → file list
+                                         │
+                           ┌─────────────┴─────────────┐
+                           │    per-file (parallel)     │
+                           │                            │
+                           │  parse → AstTree           │
+                           │  scope analysis (if needed)│
+                           │            │               │
+                           │     ┌──────┴──────┐        │
+                           │     │             │        │
+                           │   native        WASM      │
+                           │   plugins       plugins   │
+                           │     │             │        │
+                           │     └──────┬──────┘        │
+                           │       diagnostics          │
+                           └─────────────┬──────────────┘
+                                         │
+                           severity + file-pattern overrides
+                                         │
+                           stream to stdout (pretty/json/compact/count)
+                                         │
+                           optional fix passes → exit code
 ```
 
 ### Key Design Decisions
 
-- **Flat indexed AST**: Nodes reference children by index. Sidesteps WIT's inability to express recursive types while enabling zero-copy traversal and JSON serialization for WASM plugins.
-- **Single-pass traversal**: Native rules receive `AstNodeType` via `enter_node` — rules that don't match are free.
-- **Unified Plugin trait**: Both native rules and WASM plugins implement a single `Plugin` trait, giving the engine one dispatch interface.
+- **Custom parser**: Hand-written recursive descent parser handles JS, TS, JSX, and TSX. No external parser dependency. Auto-detects language from file extension (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`, `.mts`, `.cts`).
+- **Flat indexed AST**: Nodes reference children by `NodeId` index. No arena allocation, no lifetime constraints. Sidesteps WIT's inability to express recursive types while enabling zero-copy traversal and JSON serialization for WASM plugins.
+- **Single-pass traversal**: Native rules receive `AstNodeType` via `enter_node` — rules declare interest in specific node types, so non-matching rules are free.
+- **Unified Plugin trait**: Both native rules and WASM plugins implement a single `Plugin` trait. The engine has one dispatch interface; config doesn't distinguish between native and external plugins.
+- **Unified loader**: `starlint_loader` resolves plugins from config — if a name matches the native registry, it wraps as `LintRulePlugin`; if a `path` is specified, it loads external WASM. One code path for CLI and LSP.
 - **Batched WASM calls**: One `lint-file` call per file per plugin (not per-node) to amortize serialization overhead.
-- **Opt-in scope analysis**: Only built when a plugin requests it via `needs_scope_analysis()`.
-- **WASM resource limits**: Each plugin is sandboxed with fuel (10M instructions) and memory (16 MB) limits per file.
+- **Opt-in scope analysis**: `starlint_scope` builds scope tree, symbol table, and reference tracking only when a plugin requests it via `needs_scope_analysis()`. Used by 12 semantic rules.
+- **WASM sandboxing**: Each plugin runs with fuel (10M instructions) and memory (16 MB) limits per file. Uses wasmtime's Winch baseline compiler.
+- **Streaming output**: Diagnostics are written directly to stdout per-file via `BufWriter` — no intermediate string buffering. `--format count` skips formatting entirely for maximum throughput.
+- **Multi-pass fix convergence**: After applying fixes, files are re-linted and remaining fixable diagnostics are applied again (up to 10 passes), handling overlapping fixes.
 
 ### Rule Categories
 
+696 rules organized into 9 native plugin bundles:
+
 | Category | Rules | Plugin |
 |----------|------:|--------|
-| General (JS/TS) | ~328 | built-in |
+| General (JS/TS) | 318 | `core` |
 | TypeScript | 98 | `typescript` |
 | React | 52 | `react` |
 | JSX A11y | 31 | `react` |
