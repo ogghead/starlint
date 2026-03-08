@@ -159,7 +159,7 @@ run_equivalent() {
     echo "$corpus_name $nfiles" >> "$RESULTS_DIR/file-counts.txt"
 
     run_bench "equivalent-${corpus_name}" \
-        "$STARLINT_BIN --config $CONFIGS_DIR/starlint-equivalent.toml --no-plugins $cpath || true" \
+        "$STARLINT_BIN --config $CONFIGS_DIR/starlint-equivalent.toml $cpath || true" \
         "$OXLINT_BIN --config $CONFIGS_DIR/oxlint-equivalent.json $cpath || true" \
         "$ESLINT_BIN --no-config-lookup -c $CONFIGS_DIR/eslint-equivalent.config.mjs $cpath || true"
 }
@@ -175,7 +175,7 @@ run_default() {
     echo "  Corpus: $corpus_name ($nfiles files)"
 
     run_bench "default-${corpus_name}" \
-        "$STARLINT_BIN --config $CONFIGS_DIR/starlint-default.toml --no-plugins $cpath || true" \
+        "$STARLINT_BIN --config $CONFIGS_DIR/starlint-default.toml $cpath || true" \
         "$OXLINT_BIN $cpath || true" \
         "$ESLINT_BIN --no-config-lookup -c $CONFIGS_DIR/eslint-default.config.mjs $cpath || true"
 }
