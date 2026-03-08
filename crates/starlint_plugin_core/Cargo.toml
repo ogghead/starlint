@@ -1,0 +1,21 @@
+[package]
+name = "starlint-plugin-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+description = "Core JS/TS lint rules for starlint"
+
+[dependencies]
+starlint_rule_framework = { workspace = true }
+starlint_plugin_sdk = { workspace = true }
+starlint_ast = { workspace = true }
+starlint_scope = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+starlint_rule_framework = { workspace = true, features = ["test-utils"] }
+
+[lints]
+workspace = true

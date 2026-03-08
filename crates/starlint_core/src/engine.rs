@@ -264,8 +264,7 @@ mod tests {
         // Use a minimal valid statement that shouldn't trigger any rules.
         std::fs::write(&file_b, "'use strict';").ok();
 
-        let lint_rules = crate::rules::all_lint_rules();
-        let plugin: Box<dyn Plugin> = Box::new(LintRulePlugin::new(lint_rules));
+        let plugin: Box<dyn Plugin> = starlint_plugin_core::create_plugin();
         let session = LintSession::new(vec![plugin], OutputFormat::Pretty);
         let results = session.lint_files(&[file_a.clone(), file_b.clone()]);
 

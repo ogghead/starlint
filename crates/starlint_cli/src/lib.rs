@@ -18,7 +18,7 @@ use starlint_core::diagnostic::OutputFormat;
 use starlint_core::engine::{FileDiagnostics, LintSession};
 use starlint_core::file_discovery::discover_files;
 use starlint_core::fix::apply_fixes;
-use starlint_core::rules::all_rule_metas;
+use starlint_loader::all_rule_metas;
 use starlint_plugin_sdk::diagnostic::Severity;
 use starlint_plugin_sdk::rule::FixKind;
 

@@ -49,6 +49,18 @@ starlint_scope = { path = "crates/starlint_scope" }
 starlint_loader = { path = "crates/starlint_loader" }
 starlint_wasm_host = { path = "crates/starlint_wasm_host" }
 starlint_lsp = { path = "crates/starlint_lsp" }
+starlint_rule_framework = { path = "crates/starlint_rule_framework" }
+
+# Plugin crates
+starlint-plugin-core = { path = "crates/starlint_plugin_core" }
+starlint-plugin-react = { path = "crates/starlint_plugin_react" }
+starlint-plugin-typescript = { path = "crates/starlint_plugin_typescript" }
+starlint-plugin-testing = { path = "crates/starlint_plugin_testing" }
+starlint-plugin-modules = { path = "crates/starlint_plugin_modules" }
+starlint-plugin-nextjs = { path = "crates/starlint_plugin_nextjs" }
+starlint-plugin-vue = { path = "crates/starlint_plugin_vue" }
+starlint-plugin-jsdoc = { path = "crates/starlint_plugin_jsdoc" }
+starlint-plugin-storybook = { path = "crates/starlint_plugin_storybook" }
 
 # Testing
 pretty_assertions = "1"

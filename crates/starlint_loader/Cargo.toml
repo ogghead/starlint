@@ -8,16 +8,36 @@ publish.workspace = true
 description = "Plugin loader for starlint — resolves native and WASM plugins from config"
 
 [features]
-default = ["wasm"]
+default = ["wasm", "plugin-core", "plugin-react", "plugin-typescript", "plugin-testing", "plugin-modules", "plugin-nextjs", "plugin-vue", "plugin-jsdoc", "plugin-storybook"]
 wasm = ["dep:starlint_wasm_host"]
+plugin-core = ["dep:starlint-plugin-core"]
+plugin-react = ["dep:starlint-plugin-react"]
+plugin-typescript = ["dep:starlint-plugin-typescript"]
+plugin-testing = ["dep:starlint-plugin-testing"]
+plugin-modules = ["dep:starlint-plugin-modules"]
+plugin-nextjs = ["dep:starlint-plugin-nextjs"]
+plugin-vue = ["dep:starlint-plugin-vue"]
+plugin-jsdoc = ["dep:starlint-plugin-jsdoc"]
+plugin-storybook = ["dep:starlint-plugin-storybook"]
 
 [dependencies]
-starlint_core = { workspace = true }
 starlint_config = { workspace = true }
 starlint_plugin_sdk = { workspace = true }
+starlint_rule_framework = { workspace = true }
 starlint_wasm_host = { workspace = true, optional = true }
 tracing = { workspace = true }
 serde_json = { workspace = true }
+
+# Plugin crates (all optional, feature-gated)
+starlint-plugin-core = { workspace = true, optional = true }
+starlint-plugin-react = { workspace = true, optional = true }
+starlint-plugin-typescript = { workspace = true, optional = true }
+starlint-plugin-testing = { workspace = true, optional = true }
+starlint-plugin-modules = { workspace = true, optional = true }
+starlint-plugin-nextjs = { workspace = true, optional = true }
+starlint-plugin-vue = { workspace = true, optional = true }
+starlint-plugin-jsdoc = { workspace = true, optional = true }
+starlint-plugin-storybook = { workspace = true, optional = true }
 
 [lints]
 workspace = true

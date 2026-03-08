@@ -7,11 +7,8 @@
 use std::collections::{HashMap, HashSet};
 
 use starlint_config::{Config, RuleConfig};
-use starlint_core::lint_rule::LintRule;
-use starlint_core::lint_rule_plugin::LintRulePlugin;
-use starlint_core::plugin::Plugin;
-use starlint_core::rules::{NativePlugin, native_plugin_registry, parse_severity};
 use starlint_plugin_sdk::diagnostic::Severity;
+use starlint_rule_framework::{LintRule, LintRulePlugin, Plugin};
 
 #[cfg(feature = "wasm")]
 use starlint_wasm_host::runtime::{ResourceLimits, WasmPluginHost};
@@ -26,8 +23,98 @@ pub struct LoadedPlugins {
     pub disabled_rules: HashSet<String>,
 }
 
-/// Factory function type for native plugin rule bundles.
-type RuleFactory = fn() -> Vec<Box<dyn LintRule>>;
+/// A registered native plugin: name + factory function.
+struct NativePlugin {
+    /// Plugin name (e.g., "core", "react", "typescript").
+    name: &'static str,
+    /// Factory function returning all rules in this bundle.
+    factory: fn() -> Vec<Box<dyn LintRule>>,
+}
+
+/// All built-in native plugin bundles.
+///
+/// Each bundle corresponds to a named plugin in the config:
+/// ```toml
+/// [plugins]
+/// core = true
+/// react = true
+/// ```
+fn native_plugin_registry() -> Vec<NativePlugin> {
+    vec![
+        #[cfg(feature = "plugin-core")]
+        NativePlugin {
+            name: "core",
+            factory: starlint_plugin_core::all_rules,
+        },
+        #[cfg(feature = "plugin-react")]
+        NativePlugin {
+            name: "react",
+            factory: starlint_plugin_react::all_rules,
+        },
+        #[cfg(feature = "plugin-typescript")]
+        NativePlugin {
+            name: "typescript",
+            factory: starlint_plugin_typescript::all_rules,
+        },
+        #[cfg(feature = "plugin-testing")]
+        NativePlugin {
+            name: "testing",
+            factory: starlint_plugin_testing::all_rules,
+        },
+        #[cfg(feature = "plugin-modules")]
+        NativePlugin {
+            name: "modules",
+            factory: starlint_plugin_modules::all_rules,
+        },
+        #[cfg(feature = "plugin-nextjs")]
+        NativePlugin {
+            name: "nextjs",
+            factory: starlint_plugin_nextjs::all_rules,
+        },
+        #[cfg(feature = "plugin-vue")]
+        NativePlugin {
+            name: "vue",
+            factory: starlint_plugin_vue::all_rules,
+        },
+        #[cfg(feature = "plugin-jsdoc")]
+        NativePlugin {
+            name: "jsdoc",
+            factory: starlint_plugin_jsdoc::all_rules,
+        },
+        #[cfg(feature = "plugin-storybook")]
+        NativePlugin {
+            name: "storybook",
+            factory: starlint_plugin_storybook::all_rules,
+        },
+    ]
+}
+
+/// Return all built-in lint rules from all native plugin crates.
+#[must_use]
+pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
+    native_plugin_registry()
+        .into_iter()
+        .flat_map(|np| (np.factory)())
+        .collect()
+}
+
+/// Return metadata for all built-in rules.
+#[must_use]
+pub fn all_rule_metas() -> Vec<starlint_plugin_sdk::rule::RuleMeta> {
+    all_lint_rules().iter().map(|r| r.meta()).collect()
+}
+
+/// Parse a severity string from config.
+fn parse_severity(s: &str) -> Result<Option<Severity>, String> {
+    match s {
+        "error" => Ok(Some(Severity::Error)),
+        "warn" | "warning" => Ok(Some(Severity::Warning)),
+        "off" => Ok(None),
+        _ => Err(format!(
+            "unknown severity `{s}`; expected \"error\", \"warn\", or \"off\""
+        )),
+    }
+}
 
 /// Load all plugins from config.
 ///
@@ -38,13 +125,13 @@ type RuleFactory = fn() -> Vec<Box<dyn LintRule>>;
 /// Resolution order for each plugin name:
 /// 1. If `path` specified → external WASM from disk
 /// 2. If name matches native registry → native `LintRulePlugin`
-/// 3. If name matches embedded WASM → built-in WASM
-/// 4. Otherwise → warning logged, plugin skipped
+/// 3. Otherwise → warning logged, plugin skipped
 #[allow(clippy::module_name_repetitions)]
 pub fn load_plugins(config: &Config) -> LoadedPlugins {
+    type RuleFactory = fn() -> Vec<Box<dyn LintRule>>;
     let registry: HashMap<&str, RuleFactory> = native_plugin_registry()
         .into_iter()
-        .map(|NativePlugin { name, factory }| (name, factory))
+        .map(|np| (np.name, np.factory))
         .collect();
 
     let mut all_native_rules: Vec<Box<dyn LintRule>> = Vec::new();
@@ -86,33 +173,10 @@ pub fn load_plugins(config: &Config) -> LoadedPlugins {
                 continue;
             }
 
-            // Check native registry first.
+            // Check native registry.
             if let Some(factory) = registry.get(name.as_str()) {
                 all_native_rules.extend(factory());
                 continue;
-            }
-
-            // Check embedded WASM builtins.
-            #[cfg(feature = "wasm")]
-            if let Some(wasm_name) = starlint_wasm_host::builtins::config_to_wasm_name(name) {
-                if starlint_wasm_host::builtins::get_builtin_bytes(wasm_name).is_some() {
-                    let host = match wasm_host.as_mut() {
-                        Some(h) => h,
-                        None => match WasmPluginHost::new(ResourceLimits::default()) {
-                            Ok(h) => wasm_host.insert(h),
-                            Err(err) => {
-                                tracing::warn!("failed to initialize WASM runtime: {err}");
-                                continue;
-                            }
-                        },
-                    };
-                    let mut active = HashSet::new();
-                    active.insert(name.clone());
-                    if let Err(err) = host.load_builtins(&active) {
-                        tracing::warn!("failed to load built-in WASM plugin `{name}`: {err}");
-                    }
-                    continue;
-                }
             }
 
             tracing::warn!("unknown plugin `{name}` — skipping");
@@ -273,6 +337,15 @@ mod tests {
 
     use starlint_config::{DetailedRuleConfig, Override, PluginEntry};
 
+    /// Helper: get all rules from a specific native plugin.
+    fn plugin_rules(name: &str) -> Vec<Box<dyn LintRule>> {
+        native_plugin_registry()
+            .into_iter()
+            .find(|np| np.name == name)
+            .map(|np| (np.factory)())
+            .unwrap_or_default()
+    }
+
     #[test]
     fn test_load_plugins_default_config() {
         let config = Config::default();
@@ -307,10 +380,7 @@ mod tests {
             .into_iter()
             .map(|np| (np.factory)().len())
             .sum();
-        let core_count = native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map_or(0, |np| (np.factory)().len());
+        let core_count = plugin_rules("core").len();
         assert!(
             core_count < all_count,
             "core rules should be a subset of all rules"
@@ -345,11 +415,7 @@ mod tests {
 
     #[test]
     fn test_apply_rule_config_empty_config() {
-        let rules = starlint_core::rules::native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map(|np| (np.factory)())
-            .unwrap_or_default();
+        let rules = plugin_rules("core");
         let initial_count = rules.len();
         let applied = apply_rule_config(rules, &HashMap::new(), &[]);
         assert_eq!(
@@ -369,11 +435,7 @@ mod tests {
 
     #[test]
     fn test_apply_rule_config_severity_override() {
-        let rules = starlint_core::rules::native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map(|np| (np.factory)())
-            .unwrap_or_default();
+        let rules = plugin_rules("core");
         // Find a rule that defaults to "warn" and set it to "error".
         let mut rule_configs = HashMap::new();
         rule_configs.insert(
@@ -401,11 +463,7 @@ mod tests {
 
     #[test]
     fn test_apply_rule_config_off_disables() {
-        let rules = starlint_core::rules::native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map(|np| (np.factory)())
-            .unwrap_or_default();
+        let rules = plugin_rules("core");
         let mut rule_configs = HashMap::new();
         rule_configs.insert(
             "no-debugger".to_owned(),
@@ -420,11 +478,7 @@ mod tests {
 
     #[test]
     fn test_apply_rule_config_off_with_override_keeps_disabled() {
-        let rules = starlint_core::rules::native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map(|np| (np.factory)())
-            .unwrap_or_default();
+        let rules = plugin_rules("core");
         let mut rule_configs = HashMap::new();
         rule_configs.insert(
             "no-debugger".to_owned(),
@@ -455,11 +509,7 @@ mod tests {
 
     #[test]
     fn test_apply_rule_config_glob_pattern() {
-        let rules = starlint_core::rules::native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "modules")
-            .map(|np| (np.factory)())
-            .unwrap_or_default();
+        let rules = plugin_rules("modules");
         let mut rule_configs = HashMap::new();
         rule_configs.insert("node/*".to_owned(), RuleConfig::Severity("warn".to_owned()));
         let applied = apply_rule_config(rules, &rule_configs, &[]);
@@ -478,11 +528,7 @@ mod tests {
 
     #[test]
     fn test_apply_rule_config_detailed_with_options() {
-        let rules = starlint_core::rules::native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map(|np| (np.factory)())
-            .unwrap_or_default();
+        let rules = plugin_rules("core");
         let mut rule_configs = HashMap::new();
         rule_configs.insert(
             "no-console".to_owned(),
@@ -501,11 +547,7 @@ mod tests {
 
     #[test]
     fn test_apply_rule_config_invalid_severity() {
-        let rules = starlint_core::rules::native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map(|np| (np.factory)())
-            .unwrap_or_default();
+        let rules = plugin_rules("core");
         let mut rule_configs = HashMap::new();
         rule_configs.insert(
             "no-debugger".to_owned(),
@@ -520,11 +562,7 @@ mod tests {
 
     #[test]
     fn test_apply_rule_config_not_in_base_not_in_override() {
-        let rules = starlint_core::rules::native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map(|np| (np.factory)())
-            .unwrap_or_default();
+        let rules = plugin_rules("core");
         // Config only mentions a rule that doesn't exist in the rule set.
         let mut rule_configs = HashMap::new();
         rule_configs.insert(
@@ -568,10 +606,7 @@ mod tests {
         assert!(!loaded.plugins.is_empty(), "multiple plugins should load");
         // Should have rules from both plugins.
         let total_rules: usize = loaded.plugins.iter().map(|p| p.rules().len()).sum();
-        let core_count = native_plugin_registry()
-            .into_iter()
-            .find(|np| np.name == "core")
-            .map_or(0, |np| (np.factory)().len());
+        let core_count = plugin_rules("core").len();
         assert!(
             total_rules > core_count,
             "multiple plugins should have more rules than core alone"

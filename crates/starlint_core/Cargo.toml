@@ -8,11 +8,11 @@ publish.workspace = true
 description = "Core linting engine for starlint"
 
 [dependencies]
-starlint_ast = { workspace = true }
 starlint_parser = { workspace = true }
 starlint_plugin_sdk = { workspace = true }
 starlint_scope = { workspace = true }
 starlint_config = { workspace = true }
+starlint_rule_framework = { workspace = true, features = ["test-utils"] }
 
 miette = { workspace = true }
 thiserror = { workspace = true }
@@ -27,6 +27,17 @@ rayon = { workspace = true }
 pretty_assertions = { workspace = true }
 insta = { workspace = true }
 toml = { workspace = true }
+
+# Plugin crates for integration tests (fix idempotency etc.)
+starlint-plugin-core = { workspace = true }
+starlint-plugin-react = { workspace = true }
+starlint-plugin-typescript = { workspace = true }
+starlint-plugin-testing = { workspace = true }
+starlint-plugin-modules = { workspace = true }
+starlint-plugin-nextjs = { workspace = true }
+starlint-plugin-vue = { workspace = true }
+starlint-plugin-jsdoc = { workspace = true }
+starlint-plugin-storybook = { workspace = true }
 
 [lints]
 workspace = true

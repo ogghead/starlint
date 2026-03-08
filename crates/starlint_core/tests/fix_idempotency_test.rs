@@ -12,7 +12,20 @@ use starlint_core::fix::apply_fixes;
 use starlint_core::lint_rule::LintRule;
 use starlint_core::lint_rule_plugin::LintRulePlugin;
 use starlint_core::plugin::Plugin;
-use starlint_core::rules;
+/// Collect all rules from all plugin crates.
+fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
+    let mut rules = Vec::new();
+    rules.extend(starlint_plugin_core::all_rules());
+    rules.extend(starlint_plugin_react::all_rules());
+    rules.extend(starlint_plugin_typescript::all_rules());
+    rules.extend(starlint_plugin_testing::all_rules());
+    rules.extend(starlint_plugin_modules::all_rules());
+    rules.extend(starlint_plugin_nextjs::all_rules());
+    rules.extend(starlint_plugin_vue::all_rules());
+    rules.extend(starlint_plugin_jsdoc::all_rules());
+    rules.extend(starlint_plugin_storybook::all_rules());
+    rules
+}
 
 /// Maximum fix passes before giving up (matches CLI constant).
 const MAX_FIX_PASSES: usize = 10;
@@ -105,7 +118,9 @@ fn assert_fix_idempotent(rules: Vec<Box<dyn LintRule>>, source: &str, label: &st
 #[test]
 fn fix_idempotent_no_debugger() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_debugger::NoDebugger)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_debugger::NoDebugger,
+        )],
         "debugger;\nconst x = 1;\ndebugger;",
         "no_debugger",
     );
@@ -114,7 +129,9 @@ fn fix_idempotent_no_debugger() {
 #[test]
 fn fix_idempotent_empty_brace_spaces() {
     assert_fix_idempotent(
-        vec![Box::new(rules::empty_brace_spaces::EmptyBraceSpaces)],
+        vec![Box::new(
+            starlint_plugin_core::rules::empty_brace_spaces::EmptyBraceSpaces,
+        )],
         "const a = { };\nconst b = {   };",
         "empty_brace_spaces",
     );
@@ -123,7 +140,9 @@ fn fix_idempotent_empty_brace_spaces() {
 #[test]
 fn fix_idempotent_no_console_spaces() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_console_spaces::NoConsoleSpaces)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_console_spaces::NoConsoleSpaces,
+        )],
         "console.log(' hello');\nconsole.warn('world ');",
         "no_console_spaces",
     );
@@ -132,7 +151,9 @@ fn fix_idempotent_no_console_spaces() {
 #[test]
 fn fix_idempotent_no_extra_semi() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_extra_semi::NoExtraSemi)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_extra_semi::NoExtraSemi,
+        )],
         "const x = 1;;\nconst y = 2;;",
         "no_extra_semi",
     );
@@ -141,7 +162,9 @@ fn fix_idempotent_no_extra_semi() {
 #[test]
 fn fix_idempotent_no_zero_fractions() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_zero_fractions::NoZeroFractions)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_zero_fractions::NoZeroFractions,
+        )],
         "const x = 1.0;\nconst y = 2.0;",
         "no_zero_fractions",
     );
@@ -150,7 +173,9 @@ fn fix_idempotent_no_zero_fractions() {
 #[test]
 fn fix_idempotent_number_literal_case() {
     assert_fix_idempotent(
-        vec![Box::new(rules::number_literal_case::NumberLiteralCase)],
+        vec![Box::new(
+            starlint_plugin_core::rules::number_literal_case::NumberLiteralCase,
+        )],
         "const x = 0XFF;\nconst y = 0B1010;",
         "number_literal_case",
     );
@@ -159,7 +184,9 @@ fn fix_idempotent_number_literal_case() {
 #[test]
 fn fix_idempotent_no_useless_rename() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_useless_rename::NoUselessRename)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_useless_rename::NoUselessRename,
+        )],
         "import { foo as foo } from 'bar';",
         "no_useless_rename",
     );
@@ -168,7 +195,9 @@ fn fix_idempotent_no_useless_rename() {
 #[test]
 fn fix_idempotent_no_useless_catch() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_useless_catch::NoUselessCatch)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_useless_catch::NoUselessCatch,
+        )],
         "try { doSomething(); } catch (e) { throw e; }",
         "no_useless_catch",
     );
@@ -178,7 +207,7 @@ fn fix_idempotent_no_useless_catch() {
 fn fix_idempotent_prefer_optional_catch_binding() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_optional_catch_binding::PreferOptionalCatchBinding,
+            starlint_plugin_core::rules::prefer_optional_catch_binding::PreferOptionalCatchBinding,
         )],
         "try { doSomething(); } catch (unused) { console.log('failed'); }",
         "prefer_optional_catch_binding",
@@ -189,7 +218,7 @@ fn fix_idempotent_prefer_optional_catch_binding() {
 fn fix_idempotent_prefer_string_trim_start_end() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_string_trim_start_end::PreferStringTrimStartEnd,
+            starlint_plugin_core::rules::prefer_string_trim_start_end::PreferStringTrimStartEnd,
         )],
         "const a = s.trimLeft();\nconst b = s.trimRight();",
         "prefer_string_trim_start_end",
@@ -199,7 +228,7 @@ fn fix_idempotent_prefer_string_trim_start_end() {
 #[test]
 fn fix_idempotent_no_empty() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_empty::NoEmpty)],
+        vec![Box::new(starlint_plugin_core::rules::no_empty::NoEmpty)],
         "try { doSomething(); } catch (e) {}",
         "no_empty",
     );
@@ -208,7 +237,7 @@ fn fix_idempotent_no_empty() {
 #[test]
 fn fix_idempotent_no_console() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_console::NoConsole)],
+        vec![Box::new(starlint_plugin_core::rules::no_console::NoConsole)],
         "console.log('debug');\nconsole.warn('warning');",
         "no_console",
     );
@@ -218,7 +247,7 @@ fn fix_idempotent_no_console() {
 fn fix_idempotent_prefer_number_properties() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_number_properties::PreferNumberProperties,
+            starlint_plugin_core::rules::prefer_number_properties::PreferNumberProperties,
         )],
         "const a = isNaN(x);\nconst b = isFinite(y);",
         "prefer_number_properties",
@@ -228,7 +257,9 @@ fn fix_idempotent_prefer_number_properties() {
 #[test]
 fn fix_idempotent_prefer_includes() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_includes::PreferIncludes)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_includes::PreferIncludes,
+        )],
         "const found = arr.indexOf(x) !== -1;",
         "prefer_includes",
     );
@@ -237,7 +268,9 @@ fn fix_idempotent_prefer_includes() {
 #[test]
 fn fix_idempotent_throw_new_error() {
     assert_fix_idempotent(
-        vec![Box::new(rules::throw_new_error::ThrowNewError)],
+        vec![Box::new(
+            starlint_plugin_core::rules::throw_new_error::ThrowNewError,
+        )],
         "throw Error('oops');",
         "throw_new_error",
     );
@@ -246,7 +279,9 @@ fn fix_idempotent_throw_new_error() {
 #[test]
 fn fix_idempotent_new_for_builtins() {
     assert_fix_idempotent(
-        vec![Box::new(rules::new_for_builtins::NewForBuiltins)],
+        vec![Box::new(
+            starlint_plugin_core::rules::new_for_builtins::NewForBuiltins,
+        )],
         "const m = Map();\nconst s = Set();",
         "new_for_builtins",
     );
@@ -259,7 +294,7 @@ fn fix_idempotent_new_for_builtins() {
 #[test]
 fn fix_idempotent_eqeqeq() {
     assert_fix_idempotent(
-        vec![Box::new(rules::eqeqeq::Eqeqeq)],
+        vec![Box::new(starlint_plugin_core::rules::eqeqeq::Eqeqeq)],
         "if (a == b && c != d) {}",
         "eqeqeq",
     );
@@ -268,7 +303,7 @@ fn fix_idempotent_eqeqeq() {
 #[test]
 fn fix_idempotent_no_var() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_var::NoVar)],
+        vec![Box::new(starlint_plugin_core::rules::no_var::NoVar)],
         "var x = 1;\nvar y = 2;",
         "no_var",
     );
@@ -277,7 +312,9 @@ fn fix_idempotent_no_var() {
 #[test]
 fn fix_idempotent_no_typeof_undefined() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_typeof_undefined::NoTypeofUndefined)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_typeof_undefined::NoTypeofUndefined,
+        )],
         "if (typeof x === 'undefined') {}",
         "no_typeof_undefined",
     );
@@ -286,7 +323,9 @@ fn fix_idempotent_no_typeof_undefined() {
 #[test]
 fn fix_idempotent_no_unneeded_ternary() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_unneeded_ternary::NoUnneededTernary)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_unneeded_ternary::NoUnneededTernary,
+        )],
         "const a = x ? true : false;",
         "no_unneeded_ternary",
     );
@@ -295,7 +334,9 @@ fn fix_idempotent_no_unneeded_ternary() {
 #[test]
 fn fix_idempotent_no_lonely_if() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_lonely_if::NoLonelyIf)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_lonely_if::NoLonelyIf,
+        )],
         "if (a) { foo(); } else { if (b) { bar(); } }",
         "no_lonely_if",
     );
@@ -308,7 +349,9 @@ fn fix_idempotent_no_lonely_if() {
 #[test]
 fn fix_idempotent_prefer_const() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_const::PreferConst)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_const::PreferConst,
+        )],
         "let x = 1;\nlet y = 2;",
         "prefer_const",
     );
@@ -318,7 +361,7 @@ fn fix_idempotent_prefer_const() {
 fn fix_idempotent_text_encoding_identifier_case() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::text_encoding_identifier_case::TextEncodingIdentifierCase,
+            starlint_plugin_core::rules::text_encoding_identifier_case::TextEncodingIdentifierCase,
         )],
         "const enc = 'UTF-8';",
         "text_encoding_identifier_case",
@@ -328,7 +371,9 @@ fn fix_idempotent_text_encoding_identifier_case() {
 #[test]
 fn fix_idempotent_unicode_bom() {
     assert_fix_idempotent(
-        vec![Box::new(rules::unicode_bom::UnicodeBom)],
+        vec![Box::new(
+            starlint_plugin_core::rules::unicode_bom::UnicodeBom,
+        )],
         "\u{FEFF}const x = 1;",
         "unicode_bom",
     );
@@ -337,7 +382,9 @@ fn fix_idempotent_unicode_bom() {
 #[test]
 fn fix_idempotent_prefer_code_point() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_code_point::PreferCodePoint)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_code_point::PreferCodePoint,
+        )],
         "const x = str.charCodeAt(0);\nconst y = String.fromCharCode(65);",
         "prefer_code_point",
     );
@@ -346,7 +393,9 @@ fn fix_idempotent_prefer_code_point() {
 #[test]
 fn fix_idempotent_prefer_string_slice() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_string_slice::PreferStringSlice)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_string_slice::PreferStringSlice,
+        )],
         "const a = s.substr(1, 3);\nconst b = s.substring(1, 3);",
         "prefer_string_slice",
     );
@@ -355,7 +404,9 @@ fn fix_idempotent_prefer_string_slice() {
 #[test]
 fn fix_idempotent_no_useless_return() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_useless_return::NoUselessReturn)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_useless_return::NoUselessReturn,
+        )],
         "function foo() { doSomething(); return; }",
         "no_useless_return",
     );
@@ -364,7 +415,9 @@ fn fix_idempotent_no_useless_return() {
 #[test]
 fn fix_idempotent_no_unused_labels() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_unused_labels::NoUnusedLabels)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_unused_labels::NoUnusedLabels,
+        )],
         "A: var foo = 0;",
         "no_unused_labels",
     );
@@ -373,7 +426,9 @@ fn fix_idempotent_no_unused_labels() {
 #[test]
 fn fix_idempotent_no_extra_label() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_extra_label::NoExtraLabel)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_extra_label::NoExtraLabel,
+        )],
         "loop1: while (true) { break; }",
         "no_extra_label",
     );
@@ -387,7 +442,7 @@ fn fix_idempotent_no_extra_label() {
 fn fix_idempotent_no_irregular_whitespace() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::no_irregular_whitespace::NoIrregularWhitespace,
+            starlint_plugin_core::rules::no_irregular_whitespace::NoIrregularWhitespace,
         )],
         "var\u{00A0}x = 1;",
         "no_irregular_whitespace",
@@ -397,7 +452,9 @@ fn fix_idempotent_no_irregular_whitespace() {
 #[test]
 fn fix_idempotent_missing_throw() {
     assert_fix_idempotent(
-        vec![Box::new(rules::missing_throw::MissingThrow)],
+        vec![Box::new(
+            starlint_plugin_core::rules::missing_throw::MissingThrow,
+        )],
         "new Error('oops');",
         "missing_throw",
     );
@@ -406,7 +463,9 @@ fn fix_idempotent_missing_throw() {
 #[test]
 fn fix_idempotent_no_instanceof_array() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_instanceof_array::NoInstanceofArray)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_instanceof_array::NoInstanceofArray,
+        )],
         "if (x instanceof Array) {}",
         "no_instanceof_array",
     );
@@ -415,7 +474,9 @@ fn fix_idempotent_no_instanceof_array() {
 #[test]
 fn fix_idempotent_no_extra_boolean_cast() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_extra_boolean_cast::NoExtraBooleanCast)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_extra_boolean_cast::NoExtraBooleanCast,
+        )],
         "if (!!x) {}",
         "no_extra_boolean_cast",
     );
@@ -424,7 +485,9 @@ fn fix_idempotent_no_extra_boolean_cast() {
 #[test]
 fn fix_idempotent_no_extra_bind() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_extra_bind::NoExtraBind)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_extra_bind::NoExtraBind,
+        )],
         "var f = (() => {}).bind(this);",
         "no_extra_bind",
     );
@@ -433,7 +496,9 @@ fn fix_idempotent_no_extra_bind() {
 #[test]
 fn fix_idempotent_escape_case() {
     assert_fix_idempotent(
-        vec![Box::new(rules::escape_case::EscapeCase)],
+        vec![Box::new(
+            starlint_plugin_core::rules::escape_case::EscapeCase,
+        )],
         r"var s = '\xff';",
         "escape_case",
     );
@@ -442,7 +507,9 @@ fn fix_idempotent_escape_case() {
 #[test]
 fn fix_idempotent_no_hex_escape() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_hex_escape::NoHexEscape)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_hex_escape::NoHexEscape,
+        )],
         r"var s = '\x41';",
         "no_hex_escape",
     );
@@ -452,7 +519,7 @@ fn fix_idempotent_no_hex_escape() {
 fn fix_idempotent_no_useless_computed_key() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::no_useless_computed_key::NoUselessComputedKey,
+            starlint_plugin_core::rules::no_useless_computed_key::NoUselessComputedKey,
         )],
         "var obj = { [\"foo\"]: 1 };",
         "no_useless_computed_key",
@@ -462,7 +529,9 @@ fn fix_idempotent_no_useless_computed_key() {
 #[test]
 fn fix_idempotent_no_useless_escape() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_useless_escape::NoUselessEscape)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_useless_escape::NoUselessEscape,
+        )],
         r#"var x = "hell\o";"#,
         "no_useless_escape",
     );
@@ -471,7 +540,9 @@ fn fix_idempotent_no_useless_escape() {
 #[test]
 fn fix_idempotent_no_useless_concat() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_useless_concat::NoUselessConcat)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_useless_concat::NoUselessConcat,
+        )],
         "var x = 'a' + 'b';",
         "no_useless_concat",
     );
@@ -484,7 +555,9 @@ fn fix_idempotent_no_useless_concat() {
 #[test]
 fn fix_idempotent_bad_bitwise_operator() {
     assert_fix_idempotent(
-        vec![Box::new(rules::bad_bitwise_operator::BadBitwiseOperator)],
+        vec![Box::new(
+            starlint_plugin_core::rules::bad_bitwise_operator::BadBitwiseOperator,
+        )],
         "if (a > 1 | b > 2) {}",
         "bad_bitwise_operator",
     );
@@ -493,7 +566,9 @@ fn fix_idempotent_bad_bitwise_operator() {
 #[test]
 fn fix_idempotent_double_comparisons() {
     assert_fix_idempotent(
-        vec![Box::new(rules::double_comparisons::DoubleComparisons)],
+        vec![Box::new(
+            starlint_plugin_core::rules::double_comparisons::DoubleComparisons,
+        )],
         "if (a >= b && a <= b) {}",
         "double_comparisons",
     );
@@ -503,7 +578,7 @@ fn fix_idempotent_double_comparisons() {
 fn fix_idempotent_misrefactored_assign_op() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::misrefactored_assign_op::MisrefactoredAssignOp,
+            starlint_plugin_core::rules::misrefactored_assign_op::MisrefactoredAssignOp,
         )],
         "a -= a - b;",
         "misrefactored_assign_op",
@@ -513,7 +588,9 @@ fn fix_idempotent_misrefactored_assign_op() {
 #[test]
 fn fix_idempotent_operator_assignment() {
     assert_fix_idempotent(
-        vec![Box::new(rules::operator_assignment::OperatorAssignment)],
+        vec![Box::new(
+            starlint_plugin_core::rules::operator_assignment::OperatorAssignment,
+        )],
         "x = x + 1;",
         "operator_assignment",
     );
@@ -522,7 +599,7 @@ fn fix_idempotent_operator_assignment() {
 #[test]
 fn fix_idempotent_yoda() {
     assert_fix_idempotent(
-        vec![Box::new(rules::yoda::Yoda)],
+        vec![Box::new(starlint_plugin_core::rules::yoda::Yoda)],
         "if ('red' === color) {}",
         "yoda",
     );
@@ -531,7 +608,7 @@ fn fix_idempotent_yoda() {
 #[test]
 fn fix_idempotent_no_eq_null() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_eq_null::NoEqNull)],
+        vec![Box::new(starlint_plugin_core::rules::no_eq_null::NoEqNull)],
         "if (x == null) {}",
         "no_eq_null",
     );
@@ -540,7 +617,7 @@ fn fix_idempotent_no_eq_null() {
 #[test]
 fn fix_idempotent_no_null() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_null::NoNull)],
+        vec![Box::new(starlint_plugin_core::rules::no_null::NoNull)],
         "var z = null;",
         "no_null",
     );
@@ -549,7 +626,9 @@ fn fix_idempotent_no_null() {
 #[test]
 fn fix_idempotent_no_object_constructor() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_object_constructor::NoObjectConstructor)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_object_constructor::NoObjectConstructor,
+        )],
         "var obj = new Object();",
         "no_object_constructor",
     );
@@ -558,7 +637,9 @@ fn fix_idempotent_no_object_constructor() {
 #[test]
 fn fix_idempotent_no_array_constructor() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_array_constructor::NoArrayConstructor)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_array_constructor::NoArrayConstructor,
+        )],
         "var arr = new Array(1, 2, 3);",
         "no_array_constructor",
     );
@@ -567,7 +648,9 @@ fn fix_idempotent_no_array_constructor() {
 #[test]
 fn fix_idempotent_no_new_array() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_new_array::NoNewArray)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_new_array::NoNewArray,
+        )],
         "var a = new Array(10);",
         "no_new_array",
     );
@@ -580,7 +663,7 @@ fn fix_idempotent_no_new_array() {
 #[test]
 fn fix_idempotent_radix() {
     assert_fix_idempotent(
-        vec![Box::new(rules::radix::Radix)],
+        vec![Box::new(starlint_plugin_core::rules::radix::Radix)],
         "var n = parseInt('071');",
         "radix",
     );
@@ -590,7 +673,7 @@ fn fix_idempotent_radix() {
 fn fix_idempotent_require_array_join_separator() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::require_array_join_separator::RequireArrayJoinSeparator,
+            starlint_plugin_core::rules::require_array_join_separator::RequireArrayJoinSeparator,
         )],
         "[1, 2, 3].join();",
         "require_array_join_separator",
@@ -600,7 +683,9 @@ fn fix_idempotent_require_array_join_separator() {
 #[test]
 fn fix_idempotent_prefer_date_now() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_date_now::PreferDateNow)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_date_now::PreferDateNow,
+        )],
         "const t = new Date().getTime();",
         "prefer_date_now",
     );
@@ -610,7 +695,7 @@ fn fix_idempotent_prefer_date_now() {
 fn fix_idempotent_prefer_exponentiation_operator() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_exponentiation_operator::PreferExponentiationOperator,
+            starlint_plugin_core::rules::prefer_exponentiation_operator::PreferExponentiationOperator,
         )],
         "var x = Math.pow(2, 3);",
         "prefer_exponentiation_operator",
@@ -620,7 +705,9 @@ fn fix_idempotent_prefer_exponentiation_operator() {
 #[test]
 fn fix_idempotent_prefer_math_trunc() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_math_trunc::PreferMathTrunc)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_math_trunc::PreferMathTrunc,
+        )],
         "const n = ~~x;",
         "prefer_math_trunc",
     );
@@ -629,7 +716,9 @@ fn fix_idempotent_prefer_math_trunc() {
 #[test]
 fn fix_idempotent_no_implicit_coercion() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_implicit_coercion::NoImplicitCoercion)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_implicit_coercion::NoImplicitCoercion,
+        )],
         "var b = !!x;",
         "no_implicit_coercion",
     );
@@ -639,7 +728,7 @@ fn fix_idempotent_no_implicit_coercion() {
 fn fix_idempotent_numeric_separators_style() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::numeric_separators_style::NumericSeparatorsStyle,
+            starlint_plugin_core::rules::numeric_separators_style::NumericSeparatorsStyle,
         )],
         "const x = 10000;",
         "numeric_separators_style",
@@ -649,7 +738,9 @@ fn fix_idempotent_numeric_separators_style() {
 #[test]
 fn fix_idempotent_prefer_string_raw() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_string_raw::PreferStringRaw)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_string_raw::PreferStringRaw,
+        )],
         r"var x = `foo\nbar`;",
         "prefer_string_raw",
     );
@@ -662,7 +753,9 @@ fn fix_idempotent_prefer_string_raw() {
 #[test]
 fn fix_idempotent_no_regex_spaces() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_regex_spaces::NoRegexSpaces)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_regex_spaces::NoRegexSpaces,
+        )],
         "var re = /foo  bar/;",
         "no_regex_spaces",
     );
@@ -672,7 +765,7 @@ fn fix_idempotent_no_regex_spaces() {
 fn fix_idempotent_prefer_numeric_literals() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_numeric_literals::PreferNumericLiterals,
+            starlint_plugin_core::rules::prefer_numeric_literals::PreferNumericLiterals,
         )],
         "parseInt('1A', 16);",
         "prefer_numeric_literals",
@@ -682,7 +775,9 @@ fn fix_idempotent_prefer_numeric_literals() {
 #[test]
 fn fix_idempotent_prefer_object_has_own() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_object_has_own::PreferObjectHasOwn)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_object_has_own::PreferObjectHasOwn,
+        )],
         "Object.prototype.hasOwnProperty.call(obj, 'key');",
         "prefer_object_has_own",
     );
@@ -691,7 +786,9 @@ fn fix_idempotent_prefer_object_has_own() {
 #[test]
 fn fix_idempotent_no_div_regex() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_div_regex::NoDivRegex)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_div_regex::NoDivRegex,
+        )],
         "var r = /=foo/;",
         "no_div_regex",
     );
@@ -700,7 +797,9 @@ fn fix_idempotent_no_div_regex() {
 #[test]
 fn fix_idempotent_prefer_object_spread() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_object_spread::PreferObjectSpread)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_object_spread::PreferObjectSpread,
+        )],
         "var x = Object.assign({}, foo);",
         "prefer_object_spread",
     );
@@ -709,7 +808,9 @@ fn fix_idempotent_prefer_object_spread() {
 #[test]
 fn fix_idempotent_prefer_reflect_apply() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_reflect_apply::PreferReflectApply)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_reflect_apply::PreferReflectApply,
+        )],
         "foo.apply(null, args);",
         "prefer_reflect_apply",
     );
@@ -718,7 +819,9 @@ fn fix_idempotent_prefer_reflect_apply() {
 #[test]
 fn fix_idempotent_no_new_buffer() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_new_buffer::NoNewBuffer)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_new_buffer::NoNewBuffer,
+        )],
         "var b = new Buffer(10);",
         "no_new_buffer",
     );
@@ -731,12 +834,12 @@ fn fix_idempotent_no_new_buffer() {
 #[test]
 fn fix_idempotent_combined_multi_rule() {
     let lint_rules: Vec<Box<dyn LintRule>> = vec![
-        Box::new(rules::no_debugger::NoDebugger),
-        Box::new(rules::no_extra_semi::NoExtraSemi),
-        Box::new(rules::eqeqeq::Eqeqeq),
-        Box::new(rules::no_var::NoVar),
-        Box::new(rules::empty_brace_spaces::EmptyBraceSpaces),
-        Box::new(rules::no_zero_fractions::NoZeroFractions),
+        Box::new(starlint_plugin_core::rules::no_debugger::NoDebugger),
+        Box::new(starlint_plugin_core::rules::no_extra_semi::NoExtraSemi),
+        Box::new(starlint_plugin_core::rules::eqeqeq::Eqeqeq),
+        Box::new(starlint_plugin_core::rules::no_var::NoVar),
+        Box::new(starlint_plugin_core::rules::empty_brace_spaces::EmptyBraceSpaces),
+        Box::new(starlint_plugin_core::rules::no_zero_fractions::NoZeroFractions),
     ];
     let plugin: Box<dyn Plugin> = Box::new(LintRulePlugin::new(lint_rules));
     let session = LintSession::new(vec![plugin], OutputFormat::Pretty);
@@ -819,7 +922,9 @@ if (a == b) {}
 #[test]
 fn fix_idempotent_no_else_return() {
     assert_fix_idempotent(
-        vec![Box::new(rules::no_else_return::NoElseReturn)],
+        vec![Box::new(
+            starlint_plugin_core::rules::no_else_return::NoElseReturn,
+        )],
         "function f(x) { if (x) { return 1; } else { return 2; } }",
         "no_else_return",
     );
@@ -829,7 +934,7 @@ fn fix_idempotent_no_else_return() {
 fn fix_idempotent_prefer_native_coercion_functions() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_native_coercion_functions::PreferNativeCoercionFunctions,
+            starlint_plugin_core::rules::prefer_native_coercion_functions::PreferNativeCoercionFunctions,
         )],
         "arr.map(x => Number(x));",
         "prefer_native_coercion_functions",
@@ -840,7 +945,7 @@ fn fix_idempotent_prefer_native_coercion_functions() {
 fn fix_idempotent_prefer_prototype_methods() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_prototype_methods::PreferPrototypeMethods,
+            starlint_plugin_core::rules::prefer_prototype_methods::PreferPrototypeMethods,
         )],
         "[].forEach.call(obj, fn);",
         "prefer_prototype_methods",
@@ -851,7 +956,7 @@ fn fix_idempotent_prefer_prototype_methods() {
 fn fix_idempotent_prefer_string_starts_ends_with() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_string_starts_ends_with::PreferStringStartsEndsWith,
+            starlint_plugin_core::rules::prefer_string_starts_ends_with::PreferStringStartsEndsWith,
         )],
         "if (str.indexOf('foo') === 0) {}",
         "prefer_string_starts_ends_with_indexof",
@@ -862,7 +967,7 @@ fn fix_idempotent_prefer_string_starts_ends_with() {
 fn fix_idempotent_prefer_string_starts_ends_with_regex() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::prefer_string_starts_ends_with::PreferStringStartsEndsWith,
+            starlint_plugin_core::rules::prefer_string_starts_ends_with::PreferStringStartsEndsWith,
         )],
         "if (/^foo/.test(str)) {}",
         "prefer_string_starts_ends_with_regex",
@@ -872,7 +977,9 @@ fn fix_idempotent_prefer_string_starts_ends_with_regex() {
 #[test]
 fn fix_idempotent_prefer_template() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_template::PreferTemplate)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_template::PreferTemplate,
+        )],
         "var x = 'hello ' + name;",
         "prefer_template",
     );
@@ -881,7 +988,9 @@ fn fix_idempotent_prefer_template() {
 #[test]
 fn fix_idempotent_prefer_ternary_return() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_ternary::PreferTernary)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_ternary::PreferTernary,
+        )],
         "function f(x) { if (x) { return a; } else { return b; } }",
         "prefer_ternary_return",
     );
@@ -890,7 +999,9 @@ fn fix_idempotent_prefer_ternary_return() {
 #[test]
 fn fix_idempotent_prefer_ternary_assign() {
     assert_fix_idempotent(
-        vec![Box::new(rules::prefer_ternary::PreferTernary)],
+        vec![Box::new(
+            starlint_plugin_core::rules::prefer_ternary::PreferTernary,
+        )],
         "var a; if (x) { a = 1; } else { a = 2; }",
         "prefer_ternary_assign",
     );
@@ -900,7 +1011,7 @@ fn fix_idempotent_prefer_ternary_assign() {
 fn fix_idempotent_ts_no_unnecessary_boolean_literal_compare() {
     assert_fix_idempotent(
         vec![Box::new(
-            rules::typescript::no_unnecessary_boolean_literal_compare::NoUnnecessaryBooleanLiteralCompare,
+            starlint_plugin_typescript::rules::typescript::no_unnecessary_boolean_literal_compare::NoUnnecessaryBooleanLiteralCompare,
         )],
         "if (x === true) {}",
         "ts_no_unnecessary_boolean_literal_compare",
@@ -913,8 +1024,7 @@ fn fix_idempotent_all_rules() {
     // no-console-spaces with overlapping spans — the multi-pass convergence
     // loop handles this by picking up the skipped fix on the next pass.
     //
-    let plugin: Box<dyn Plugin> =
-        Box::new(LintRulePlugin::new(starlint_core::rules::all_lint_rules()));
+    let plugin: Box<dyn Plugin> = Box::new(LintRulePlugin::new(all_lint_rules()));
     let session = LintSession::new(vec![plugin], OutputFormat::Pretty);
     let file = Path::new("test.js");
     let source = "\
