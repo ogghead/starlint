@@ -18,8 +18,9 @@ const RULE_NAME: &str = "jest/no-test-return-statement";
 pub struct NoTestReturnStatement;
 
 impl LintRule for NoTestReturnStatement {
-    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
-        source_text.contains("test(") || source_text.contains("it(")
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        (source_text.contains("test(") || source_text.contains("it("))
+            && crate::is_test_file(file_path)
     }
 
     fn meta(&self) -> RuleMeta {
@@ -35,17 +36,13 @@ impl LintRule for NoTestReturnStatement {
         Some(&[AstNodeType::ReturnStatement])
     }
 
-    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+    fn run(&self, node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         let AstNode::ReturnStatement(ret) = node else {
             return;
         };
 
-        // Check if this return is inside a test/it callback
-        let source = ctx.source_text();
-        let pos = usize::try_from(ret.span.start).unwrap_or(0);
-        let before = source.get(..pos).unwrap_or("");
-
-        if is_inside_test_callback(before) {
+        // Walk up the AST to check if inside a test callback
+        if is_inside_test_via_ancestors(node_id, ctx) {
             // Build fix: replace `return <expr>;` with `return;`
             let fix = ret.argument.as_ref().map(|_| Fix {
                 kind: FixKind::SuggestionFix,
@@ -71,33 +68,22 @@ impl LintRule for NoTestReturnStatement {
     }
 }
 
-/// Check if a position is inside a test/it callback by counting brace depth.
-fn is_inside_test_callback(before: &str) -> bool {
-    let last_test = before.rfind("test(");
-    let last_it = before.rfind("it(");
-
-    let call_pos = match (last_test, last_it) {
-        (Some(t), Some(i)) => Some(t.max(i)),
-        (Some(t), None) => Some(t),
-        (None, Some(i)) => Some(i),
-        (None, None) => None,
-    };
-
-    let Some(pos) = call_pos else {
-        return false;
-    };
-
-    let after_call = before.get(pos..).unwrap_or("");
-    let mut brace_depth: i32 = 0;
-    for ch in after_call.chars() {
-        if ch == '{' {
-            brace_depth = brace_depth.saturating_add(1);
-        } else if ch == '}' {
-            brace_depth = brace_depth.saturating_sub(1);
+/// Walk up the AST parent chain to check if `node_id` is inside a
+/// `test`/`it` callback. `O(depth)` instead of `O(source_length)`.
+fn is_inside_test_via_ancestors(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let tree = ctx.tree();
+    let mut current = tree.parent(node_id);
+    while let Some(pid) = current {
+        if let Some(AstNode::CallExpression(call)) = tree.get(pid) {
+            if let Some(AstNode::IdentifierReference(id)) = tree.get(call.callee) {
+                if id.name.as_str() == "test" || id.name.as_str() == "it" {
+                    return true;
+                }
+            }
         }
+        current = tree.parent(pid);
     }
-
-    brace_depth > 0
+    false
 }
 
 #[cfg(test)]

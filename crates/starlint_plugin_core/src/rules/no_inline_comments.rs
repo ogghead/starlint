@@ -13,6 +13,10 @@ use starlint_rule_framework::{LintContext, LintRule};
 pub struct NoInlineComments;
 
 impl LintRule for NoInlineComments {
+    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
+        source_text.contains("//") || source_text.contains("/*")
+    }
+
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: "no-inline-comments".to_owned(),

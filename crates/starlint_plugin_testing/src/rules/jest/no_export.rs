@@ -17,12 +17,6 @@ const RULE_NAME: &str = "jest/no-export";
 #[derive(Debug)]
 pub struct NoExport;
 
-/// Check if a file path looks like a test file.
-fn is_test_file(path: &std::path::Path) -> bool {
-    let path_str = path.to_string_lossy();
-    path_str.contains(".test.") || path_str.contains(".spec.")
-}
-
 impl LintRule for NoExport {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
@@ -31,6 +25,10 @@ impl LintRule for NoExport {
             category: Category::Correctness,
             default_severity: Severity::Error,
         }
+    }
+
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        source_text.contains("export") && crate::is_test_file(file_path)
     }
 
     fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
@@ -42,11 +40,6 @@ impl LintRule for NoExport {
     }
 
     fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
-        // Only apply to test files
-        if !is_test_file(ctx.file_path()) {
-            return;
-        }
-
         let span = match node {
             AstNode::ExportNamedDeclaration(decl) => Span::new(decl.span.start, decl.span.end),
             AstNode::ExportDefaultDeclaration(decl) => Span::new(decl.span.start, decl.span.end),

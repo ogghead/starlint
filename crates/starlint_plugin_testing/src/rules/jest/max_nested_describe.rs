@@ -27,8 +27,8 @@ impl LintRule for MaxNestedDescribe {
         }
     }
 
-    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
-        source_text.contains("describe(")
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        source_text.contains("describe(") && crate::is_test_file(file_path)
     }
 
     fn needs_traversal(&self) -> bool {
@@ -89,11 +89,13 @@ fn find_deeply_nested_describes(source: &str) -> Vec<(usize, Span)> {
     }
 
     // Now do a single forward pass counting braces, checking depth at each describe.
+    // Use byte iteration since `{`, `}` are ASCII — avoids UTF-8 decoding overhead.
+    let bytes = source.as_bytes();
     let mut desc_idx: usize = 0;
-    for (i, ch) in source.chars().enumerate() {
-        if ch == '{' {
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'{' {
             brace_depth = brace_depth.saturating_add(1);
-        } else if ch == '}' {
+        } else if b == b'}' {
             brace_depth = brace_depth.saturating_sub(1);
             while describe_stack.last().is_some_and(|&d| d == brace_depth) {
                 describe_stack.pop();

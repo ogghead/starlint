@@ -81,8 +81,11 @@ impl LintRule for NoExtendNative {
         let span_end = assign.span.end;
 
         for native in NATIVE_TYPES {
-            let prefix = format!("{native}.prototype");
-            if target_text.starts_with(&prefix) {
+            if target_text.starts_with(native)
+                && target_text
+                    .get(native.len()..)
+                    .is_some_and(|rest| rest.starts_with(".prototype"))
+            {
                 ctx.report(Diagnostic {
                     rule_name: "no-extend-native".to_owned(),
                     message: format!(

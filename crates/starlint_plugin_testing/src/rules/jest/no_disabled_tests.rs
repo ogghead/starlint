@@ -33,6 +33,14 @@ impl LintRule for NoDisabledTests {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        (source_text.contains("xdescribe")
+            || source_text.contains("xit")
+            || source_text.contains("xtest")
+            || source_text.contains(".skip"))
+            && crate::is_test_file(file_path)
+    }
+
     fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[AstNodeType::CallExpression])
     }

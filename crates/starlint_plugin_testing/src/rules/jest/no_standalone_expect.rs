@@ -18,8 +18,8 @@ const RULE_NAME: &str = "jest/no-standalone-expect";
 pub struct NoStandaloneExpect;
 
 impl LintRule for NoStandaloneExpect {
-    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
-        source_text.contains("expect(")
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        source_text.contains("expect(") && crate::is_test_file(file_path)
     }
 
     fn meta(&self) -> RuleMeta {
@@ -35,7 +35,7 @@ impl LintRule for NoStandaloneExpect {
         Some(&[AstNodeType::CallExpression])
     }
 
-    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+    fn run(&self, node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         let AstNode::CallExpression(call) = node else {
             return;
         };
@@ -50,12 +50,8 @@ impl LintRule for NoStandaloneExpect {
             return;
         }
 
-        // Check if this expect is inside a test/it callback
-        let source = ctx.source_text();
-        let pos = usize::try_from(call.span.start).unwrap_or(0);
-        let before = source.get(..pos).unwrap_or("");
-
-        if !is_inside_test_callback(before) {
+        // Walk up the AST to check if inside a test/hook callback
+        if !is_inside_test_via_ancestors(node_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "`expect()` must be called inside an `it()` or `test()` block".to_owned(),
@@ -69,45 +65,32 @@ impl LintRule for NoStandaloneExpect {
     }
 }
 
-/// Check if a position is inside a test/it callback by finding the last
-/// `test(`/`it(` call and counting brace depth.
-fn is_inside_test_callback(before: &str) -> bool {
-    let last_test = before.rfind("test(");
-    let last_it = before.rfind("it(");
+/// Test/hook function names that are valid containers for `expect()`.
+const TEST_CALLBACK_NAMES: &[&str] = &[
+    "test",
+    "it",
+    "beforeEach",
+    "afterEach",
+    "beforeAll",
+    "afterAll",
+];
 
-    // Also consider beforeEach/afterEach/beforeAll/afterAll as valid containers
-    let last_before_each = before.rfind("beforeEach(");
-    let last_after_each = before.rfind("afterEach(");
-    let last_before_all = before.rfind("beforeAll(");
-    let last_after_all = before.rfind("afterAll(");
-
-    let call_pos = [
-        last_test,
-        last_it,
-        last_before_each,
-        last_after_each,
-        last_before_all,
-        last_after_all,
-    ]
-    .into_iter()
-    .flatten()
-    .max();
-
-    let Some(pos) = call_pos else {
-        return false;
-    };
-
-    let after_call = before.get(pos..).unwrap_or("");
-    let mut brace_depth: i32 = 0;
-    for ch in after_call.chars() {
-        if ch == '{' {
-            brace_depth = brace_depth.saturating_add(1);
-        } else if ch == '}' {
-            brace_depth = brace_depth.saturating_sub(1);
+/// Walk up the AST parent chain to check if `node_id` is inside a
+/// test/hook callback. `O(depth)` instead of `O(source_length)`.
+fn is_inside_test_via_ancestors(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let tree = ctx.tree();
+    let mut current = tree.parent(node_id);
+    while let Some(pid) = current {
+        if let Some(AstNode::CallExpression(call)) = tree.get(pid) {
+            if let Some(AstNode::IdentifierReference(id)) = tree.get(call.callee) {
+                if TEST_CALLBACK_NAMES.contains(&id.name.as_str()) {
+                    return true;
+                }
+            }
         }
+        current = tree.parent(pid);
     }
-
-    brace_depth > 0
+    false
 }
 
 #[cfg(test)]

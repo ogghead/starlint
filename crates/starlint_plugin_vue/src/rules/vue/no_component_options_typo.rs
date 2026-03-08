@@ -51,7 +51,10 @@ impl LintRule for NoComponentOptionsTypo {
     }
 
     fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
-        TYPO_MAP.iter().any(|(typo, _)| source_text.contains(typo))
+        // Pre-filter: only scan 21 typo patterns if the file looks like a Vue component.
+        // This avoids 21 contains scans on files that can't have Vue component options.
+        (source_text.contains("export default") || source_text.contains("defineComponent"))
+            && TYPO_MAP.iter().any(|(typo, _)| source_text.contains(typo))
     }
 
     fn needs_traversal(&self) -> bool {

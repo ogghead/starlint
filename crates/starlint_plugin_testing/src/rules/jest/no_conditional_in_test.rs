@@ -23,6 +23,11 @@ const RULE_NAME: &str = "jest/no-conditional-in-test";
 pub struct NoConditionalInTest;
 
 impl LintRule for NoConditionalInTest {
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        (source_text.contains("test(") || source_text.contains("it("))
+            && crate::is_test_file(file_path)
+    }
+
     fn meta(&self) -> RuleMeta {
         RuleMeta {
             name: RULE_NAME.to_owned(),
@@ -40,7 +45,7 @@ impl LintRule for NoConditionalInTest {
         ])
     }
 
-    fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
+    fn run(&self, node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         let (stmt_type, span_start, span_end) = match node {
             AstNode::IfStatement(stmt) => ("if statement", stmt.span.start, stmt.span.end),
             AstNode::SwitchStatement(stmt) => ("switch statement", stmt.span.start, stmt.span.end),
@@ -50,13 +55,8 @@ impl LintRule for NoConditionalInTest {
             _ => return,
         };
 
-        // Check if this conditional is inside a test callback by scanning the source
-        // before it for `test(` or `it(` patterns
-        let source = ctx.source_text();
-        let pos = usize::try_from(span_start).unwrap_or(0);
-        let before = source.get(..pos).unwrap_or("");
-
-        if is_inside_test_callback(before) {
+        // Walk up the AST to check if inside a test callback
+        if is_inside_test_via_ancestors(node_id, ctx) {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: format!("Unexpected {stmt_type} inside a test — tests should not contain conditional logic"),
@@ -70,37 +70,22 @@ impl LintRule for NoConditionalInTest {
     }
 }
 
-/// Check if a position is inside a test/it callback by counting open/close braces
-/// after the last `test(` or `it(` call.
-fn is_inside_test_callback(before: &str) -> bool {
-    // Find the last occurrence of `test(` or `it(`
-    let last_test = before.rfind("test(");
-    let last_it = before.rfind("it(");
-
-    let call_pos = match (last_test, last_it) {
-        (Some(t), Some(i)) => Some(t.max(i)),
-        (Some(t), None) => Some(t),
-        (None, Some(i)) => Some(i),
-        (None, None) => None,
-    };
-
-    let Some(pos) = call_pos else {
-        return false;
-    };
-
-    // Count braces from the call position to see if we're still inside the callback
-    let after_call = before.get(pos..).unwrap_or("");
-    let mut brace_depth: i32 = 0;
-    for ch in after_call.chars() {
-        if ch == '{' {
-            brace_depth = brace_depth.saturating_add(1);
-        } else if ch == '}' {
-            brace_depth = brace_depth.saturating_sub(1);
+/// Walk up the AST parent chain to check if `node_id` is inside a
+/// `test`/`it` callback. `O(depth)` instead of `O(source_length)`.
+fn is_inside_test_via_ancestors(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
+    let tree = ctx.tree();
+    let mut current = tree.parent(node_id);
+    while let Some(pid) = current {
+        if let Some(AstNode::CallExpression(call)) = tree.get(pid) {
+            if let Some(AstNode::IdentifierReference(id)) = tree.get(call.callee) {
+                if id.name.as_str() == "test" || id.name.as_str() == "it" {
+                    return true;
+                }
+            }
         }
+        current = tree.parent(pid);
     }
-
-    // If braces are still open, we're inside the callback
-    brace_depth > 0
+    false
 }
 
 #[cfg(test)]

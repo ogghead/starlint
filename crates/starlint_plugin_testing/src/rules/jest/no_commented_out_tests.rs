@@ -42,6 +42,16 @@ impl LintRule for NoCommentedOutTests {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        (source_text.contains("// it(")
+            || source_text.contains("// test(")
+            || source_text.contains("// describe(")
+            || source_text.contains("/* it(")
+            || source_text.contains("/* test(")
+            || source_text.contains("/* describe("))
+            && crate::is_test_file(file_path)
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

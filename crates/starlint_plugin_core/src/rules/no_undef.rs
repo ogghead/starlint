@@ -7,6 +7,8 @@
 //! in the semantic model. Well-known globals (console, setTimeout, etc.)
 //! are allowed.
 
+use std::sync::LazyLock;
+
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
@@ -20,7 +22,12 @@ use starlint_rule_framework::{LintContext, LintRule};
 pub struct NoUndef;
 
 /// Well-known browser/Node.js globals that should not be flagged.
-const KNOWN_GLOBALS: &[&str] = &[
+/// Uses a `HashSet` for O(1) lookup instead of linear scan.
+static KNOWN_GLOBALS_SET: LazyLock<std::collections::HashSet<&'static str>> =
+    LazyLock::new(|| KNOWN_GLOBALS_LIST.iter().copied().collect());
+
+/// Well-known browser/Node.js globals list.
+const KNOWN_GLOBALS_LIST: &[&str] = &[
     "undefined",
     "NaN",
     "Infinity",
@@ -179,8 +186,8 @@ impl LintRule for NoUndef {
             return;
         };
 
-        // Skip known globals
-        if KNOWN_GLOBALS.contains(&ident.name.as_str()) {
+        // Skip known globals (O(1) HashSet lookup)
+        if KNOWN_GLOBALS_SET.contains(ident.name.as_str()) {
             return;
         }
 

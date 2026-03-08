@@ -37,6 +37,10 @@ impl LintRule for NoRestrictedJestMethods {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        source_text.contains("jest.") && crate::is_test_file(file_path)
+    }
+
     fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[AstNodeType::CallExpression])
     }

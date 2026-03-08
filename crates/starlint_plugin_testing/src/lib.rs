@@ -5,6 +5,27 @@
 
 pub mod rules;
 
+/// Check whether a file path looks like a test file based on naming conventions.
+///
+/// Matches common patterns: `*.test.*`, `*.spec.*`, `__tests__/`, `__test__/`,
+/// `test.js`, `spec.ts`, etc.
+pub(crate) fn is_test_file(file_path: &std::path::Path) -> bool {
+    let path_str = file_path.to_string_lossy();
+    path_str.contains(".test.")
+        || path_str.contains(".spec.")
+        || path_str.contains("__tests__")
+        || path_str.contains("__test__")
+        || path_str.ends_with(".test")
+        || path_str.ends_with(".spec")
+        || file_path.file_stem().is_some_and(|stem| {
+            let name = stem.to_string_lossy();
+            name == "test"
+                || name == "spec"
+                || name.starts_with("test_")
+                || name.starts_with("spec_")
+        })
+}
+
 use starlint_rule_framework::{LintRule, LintRulePlugin, Plugin};
 
 /// Create the testing plugin with all its rules.

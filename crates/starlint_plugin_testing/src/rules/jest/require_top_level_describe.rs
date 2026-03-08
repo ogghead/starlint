@@ -24,8 +24,9 @@ impl LintRule for RequireTopLevelDescribe {
         }
     }
 
-    fn should_run_on_file(&self, source_text: &str, _file_path: &std::path::Path) -> bool {
-        source_text.contains("it(") || source_text.contains("test(")
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        (source_text.contains("it(") || source_text.contains("test("))
+            && crate::is_test_file(file_path)
     }
 
     fn needs_traversal(&self) -> bool {
@@ -99,10 +100,12 @@ fn find_top_level_tests(source: &str) -> Vec<(String, Span)> {
     let mut brace_depth: usize = 0;
     let mut kw_idx: usize = 0;
 
-    for (i, ch) in source.chars().enumerate() {
-        if ch == '{' {
+    // Use byte iteration since `{`, `}` are ASCII — avoids UTF-8 decoding overhead.
+    let bytes = source.as_bytes();
+    for (i, &b) in bytes.iter().enumerate() {
+        if b == b'{' {
             brace_depth = brace_depth.saturating_add(1);
-        } else if ch == '}' {
+        } else if b == b'}' {
             brace_depth = brace_depth.saturating_sub(1);
             while describe_stack.last().is_some_and(|&d| d == brace_depth) {
                 describe_stack.pop();
