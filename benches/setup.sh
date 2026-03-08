@@ -55,8 +55,16 @@ clone_if_missing "grafana"  "https://github.com/grafana/grafana.git" "public/app
 
 # ── Install eslint & oxlint ───────────────────────────────────────────────
 
-echo "Installing eslint and oxlint..."
-(cd "$SCRIPT_DIR" && npm install --save-dev eslint @eslint/js @typescript-eslint/parser oxlint)
+echo "Installing eslint, oxlint, and eslint plugins..."
+(cd "$SCRIPT_DIR" && npm install --save-dev \
+    eslint@9 @eslint/js @typescript-eslint/parser oxlint \
+    typescript typescript-eslint \
+    eslint-plugin-react eslint-plugin-react-hooks \
+    eslint-plugin-jsx-a11y eslint-plugin-import-x \
+    eslint-plugin-jest eslint-plugin-promise \
+    eslint-plugin-n eslint-plugin-jsdoc \
+    eslint-plugin-vue vue-eslint-parser \
+    --legacy-peer-deps)
 
 # ── Build starlint ────────────────────────────────────────────────────────
 

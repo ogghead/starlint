@@ -167,12 +167,12 @@ SECTION+=""$'\n'
 SECTION+="$(generate_table "equivalent")"
 SECTION+=""$'\n'
 
-# Add full defaults in a collapsible section if results exist
-if ls "$RESULTS_DIR"/default-*.json &>/dev/null 2>&1; then
+# Add all-rules in a collapsible section if results exist
+if ls "$RESULTS_DIR"/all-rules-*.json &>/dev/null 2>&1; then
     SECTION+="<details>"$'\n'
-    SECTION+="<summary>Full defaults (all rules enabled per tool)</summary>"$'\n'
+    SECTION+="<summary>All rules (~630-710 rules per tool)</summary>"$'\n'
     SECTION+=""$'\n'
-    SECTION+="$(generate_table "default")"$'\n'
+    SECTION+="$(generate_table "all-rules")"$'\n'
     SECTION+="</details>"$'\n'
     SECTION+=""$'\n'
 fi

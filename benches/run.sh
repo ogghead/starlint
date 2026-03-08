@@ -42,7 +42,7 @@ while [[ $# -gt 0 ]]; do
         -h|--help)
             echo "Usage: $0 [--corpus NAME] [--scenario NAME] [--warmup N] [--runs N]"
             echo "  Corpora:   express, date-fns, grafana"
-            echo "  Scenarios: equivalent, default"
+            echo "  Scenarios: equivalent, all-rules"
             exit 0
             ;;
         *) echo "Unknown arg: $1" >&2; exit 1 ;;
@@ -164,20 +164,24 @@ run_equivalent() {
         "$ESLINT_BIN --no-config-lookup -c $CONFIGS_DIR/eslint-equivalent.config.mjs $cpath >/dev/null || true"
 }
 
-# ── Scenario: Full defaults ───────────────────────────────────────────────
+# ── Scenario: All rules (maximum rule load per tool) ─────────────────────
 
-run_default() {
+# oxlint: -D all enables all categories; plugin flags enable additional rule sets
+OXLINT_ALL_FLAGS="-D all --react-plugin --jsdoc-plugin --jest-plugin --vitest-plugin --jsx-a11y-plugin --nextjs-plugin --react-perf-plugin --promise-plugin --node-plugin --vue-plugin --import-plugin"
+
+run_all_rules() {
     local corpus_name="$1"
     local cpath nfiles
     cpath="$(corpus_path "$corpus_name")"
     nfiles="$(count_files "$cpath")"
 
     echo "  Corpus: $corpus_name ($nfiles files)"
+    echo "$corpus_name $nfiles" >> "$RESULTS_DIR/file-counts.txt"
 
-    run_bench "default-${corpus_name}" \
+    run_bench "all-rules-${corpus_name}" \
         "$STARLINT_BIN --format count --config $CONFIGS_DIR/starlint-default.toml $cpath || true" \
-        "$OXLINT_BIN $cpath >/dev/null || true" \
-        "$ESLINT_BIN --no-config-lookup -c $CONFIGS_DIR/eslint-default.config.mjs $cpath >/dev/null || true"
+        "$OXLINT_BIN $OXLINT_ALL_FLAGS $cpath >/dev/null || true" \
+        "$ESLINT_BIN --no-config-lookup -c $CONFIGS_DIR/eslint-all.config.mjs $cpath >/dev/null || true"
 }
 
 # ── Main ───────────────────────────────────────────────────────────────────
@@ -202,12 +206,12 @@ if should_run_scenario "equivalent"; then
     done
 fi
 
-if should_run_scenario "default"; then
+if should_run_scenario "all-rules"; then
     echo ""
-    echo "▶ Scenario: Full Defaults"
+    echo "▶ Scenario: All Rules (~630-710 rules per tool)"
     for c in "${CORPORA[@]}"; do
         if should_run_corpus "$c"; then
-            run_default "$c"
+            run_all_rules "$c"
         fi
     done
 fi
