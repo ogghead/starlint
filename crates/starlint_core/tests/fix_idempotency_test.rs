@@ -914,7 +914,7 @@ fn fix_idempotent_all_rules() {
     // loop handles this by picking up the skipped fix on the next pass.
     //
     let plugin: Box<dyn Plugin> = Box::new(LintRulePlugin::new(
-        starlint_core::lint_rules::all_lint_rules(),
+        starlint_core::rules::all_lint_rules(),
     ));
     let session = LintSession::new(vec![plugin], OutputFormat::Pretty);
     let file = Path::new("test.js");

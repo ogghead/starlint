@@ -13,7 +13,6 @@ pub mod fix_builder;
 pub mod fix_utils;
 pub mod lint_rule;
 pub mod lint_rule_plugin;
-pub mod lint_rules;
 pub mod overrides;
 pub mod plugin;
 pub mod rules;
