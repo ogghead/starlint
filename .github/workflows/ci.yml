@@ -71,7 +71,7 @@ jobs:
         run: cargo llvm-cov nextest --workspace --lcov --output-path lcov.info
 
       - name: Generate HTML report
-        run: cargo llvm-cov nextest --workspace --html --output-dir target/llvm-cov/html
+        run: cargo llvm-cov report --html --output-dir target/llvm-cov/html
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v7
@@ -80,5 +80,12 @@ jobs:
           path: target/llvm-cov/html/
           retention-days: 14
 
-      - name: Enforce coverage threshold
-        run: cargo llvm-cov nextest --workspace --fail-under-lines 90
+      - name: Enforce coverage floor
+        run: cargo llvm-cov report --fail-under-lines 90
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true

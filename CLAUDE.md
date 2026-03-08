@@ -17,7 +17,16 @@ Rust workspace (edition 2024, rustc 1.85+, stable channel). A fast JS/TS linter 
 | `cargo machete` | Check for unused dependencies |
 | `cargo llvm-cov nextest --workspace` | Coverage (text summary) |
 | `cargo llvm-cov nextest --workspace --html --open` | Coverage in browser |
-| `cargo llvm-cov nextest --workspace --fail-under-lines 90` | Enforce coverage threshold |
+| `cargo llvm-cov nextest --workspace --fail-under-lines 90` | Enforce coverage floor (hard minimum) |
+
+### Coverage Policy
+
+Two Codecov checks run on every PR (configured in `.codecov.yml`):
+
+- **`codecov/project`**: Overall coverage must not decrease vs base commit (no regression)
+- **`codecov/patch`**: New/changed lines must have ≥95% coverage
+
+The 90% `--fail-under-lines` floor remains as a hard minimum in CI.
 
 ## Workflow
 
