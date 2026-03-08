@@ -29,12 +29,21 @@ jobs:
         with:
           cache-on-failure: true
 
+      - name: Cache cargo-flamegraph binary
+        id: cache-flamegraph
+        uses: actions/cache@v5
+        with:
+          path: ~/.cargo/bin/flamegraph
+          key: cargo-flamegraph-v1
+
       - name: Install perf and cargo-flamegraph
         run: |
           sudo apt-get update
           sudo apt-get install -y linux-tools-$(uname -r) \
             || sudo apt-get install -y linux-tools-generic
-          cargo install flamegraph --locked
+          if [ ! -f ~/.cargo/bin/flamegraph ]; then
+            cargo install flamegraph --locked
+          fi
 
       - name: Allow perf events
         run: sudo sysctl kernel.perf_event_paranoid=-1
@@ -57,9 +66,7 @@ jobs:
       - name: Build release binary
         env:
           RUSTFLAGS: "-C force-frame-pointers=yes"
-          CARGO_PROFILE_RELEASE_DEBUG: "true"
-          CARGO_PROFILE_RELEASE_STRIP: "false"
-        run: cargo build --release --bin starlint
+        run: cargo build --profile flamegraph --bin starlint
 
       - name: Generate flamegraph
         run: |
@@ -68,7 +75,7 @@ jobs:
             --ignore-status \
             --post-process "tee flamegraph.txt" \
             -o flamegraph.svg \
-            -- target/release/starlint \
+            -- target/flamegraph/starlint \
                --config benches/configs/starlint-default.toml \
                benches/corpora/grafana 2>&1
           exit_code=$?

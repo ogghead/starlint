@@ -167,3 +167,10 @@ panic = "abort"
 inherits = "release"
 lto = false
 codegen-units = 16
+
+[profile.flamegraph]
+inherits = "release"
+lto = false
+codegen-units = 16
+debug = true
+strip = false
