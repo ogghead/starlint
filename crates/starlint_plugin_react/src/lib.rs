@@ -108,3 +108,24 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::react_perf::jsx_no_new_object_as_prop::JsxNoNewObjectAsProp),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_plugin_returns_rules() {
+        let plugin = create_plugin();
+        let rules = plugin.rules();
+        assert!(
+            !rules.is_empty(),
+            "react plugin should provide at least one rule"
+        );
+    }
+
+    #[test]
+    fn test_all_rules_count() {
+        let rules = all_rules();
+        assert_eq!(rules.len(), 84, "react should have 84 rules");
+    }
+}

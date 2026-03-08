@@ -201,6 +201,24 @@ mod tests {
     }
 
     #[test]
+    fn test_build_snippet_produces_snippet_fix() {
+        let result = FixBuilder::new("snippet fix", FixKind::SafeFix)
+            .replace(Span::new(0, 3), "replacement")
+            .build_snippet();
+        assert!(result.is_some(), "should produce a snippet fix");
+        if let Some(fix) = result {
+            assert!(fix.is_snippet, "fix should be a snippet");
+            assert_eq!(fix.edits.len(), 1, "should have one edit");
+        }
+    }
+
+    #[test]
+    fn test_build_snippet_no_edits_returns_none() {
+        let result = FixBuilder::new("empty snippet", FixKind::SafeFix).build_snippet();
+        assert!(result.is_none(), "no edits should return None for snippet");
+    }
+
+    #[test]
     fn test_insert_at_creates_zero_width_span() {
         let result = FixBuilder::new("ins", FixKind::SafeFix)
             .insert_at(10, "text")

@@ -118,3 +118,24 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::typescript::use_unknown_in_catch_callback_variable::UseUnknownInCatchCallbackVariable),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_plugin_returns_rules() {
+        let plugin = create_plugin();
+        let rules = plugin.rules();
+        assert!(
+            !rules.is_empty(),
+            "typescript plugin should provide at least one rule"
+        );
+    }
+
+    #[test]
+    fn test_all_rules_count() {
+        let rules = all_rules();
+        assert_eq!(rules.len(), 98, "typescript should have 98 rules");
+    }
+}

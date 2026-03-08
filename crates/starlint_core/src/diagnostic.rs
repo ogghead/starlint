@@ -368,4 +368,223 @@ mod tests {
             "json should contain rule name"
         );
     }
+
+    #[test]
+    fn test_format_diagnostics_dispatches() {
+        let diag = make_diag("test/rule", "msg", Severity::Error);
+        let diags = &[diag];
+        let source = "let x = 1;";
+        let path = Path::new("test.js");
+
+        let pretty = format_diagnostics(diags, source, path, OutputFormat::Pretty);
+        assert!(
+            pretty.contains("error[test/rule]"),
+            "pretty format should contain error prefix"
+        );
+
+        let json = format_diagnostics(diags, source, path, OutputFormat::Json);
+        assert!(
+            json.contains("\"rule\":\"test/rule\""),
+            "json format should contain rule"
+        );
+
+        let compact = format_diagnostics(diags, source, path, OutputFormat::Compact);
+        assert!(
+            compact.contains("E [test/rule]"),
+            "compact format should contain severity char"
+        );
+
+        let count = format_diagnostics(diags, source, path, OutputFormat::Count);
+        assert!(count.is_empty(), "count format should be empty");
+    }
+
+    #[test]
+    fn test_write_diagnostics_pretty() {
+        let diag = make_diag("test/rule", "bad code", Severity::Warning);
+        let mut buf = Vec::new();
+        write_diagnostics(
+            &mut buf,
+            &[diag],
+            "let x = 1;",
+            Path::new("test.js"),
+            OutputFormat::Pretty,
+        )
+        .ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("warning[test/rule]"),
+            "should contain warning"
+        );
+        assert!(output.contains("test.js:1:1"), "should contain location");
+    }
+
+    #[test]
+    fn test_write_diagnostics_json() {
+        let diag = make_diag("test/rule", "msg", Severity::Error);
+        let mut buf = Vec::new();
+        write_diagnostics(
+            &mut buf,
+            &[diag],
+            "x;",
+            Path::new("test.js"),
+            OutputFormat::Json,
+        )
+        .ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("\"rule\":\"test/rule\""),
+            "json should contain rule"
+        );
+    }
+
+    #[test]
+    fn test_write_diagnostics_compact() {
+        let diag = make_diag("test/rule", "msg", Severity::Error);
+        let mut buf = Vec::new();
+        write_diagnostics(
+            &mut buf,
+            &[diag],
+            "x;",
+            Path::new("test.js"),
+            OutputFormat::Compact,
+        )
+        .ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("E [test/rule]"),
+            "compact should contain severity char"
+        );
+    }
+
+    #[test]
+    fn test_write_diagnostics_count_is_noop() {
+        let diag = make_diag("test/rule", "msg", Severity::Error);
+        let mut buf = Vec::new();
+        let result = write_diagnostics(
+            &mut buf,
+            &[diag],
+            "x;",
+            Path::new("test.js"),
+            OutputFormat::Count,
+        );
+        assert!(result.is_ok(), "count format should succeed");
+        assert!(buf.is_empty(), "count format should write nothing");
+    }
+
+    #[test]
+    fn test_write_pretty_with_help() {
+        let mut diag = make_diag("test/rule", "msg", Severity::Error);
+        diag.help = Some("try this instead".to_owned());
+        let mut buf = Vec::new();
+        write_pretty(&mut buf, &[diag], "x;", Path::new("test.js")).ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("help: try this instead"),
+            "should contain help text"
+        );
+    }
+
+    #[test]
+    fn test_format_pretty_suggestion_severity() {
+        let diag = make_diag("test/rule", "msg", Severity::Suggestion);
+        let output = format_pretty(&[diag], "x;", Path::new("test.js"));
+        assert!(
+            output.contains("suggestion[test/rule]"),
+            "should format suggestion severity"
+        );
+    }
+
+    #[test]
+    fn test_compact_all_severities() {
+        let diags = vec![
+            make_diag("r1", "err", Severity::Error),
+            make_diag("r2", "warn", Severity::Warning),
+            make_diag("r3", "sugg", Severity::Suggestion),
+        ];
+        let output = format_compact(&diags, Path::new("test.js"));
+        assert!(output.contains(" E [r1]"), "should have E for error");
+        assert!(output.contains(" W [r2]"), "should have W for warning");
+        assert!(output.contains(" S [r3]"), "should have S for suggestion");
+    }
+
+    #[test]
+    fn test_write_compact_all_severities() {
+        let diags = vec![
+            make_diag("r1", "err", Severity::Error),
+            make_diag("r2", "warn", Severity::Warning),
+            make_diag("r3", "sugg", Severity::Suggestion),
+        ];
+        let mut buf = Vec::new();
+        write_compact(&mut buf, &diags, Path::new("test.js")).ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(output.contains(" E [r1]"), "should have E");
+        assert!(output.contains(" W [r2]"), "should have W");
+        assert!(output.contains(" S [r3]"), "should have S");
+    }
+
+    #[test]
+    fn test_format_json_multiple_diagnostics() {
+        let diags = vec![
+            make_diag("r1", "first", Severity::Error),
+            make_diag("r2", "second", Severity::Warning),
+        ];
+        let output = format_json(&diags, Path::new("test.js"));
+        assert!(output.contains("\"r1\""), "should contain first rule");
+        assert!(output.contains("\"r2\""), "should contain second rule");
+    }
+
+    #[test]
+    fn test_write_json_multiple_diagnostics() {
+        let diags = vec![
+            make_diag("r1", "first", Severity::Error),
+            make_diag("r2", "second", Severity::Warning),
+        ];
+        let mut buf = Vec::new();
+        write_json(&mut buf, &diags, Path::new("test.js")).ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(output.contains("\"r1\""), "should contain first rule");
+        assert!(output.contains("\"r2\""), "should contain second rule");
+    }
+
+    #[test]
+    fn test_format_pretty_with_help() {
+        let mut diag = make_diag("test/rule", "msg", Severity::Error);
+        diag.help = Some("fix it".to_owned());
+        let output = format_pretty(&[diag], "x;", Path::new("test.js"));
+        assert!(output.contains("help: fix it"), "should contain help text");
+    }
+
+    #[test]
+    fn test_write_pretty_suggestion_severity() {
+        let diag = make_diag("test/rule", "msg", Severity::Suggestion);
+        let mut buf = Vec::new();
+        write_pretty(&mut buf, &[diag], "x;", Path::new("test.js")).ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("suggestion[test/rule]"),
+            "should format suggestion severity"
+        );
+    }
+
+    #[test]
+    fn test_output_format_default() {
+        assert_eq!(
+            OutputFormat::default(),
+            OutputFormat::Pretty,
+            "default should be Pretty"
+        );
+    }
+
+    #[test]
+    fn test_write_json_with_help() {
+        let mut diag = make_diag("test/rule", "msg", Severity::Error);
+        diag.help = Some("helpful".to_owned());
+        let mut buf = Vec::new();
+        write_json(&mut buf, &[diag], Path::new("test.js")).ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("\"help\":\"helpful\""),
+            "json should contain help"
+        );
+    }
 }

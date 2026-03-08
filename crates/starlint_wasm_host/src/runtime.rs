@@ -672,6 +672,265 @@ mod host {
             wit::Severity::Suggestion => Severity::Suggestion,
         }
     }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn test_plugin_name_from_path() {
+            assert_eq!(
+                plugin_name_from_path(Path::new("/plugins/my-plugin.wasm")),
+                "my-plugin"
+            );
+            assert_eq!(plugin_name_from_path(Path::new("simple.wasm")), "simple");
+            assert_eq!(
+                plugin_name_from_path(Path::new("/no-extension")),
+                "no-extension"
+            );
+        }
+
+        #[test]
+        fn test_compile_file_patterns_empty() {
+            let result = compile_file_patterns(&[], "test-plugin");
+            assert!(result.is_none(), "empty patterns should return None");
+        }
+
+        #[test]
+        fn test_compile_file_patterns_valid() {
+            let patterns = vec!["*.stories.tsx".to_owned(), "*.stories.ts".to_owned()];
+            let result = compile_file_patterns(&patterns, "test-plugin");
+            assert!(result.is_some(), "valid patterns should compile");
+            if let Some(set) = &result {
+                assert!(
+                    set.is_match(Path::new("Button.stories.tsx")),
+                    "should match .stories.tsx"
+                );
+                assert!(
+                    !set.is_match(Path::new("Button.tsx")),
+                    "should not match plain .tsx"
+                );
+            }
+        }
+
+        #[test]
+        fn test_compile_file_patterns_invalid() {
+            let patterns = vec!["[invalid".to_owned()];
+            let result = compile_file_patterns(&patterns, "test-plugin");
+            assert!(result.is_none(), "invalid patterns should return None");
+        }
+
+        #[test]
+        fn test_wit_severity_to_sdk_conversions() {
+            assert!(matches!(
+                wit_severity_to_sdk(wit::Severity::Error),
+                Severity::Error
+            ));
+            assert!(matches!(
+                wit_severity_to_sdk(wit::Severity::Warning),
+                Severity::Warning
+            ));
+            assert!(matches!(
+                wit_severity_to_sdk(wit::Severity::Suggestion),
+                Severity::Suggestion
+            ));
+        }
+
+        #[test]
+        fn test_wit_category_to_sdk_conversions() {
+            assert!(matches!(
+                wit_category_to_sdk(wit::Category::Correctness),
+                SdkCategory::Correctness
+            ));
+            assert!(matches!(
+                wit_category_to_sdk(wit::Category::Style),
+                SdkCategory::Style
+            ));
+            assert!(matches!(
+                wit_category_to_sdk(wit::Category::Performance),
+                SdkCategory::Performance
+            ));
+            assert!(matches!(
+                wit_category_to_sdk(wit::Category::Suggestion),
+                SdkCategory::Suggestion
+            ));
+            assert!(matches!(
+                wit_category_to_sdk(wit::Category::Custom),
+                SdkCategory::Custom(_)
+            ));
+        }
+
+        #[test]
+        fn test_wit_rule_meta_to_sdk() {
+            let meta = wit::RuleMeta {
+                name: "test/rule".to_owned(),
+                description: "A test rule".to_owned(),
+                category: wit::Category::Correctness,
+                default_severity: wit::Severity::Error,
+            };
+            let sdk_meta = wit_rule_meta_to_sdk(meta);
+            assert_eq!(sdk_meta.name, "test/rule");
+            assert_eq!(sdk_meta.description, "A test rule");
+        }
+
+        #[test]
+        fn test_wit_edit_to_sdk() {
+            let edit = wit::Edit {
+                span: wit::Span { start: 0, end: 5 },
+                replacement: "const".to_owned(),
+            };
+            let sdk_edit = wit_edit_to_sdk(edit);
+            assert_eq!(sdk_edit.span.start, 0);
+            assert_eq!(sdk_edit.span.end, 5);
+            assert_eq!(sdk_edit.replacement, "const");
+        }
+
+        #[test]
+        fn test_wit_label_to_sdk() {
+            let label = wit::Label {
+                span: wit::Span { start: 10, end: 20 },
+                message: "here".to_owned(),
+            };
+            let sdk_label = wit_label_to_sdk(label);
+            assert_eq!(sdk_label.span.start, 10);
+            assert_eq!(sdk_label.span.end, 20);
+            assert_eq!(sdk_label.message, "here");
+        }
+
+        #[test]
+        fn test_wit_fix_to_sdk() {
+            use starlint_plugin_sdk::rule::FixKind;
+
+            let fix = wit::Fix {
+                kind: wit::FixKind::SafeFix,
+                message: "remove debugger".to_owned(),
+                edits: vec![wit::Edit {
+                    span: wit::Span { start: 0, end: 9 },
+                    replacement: String::new(),
+                }],
+                is_snippet: false,
+            };
+            let sdk_fix = wit_fix_to_sdk(fix);
+            assert!(matches!(sdk_fix.kind, FixKind::SafeFix));
+            assert_eq!(sdk_fix.message, "remove debugger");
+            assert_eq!(sdk_fix.edits.len(), 1);
+            assert!(!sdk_fix.is_snippet);
+        }
+
+        #[test]
+        fn test_wit_fix_to_sdk_suggestion() {
+            use starlint_plugin_sdk::rule::FixKind;
+
+            let fix = wit::Fix {
+                kind: wit::FixKind::SuggestionFix,
+                message: "suggestion".to_owned(),
+                edits: vec![],
+                is_snippet: true,
+            };
+            let sdk_fix = wit_fix_to_sdk(fix);
+            assert!(matches!(sdk_fix.kind, FixKind::SuggestionFix));
+            assert!(sdk_fix.is_snippet);
+        }
+
+        #[test]
+        fn test_wit_fix_to_sdk_dangerous() {
+            use starlint_plugin_sdk::rule::FixKind;
+
+            let fix = wit::Fix {
+                kind: wit::FixKind::DangerousFix,
+                message: "dangerous".to_owned(),
+                edits: vec![],
+                is_snippet: false,
+            };
+            let sdk_fix = wit_fix_to_sdk(fix);
+            assert!(matches!(sdk_fix.kind, FixKind::DangerousFix));
+        }
+
+        #[test]
+        fn test_wit_diagnostic_to_sdk_full() {
+            let diag = wit::LintDiagnostic {
+                rule_name: "test/no-debugger".to_owned(),
+                message: "Unexpected debugger statement".to_owned(),
+                span: wit::Span { start: 0, end: 9 },
+                severity: wit::Severity::Error,
+                help: Some("Remove the debugger statement".to_owned()),
+                fix: Some(wit::Fix {
+                    kind: wit::FixKind::SafeFix,
+                    message: "Remove debugger".to_owned(),
+                    edits: vec![wit::Edit {
+                        span: wit::Span { start: 0, end: 9 },
+                        replacement: String::new(),
+                    }],
+                    is_snippet: false,
+                }),
+                labels: vec![wit::Label {
+                    span: wit::Span { start: 0, end: 8 },
+                    message: "here".to_owned(),
+                }],
+            };
+            let sdk_diag = wit_diagnostic_to_sdk(diag);
+            assert_eq!(sdk_diag.rule_name, "test/no-debugger");
+            assert_eq!(sdk_diag.span.start, 0);
+            assert_eq!(sdk_diag.span.end, 9);
+            assert!(sdk_diag.help.is_some());
+            assert!(sdk_diag.fix.is_some());
+            assert_eq!(sdk_diag.labels.len(), 1);
+        }
+
+        #[test]
+        fn test_wit_diagnostic_to_sdk_minimal() {
+            let diag = wit::LintDiagnostic {
+                rule_name: "test/rule".to_owned(),
+                message: "msg".to_owned(),
+                span: wit::Span { start: 0, end: 1 },
+                severity: wit::Severity::Warning,
+                help: None,
+                fix: None,
+                labels: vec![],
+            };
+            let sdk_diag = wit_diagnostic_to_sdk(diag);
+            assert_eq!(sdk_diag.rule_name, "test/rule");
+            assert!(sdk_diag.help.is_none());
+            assert!(sdk_diag.fix.is_none());
+            assert!(sdk_diag.labels.is_empty());
+        }
+
+        #[test]
+        fn test_wasm_host_into_empty_plugins() {
+            let host = WasmPluginHost::new(ResourceLimits::default());
+            assert!(host.is_ok(), "should create host");
+            if let Ok(h) = host {
+                let plugins = h.into_plugins();
+                assert!(
+                    plugins.is_empty(),
+                    "host with no loaded plugins should produce empty vec"
+                );
+            }
+        }
+
+        #[test]
+        fn test_wasm_host_plugin_count() {
+            let host = WasmPluginHost::new(ResourceLimits::default());
+            assert!(host.is_ok(), "should create host");
+            if let Ok(h) = host {
+                assert_eq!(h.plugin_count(), 0, "new host should have 0 plugins");
+            }
+        }
+
+        #[test]
+        fn test_wasm_host_lint_file_no_plugins() {
+            let host = WasmPluginHost::new(ResourceLimits::default());
+            assert!(host.is_ok(), "should create host");
+            if let Ok(h) = host {
+                let tree = AstTree::new();
+                let diags = h.lint_file(Path::new("test.js"), "const x = 1;", &tree);
+                assert!(
+                    diags.is_empty(),
+                    "host with no plugins should produce no diagnostics"
+                );
+            }
+        }
+    }
 }
 
 #[cfg(feature = "wasm")]

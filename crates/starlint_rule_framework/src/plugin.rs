@@ -71,3 +71,52 @@ pub trait Plugin: Send + Sync {
         false
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use starlint_plugin_sdk::diagnostic::Diagnostic;
+    use starlint_plugin_sdk::rule::RuleMeta;
+
+    /// Minimal plugin that only implements required methods, exercising defaults.
+    struct DefaultsPlugin;
+
+    impl Plugin for DefaultsPlugin {
+        fn rules(&self) -> Vec<RuleMeta> {
+            vec![]
+        }
+
+        fn lint_file(&self, _ctx: &FileContext<'_>) -> Vec<Diagnostic> {
+            vec![]
+        }
+    }
+
+    #[test]
+    fn test_default_file_patterns_is_empty() {
+        let plugin = DefaultsPlugin;
+        assert!(
+            plugin.file_patterns().is_empty(),
+            "default file_patterns should be empty"
+        );
+    }
+
+    #[test]
+    fn test_default_configure_returns_no_errors() {
+        let mut plugin = DefaultsPlugin;
+        let errors = plugin.configure("{}");
+        assert!(
+            errors.is_empty(),
+            "default configure should return no errors"
+        );
+    }
+
+    #[test]
+    fn test_default_needs_scope_analysis_is_false() {
+        let plugin = DefaultsPlugin;
+        assert!(
+            !plugin.needs_scope_analysis(),
+            "default needs_scope_analysis should be false"
+        );
+    }
+}

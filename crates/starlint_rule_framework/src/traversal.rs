@@ -191,3 +191,308 @@ fn walk_node_recursive(
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use starlint_ast::node::AstNode;
+    use starlint_ast::node_type::AstNodeType;
+    use starlint_ast::tree::AstTree;
+    use starlint_ast::types::NodeId;
+    use starlint_plugin_sdk::diagnostic::{Severity, Span};
+    use starlint_plugin_sdk::rule::{Category, RuleMeta};
+    use std::path::Path;
+
+    use super::*;
+    use crate::lint_rule::{LintContext, LintRule};
+
+    // ── Mock rules for testing dispatch ──
+
+    /// Rule that records enter calls via a diagnostic.
+    #[derive(Debug)]
+    struct EnterCountRule {
+        name: &'static str,
+    }
+
+    impl LintRule for EnterCountRule {
+        fn meta(&self) -> RuleMeta {
+            RuleMeta {
+                name: self.name.to_owned(),
+                description: String::new(),
+                category: Category::Correctness,
+                default_severity: Severity::Warning,
+            }
+        }
+
+        fn run(&self, _node_id: NodeId, _node: &AstNode, ctx: &mut LintContext<'_>) {
+            ctx.report_warning(self.name, "entered", Span::new(0, 0));
+        }
+
+        fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+            None // wildcard — receives all nodes
+        }
+    }
+
+    /// Rule that records leave calls via a diagnostic.
+    #[derive(Debug)]
+    struct LeaveCountRule;
+
+    impl LintRule for LeaveCountRule {
+        fn meta(&self) -> RuleMeta {
+            RuleMeta {
+                name: "leave-rule".to_owned(),
+                description: String::new(),
+                category: Category::Correctness,
+                default_severity: Severity::Warning,
+            }
+        }
+
+        fn run(&self, _node_id: NodeId, _node: &AstNode, _ctx: &mut LintContext<'_>) {}
+
+        fn leave(&self, _node_id: NodeId, _node: &AstNode, ctx: &mut LintContext<'_>) {
+            ctx.report_warning("leave-rule", "left", Span::new(0, 0));
+        }
+
+        fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+            None
+        }
+
+        fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
+            None // wildcard leave
+        }
+    }
+
+    /// Rule that targets specific node types for leave.
+    #[derive(Debug)]
+    struct TargetedLeaveRule;
+
+    impl LintRule for TargetedLeaveRule {
+        fn meta(&self) -> RuleMeta {
+            RuleMeta {
+                name: "targeted-leave".to_owned(),
+                description: String::new(),
+                category: Category::Correctness,
+                default_severity: Severity::Warning,
+            }
+        }
+
+        fn leave(&self, _node_id: NodeId, _node: &AstNode, ctx: &mut LintContext<'_>) {
+            ctx.report_warning("targeted-leave", "targeted-left", Span::new(0, 0));
+        }
+
+        fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+            Some(&[AstNodeType::ExpressionStatement])
+        }
+
+        fn leave_on_types(&self) -> Option<&'static [AstNodeType]> {
+            Some(&[AstNodeType::ExpressionStatement])
+        }
+    }
+
+    /// Rule that only uses `run_once` (no traversal).
+    #[derive(Debug)]
+    struct RunOnceRule;
+
+    impl LintRule for RunOnceRule {
+        fn meta(&self) -> RuleMeta {
+            RuleMeta {
+                name: "run-once".to_owned(),
+                description: String::new(),
+                category: Category::Correctness,
+                default_severity: Severity::Warning,
+            }
+        }
+
+        fn needs_traversal(&self) -> bool {
+            false
+        }
+
+        fn run_once(&self, ctx: &mut LintContext<'_>) {
+            ctx.report_warning("run-once", "ran once", Span::new(0, 0));
+        }
+    }
+
+    /// Rule that always skips files.
+    #[derive(Debug)]
+    struct SkipFileRule;
+
+    impl LintRule for SkipFileRule {
+        fn meta(&self) -> RuleMeta {
+            RuleMeta {
+                name: "skip-file".to_owned(),
+                description: String::new(),
+                category: Category::Correctness,
+                default_severity: Severity::Warning,
+            }
+        }
+
+        fn run(&self, _node_id: NodeId, _node: &AstNode, ctx: &mut LintContext<'_>) {
+            ctx.report_warning("skip-file", "should not appear", Span::new(0, 0));
+        }
+
+        fn should_run_on_file(&self, _source_text: &str, _file_path: &Path) -> bool {
+            false
+        }
+
+        fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+            None
+        }
+    }
+
+    /// Helper: parse source and run traversal with given rules.
+    fn run_traversal(source: &str, rules: &[Box<dyn LintRule>]) -> Vec<Diagnostic> {
+        let path = Path::new("test.js");
+        let options = starlint_parser::ParseOptions::from_path(path);
+        let tree = starlint_parser::parse(source, options).tree;
+
+        let traversal_indices: Vec<usize> = rules
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| r.needs_traversal())
+            .map(|(i, _)| i)
+            .collect();
+        let run_once_indices: Vec<usize> = rules
+            .iter()
+            .enumerate()
+            .filter(|(_, r)| !r.needs_traversal())
+            .map(|(i, _)| i)
+            .collect();
+        let table = LintDispatchTable::build_from_indices(rules, &traversal_indices);
+        traverse_ast_tree(&tree, rules, &table, &run_once_indices, source, path, None)
+    }
+
+    #[test]
+    fn test_wildcard_enter_dispatches_to_all_nodes() {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(EnterCountRule { name: "wildcard" })];
+        let diags = run_traversal("1;", &rules);
+        assert!(
+            !diags.is_empty(),
+            "wildcard rule should produce diagnostics for each node"
+        );
+        assert!(
+            diags.iter().all(|d| d.rule_name == "wildcard"),
+            "all diagnostics should be from the wildcard rule"
+        );
+    }
+
+    #[test]
+    fn test_wildcard_leave_dispatches() {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(LeaveCountRule)];
+        let diags = run_traversal("1;", &rules);
+        assert!(
+            !diags.is_empty(),
+            "wildcard leave rule should produce diagnostics"
+        );
+        assert!(
+            diags.iter().all(|d| d.message == "left"),
+            "all should be leave diagnostics"
+        );
+    }
+
+    #[test]
+    fn test_targeted_leave_dispatches() {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(TargetedLeaveRule)];
+        let diags = run_traversal("1;", &rules);
+        // The source "1;" should parse as an ExpressionStatement, triggering the targeted leave.
+        assert!(
+            diags
+                .iter()
+                .any(|d| d.rule_name == "targeted-leave" && d.message == "targeted-left"),
+            "targeted leave should fire on ExpressionStatement"
+        );
+    }
+
+    #[test]
+    fn test_run_once_fires() {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RunOnceRule)];
+        let diags = run_traversal("const x = 1;", &rules);
+        assert_eq!(
+            diags.len(),
+            1,
+            "run_once should produce exactly one diagnostic"
+        );
+        assert_eq!(
+            diags.first().map(|d| d.rule_name.as_str()),
+            Some("run-once"),
+            "should be from the run-once rule"
+        );
+    }
+
+    #[test]
+    fn test_should_run_on_file_filters_rule() {
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SkipFileRule)];
+        let diags = run_traversal("debugger;", &rules);
+        assert!(
+            diags.is_empty(),
+            "rule that returns false from should_run_on_file should produce no diagnostics"
+        );
+    }
+
+    #[test]
+    fn test_mixed_traversal_and_run_once() {
+        let rules: Vec<Box<dyn LintRule>> = vec![
+            Box::new(EnterCountRule { name: "enter" }),
+            Box::new(RunOnceRule),
+        ];
+        let diags = run_traversal("1;", &rules);
+        let enter_count = diags.iter().filter(|d| d.rule_name == "enter").count();
+        let once_count = diags.iter().filter(|d| d.rule_name == "run-once").count();
+        assert!(enter_count > 0, "enter rule should fire");
+        assert_eq!(once_count, 1, "run-once should fire exactly once");
+    }
+
+    #[test]
+    fn test_empty_rules_produces_no_diagnostics() {
+        let rules: Vec<Box<dyn LintRule>> = vec![];
+        let diags = run_traversal("const x = 1;", &rules);
+        assert!(diags.is_empty(), "no rules should produce no diagnostics");
+    }
+
+    #[test]
+    fn test_empty_tree_with_wildcard_rule() {
+        let tree = AstTree::new();
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(EnterCountRule { name: "wildcard" })];
+        let table = LintDispatchTable::build_from_indices(&rules, &[0]);
+        let diags = traverse_ast_tree(&tree, &rules, &table, &[], "", Path::new("test.js"), None);
+        assert!(
+            diags.is_empty(),
+            "empty tree should produce no diagnostics even with wildcard rule"
+        );
+    }
+
+    #[test]
+    fn test_run_once_with_should_run_on_file_false() {
+        /// Run-once rule that skips all files.
+        #[derive(Debug)]
+        struct SkipOnceRule;
+
+        impl LintRule for SkipOnceRule {
+            fn meta(&self) -> RuleMeta {
+                RuleMeta {
+                    name: "skip-once".to_owned(),
+                    description: String::new(),
+                    category: Category::Correctness,
+                    default_severity: Severity::Warning,
+                }
+            }
+
+            fn needs_traversal(&self) -> bool {
+                false
+            }
+
+            fn run_once(&self, ctx: &mut LintContext<'_>) {
+                ctx.report_warning("skip-once", "should not appear", Span::new(0, 0));
+            }
+
+            fn should_run_on_file(&self, _source_text: &str, _file_path: &Path) -> bool {
+                false
+            }
+        }
+
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SkipOnceRule)];
+        let diags = run_traversal("const x = 1;", &rules);
+        assert!(
+            diags.is_empty(),
+            "run_once rule with should_run_on_file=false should not fire"
+        );
+    }
+}

@@ -338,3 +338,24 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::yoda::Yoda),
     ]
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_plugin_returns_rules() {
+        let plugin = create_plugin();
+        let rules = plugin.rules();
+        assert!(
+            !rules.is_empty(),
+            "core plugin should provide at least one rule"
+        );
+    }
+
+    #[test]
+    fn test_all_rules_count() {
+        let rules = all_rules();
+        assert_eq!(rules.len(), 318, "core should have 318 rules");
+    }
+}
