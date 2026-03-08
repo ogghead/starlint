@@ -17,7 +17,7 @@ Rust workspace (edition 2024, rustc 1.85+, stable channel). A fast JS/TS linter 
 | `cargo machete` | Check for unused dependencies |
 | `cargo llvm-cov nextest --workspace` | Coverage (text summary) |
 | `cargo llvm-cov nextest --workspace --html --open` | Coverage in browser |
-| `cargo llvm-cov nextest --workspace --fail-under-lines 60` | Enforce coverage threshold |
+| `cargo llvm-cov nextest --workspace --fail-under-lines 90` | Enforce coverage threshold |
 
 ## Workflow
 

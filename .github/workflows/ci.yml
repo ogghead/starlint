@@ -81,4 +81,4 @@ jobs:
           retention-days: 14
 
       - name: Enforce coverage threshold
-        run: cargo llvm-cov nextest --workspace --fail-under-lines 60
+        run: cargo llvm-cov nextest --workspace --fail-under-lines 90
