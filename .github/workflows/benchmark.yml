@@ -51,13 +51,16 @@ jobs:
         uses: actions/cache@v5
         with:
           path: benches/node_modules
-          key: bench-npm-v1
+          key: bench-npm-v2
 
       - name: Setup benchmarks
         run: ./benches/setup.sh
 
-      - name: Run benchmarks
-        run: ./benches/run.sh --warmup 2 --runs 5
+      - name: Run equivalent benchmarks (all corpora)
+        run: ./benches/run.sh --scenario equivalent --warmup 2 --runs 5
+
+      - name: Run all-rules benchmarks (express only — eslint OOMs on larger corpora)
+        run: ./benches/run.sh --scenario all-rules --corpus express --warmup 2 --runs 5
 
       - name: Update README with results
         run: ./benches/update-readme.sh
