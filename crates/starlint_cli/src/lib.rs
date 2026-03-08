@@ -6,6 +6,7 @@ pub mod cli;
 pub mod error;
 
 use std::fmt::Write;
+use std::io::Write as IoWrite;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
@@ -327,16 +328,22 @@ fn report_diagnostics(
         })
         .collect();
 
-    // Print sequentially to preserve file order and avoid interleaving.
+    // Write sequentially with a buffered stdout to minimize syscalls.
+    let stdout = std::io::stdout();
+    let mut writer = std::io::BufWriter::new(stdout.lock());
     let mut total_errors = 0usize;
     let mut total_warnings = 0usize;
     for report in &reports {
         if !report.output.is_empty() {
-            print!("{}", report.output);
+            #[allow(clippy::let_underscore_must_use)]
+            let _ = writer.write_all(report.output.as_bytes());
         }
         total_errors = total_errors.saturating_add(report.errors);
         total_warnings = total_warnings.saturating_add(report.warnings);
     }
+    #[allow(clippy::let_underscore_must_use)]
+    let _ = writer.flush();
+    drop(writer);
 
     if total_errors > 0 || total_warnings > 0 {
         eprintln!(
