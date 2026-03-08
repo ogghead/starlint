@@ -8,10 +8,7 @@ use std::path::Path;
 
 use starlint_core::diagnostic::OutputFormat;
 use starlint_core::engine::LintSession;
-use starlint_core::fix::apply_fixes;
-use starlint_core::lint_rule::LintRule;
-use starlint_core::lint_rule_plugin::LintRulePlugin;
-use starlint_core::plugin::Plugin;
+use starlint_rule_framework::{LintRule, LintRulePlugin, Plugin, apply_fixes};
 /// Collect all rules from all plugin crates.
 fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
     let mut rules = Vec::new();

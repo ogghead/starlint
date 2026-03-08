@@ -2,7 +2,7 @@
 //!
 //! Manages the wasmtime engine, store, and plugin instances.
 //! [`WasmPluginHost`] loads WASM component plugins and produces
-//! [`Plugin`](starlint_core::Plugin) instances for integration with
+//! [`Plugin`](starlint_rule_framework::Plugin) instances for integration with
 //! the lint engine via [`into_plugins`](WasmPluginHost::into_plugins).
 
 // Generated WIT bindings for the `linter-plugin` world.
@@ -66,9 +66,9 @@ mod host {
     use wasmtime::component::{Component, Linker};
     use wasmtime::{Engine, Store, StoreLimits, StoreLimitsBuilder};
 
-    use starlint_core::plugin::{FileContext as CoreFileContext, Plugin};
     use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Label, Severity, Span};
     use starlint_plugin_sdk::rule::{Category as SdkCategory, FixKind, RuleMeta as SdkRuleMeta};
+    use starlint_rule_framework::{FileContext as CoreFileContext, Plugin};
 
     use super::ResourceLimits;
     use super::bindings::LinterPluginPre;

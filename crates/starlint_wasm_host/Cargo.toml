@@ -13,7 +13,7 @@ wasm = ["dep:wasmtime"]
 
 [dependencies]
 starlint_plugin_sdk = { workspace = true }
-starlint_core = { workspace = true }
+starlint_rule_framework = { workspace = true }
 
 globset = { workspace = true }
 miette = { workspace = true }

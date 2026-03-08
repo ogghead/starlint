@@ -12,7 +12,7 @@ starlint_parser = { workspace = true }
 starlint_plugin_sdk = { workspace = true }
 starlint_scope = { workspace = true }
 starlint_config = { workspace = true }
-starlint_rule_framework = { workspace = true, features = ["test-utils"] }
+starlint_rule_framework = { workspace = true }
 
 miette = { workspace = true }
 thiserror = { workspace = true }

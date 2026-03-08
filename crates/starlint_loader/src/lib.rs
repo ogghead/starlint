@@ -91,7 +91,7 @@ fn native_plugin_registry() -> Vec<NativePlugin> {
 
 /// Return all built-in lint rules from all native plugin crates.
 #[must_use]
-pub fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
+fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
     native_plugin_registry()
         .into_iter()
         .flat_map(|np| (np.factory)())

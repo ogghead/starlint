@@ -2,18 +2,18 @@
 //!
 //! [`LintSession`] holds the resolved plugin set and lints files in parallel.
 //! All rule providers — native Rust rules and WASM plugins alike — implement
-//! the [`Plugin`](crate::plugin::Plugin) trait.
+//! the [`Plugin`](starlint_rule_framework::Plugin) trait.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
 use starlint_parser::ParseOptions;
+use starlint_rule_framework::{FileContext, Plugin};
 
 use crate::diagnostic::OutputFormat;
 use crate::error::LintError;
 use crate::overrides::OverrideSet;
-use crate::plugin::{FileContext, Plugin};
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
 
 /// Diagnostics collected for a single file.
@@ -215,7 +215,7 @@ impl LintSession {
 mod tests {
     #[allow(clippy::wildcard_imports)]
     use super::*;
-    use crate::lint_rule_plugin::LintRulePlugin;
+    use starlint_rule_framework::LintRulePlugin;
 
     #[test]
     fn test_lint_session_no_rules() {
