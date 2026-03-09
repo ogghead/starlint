@@ -51,15 +51,16 @@ crates/
   starlint_plugin_sdk/       # Shared wire types (Diagnostic, RuleMeta, Span)
   starlint_loader/           # Plugin loader (unified registry + WASM loading)
   starlint_wasm_host/        # WASM runtime (wasmtime, bridge)
-  starlint_plugin_core/      # 318 core JS/TS rules
-  starlint_plugin_react/     # 84 React + JSX a11y + perf rules
-  starlint_plugin_typescript/ # 98 TypeScript rules
+  starlint_plugin_core/      # 326 core JS/TS rules
+  starlint_plugin_react/     # 87 React + JSX a11y + perf rules
+  starlint_plugin_typescript/ # 99 TypeScript rules
   starlint_plugin_testing/   # 71 Jest + Vitest rules
   starlint_plugin_modules/   # 55 import + node + promise rules
   starlint_plugin_nextjs/    # 21 Next.js rules
   starlint_plugin_vue/       # 17 Vue rules
   starlint_plugin_jsdoc/     # 18 JSDoc rules
   starlint_plugin_storybook/ # 15 Storybook rules
+  starlint_benches/        # Per-rule criterion benchmarks (cargo bench -p starlint-benches)
 editors/
   vscode/                    # VS Code extension (language client)
 wit/
@@ -94,7 +95,7 @@ starlint_plugin_sdk → serde
 
 ### Key Design Decisions
 
-- **Modular Plugin architecture**: All 697 rules live in 9 independent plugin crates (`starlint_plugin_*`). Each exports `create_plugin() -> Box<dyn Plugin>` and `all_rules()`. Native and WASM plugins implement the same `Plugin` trait. The loader uses a feature-gated registry — users can compile custom distributions with only needed plugins. Config uses `[plugins]` — no distinction between built-in and external.
+- **Modular Plugin architecture**: All 709 rules live in 9 independent plugin crates (`starlint_plugin_*`). Each exports `create_plugin() -> Box<dyn Plugin>` and `all_rules()`. Native and WASM plugins implement the same `Plugin` trait. The loader uses a feature-gated registry — users can compile custom distributions with only needed plugins. Config uses `[plugins]` — no distinction between built-in and external.
 - **Rule framework separation**: `starlint_rule_framework` provides `LintRule`, `LintContext`, `Plugin`, `LintRulePlugin` adapter, AST traversal, and fix utilities. Plugin crates depend only on the framework (never the engine). The engine (`starlint_core`) depends on the framework but not on any plugin crate.
 - **Custom parser + flat AST**: `starlint_parser` produces a `NodeId`-indexed `AstTree` — no arena allocation, no lifetime constraints
 - **Lightweight scope analysis**: `starlint_scope` builds scope tree, symbol table, and reference tracking in two passes over `AstTree`

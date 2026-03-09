@@ -19,6 +19,7 @@ pub fn create_plugin() -> Box<dyn Plugin> {
 pub fn all_rules() -> Vec<Box<dyn LintRule>> {
     vec![
         Box::new(crate::rules::react::button_has_type::ButtonHasType),
+        Box::new(crate::rules::react::checked_requires_onchange_or_readonly::CheckedRequiresOnchangeOrReadonly),
         Box::new(crate::rules::react::display_name::DisplayName),
         Box::new(crate::rules::react::exhaustive_deps::ExhaustiveDeps),
         Box::new(crate::rules::react::forbid_dom_props::ForbidDomProps),
@@ -53,6 +54,8 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::react::no_find_dom_node::NoFindDomNode),
         Box::new(crate::rules::react::no_is_mounted::NoIsMounted),
         Box::new(crate::rules::react::no_multi_comp::NoMultiComp),
+        Box::new(crate::rules::react::no_namespace::NoNamespace),
+        Box::new(crate::rules::react::no_redundant_should_component_update::NoRedundantShouldComponentUpdate),
         Box::new(crate::rules::react::no_render_return_value::NoRenderReturnValue),
         Box::new(crate::rules::react::no_set_state::NoSetState),
         Box::new(crate::rules::react::no_string_refs::NoStringRefs),
@@ -126,6 +129,6 @@ mod tests {
     #[test]
     fn test_all_rules_count() {
         let rules = all_rules();
-        assert_eq!(rules.len(), 84, "react should have 84 rules");
+        assert_eq!(rules.len(), 87, "react should have 87 rules");
     }
 }

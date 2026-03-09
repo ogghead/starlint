@@ -54,6 +54,7 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::typescript::no_misused_new::NoMisusedNew),
         Box::new(crate::rules::typescript::no_misused_promises::NoMisusedPromises),
         Box::new(crate::rules::typescript::no_misused_spread::NoMisusedSpread),
+        Box::new(crate::rules::typescript::no_namespace::NoNamespace),
         Box::new(crate::rules::typescript::no_mixed_enums::NoMixedEnums),
         Box::new(crate::rules::typescript::no_non_null_asserted_optional_chain::NoNonNullAssertedOptionalChain),
         Box::new(crate::rules::typescript::no_non_null_assertion::NoNonNullAssertion),
@@ -136,6 +137,6 @@ mod tests {
     #[test]
     fn test_all_rules_count() {
         let rules = all_rules();
-        assert_eq!(rules.len(), 98, "typescript should have 98 rules");
+        assert_eq!(rules.len(), 99, "typescript should have 99 rules");
     }
 }

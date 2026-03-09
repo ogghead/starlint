@@ -84,6 +84,7 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::no_accessor_recursion::NoAccessorRecursion),
         Box::new(crate::rules::no_accumulating_spread::NoAccumulatingSpread),
         Box::new(crate::rules::no_alert::NoAlert),
+        Box::new(crate::rules::no_anonymous_default_export::NoAnonymousDefaultExport),
         Box::new(crate::rules::no_array_callback_reference::NoArrayCallbackReference),
         Box::new(crate::rules::no_array_constructor::NoArrayConstructor),
         Box::new(crate::rules::no_array_for_each::NoArrayForEach),
@@ -119,6 +120,7 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::no_document_cookie::NoDocumentCookie),
         Box::new(crate::rules::no_dupe_class_members::NoDupeClassMembers),
         Box::new(crate::rules::no_dupe_else_if::NoDupeElseIf),
+        Box::new(crate::rules::no_dupe_keys::NoDupeKeys),
         Box::new(crate::rules::no_duplicate_case::NoDuplicateCase),
         Box::new(crate::rules::no_duplicate_imports::NoDuplicateImports),
         Box::new(crate::rules::no_else_return::NoElseReturn),
@@ -182,12 +184,14 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::no_optional_chaining::NoOptionalChaining),
         Box::new(crate::rules::no_param_reassign::NoParamReassign),
         Box::new(crate::rules::no_plusplus::NoPlusplus),
+        Box::new(crate::rules::no_process_exit::NoProcessExit),
         Box::new(crate::rules::no_promise_executor_return::NoPromiseExecutorReturn),
         Box::new(crate::rules::no_proto::NoProto),
         Box::new(crate::rules::no_prototype_builtins::NoPrototypeBuiltins),
         Box::new(crate::rules::no_redeclare::NoRedeclare),
         Box::new(crate::rules::no_regex_spaces::NoRegexSpaces),
         Box::new(crate::rules::no_rest_spread_properties::NoRestSpreadProperties),
+        Box::new(crate::rules::no_restricted_imports::NoRestrictedImports::new()),
         Box::new(crate::rules::no_restricted_globals::NoRestrictedGlobals::new()),
         Box::new(crate::rules::no_return_assign::NoReturnAssign),
         Box::new(crate::rules::no_script_url::NoScriptUrl),
@@ -276,6 +280,7 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::prefer_dom_node_remove::PreferDomNodeRemove),
         Box::new(crate::rules::prefer_dom_node_text_content::PreferDomNodeTextContent),
         Box::new(crate::rules::prefer_event_target::PreferEventTarget),
+        Box::new(crate::rules::prefer_includes::PreferIncludes),
         Box::new(crate::rules::prefer_exponentiation_operator::PreferExponentiationOperator),
         Box::new(crate::rules::prefer_global_this::PreferGlobalThis),
         Box::new(crate::rules::prefer_keyboard_event_key::PreferKeyboardEventKey),
@@ -291,6 +296,7 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::prefer_number_properties::PreferNumberProperties),
         Box::new(crate::rules::prefer_numeric_literals::PreferNumericLiterals),
         Box::new(crate::rules::prefer_object_from_entries::PreferObjectFromEntries),
+        Box::new(crate::rules::prefer_promise_reject_errors::PreferPromiseRejectErrors),
         Box::new(crate::rules::prefer_object_has_own::PreferObjectHasOwn),
         Box::new(crate::rules::prefer_object_spread::PreferObjectSpread),
         Box::new(crate::rules::prefer_optional_catch_binding::PreferOptionalCatchBinding),
@@ -304,6 +310,7 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::prefer_set_size::PreferSetSize),
         Box::new(crate::rules::prefer_spread::PreferSpread),
         Box::new(crate::rules::prefer_string_raw::PreferStringRaw),
+        Box::new(crate::rules::prefer_string_starts_ends_with::PreferStringStartsEndsWith),
         Box::new(crate::rules::prefer_string_replace_all::PreferStringReplaceAll),
         Box::new(crate::rules::prefer_string_slice::PreferStringSlice),
         Box::new(crate::rules::prefer_string_trim_start_end::PreferStringTrimStartEnd),
@@ -318,6 +325,7 @@ pub fn all_rules() -> Vec<Box<dyn LintRule>> {
         Box::new(crate::rules::radix::Radix),
         Box::new(crate::rules::relative_url_style::RelativeUrlStyle),
         Box::new(crate::rules::require_array_join_separator::RequireArrayJoinSeparator),
+        Box::new(crate::rules::require_await::RequireAwait),
         Box::new(crate::rules::require_module_attributes::RequireModuleAttributes),
         Box::new(crate::rules::require_module_specifiers::RequireModuleSpecifiers),
         Box::new(crate::rules::require_number_to_fixed_digits_argument::RequireNumberToFixedDigitsArgument),
@@ -356,6 +364,6 @@ mod tests {
     #[test]
     fn test_all_rules_count() {
         let rules = all_rules();
-        assert_eq!(rules.len(), 318, "core should have 318 rules");
+        assert_eq!(rules.len(), 326, "core should have 326 rules");
     }
 }

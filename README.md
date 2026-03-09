@@ -5,7 +5,7 @@ A fast, Rust-based JavaScript/TypeScript linter with first-class WASM plugin sup
 ## Features
 
 - **Fast**: Hand-written recursive descent parser, flat indexed AST, single-pass traversal, streaming output
-- **696 rules**: Covers JS, TS, React, Next.js, Vue, Jest, Vitest, JSDoc, Storybook, and more
+- **709 rules**: Covers JS, TS, React, Next.js, Vue, Jest, Vitest, JSDoc, Storybook, and more
 - **WASM plugins**: Write lint rules in Rust (or any language targeting WASM) using the Component Model
 - **Auto-fix**: Safe and dangerous fix categories with `--fix` and `--fix-dangerous`, multi-pass convergence
 - **Parallel**: File-level parallelism via rayon
@@ -164,13 +164,13 @@ CLI args → config resolution → plugin loading (starlint_loader)
 
 ### Rule Categories
 
-696 rules organized into 9 native plugin bundles:
+709 rules organized into 9 native plugin bundles:
 
 | Category | Rules | Plugin |
 |----------|------:|--------|
-| General (JS/TS) | 318 | `core` |
-| TypeScript | 98 | `typescript` |
-| React | 52 | `react` |
+| General (JS/TS) | 326 | `core` |
+| TypeScript | 99 | `typescript` |
+| React | 55 | `react` |
 | JSX A11y | 31 | `react` |
 | Jest | 54 | `testing` |
 | Vitest | 17 | `testing` |
