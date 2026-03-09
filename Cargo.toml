@@ -4,6 +4,7 @@ members = ["crates/*"]
 exclude = ["examples/plugins/starlint-plugin-example", "examples/plugins/starlint-plugin-jsx-example", "examples/plugins/starlint-plugin-storybook", "examples/plugins/starlint-plugin-testing", "examples/plugins/starlint-plugin-react", "examples/plugins/starlint-plugin-modules", "examples/plugins/starlint-plugin-nextjs", "examples/plugins/starlint-plugin-vue", "examples/plugins/starlint-plugin-jsdoc", "examples/plugins/starlint-plugin-typescript"]
 
 [workspace.package]
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.85"
 license = "MIT"

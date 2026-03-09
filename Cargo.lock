@@ -1997,7 +1997,7 @@ checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "starlint_ast"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pretty_assertions",
  "serde",
@@ -2006,7 +2006,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_benches"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "starlint_ast",
@@ -2026,7 +2026,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_cli"
-version = "0.1.5"
+version = "0.2.0"
 dependencies = [
  "clap",
  "miette",
@@ -2047,7 +2047,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_config"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "miette",
  "pretty_assertions",
@@ -2060,7 +2060,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "globset",
  "ignore",
@@ -2091,7 +2091,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_loader"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "starlint_config",
@@ -2112,7 +2112,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_lsp"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "miette",
  "serde",
@@ -2128,7 +2128,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_parser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "miette",
  "pretty_assertions",
@@ -2139,7 +2139,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "starlint_ast",
@@ -2150,7 +2150,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_jsdoc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "starlint_plugin_sdk",
  "starlint_rule_framework",
@@ -2158,7 +2158,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_modules"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "serde_json",
  "starlint_ast",
@@ -2168,7 +2168,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_nextjs"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "starlint_ast",
  "starlint_plugin_sdk",
@@ -2177,7 +2177,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_react"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "starlint_ast",
  "starlint_plugin_sdk",
@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_sdk"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pretty_assertions",
  "serde",
@@ -2195,7 +2195,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_storybook"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "starlint_ast",
  "starlint_plugin_sdk",
@@ -2204,7 +2204,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_testing"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "starlint_ast",
  "starlint_plugin_sdk",
@@ -2213,7 +2213,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_typescript"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "starlint_ast",
  "starlint_plugin_sdk",
@@ -2222,7 +2222,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_plugin_vue"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "starlint_ast",
  "starlint_plugin_sdk",
@@ -2231,7 +2231,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_rule_framework"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "pretty_assertions",
  "serde_json",
@@ -2244,7 +2244,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_scope"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proptest",
  "starlint_ast",
@@ -2254,7 +2254,7 @@ dependencies = [
 
 [[package]]
 name = "starlint_wasm_host"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "globset",
