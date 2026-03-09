@@ -1,6 +1,6 @@
 {
   "name": "starlint",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "A fast, Rust-based JavaScript/TypeScript linter",
   "license": "MIT",
   "repository": {
@@ -27,10 +27,10 @@
     "node": ">=14"
   },
   "optionalDependencies": {
-    "@starlint/cli-linux-x64-gnu": "0.1.4",
-    "@starlint/cli-linux-arm64-gnu": "0.1.4",
-    "@starlint/cli-darwin-x64": "0.1.4",
-    "@starlint/cli-darwin-arm64": "0.1.4",
-    "@starlint/cli-win32-x64-msvc": "0.1.4"
+    "@starlint/cli-linux-x64-gnu": "0.1.5",
+    "@starlint/cli-linux-arm64-gnu": "0.1.5",
+    "@starlint/cli-darwin-x64": "0.1.5",
+    "@starlint/cli-darwin-arm64": "0.1.5",
+    "@starlint/cli-win32-x64-msvc": "0.1.5"
   }
 }
