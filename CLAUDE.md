@@ -48,7 +48,11 @@ Key crates (quick reference):
 - `starlint_scope` — scope analysis (symbols, references, scopes)
 - `starlint_plugin_sdk` — shared wire types (`Diagnostic`, `RuleMeta`, `Span`)
 - `starlint_loader` — plugin loader (unified registry + WASM, feature-gated)
-- `starlint_plugin_*` — 9 plugin crates (709 rules total), each exports `create_plugin()` and `all_rules()`
+- `starlint_config` — config file loading (`starlint.toml`)
+- `starlint_ast` — flat indexed AST types (`NodeId`-based)
+- `starlint_lsp` — LSP server (tower-lsp, diagnostics, code actions)
+- `starlint_wasm_host` — WASM runtime (wasmtime, bridge)
+- `starlint_plugin_*` — 9 plugin crates (710 rules total), each exports `create_plugin()` and `all_rules()`
 - `starlint_benches` — per-rule criterion benchmarks (`cargo bench -p starlint_benches`)
 
 Data flow: CLI args → config → plugin loading → file discovery → per-file parallel (parse → scope if needed → dispatch to plugins) → diagnostics → overrides → output → optional fix passes
