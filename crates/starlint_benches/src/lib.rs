@@ -1,16 +1,16 @@
 //! Benchmark utilities and fixtures for starlint rule benchmarks.
 //!
 //! Provides pre-parsed fixtures and helpers for criterion-based benchmarks.
-//! Run individual benchmarks with: `cargo bench -p starlint-benches -- <filter>`
+//! Run individual benchmarks with: `cargo bench -p starlint_benches -- <filter>`
 //!
 //! # Examples
 //!
 //! ```bash
-//! cargo bench -p starlint-benches                    # all rules (~30 min)
-//! cargo bench -p starlint-benches -- core/           # core plugin only
-//! cargo bench -p starlint-benches -- core/no-debugger # single rule
-//! cargo bench -p starlint-benches -- _bundle         # all plugin bundles
-//! cargo bench -p starlint-benches -- parse/          # parse-only benchmarks
+//! cargo bench -p starlint_benches                    # all rules (~30 min)
+//! cargo bench -p starlint_benches -- core/           # core plugin only
+//! cargo bench -p starlint_benches -- core/no-debugger # single rule
+//! cargo bench -p starlint_benches -- _bundle         # all plugin bundles
+//! cargo bench -p starlint_benches -- parse/          # parse-only benchmarks
 //! ```
 
 #![allow(clippy::missing_docs_in_private_items)]

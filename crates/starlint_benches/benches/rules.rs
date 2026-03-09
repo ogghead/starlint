@@ -4,7 +4,7 @@
 //! benchmarked individually plus a `_bundle` benchmark that runs all rules
 //! in that plugin together.
 //!
-//! Filter with: `cargo bench -p starlint-benches -- <pattern>`
+//! Filter with: `cargo bench -p starlint_benches -- <pattern>`
 
 #![allow(clippy::missing_docs_in_private_items)]
 #![allow(clippy::print_stdout)]

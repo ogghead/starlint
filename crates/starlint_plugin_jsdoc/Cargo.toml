@@ -1,5 +1,5 @@
 [package]
-name = "starlint-plugin-jsdoc"
+name = "starlint_plugin_jsdoc"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true

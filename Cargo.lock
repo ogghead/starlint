@@ -1996,115 +1996,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
-name = "starlint-benches"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "starlint-plugin-core",
- "starlint-plugin-jsdoc",
- "starlint-plugin-modules",
- "starlint-plugin-nextjs",
- "starlint-plugin-react",
- "starlint-plugin-storybook",
- "starlint-plugin-testing",
- "starlint-plugin-typescript",
- "starlint-plugin-vue",
- "starlint_ast",
- "starlint_parser",
- "starlint_rule_framework",
- "starlint_scope",
-]
-
-[[package]]
-name = "starlint-plugin-core"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "starlint_ast",
- "starlint_plugin_sdk",
- "starlint_rule_framework",
- "starlint_scope",
-]
-
-[[package]]
-name = "starlint-plugin-jsdoc"
-version = "0.1.0"
-dependencies = [
- "starlint_plugin_sdk",
- "starlint_rule_framework",
-]
-
-[[package]]
-name = "starlint-plugin-modules"
-version = "0.1.0"
-dependencies = [
- "serde_json",
- "starlint_ast",
- "starlint_plugin_sdk",
- "starlint_rule_framework",
-]
-
-[[package]]
-name = "starlint-plugin-nextjs"
-version = "0.1.0"
-dependencies = [
- "starlint_ast",
- "starlint_plugin_sdk",
- "starlint_rule_framework",
-]
-
-[[package]]
-name = "starlint-plugin-react"
-version = "0.1.0"
-dependencies = [
- "starlint_ast",
- "starlint_plugin_sdk",
- "starlint_rule_framework",
-]
-
-[[package]]
-name = "starlint-plugin-storybook"
-version = "0.1.0"
-dependencies = [
- "starlint_ast",
- "starlint_plugin_sdk",
- "starlint_rule_framework",
-]
-
-[[package]]
-name = "starlint-plugin-testing"
-version = "0.1.0"
-dependencies = [
- "starlint_ast",
- "starlint_plugin_sdk",
- "starlint_rule_framework",
-]
-
-[[package]]
-name = "starlint-plugin-typescript"
-version = "0.1.0"
-dependencies = [
- "starlint_ast",
- "starlint_plugin_sdk",
- "starlint_rule_framework",
-]
-
-[[package]]
-name = "starlint-plugin-vue"
-version = "0.1.0"
-dependencies = [
- "starlint_ast",
- "starlint_plugin_sdk",
- "starlint_rule_framework",
-]
-
-[[package]]
 name = "starlint_ast"
 version = "0.1.0"
 dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "starlint_benches"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "starlint_ast",
+ "starlint_parser",
+ "starlint_plugin_core",
+ "starlint_plugin_jsdoc",
+ "starlint_plugin_modules",
+ "starlint_plugin_nextjs",
+ "starlint_plugin_react",
+ "starlint_plugin_storybook",
+ "starlint_plugin_testing",
+ "starlint_plugin_typescript",
+ "starlint_plugin_vue",
+ "starlint_rule_framework",
+ "starlint_scope",
 ]
 
 [[package]]
@@ -2153,18 +2070,18 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "starlint-plugin-core",
- "starlint-plugin-jsdoc",
- "starlint-plugin-modules",
- "starlint-plugin-nextjs",
- "starlint-plugin-react",
- "starlint-plugin-storybook",
- "starlint-plugin-testing",
- "starlint-plugin-typescript",
- "starlint-plugin-vue",
  "starlint_config",
  "starlint_parser",
+ "starlint_plugin_core",
+ "starlint_plugin_jsdoc",
+ "starlint_plugin_modules",
+ "starlint_plugin_nextjs",
+ "starlint_plugin_react",
  "starlint_plugin_sdk",
+ "starlint_plugin_storybook",
+ "starlint_plugin_testing",
+ "starlint_plugin_typescript",
+ "starlint_plugin_vue",
  "starlint_rule_framework",
  "starlint_scope",
  "thiserror 2.0.18",
@@ -2177,17 +2094,17 @@ name = "starlint_loader"
 version = "0.1.0"
 dependencies = [
  "serde_json",
- "starlint-plugin-core",
- "starlint-plugin-jsdoc",
- "starlint-plugin-modules",
- "starlint-plugin-nextjs",
- "starlint-plugin-react",
- "starlint-plugin-storybook",
- "starlint-plugin-testing",
- "starlint-plugin-typescript",
- "starlint-plugin-vue",
  "starlint_config",
+ "starlint_plugin_core",
+ "starlint_plugin_jsdoc",
+ "starlint_plugin_modules",
+ "starlint_plugin_nextjs",
+ "starlint_plugin_react",
  "starlint_plugin_sdk",
+ "starlint_plugin_storybook",
+ "starlint_plugin_testing",
+ "starlint_plugin_typescript",
+ "starlint_plugin_vue",
  "starlint_rule_framework",
  "starlint_wasm_host",
  "tracing",
@@ -2221,12 +2138,95 @@ dependencies = [
 ]
 
 [[package]]
+name = "starlint_plugin_core"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "starlint_ast",
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
+ "starlint_scope",
+]
+
+[[package]]
+name = "starlint_plugin_jsdoc"
+version = "0.1.0"
+dependencies = [
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
+]
+
+[[package]]
+name = "starlint_plugin_modules"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "starlint_ast",
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
+]
+
+[[package]]
+name = "starlint_plugin_nextjs"
+version = "0.1.0"
+dependencies = [
+ "starlint_ast",
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
+]
+
+[[package]]
+name = "starlint_plugin_react"
+version = "0.1.0"
+dependencies = [
+ "starlint_ast",
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
+]
+
+[[package]]
 name = "starlint_plugin_sdk"
 version = "0.1.0"
 dependencies = [
  "pretty_assertions",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "starlint_plugin_storybook"
+version = "0.1.0"
+dependencies = [
+ "starlint_ast",
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
+]
+
+[[package]]
+name = "starlint_plugin_testing"
+version = "0.1.0"
+dependencies = [
+ "starlint_ast",
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
+]
+
+[[package]]
+name = "starlint_plugin_typescript"
+version = "0.1.0"
+dependencies = [
+ "starlint_ast",
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
+]
+
+[[package]]
+name = "starlint_plugin_vue"
+version = "0.1.0"
+dependencies = [
+ "starlint_ast",
+ "starlint_plugin_sdk",
+ "starlint_rule_framework",
 ]
 
 [[package]]

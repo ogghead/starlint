@@ -60,7 +60,7 @@ crates/
   starlint_plugin_vue/       # 17 Vue rules
   starlint_plugin_jsdoc/     # 18 JSDoc rules
   starlint_plugin_storybook/ # 15 Storybook rules
-  starlint_benches/        # Per-rule criterion benchmarks (cargo bench -p starlint-benches)
+  starlint_benches/        # Per-rule criterion benchmarks (cargo bench -p starlint_benches)
 editors/
   vscode/                    # VS Code extension (language client)
 wit/

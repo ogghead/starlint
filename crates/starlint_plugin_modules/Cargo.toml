@@ -1,5 +1,5 @@
 [package]
-name = "starlint-plugin-modules"
+name = "starlint_plugin_modules"
 version = "0.1.0"
 edition.workspace = true
 rust-version.workspace = true
