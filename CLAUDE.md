@@ -38,71 +38,20 @@ Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets --
 
 ## Architecture
 
-```
-crates/
-  starlint_cli/              # CLI binary (clap, orchestration)
-  starlint_core/             # Linter engine (file discovery, diagnostics, overrides)
-  starlint_rule_framework/   # Rule authoring (LintRule, LintContext, Plugin, traversal, fix utils)
-  starlint_config/           # Config file loading (starlint.toml)
-  starlint_ast/              # Flat indexed AST types (NodeId-based)
-  starlint_parser/           # Custom JS/TS/JSX/TSX parser → AstTree
-  starlint_scope/            # Lightweight scope analysis (symbols, references, scopes)
-  starlint_lsp/              # LSP server (tower-lsp, diagnostics, code actions)
-  starlint_plugin_sdk/       # Shared wire types (Diagnostic, RuleMeta, Span)
-  starlint_loader/           # Plugin loader (unified registry + WASM loading)
-  starlint_wasm_host/        # WASM runtime (wasmtime, bridge)
-  starlint_plugin_core/      # 326 core JS/TS rules
-  starlint_plugin_react/     # 87 React + JSX a11y + perf rules
-  starlint_plugin_typescript/ # 99 TypeScript rules
-  starlint_plugin_testing/   # 71 Jest + Vitest rules
-  starlint_plugin_modules/   # 55 import + node + promise rules
-  starlint_plugin_nextjs/    # 21 Next.js rules
-  starlint_plugin_vue/       # 17 Vue rules
-  starlint_plugin_jsdoc/     # 18 JSDoc rules
-  starlint_plugin_storybook/ # 15 Storybook rules
-  starlint_benches/        # Per-rule criterion benchmarks (cargo bench -p starlint_benches)
-editors/
-  vscode/                    # VS Code extension (language client)
-wit/
-  plugin.wit                 # WIT interface definition (plugin ABI)
-```
+Full architecture details, crate dependency graph, and design decisions are in [CONTRIBUTING.md](CONTRIBUTING.md).
 
-### Crate Dependency Graph
+Key crates (quick reference):
+- `starlint_cli` — CLI binary
+- `starlint_core` — engine (file discovery, diagnostics, overrides)
+- `starlint_rule_framework` — rule authoring (`LintRule`, `LintContext`, `Plugin`, traversal, fix utils)
+- `starlint_parser` — custom JS/TS/JSX/TSX parser → `AstTree`
+- `starlint_scope` — scope analysis (symbols, references, scopes)
+- `starlint_plugin_sdk` — shared wire types (`Diagnostic`, `RuleMeta`, `Span`)
+- `starlint_loader` — plugin loader (unified registry + WASM, feature-gated)
+- `starlint_plugin_*` — 9 plugin crates (709 rules total), each exports `create_plugin()` and `all_rules()`
+- `starlint_benches` — per-rule criterion benchmarks (`cargo bench -p starlint_benches`)
 
-```
-starlint_cli → starlint_core, starlint_config, starlint_loader, starlint_lsp, starlint_plugin_sdk, tokio
-starlint_lsp → starlint_core, starlint_config, starlint_loader, starlint_plugin_sdk, tower-lsp, tokio
-starlint_loader → starlint_core, starlint_config, starlint_rule_framework, starlint_plugin_sdk, starlint_wasm_host (feature-gated), all starlint_plugin_* crates (feature-gated)
-starlint_core → starlint_ast, starlint_parser, starlint_scope, starlint_plugin_sdk, starlint_config, starlint_rule_framework
-starlint_rule_framework → starlint_ast, starlint_scope, starlint_plugin_sdk
-starlint_plugin_* → starlint_rule_framework, starlint_plugin_sdk, starlint_ast
-starlint_scope → starlint_ast
-starlint_parser → starlint_ast
-starlint_config → toml, serde
-starlint_wasm_host → starlint_plugin_sdk, starlint_core, wasmtime
-starlint_plugin_sdk → serde
-```
-
-### Data Flow
-
-1. CLI args parsed (clap) → `Cli` struct
-2. Config resolved (walk up dirs for `starlint.toml`)
-3. `file_discovery` walks dirs, filters by extension → file list
-4. Per file (parallel via rayon): `starlint_parser::parse()` → `AstTree`
-5. If semantic rules active: `starlint_scope::build_scope_data(&tree)` → `ScopeData`
-6. Dispatch to all plugins uniformly via `Plugin::lint_file(&FileContext)`
-7. Merge all diagnostics → apply overrides → format (pretty/json/compact) → exit code
-
-### Key Design Decisions
-
-- **Modular Plugin architecture**: All 709 rules live in 9 independent plugin crates (`starlint_plugin_*`). Each exports `create_plugin() -> Box<dyn Plugin>` and `all_rules()`. Native and WASM plugins implement the same `Plugin` trait. The loader uses a feature-gated registry — users can compile custom distributions with only needed plugins. Config uses `[plugins]` — no distinction between built-in and external.
-- **Rule framework separation**: `starlint_rule_framework` provides `LintRule`, `LintContext`, `Plugin`, `LintRulePlugin` adapter, AST traversal, and fix utilities. Plugin crates depend only on the framework (never the engine). The engine (`starlint_core`) depends on the framework but not on any plugin crate.
-- **Custom parser + flat AST**: `starlint_parser` produces a `NodeId`-indexed `AstTree` — no arena allocation, no lifetime constraints
-- **Lightweight scope analysis**: `starlint_scope` builds scope tree, symbol table, and reference tracking in two passes over `AstTree`
-- **Single-pass traversal**: Native rules receive `AstNodeType` via type-filtered dispatch inside `LintRulePlugin` — miss is free
-- **Interest-based filtering**: WASM v1 plugins declare which node types they need
-- **Parallel processing**: rayon for file-level parallelism
-- **Batched WASM calls**: One `lint-file` call per file per plugin (not per-node)
+Data flow: CLI args → config → plugin loading → file discovery → per-file parallel (parse → scope if needed → dispatch to plugins) → diagnostics → overrides → output → optional fix passes
 
 ## Rust Conventions
 
