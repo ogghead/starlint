@@ -74,6 +74,14 @@ proptest = "1"
 [workspace.lints.rust]
 unsafe_code = "forbid"
 
+[workspace.lints.rustdoc]
+missing_crate_level_docs = "deny"
+unescaped_backticks = "deny"
+broken_intra_doc_links = "deny"
+bare_urls = "deny"
+invalid_html_tags = "deny"
+invalid_rust_codeblocks = "deny"
+
 [workspace.lints.clippy]
 all = { level = "warn", priority = -1 }
 pedantic = { level = "warn", priority = -1 }

@@ -49,7 +49,7 @@ pub trait LintRule: Debug + Send + Sync {
 
     /// Whether this rule requires semantic analysis (scope tree, symbol table).
     ///
-    /// Return `true` to indicate that the rule needs access to [`ScopeData`]
+    /// Return `true` to indicate that the rule needs access to `ScopeData`
     /// via [`LintContext::scope_data()`]. When any active rule returns `true`,
     /// the engine runs scope analysis before traversal.
     fn needs_semantic(&self) -> bool {

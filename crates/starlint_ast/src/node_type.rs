@@ -1,6 +1,6 @@
 //! Fieldless discriminant enum for dispatch-table indexing.
 //!
-//! [`AstNodeType`] has one variant per [`AstNode`](crate::AstNode) variant but
+//! [`AstNodeType`] has one variant per [`AstNode`] variant but
 //! carries no data. It is `#[repr(u8)]` so it can be used as an array index
 //! for O(1) dispatch.
 

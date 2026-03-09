@@ -1,7 +1,7 @@
 //! Fix utility functions for common autofix patterns.
 //!
 //! Provides composable helpers that return [`Edit`] or `Vec<Edit>`,
-//! allowing rules to assemble [`Fix`] objects from building blocks.
+//! allowing rules to assemble `Fix` objects from building blocks.
 
 use starlint_plugin_sdk::diagnostic::{Edit, Span};
 

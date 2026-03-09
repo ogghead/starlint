@@ -2,7 +2,7 @@
 //!
 //! [`LintSession`] holds the resolved plugin set and lints files in parallel.
 //! All rule providers — native Rust rules and WASM plugins alike — implement
-//! the [`Plugin`](starlint_rule_framework::Plugin) trait.
+//! the [`Plugin`] trait.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
