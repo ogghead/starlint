@@ -27,6 +27,10 @@ impl LintRule for HoistedApisOnTop {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        source_text.contains("vi.hoisted") && crate::is_test_file(file_path)
+    }
+
     fn needs_traversal(&self) -> bool {
         false
     }

@@ -32,17 +32,20 @@ MIN_RUNS=10
 
 CORPUS_FILTER=""
 SCENARIO_FILTER=""
+SKIP_ESLINT=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --corpus)   CORPUS_FILTER="$2"; shift 2 ;;
-        --scenario) SCENARIO_FILTER="$2"; shift 2 ;;
-        --warmup)   WARMUP="$2"; shift 2 ;;
-        --runs)     MIN_RUNS="$2"; shift 2 ;;
+        --corpus)     CORPUS_FILTER="$2"; shift 2 ;;
+        --scenario)   SCENARIO_FILTER="$2"; shift 2 ;;
+        --warmup)     WARMUP="$2"; shift 2 ;;
+        --runs)       MIN_RUNS="$2"; shift 2 ;;
+        --no-eslint)  SKIP_ESLINT=true; shift ;;
         -h|--help)
-            echo "Usage: $0 [--corpus NAME] [--scenario NAME] [--warmup N] [--runs N]"
+            echo "Usage: $0 [--corpus NAME] [--scenario NAME] [--warmup N] [--runs N] [--no-eslint]"
             echo "  Corpora:   express, date-fns, grafana"
             echo "  Scenarios: equivalent, all-rules"
+            echo "  --no-eslint: skip eslint benchmarks (run only starlint + oxlint)"
             exit 0
             ;;
         *) echo "Unknown arg: $1" >&2; exit 1 ;;
@@ -66,7 +69,7 @@ if [ ! -f "$OXLINT_BIN" ]; then
     exit 1
 fi
 
-if [ ! -f "$ESLINT_BIN" ]; then
+if [ "$SKIP_ESLINT" = false ] && [ ! -f "$ESLINT_BIN" ]; then
     echo "ERROR: eslint not found at $ESLINT_BIN. Run ./benches/setup.sh first." >&2
     exit 1
 fi
@@ -113,7 +116,7 @@ print(int(resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss))
     fi
 }
 
-# Run hyperfine + memory for a trio of linter commands.
+# Run hyperfine + memory for linter commands (eslint optional).
 run_bench() {
     local name="$1"
     local starlint_cmd="$2"
@@ -123,20 +126,32 @@ run_bench() {
     echo ""
     echo "━━━ Benchmark: $name ━━━"
 
-    hyperfine \
-        --warmup "$WARMUP" \
-        --min-runs "$MIN_RUNS" \
-        --export-json "$RESULTS_DIR/${name}.json" \
-        --export-markdown "$RESULTS_DIR/${name}.md" \
-        -n "starlint" "$starlint_cmd" \
-        -n "oxlint"   "$oxlint_cmd" \
-        -n "eslint"   "$eslint_cmd"
+    if [ "$SKIP_ESLINT" = true ]; then
+        hyperfine \
+            --warmup "$WARMUP" \
+            --min-runs "$MIN_RUNS" \
+            --export-json "$RESULTS_DIR/${name}.json" \
+            --export-markdown "$RESULTS_DIR/${name}.md" \
+            -n "starlint" "$starlint_cmd" \
+            -n "oxlint"   "$oxlint_cmd"
+    else
+        hyperfine \
+            --warmup "$WARMUP" \
+            --min-runs "$MIN_RUNS" \
+            --export-json "$RESULTS_DIR/${name}.json" \
+            --export-markdown "$RESULTS_DIR/${name}.md" \
+            -n "starlint" "$starlint_cmd" \
+            -n "oxlint"   "$oxlint_cmd" \
+            -n "eslint"   "$eslint_cmd"
+    fi
 
     echo "  Measuring peak memory..."
     rm -f "$RESULTS_DIR/${name}.mem"
     measure_memory "starlint" "$starlint_cmd" "$RESULTS_DIR/${name}.mem"
     measure_memory "oxlint"   "$oxlint_cmd"   "$RESULTS_DIR/${name}.mem"
-    measure_memory "eslint"   "$eslint_cmd"   "$RESULTS_DIR/${name}.mem"
+    if [ "$SKIP_ESLINT" = false ]; then
+        measure_memory "eslint"   "$eslint_cmd"   "$RESULTS_DIR/${name}.mem"
+    fi
 }
 
 should_run_corpus() {

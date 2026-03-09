@@ -28,6 +28,10 @@ impl LintRule for PreferToHaveLength {
         }
     }
 
+    fn should_run_on_file(&self, source_text: &str, file_path: &std::path::Path) -> bool {
+        source_text.contains(".length") && crate::is_test_file(file_path)
+    }
+
     fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
         Some(&[AstNodeType::CallExpression])
     }

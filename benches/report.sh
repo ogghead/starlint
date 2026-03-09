@@ -98,26 +98,50 @@ for json_file in "$RESULTS_DIR"/*.json; do
     oxlint_mem=$(get_memory_kb "$mem_file" "oxlint")
     eslint_mem=$(get_memory_kb "$mem_file" "eslint")
 
-    echo "| Tool | Median | Stddev | Memory | vs eslint | vs oxlint |"
-    echo "|------|--------|--------|--------|-----------|-----------|"
+    # Detect if eslint data is present
+    has_eslint=true
+    if [ "$eslint_t" = "N/A" ] || [ -z "$eslint_t" ]; then
+        has_eslint=false
+    fi
 
-    printf "| starlint | %s | %s | %s | %s | %s |\n" \
-        "$(fmt_time "$starlint_t")" \
-        "$(fmt_time "$starlint_sd")" \
-        "$(fmt_mem "$starlint_mem")" \
-        "$(speedup "$eslint_t" "$starlint_t")" \
-        "$(speedup "$oxlint_t" "$starlint_t")"
+    if [ "$has_eslint" = true ]; then
+        echo "| Tool | Median | Stddev | Memory | vs eslint | vs oxlint |"
+        echo "|------|--------|--------|--------|-----------|-----------|"
+    else
+        echo "| Tool | Median | Stddev | Memory | vs oxlint |"
+        echo "|------|--------|--------|--------|-----------|"
+    fi
 
-    printf "| oxlint | %s | %s | %s | %s | — |\n" \
-        "$(fmt_time "$oxlint_t")" \
-        "$(fmt_time "$oxlint_sd")" \
-        "$(fmt_mem "$oxlint_mem")" \
-        "$(speedup "$eslint_t" "$oxlint_t")"
+    if [ "$has_eslint" = true ]; then
+        printf "| starlint | %s | %s | %s | %s | %s |\n" \
+            "$(fmt_time "$starlint_t")" \
+            "$(fmt_time "$starlint_sd")" \
+            "$(fmt_mem "$starlint_mem")" \
+            "$(speedup "$eslint_t" "$starlint_t")" \
+            "$(speedup "$oxlint_t" "$starlint_t")"
 
-    printf "| eslint | %s | %s | %s | — | — |\n" \
-        "$(fmt_time "$eslint_t")" \
-        "$(fmt_time "$eslint_sd")" \
-        "$(fmt_mem "$eslint_mem")"
+        printf "| oxlint | %s | %s | %s | %s | — |\n" \
+            "$(fmt_time "$oxlint_t")" \
+            "$(fmt_time "$oxlint_sd")" \
+            "$(fmt_mem "$oxlint_mem")" \
+            "$(speedup "$eslint_t" "$oxlint_t")"
+
+        printf "| eslint | %s | %s | %s | — | — |\n" \
+            "$(fmt_time "$eslint_t")" \
+            "$(fmt_time "$eslint_sd")" \
+            "$(fmt_mem "$eslint_mem")"
+    else
+        printf "| starlint | %s | %s | %s | %s |\n" \
+            "$(fmt_time "$starlint_t")" \
+            "$(fmt_time "$starlint_sd")" \
+            "$(fmt_mem "$starlint_mem")" \
+            "$(speedup "$oxlint_t" "$starlint_t")"
+
+        printf "| oxlint | %s | %s | %s | — |\n" \
+            "$(fmt_time "$oxlint_t")" \
+            "$(fmt_time "$oxlint_sd")" \
+            "$(fmt_mem "$oxlint_mem")"
+    fi
 
     echo ""
 done
