@@ -19,18 +19,18 @@ Compared against [oxlint](https://oxc.rs) and [eslint](https://eslint.org) on re
 
 | Corpus | Files | starlint | oxlint | eslint |
 |--------|------:|----------|--------|--------|
-| express | 141 | **17ms (13 MB)** | 113ms (112 MB) | 1.61s (248 MB) |
-| date-fns | 1562 | **88ms (12 MB)** | 95ms (112 MB) | 4.92s (441 MB) |
-| grafana | 6201 | 485ms (37 MB) | **397ms (136 MB)** | 33.79s (564 MB) |
+| express | 141 | **16ms (12 MB)** | 80ms (111 MB) | 1.51s (271 MB) |
+| date-fns | 1562 | **87ms (12 MB)** | 89ms (113 MB) | 4.83s (417 MB) |
+| grafana | 6259 | 489ms (36 MB) | **355ms (135 MB)** | 33.60s (548 MB) |
 <details>
 <summary>All rules (~630-710 rules per tool)</summary>
 
 | Corpus | Files | starlint | oxlint | eslint |
 |--------|------:|----------|--------|--------|
-| express | 141 | **60ms (18 MB)** | 511ms (135 MB) | 13.72s (721 MB) |
+| express | 141 | **59ms (19 MB)** | 246ms (134 MB) | 13.25s (726 MB) |
 </details>
 
-*Last updated: 2026-03-09. Benchmarked with [hyperfine](https://github.com/sharkdp/hyperfine) (3 warmup, 10+ runs).*
+*Last updated: 2026-03-10. Benchmarked with [hyperfine](https://github.com/sharkdp/hyperfine) (3 warmup, 10+ runs).*
 <!-- BENCHMARKS_END -->
 
 ## Flamegraph
