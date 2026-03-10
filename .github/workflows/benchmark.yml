@@ -1,15 +1,15 @@
 name: Benchmarks
 
 on:
-  push:
-    branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pull-requests: write
 
 concurrency:
-  group: benchmarks
+  group: benchmarks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -62,8 +62,12 @@ jobs:
       - name: Run all-rules benchmarks (express only — eslint OOMs on larger corpora)
         run: ./benches/run.sh --scenario all-rules --corpus express --warmup 2 --runs 5
 
-      - name: Update README with results
-        run: ./benches/update-readme.sh
+      - name: Generate benchmark summary
+        id: bench-summary
+        run: |
+          SUMMARY="$(./benches/update-readme.sh --dry-run)"
+          # Write to file for the comment step (avoids shell quoting issues)
+          echo "$SUMMARY" > benches/results/summary.md
 
       - name: Upload raw results
         if: always()
@@ -73,10 +77,9 @@ jobs:
           path: benches/results/
           retention-days: 90
 
-      - name: Commit updated README
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add README.md
-          git diff --cached --quiet || git commit -m "Update benchmark results in README"
-          git push
+      - name: Post results to PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: benchmark-results
+          path: benches/results/summary.md
