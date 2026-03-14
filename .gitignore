@@ -25,4 +25,5 @@ npm/cli-*/starlint.exe
 npm/*.tgz
 
 # Claude
-.claude/
+.claude/*
+!.claude/settings.json
