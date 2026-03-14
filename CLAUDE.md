@@ -2,6 +2,61 @@
 
 Rust workspace (edition 2024, rustc 1.85+, stable channel). A fast JS/TS linter with first-class WASM plugin support.
 
+## Operating Principles (Non-Negotiable)
+
+- **Correctness over cleverness**: Prefer boring, readable solutions that are easy to maintain.
+- **Smallest change that works**: Minimize blast radius; don't refactor adjacent code unless it meaningfully reduces risk or complexity.
+- **Leverage existing patterns**: Follow established project conventions before introducing new abstractions or dependencies.
+- **Prove it works**: "Seems right" is not done. Validate with tests/build/lint and/or a reliable manual repro.
+- **Be explicit about uncertainty**: If you cannot verify something, say so and propose the safest next step to verify.
+
+## Agent Teams (Required)
+
+**Always create a Claude Code agent team for any non-trivial task.** This is mandatory for tasks involving 2+ files, architectural decisions, bug fixes, or new features.
+
+### When to Create a Team
+
+- Any task touching multiple crates or files
+- Bug reports (one agent reproduces, one investigates root cause, one reviews the fix)
+- New rules or features (one agent implements, one writes tests, one validates coverage/lint)
+- Refactoring across the workspace
+- Performance investigations (one agent profiles, one explores alternatives)
+
+### Team Structure Guidelines
+
+- Assign each teammate **one focused objective** with a concrete deliverable
+- Keep the main agent as coordinator — merge teammate outputs into actionable synthesis before coding
+- Use teammates for: repo exploration, pattern discovery, test failure triage, dependency research, risk review
+- Prefer 2-4 teammates; avoid spawning more than necessary
+
+### Example Team Prompts
+
+**Bug fix:**
+> Create a team: one teammate to reproduce and isolate the bug, one to research similar patterns in the codebase, one to draft a regression test.
+
+**New lint rule:**
+> Create a team: one teammate to study existing rules in the target plugin for patterns, one to research the ESLint equivalent rule behavior, one to draft test fixtures.
+
+**Cross-crate refactor:**
+> Create a team: one teammate to map all call sites and dependencies, one to assess risk and identify affected tests, one to prototype the change in an isolated crate.
+
+## Workflow Orchestration
+
+### Plan Mode Default
+- Enter plan mode for any non-trivial task (3+ steps, multi-file change, architectural decision).
+- Include verification steps in the plan (not as an afterthought).
+- If new information invalidates the plan: **stop**, update the plan, then continue.
+
+### Incremental Delivery
+- Prefer **thin vertical slices** over big-bang changes.
+- Land work in small, verifiable increments: implement → test → verify → then expand.
+- When feasible, keep changes behind feature flags or safe defaults.
+
+### Verification Before "Done"
+- Never mark complete without evidence: tests, lint/typecheck, build, or deterministic manual repro.
+- Compare behavior baseline vs changed behavior when relevant.
+- Ask: "Would a staff engineer approve this diff and the verification story?"
+
 ## Commands
 
 | Command | Purpose |
@@ -24,6 +79,10 @@ Rust workspace (edition 2024, rustc 1.85+, stable channel). A fast JS/TS linter 
 | `cargo fuzz run fuzz_parse` | Fuzz the parser (requires nightly + cargo-fuzz) |
 | `cargo fuzz run fuzz_parse_scope` | Fuzz parser → scope pipeline |
 
+### Pre-Commit Quality Gate
+
+Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
+
 ### Coverage Policy
 
 Two Codecov checks run on every PR (configured in `.codecov.yml`):
@@ -32,10 +91,6 @@ Two Codecov checks run on every PR (configured in `.codecov.yml`):
 - **`codecov/patch`**: New/changed lines must have ≥95% coverage
 
 The 90% `--fail-under-lines` floor remains as a hard minimum in CI.
-
-## Workflow
-
-Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace`
 
 ## Architecture
 
@@ -124,6 +179,8 @@ starlint_wasm_host → starlint_plugin_sdk, starlint_core, wasmtime
 - Snapshot testing: `insta` crate (YAML format)
 - Property testing: `proptest` (parser and scope analysis)
 - Rule testing: `lint_source()` helper from `starlint_rule_framework` (feature: `test-utils`)
+- Add the smallest test that would have caught the bug
+- Prefer unit tests for pure logic, integration tests for boundaries
 
 ### Adding a New Rule
 
@@ -132,6 +189,37 @@ starlint_wasm_host → starlint_plugin_sdk, starlint_core, wasmtime
 3. Register in plugin's `all_rules()` function in `lib.rs`
 4. Add tests using `lint_source()` helper
 5. Ensure ≥95% coverage on new lines
+
+### Dependency Discipline
+- Do not add new dependencies unless the existing stack cannot solve it cleanly
+- Prefer standard library / existing workspace utilities
+- `cargo deny check` enforces license allowlist and vulnerability audit
+- `cargo machete` catches unused dependencies
+
+## Error Handling and Recovery
+
+### Stop-the-Line Rule
+If anything unexpected happens (test failures, build errors, behavior regressions):
+- Stop adding features
+- Preserve evidence (error output, repro steps)
+- Return to diagnosis and re-plan
+
+### Bug Fix Triage (Use in Order)
+1. **Reproduce** reliably (test, script, or minimal steps)
+2. **Localize** the failure (which crate/layer)
+3. **Reduce** to a minimal failing case
+4. **Fix** root cause (not symptoms)
+5. **Guard** with regression coverage
+6. **Verify** end-to-end for the original report
+
+## Communication Guidelines
+
+- Lead with outcome and impact, not process
+- Reference concrete artifacts: file paths, command names, error messages
+- Ask **exactly one** targeted question when blocked, with a recommended default
+- State assumptions and constraints explicitly
+- Always include the verification story: what you ran and the outcome
+- Don't narrate every step; provide checkpoints when scope changes, risks appear, or verification fails
 
 ## CI Pipeline
 
@@ -142,6 +230,13 @@ Runs on every push to `master` and every PR:
 3. **Dependency audit** — `cargo deny` for license (MIT, Apache-2.0, BSD-*, ISC, MPL-2.0, Unicode, Zlib) and vulnerability checks
 4. **Test + Coverage** — full test suite with `cargo-llvm-cov`, enforces 90% floor, Codecov upload
 5. **Benchmarks** (PRs) — hyperfine comparison against oxlint/eslint on real-world corpora
+
+## Git and Change Hygiene
+
+- Keep commits atomic and describable; avoid "misc fixes" bundles
+- Don't rewrite history unless explicitly requested
+- Don't mix formatting-only changes with behavioral changes
+- Treat generated files carefully: only commit them if the project expects it
 
 ## Task Tracking (Beads)
 
@@ -169,6 +264,16 @@ Priorities: `0` critical, `1` high, `2` medium (default), `3` low, `4` backlog
 - Link discovered work with `discovered-from` dependencies
 - Check `bd ready` before asking "what should I work on?"
 - bd auto-syncs to `.beads/issues.jsonl` — no manual export needed
+
+## Definition of Done
+
+A task is done when:
+- Behavior matches acceptance criteria
+- `cargo fmt --all && cargo clippy --workspace --all-targets -- -D warnings && cargo test --workspace` passes
+- New/changed lines have ≥95% coverage
+- Risky changes have a rollback strategy (feature flag, config gating, or isolated commits)
+- Code follows existing conventions and is readable
+- A short verification story exists: what changed + how we know it works
 
 ## Session Completion
 
