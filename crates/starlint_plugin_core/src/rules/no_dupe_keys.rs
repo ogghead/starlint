@@ -13,6 +13,7 @@ use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::operator::PropertyKind;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::ast_utils::extract_static_key_name;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Flags object literals with duplicate property keys.
@@ -56,7 +57,7 @@ impl LintRule for NoDupeKeys {
                 continue;
             }
 
-            let Some(key_name) = static_property_key_name(prop.key, ctx) else {
+            let Some(key_name) = extract_static_key_name(prop.key, ctx) else {
                 continue;
             };
 
@@ -76,23 +77,6 @@ impl LintRule for NoDupeKeys {
                 });
             }
         }
-    }
-}
-
-/// Extract a static key name from a property key node.
-fn static_property_key_name(key_id: NodeId, ctx: &LintContext<'_>) -> Option<String> {
-    let node = ctx.node(key_id)?;
-    match node {
-        AstNode::IdentifierReference(ident) => Some(ident.name.clone()),
-        AstNode::BindingIdentifier(ident) => Some(ident.name.clone()),
-        AstNode::StringLiteral(lit) => Some(lit.value.clone()),
-        AstNode::NumericLiteral(lit) => {
-            // Use source text to preserve the original representation
-            let start = usize::try_from(lit.span.start).unwrap_or(0);
-            let end = usize::try_from(lit.span.end).unwrap_or(0);
-            ctx.source_text().get(start..end).map(String::from)
-        }
-        _ => None,
     }
 }
 

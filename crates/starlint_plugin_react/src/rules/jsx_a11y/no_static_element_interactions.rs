@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::has_jsx_attribute;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -59,21 +60,6 @@ const EVENT_HANDLERS: &[&str] = &[
 #[derive(Debug)]
 pub struct NoStaticElementInteractions;
 
-/// Check if an attribute exists on a JSX element.
-fn has_attribute(
-    opening: &starlint_ast::node::JSXOpeningElementNode,
-    name: &str,
-    ctx: &LintContext<'_>,
-) -> bool {
-    opening.attributes.iter().any(|attr_id| {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
-            attr.name.as_str() == name
-        } else {
-            false
-        }
-    })
-}
-
 impl LintRule for NoStaticElementInteractions {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
@@ -100,14 +86,14 @@ impl LintRule for NoStaticElementInteractions {
         }
 
         // If it has a role, it is intentionally interactive
-        if has_attribute(opening, "role", ctx) {
+        if has_jsx_attribute(&opening.attributes, "role", ctx) {
             return;
         }
 
         // Check for event handler attributes
         let has_event_handler = EVENT_HANDLERS
             .iter()
-            .any(|handler| has_attribute(opening, handler, ctx));
+            .any(|handler| has_jsx_attribute(&opening.attributes, handler, ctx));
 
         if has_event_handler {
             ctx.report(Diagnostic {

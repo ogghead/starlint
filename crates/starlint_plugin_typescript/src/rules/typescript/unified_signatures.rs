@@ -12,6 +12,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
+use starlint_rule_framework::source_utils::find_matching_paren;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -184,29 +185,6 @@ fn parse_overload_line(line: &str, line_start: usize, line_end: usize) -> Option
         line_start,
         line_end,
     })
-}
-
-/// Find the matching closing `)` for an opening `(` at `start`.
-fn find_matching_paren(text: &str, start: usize) -> Option<usize> {
-    let bytes = text.as_bytes();
-    let mut depth: usize = 0;
-    let mut pos = start;
-
-    while pos < bytes.len() {
-        match bytes.get(pos).copied() {
-            Some(b'(') => depth = depth.saturating_add(1),
-            Some(b')') => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(pos);
-                }
-            }
-            _ => {}
-        }
-        pos = pos.saturating_add(1);
-    }
-
-    None
 }
 
 /// Split parameter text by commas, respecting nested angle brackets and parens.

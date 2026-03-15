@@ -9,6 +9,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use starlint_rule_framework::source_utils::find_matching_brace;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -95,24 +96,6 @@ fn find_require_in_mock_factory(source: &str) -> Vec<Span> {
     }
 
     results
-}
-
-/// Find the matching closing brace for the brace at `open_pos`.
-fn find_matching_brace(source: &str, open_pos: usize) -> Option<usize> {
-    let mut depth: usize = 0;
-    for (i, ch) in source.get(open_pos..)?.char_indices() {
-        match ch {
-            '{' => depth = depth.saturating_add(1),
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(open_pos.saturating_add(i).saturating_add(1));
-                }
-            }
-            _ => {}
-        }
-    }
-    None
 }
 
 #[cfg(test)]

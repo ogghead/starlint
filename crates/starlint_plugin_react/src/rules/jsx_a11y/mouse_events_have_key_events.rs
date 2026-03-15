@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::has_jsx_attribute;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -15,21 +16,6 @@ const RULE_NAME: &str = "jsx-a11y/mouse-events-have-key-events";
 
 #[derive(Debug)]
 pub struct MouseEventsHaveKeyEvents;
-
-/// Check if an attribute with the given name exists on a JSX element.
-fn has_attribute(
-    opening: &starlint_ast::node::JSXOpeningElementNode,
-    name: &str,
-    ctx: &LintContext<'_>,
-) -> bool {
-    opening.attributes.iter().any(|attr_id| {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
-            attr.name.as_str() == name
-        } else {
-            false
-        }
-    })
-}
 
 impl LintRule for MouseEventsHaveKeyEvents {
     fn meta(&self) -> RuleMeta {
@@ -51,7 +37,9 @@ impl LintRule for MouseEventsHaveKeyEvents {
         };
 
         // onMouseOver requires onFocus
-        if has_attribute(opening, "onMouseOver", ctx) && !has_attribute(opening, "onFocus", ctx) {
+        if has_jsx_attribute(&opening.attributes, "onMouseOver", ctx)
+            && !has_jsx_attribute(&opening.attributes, "onFocus", ctx)
+        {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message:
@@ -66,7 +54,9 @@ impl LintRule for MouseEventsHaveKeyEvents {
         }
 
         // onMouseOut requires onBlur
-        if has_attribute(opening, "onMouseOut", ctx) && !has_attribute(opening, "onBlur", ctx) {
+        if has_jsx_attribute(&opening.attributes, "onMouseOut", ctx)
+            && !has_jsx_attribute(&opening.attributes, "onBlur", ctx)
+        {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "`onMouseOut` must be accompanied by `onBlur` for keyboard accessibility"

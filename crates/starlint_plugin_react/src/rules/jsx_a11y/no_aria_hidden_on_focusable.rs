@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::has_jsx_attribute;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -18,16 +19,6 @@ const INTERACTIVE_ELEMENTS: &[&str] = &["button", "input", "select", "textarea"]
 
 #[derive(Debug)]
 pub struct NoAriaHiddenOnFocusable;
-
-/// Check if an attribute with the given name exists on the JSX opening element's attributes.
-fn has_attribute(ctx: &LintContext<'_>, attributes: &[NodeId], name: &str) -> bool {
-    attributes.iter().any(|attr_id| {
-        let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
-            return false;
-        };
-        attr.name.as_str() == name
-    })
-}
 
 impl LintRule for NoAriaHiddenOnFocusable {
     fn meta(&self) -> RuleMeta {
@@ -75,10 +66,10 @@ impl LintRule for NoAriaHiddenOnFocusable {
 
         // <a> with href is focusable
         let is_anchor_with_href =
-            element_name == "a" && has_attribute(ctx, &opening.attributes, "href");
+            element_name == "a" && has_jsx_attribute(&opening.attributes, "href", ctx);
 
         // Any element with tabIndex is focusable
-        let has_tabindex = has_attribute(ctx, &opening.attributes, "tabIndex");
+        let has_tabindex = has_jsx_attribute(&opening.attributes, "tabIndex", ctx);
 
         if is_interactive || is_anchor_with_href || has_tabindex {
             ctx.report(Diagnostic {

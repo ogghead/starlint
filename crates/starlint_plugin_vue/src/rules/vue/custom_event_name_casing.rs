@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::case_utils::{is_camel_case, to_camel_case};
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -16,31 +17,6 @@ const RULE_NAME: &str = "vue/custom-event-name-casing";
 /// Enforce camelCase for custom event names in `$emit()`.
 #[derive(Debug)]
 pub struct CustomEventNameCasing;
-
-/// Convert a string to `camelCase`.
-fn to_camel_case(s: &str) -> String {
-    let mut result = String::new();
-    let mut capitalize_next = false;
-    for (i, ch) in s.chars().enumerate() {
-        if ch == '-' || ch == '_' || ch == ' ' {
-            capitalize_next = true;
-        } else if capitalize_next {
-            result.extend(ch.to_uppercase());
-            capitalize_next = false;
-        } else if i == 0 {
-            result.extend(ch.to_lowercase());
-        } else {
-            result.push(ch);
-        }
-    }
-    result
-}
-
-/// Check if a string is `camelCase`.
-fn is_camel_case(s: &str) -> bool {
-    let first = s.chars().next();
-    matches!(first, Some('a'..='z')) && !s.contains('-') && !s.contains('_') && !s.contains(' ')
-}
 
 impl LintRule for CustomEventNameCasing {
     fn meta(&self) -> RuleMeta {

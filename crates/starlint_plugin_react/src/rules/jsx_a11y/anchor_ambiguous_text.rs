@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::get_jsx_attr_string_value;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -25,26 +26,6 @@ const AMBIGUOUS_PHRASES: &[&str] = &[
 
 #[derive(Debug)]
 pub struct AnchorAmbiguousText;
-
-/// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value(
-    opening: &starlint_ast::node::JSXOpeningElementNode,
-    attr_name: &str,
-    ctx: &LintContext<'_>,
-) -> Option<String> {
-    for attr_id in &opening.attributes {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
-            if attr.name.as_str() == attr_name {
-                if let Some(value_id) = attr.value {
-                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
-                        return Some(lit.value.clone());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
 
 /// Check if text is an ambiguous link phrase.
 fn is_ambiguous(text: &str) -> bool {
@@ -77,7 +58,7 @@ impl LintRule for AnchorAmbiguousText {
         }
 
         // Check aria-label for ambiguous text
-        if let Some(label) = get_attr_string_value(opening, "aria-label", ctx) {
+        if let Some(label) = get_jsx_attr_string_value(&opening.attributes, "aria-label", ctx) {
             if is_ambiguous(&label) {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
