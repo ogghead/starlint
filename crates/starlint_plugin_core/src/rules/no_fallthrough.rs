@@ -173,4 +173,67 @@ mod tests {
             "last case without break should not be flagged"
         );
     }
+
+    #[test]
+    fn test_multiple_fallthroughs() {
+        let diags = lint("switch(x) { case 1: foo(); case 2: bar(); case 3: baz(); break; }");
+        assert_eq!(
+            diags.len(),
+            2,
+            "two consecutive cases without break should produce two diagnostics"
+        );
+    }
+
+    #[test]
+    fn test_block_with_break_no_fallthrough() {
+        let diags = lint("switch(x) { case 1: { foo(); break; } case 2: bar(); break; }");
+        assert!(
+            diags.is_empty(),
+            "block statement ending with break should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_if_else_both_terminate() {
+        let diags = lint("switch(x) { case 1: if (y) { break; } else { return; } case 2: break; }");
+        assert!(
+            diags.is_empty(),
+            "if/else both terminating should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_if_only_consequent_terminates() {
+        let diags = lint("switch(x) { case 1: if (y) { break; } case 2: break; }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "if with only consequent terminating (no else) should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_switch_with_only_default() {
+        let diags = lint("switch(x) { default: foo(); }");
+        assert!(
+            diags.is_empty(),
+            "switch with only default case should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_continue_in_case_terminates() {
+        let diags = lint("while(true) { switch(x) { case 1: continue; case 2: break; } }");
+        assert!(diags.is_empty(), "continue should count as a terminator");
+    }
+
+    #[test]
+    fn test_nested_switch_with_fallthrough() {
+        let diags =
+            lint("switch(x) { case 1: switch(y) { case 'a': foo(); } break; case 2: break; }");
+        assert!(
+            diags.is_empty(),
+            "outer case with break should not be flagged despite inner fallthrough"
+        );
+    }
 }

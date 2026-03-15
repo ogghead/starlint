@@ -297,4 +297,136 @@ mod tests {
             "should contain synthetic io-error diagnostic"
         );
     }
+
+    #[test]
+    fn test_severity_overrides() {
+        let plugin: Box<dyn Plugin> = starlint_plugin_core::create_plugin();
+        let mut overrides = HashMap::new();
+        overrides.insert("no-debugger".to_owned(), Severity::Error);
+        let session =
+            LintSession::new(vec![plugin], OutputFormat::Pretty).with_severity_overrides(overrides);
+
+        let result = session.lint_single_file(Path::new("test.js"), "debugger;");
+        // The no-debugger rule should fire and have its severity overridden to Error.
+        let debugger_diags: Vec<&Diagnostic> = result
+            .diagnostics
+            .iter()
+            .filter(|d| d.rule_name == "no-debugger")
+            .collect();
+        assert!(
+            !debugger_diags.is_empty(),
+            "no-debugger rule should produce diagnostics"
+        );
+        assert!(
+            debugger_diags.iter().all(|d| d.severity == Severity::Error),
+            "severity should be overridden to Error"
+        );
+    }
+
+    #[test]
+    fn test_disabled_rules() {
+        let plugin: Box<dyn Plugin> = starlint_plugin_core::create_plugin();
+        let mut disabled = HashSet::new();
+        disabled.insert("no-debugger".to_owned());
+        let session =
+            LintSession::new(vec![plugin], OutputFormat::Pretty).with_disabled_rules(disabled);
+
+        let result = session.lint_single_file(Path::new("test.js"), "debugger;");
+        let has_debugger = result
+            .diagnostics
+            .iter()
+            .any(|d| d.rule_name == "no-debugger");
+        assert!(
+            !has_debugger,
+            "disabled rule should not produce diagnostics"
+        );
+    }
+
+    #[test]
+    fn test_output_format_getter() {
+        let session_pretty = LintSession::new(vec![], OutputFormat::Pretty);
+        assert_eq!(session_pretty.output_format(), OutputFormat::Pretty);
+
+        let session_json = LintSession::new(vec![], OutputFormat::Json);
+        assert_eq!(session_json.output_format(), OutputFormat::Json);
+
+        let session_compact = LintSession::new(vec![], OutputFormat::Compact);
+        assert_eq!(session_compact.output_format(), OutputFormat::Compact);
+
+        let session_count = LintSession::new(vec![], OutputFormat::Count);
+        assert_eq!(session_count.output_format(), OutputFormat::Count);
+    }
+
+    #[test]
+    fn test_is_supported_extension_valid() {
+        let supported = [
+            "js", "mjs", "cjs", "jsx", "mjsx", "ts", "mts", "cts", "tsx", "mtsx",
+        ];
+        for ext in &supported {
+            let path = PathBuf::from(format!("file.{ext}"));
+            let session = LintSession::new(vec![], OutputFormat::Pretty);
+            let result = session.lint_single_file(&path, "const x = 1;");
+            assert!(
+                !result
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.rule_name == "starlint/parse-error"),
+                "extension .{ext} should be supported"
+            );
+        }
+    }
+
+    #[test]
+    fn test_is_supported_extension_unsupported() {
+        let unsupported = ["py", "rs", "css"];
+        for ext in &unsupported {
+            let path = PathBuf::from(format!("file.{ext}"));
+            let session = LintSession::new(vec![], OutputFormat::Pretty);
+            let result = session.lint_single_file(&path, "const x = 1;");
+            assert!(
+                result
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.rule_name == "starlint/parse-error"),
+                "extension .{ext} should produce parse-error"
+            );
+        }
+    }
+
+    #[test]
+    fn test_lint_single_file_with_real_rules() {
+        let plugin: Box<dyn Plugin> = starlint_plugin_core::create_plugin();
+        let session = LintSession::new(vec![plugin], OutputFormat::Pretty);
+        let result = session.lint_single_file(Path::new("test.js"), "debugger;");
+
+        assert!(
+            !result.diagnostics.is_empty(),
+            "debugger statement should trigger diagnostics"
+        );
+        assert!(
+            result
+                .diagnostics
+                .iter()
+                .any(|d| d.rule_name == "no-debugger"),
+            "should include no-debugger diagnostic"
+        );
+        // Source text should be preserved when diagnostics are present.
+        assert_eq!(result.source_text, "debugger;");
+    }
+
+    #[test]
+    fn test_scope_analysis_path() {
+        // The core plugin has rules that need scope analysis (e.g. no-unused-vars).
+        let plugin: Box<dyn Plugin> = starlint_plugin_core::create_plugin();
+        assert!(
+            plugin.needs_scope_analysis(),
+            "core plugin should need scope analysis"
+        );
+        let session = LintSession::new(vec![plugin], OutputFormat::Pretty);
+        // Lint code that exercises scope analysis without crashing.
+        let result = session.lint_single_file(Path::new("test.js"), "const x = 1; console.log(x);");
+        // Should not crash; diagnostics may or may not be present.
+        // Just verify the path didn't panic and returned a valid result.
+        assert_eq!(result.path, Path::new("test.js"));
+    }
 }
