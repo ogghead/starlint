@@ -12,7 +12,7 @@ coverage:
 
 comment:
   layout: "reach,diff,flags,files"
-  behavior: default
+  behavior: new
   require_changes: true
 
 ignore:
