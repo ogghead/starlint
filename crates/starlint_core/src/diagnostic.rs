@@ -2,7 +2,6 @@
 //!
 //! Supports pretty (human-readable), JSON, and compact output formats.
 
-use std::fmt::Write;
 use std::path::Path;
 
 use serde::Serialize;
@@ -58,39 +57,10 @@ pub fn write_diagnostics(
 }
 
 /// Format diagnostics in human-readable form.
-#[allow(clippy::let_underscore_must_use)] // writeln! to String is infallible
 fn format_pretty(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path) -> String {
-    let mut output = String::new();
-    let index = LineIndex::new(source_text);
-
-    for diag in diagnostics {
-        let (line, col) = index.offset_to_line_col(source_text, diag.span.start);
-        let severity_str = match diag.severity {
-            Severity::Error => "error",
-            Severity::Warning => "warning",
-            Severity::Suggestion => "suggestion",
-        };
-
-        let _ = writeln!(
-            output,
-            "  {severity_str}[{rule}]: {message}",
-            rule = diag.rule_name,
-            message = diag.message,
-        );
-        let _ = writeln!(
-            output,
-            "    --> {path}:{line}:{col}",
-            path = file_path.display(),
-        );
-
-        if let Some(help) = &diag.help {
-            let _ = writeln!(output, "    help: {help}");
-        }
-
-        output.push('\n');
-    }
-
-    output
+    let mut output = Vec::new();
+    write_pretty(&mut output, diagnostics, source_text, file_path).ok();
+    String::from_utf8(output).unwrap_or_default()
 }
 
 /// Write diagnostics in human-readable form directly to a writer.
@@ -208,27 +178,10 @@ fn write_json(
 }
 
 /// Format diagnostics in compact single-line form.
-#[allow(clippy::let_underscore_must_use)] // writeln! to String is infallible
 fn format_compact(diagnostics: &[Diagnostic], file_path: &Path) -> String {
-    let mut output = String::new();
-    for diag in diagnostics {
-        let severity_char = match diag.severity {
-            Severity::Error => 'E',
-            Severity::Warning => 'W',
-            Severity::Suggestion => 'S',
-        };
-        let _ = writeln!(
-            output,
-            "{path}:{start}-{end} {sev} [{rule}] {message}",
-            path = file_path.display(),
-            start = diag.span.start,
-            end = diag.span.end,
-            sev = severity_char,
-            rule = diag.rule_name,
-            message = diag.message,
-        );
-    }
-    output
+    let mut output = Vec::new();
+    write_compact(&mut output, diagnostics, file_path).ok();
+    String::from_utf8(output).unwrap_or_default()
 }
 
 /// Write diagnostics in compact single-line form directly to a writer.

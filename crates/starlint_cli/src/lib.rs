@@ -13,7 +13,7 @@ use std::time::Instant;
 use clap::Parser;
 
 use cli::{Cli, Command, OutputFormatArg};
-use starlint_config::resolve::load_config;
+use starlint_config::resolve::{load_config, resolve_config};
 use starlint_core::diagnostic::OutputFormat;
 use starlint_core::engine::{FileDiagnostics, LintSession};
 use starlint_core::file_discovery::discover_files;
@@ -161,11 +161,7 @@ fn load_merged_config(
     if let Some(path) = explicit_path {
         return Ok(load_config(path)?);
     }
-
-    match starlint_config::resolve::find_config_file(Path::new(".")) {
-        Some(path) => Ok(load_config(&path)?),
-        None => Ok(starlint_config::Config::default()),
-    }
+    Ok(resolve_config(Path::new("."))?)
 }
 
 /// Configure the rayon global thread pool. CLI arg takes priority over config.
