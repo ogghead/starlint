@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-The codebase is well-architected overall — the crate dependency graph is clean, the `declare_plugin!` macro eliminates boilerplate effectively, and the SDK/framework layering is intentional. However, analysis reveals **14 actionable redundancies** and **8 organizational improvements** across the workspace, concentrated in three areas: duplicated utility functions across plugin crates, an unused builder API, and a dual `Span` type situation.
+The codebase is well-architected overall — the crate dependency graph is clean, the `declare_plugin!` macro eliminates boilerplate effectively, and the SDK/framework layering is intentional. However, analysis reveals **17 actionable redundancies** and **9 organizational improvements** across the workspace, concentrated in four areas: duplicated JSX attribute helpers (21 copies across react/nextjs), duplicated utility functions across plugin crates, unused/underutilized builder APIs, and a dual `Span` type situation.
 
 ---
 
@@ -110,6 +110,49 @@ The `DiagnosticBuilder` API exists with full test coverage, but **zero** of the 
 2. **Remove it** — delete dead code to reduce maintenance burden
 
 Option 1 is preferable: the builder pattern would reduce boilerplate (especially the repeated `labels: vec![]` and `fix: None` fields) and make the API more ergonomic. A migration could be incremental — new rules use the builder, existing rules migrated per-plugin.
+
+### R12. `has_attribute()` duplicated 13 times across JSX rules (HIGH)
+
+**Identical or near-identical implementations in:**
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/alt_text.rs:24`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/heading_has_content.rs:25`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/anchor_is_valid.rs:22`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/anchor_has_content.rs:22`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/no_noninteractive_tabindex.rs:67`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/aria_activedescendant_has_tabindex.rs:23`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/label_has_associated_control.rs:20`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/no_aria_hidden_on_focusable.rs:23`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/role_has_required_aria_props.rs:35`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/click_events_have_key_events.rs:20`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/mouse_events_have_key_events.rs:20`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/no_static_element_interactions.rs:63`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/media_has_caption.rs:23`
+
+All check whether a JSX element has a given attribute by name, walking the attributes `NodeId` list.
+
+### R13. `get_attr_string_value()` duplicated 8 times across JSX rules (HIGH)
+
+**Implementations in:**
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/alt_text.rs:35`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/anchor_is_valid.rs:33`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/anchor_ambiguous_text.rs:30`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/aria_activedescendant_has_tabindex.rs:34`
+- `crates/starlint_plugin_react/src/rules/jsx_a11y/role_supports_aria_props.rs:49`
+- `crates/starlint_plugin_react/src/rules/react/jsx_no_target_blank.rs:21`
+- `crates/starlint_plugin_nextjs/src/rules/nextjs/no_css_tags.rs:22` (+ 4 more nextjs rules)
+
+**Recommendation for R12 + R13:** Extract to a new `jsx_utils` module in `starlint_rule_framework`:
+```rust
+pub fn has_jsx_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext) -> bool
+pub fn get_jsx_attr_string_value(attributes: &[NodeId], name: &str, ctx: &LintContext) -> Option<String>
+```
+This would deduplicate ~21 function definitions across 2 plugins and simplify ~25+ rule files.
+
+### R14. `FixBuilder` exists but ~150 rules use raw `Fix` struct instead (MEDIUM)
+
+`FixBuilder` (in `starlint_rule_framework::fix_builder`) is used by ~60 rules, but ~150 rules construct `Fix { kind, message, edits, is_snippet }` directly. The builder is more ergonomic and less error-prone (handles `is_snippet: false` default).
+
+**Recommendation:** Migrate to `FixBuilder` incrementally alongside the `DiagnosticBuilder` migration (R9).
 
 ### R10. `source_text_for_span()` overlaps with `Span::source_text()` (MEDIUM)
 
@@ -232,11 +275,14 @@ The engine supports `mjsx` and `mtsx` but file discovery does not. This means fi
 | HIGH | R11 | Dual `Span` types without conversions | Developer friction |
 | HIGH | R5 | `is_inside_test_via_ancestors()` x3 | Testing plugin maintenance |
 | HIGH | R6 | `is_expect_chain()` x5 | Testing plugin maintenance |
+| HIGH | R12 | `has_attribute()` x13 across JSX rules | Massive duplication |
+| HIGH | R13 | `get_attr_string_value()` x8 across JSX rules | Massive duplication |
 | HIGH | R1 | `is_pascal_case()` x4 across plugins | Cross-plugin maintenance |
 | MEDIUM | O1 | Core plugin 327 flat files, no subdirs | Developer navigation |
 | MEDIUM | R2 | `to_pascal_case()` x2 | Consistency |
 | MEDIUM | R3 | `is_kebab_case()` x2 | Consistency |
 | MEDIUM | R7 | `get_string_value()` x2 in Next.js | Internal duplication |
+| MEDIUM | R14 | `FixBuilder` exists but ~150 rules use raw `Fix` struct | Inconsistency |
 | MEDIUM | R10 | `source_text_for_span` vs `Span::source_text` | API confusion |
 | MEDIUM | O6 | No shared test utilities beyond `lint_source()` | Test boilerplate |
 | MEDIUM | O9 | File extension lists diverge (8 vs 10) in starlint_core | Potential bug |
@@ -255,11 +301,12 @@ The engine supports `mjsx` and `mtsx` but file discovery does not. This means fi
    - O9: Unify file extension lists in `starlint_core`
 
 2. **Medium effort (half-day each):**
+   - R12 + R13: Create `jsx_utils` module in `starlint_rule_framework` (biggest impact — deduplicates 21 functions across 25+ files)
    - R1 + R2 + R3 + R4: Create `case_utils` module in `starlint_rule_framework`
    - R10: Remove redundant `source_text_for_span()` once Spans are unified
    - O5: Single `native_plugin_registry()` call
 
 3. **Larger initiatives (1-2 days each):**
-   - R9: Decide on and implement `DiagnosticBuilder` migration strategy
+   - R9 + R14: Decide on and implement `DiagnosticBuilder`/`FixBuilder` migration strategy
    - O1: Reorganize `starlint_plugin_core` rules into subdirectories
    - O6: Expand shared test utilities
