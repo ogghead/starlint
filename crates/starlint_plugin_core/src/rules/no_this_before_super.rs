@@ -225,4 +225,59 @@ mod tests {
             "this.foo() before super() should be flagged"
         );
     }
+
+    #[test]
+    fn test_flags_this_in_variable_initializer() {
+        let diags = lint("class B extends A { constructor() { const x = this.y; super(); } }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "this in variable initializer before super should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_this_computed_member() {
+        let diags = lint("class B extends A { constructor() { this[0]; super(); } }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "this via computed member access before super should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_reports_only_first_this() {
+        let diags =
+            lint("class B extends A { constructor() { this.x = 1; this.y = 2; super(); } }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "multiple this references before super should only report the first"
+        );
+    }
+
+    #[test]
+    fn test_no_constructor_in_derived_class() {
+        let diags = lint("class B extends A { method() { this.x = 1; } }");
+        assert!(
+            diags.is_empty(),
+            "non-constructor method in derived class should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_return_this_before_super() {
+        let diags = lint("class B extends A { constructor() { return this; } }");
+        assert_eq!(diags.len(), 1, "return this before super should be flagged");
+    }
+
+    #[test]
+    fn test_empty_constructor_body() {
+        let diags = lint("class B extends A { constructor() {} }");
+        assert!(
+            diags.is_empty(),
+            "empty constructor body should not be flagged"
+        );
+    }
 }

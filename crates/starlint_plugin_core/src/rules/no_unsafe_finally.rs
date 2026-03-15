@@ -172,4 +172,79 @@ mod tests {
             "return in catch (not finally) should not be flagged"
         );
     }
+
+    #[test]
+    fn test_flags_continue_in_finally() {
+        let diags = lint("while(true) { try {} finally { continue; } }");
+        assert_eq!(diags.len(), 1, "continue in finally should be flagged");
+    }
+
+    #[test]
+    fn test_flags_multiple_control_flow_in_finally() {
+        let diags = lint("try {} finally { return 1; throw new Error(); }");
+        assert_eq!(
+            diags.len(),
+            2,
+            "multiple control flow statements in finally should each be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_control_flow_in_nested_block() {
+        let diags = lint("try {} finally { { return 1; } }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "return inside nested block in finally should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_control_flow_in_if_consequent() {
+        let diags = lint("try {} finally { if (x) { return 1; } }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "return in if consequent inside finally should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_flags_control_flow_in_if_else() {
+        let diags = lint("try {} finally { if (x) { return 1; } else { throw e; } }");
+        assert_eq!(
+            diags.len(),
+            2,
+            "control flow in both if branches inside finally should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_nested_try_inside_finally_not_flagged() {
+        let diags = lint("try {} finally { try { return 1; } catch(e) {} }");
+        // The inner try/catch handles the return, so the outer finally is safe
+        assert!(
+            diags.is_empty(),
+            "return in nested try/catch inside finally should not be flagged"
+        );
+    }
+
+    #[test]
+    fn test_try_with_catch_and_finally() {
+        let diags = lint("try { foo(); } catch (e) { bar(); } finally { return 1; }");
+        assert_eq!(
+            diags.len(),
+            1,
+            "return in finally with both catch and finally should be flagged"
+        );
+    }
+
+    #[test]
+    fn test_empty_finally_block() {
+        let diags = lint("try { foo(); } finally {}");
+        assert!(
+            diags.is_empty(),
+            "empty finally block should not be flagged"
+        );
+    }
 }

@@ -527,4 +527,176 @@ mod tests {
             "run_once rule with should_run_on_file=false should not fire"
         );
     }
+
+    #[test]
+    fn test_filtered_dispatch_table() {
+        // Two wildcard rules, but only one is active.
+        let rules: Vec<Box<dyn LintRule>> = vec![
+            Box::new(EnterCountRule { name: "rule-0" }),
+            Box::new(EnterCountRule { name: "rule-1" }),
+        ];
+        let table = LintDispatchTable::build_from_indices(&rules, &[0, 1]);
+
+        // Only rule at index 1 is active.
+        let active = vec![false, true];
+        let filtered = table.filtered(&active);
+
+        // enter_all should only contain index 1 (the active rule).
+        assert_eq!(
+            filtered.enter_all.len(),
+            1,
+            "filtered table should only contain active rule indices"
+        );
+        assert_eq!(
+            filtered.enter_all.first().copied(),
+            Some(1),
+            "active rule index should be 1"
+        );
+    }
+
+    #[test]
+    fn test_filtered_dispatch_table_targeted() {
+        // One targeted rule and one wildcard, disable the targeted one.
+        let rules: Vec<Box<dyn LintRule>> = vec![
+            Box::new(TargetedLeaveRule),                   // index 0: targeted
+            Box::new(EnterCountRule { name: "wildcard" }), // index 1: wildcard
+        ];
+        let table = LintDispatchTable::build_from_indices(&rules, &[0, 1]);
+
+        // Only the wildcard (index 1) is active.
+        let active = vec![false, true];
+        let filtered = table.filtered(&active);
+
+        // The targeted enter slot for ExpressionStatement should be empty.
+        let expr_idx = AstNodeType::ExpressionStatement.index();
+        let targeted_enter = filtered.enter.get(expr_idx);
+        assert!(
+            targeted_enter.is_some_and(SmallVec::is_empty),
+            "disabled targeted rule should not appear in filtered enter table"
+        );
+
+        // Wildcard should still be present.
+        assert_eq!(filtered.enter_all.len(), 1);
+    }
+
+    #[test]
+    fn test_multiple_rules_same_node_type() {
+        /// Targeted enter rule that fires on `ExpressionStatement`.
+        #[derive(Debug)]
+        struct TargetedEnterRule {
+            /// Rule name.
+            name: &'static str,
+        }
+
+        impl LintRule for TargetedEnterRule {
+            fn meta(&self) -> RuleMeta {
+                RuleMeta {
+                    name: self.name.to_owned(),
+                    description: String::new(),
+                    category: Category::Correctness,
+                    default_severity: Severity::Warning,
+                }
+            }
+
+            fn run(&self, _node_id: NodeId, _node: &AstNode, ctx: &mut LintContext<'_>) {
+                ctx.report_warning(self.name, "targeted-enter", Span::new(0, 0));
+            }
+
+            fn run_on_types(&self) -> Option<&'static [AstNodeType]> {
+                Some(&[AstNodeType::ExpressionStatement])
+            }
+        }
+
+        let rules: Vec<Box<dyn LintRule>> = vec![
+            Box::new(TargetedEnterRule { name: "target-a" }),
+            Box::new(TargetedEnterRule { name: "target-b" }),
+        ];
+        let diags = run_traversal("1;", &rules);
+
+        let a_count = diags.iter().filter(|d| d.rule_name == "target-a").count();
+        let b_count = diags.iter().filter(|d| d.rule_name == "target-b").count();
+        assert!(
+            a_count > 0,
+            "first targeted rule should fire on ExpressionStatement"
+        );
+        assert!(
+            b_count > 0,
+            "second targeted rule should fire on ExpressionStatement"
+        );
+    }
+
+    #[test]
+    fn test_traversal_with_scope_data() {
+        let source = "const x = 1; console.log(x);";
+        let path = Path::new("test.js");
+        let options = starlint_parser::ParseOptions::from_path(path);
+        let tree = starlint_parser::parse(source, options).tree;
+        let scope_data = starlint_scope::build_scope_data(&tree);
+
+        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(EnterCountRule { name: "scoped" })];
+        let table = LintDispatchTable::build_from_indices(&rules, &[0]);
+        let diags = traverse_ast_tree(&tree, &rules, &table, &[], source, path, Some(&scope_data));
+
+        assert!(
+            !diags.is_empty(),
+            "traversal with scope data should still dispatch to rules"
+        );
+        assert!(
+            diags.iter().all(|d| d.rule_name == "scoped"),
+            "all diagnostics should come from the scoped rule"
+        );
+    }
+
+    #[test]
+    fn test_run_once_skipped_but_traversal_active() {
+        // Mix a skipped run_once rule with an active traversal rule.
+        /// Run-once rule that skips all files.
+        #[derive(Debug)]
+        struct SkipRunOnce;
+
+        impl LintRule for SkipRunOnce {
+            fn meta(&self) -> RuleMeta {
+                RuleMeta {
+                    name: "skip-run-once".to_owned(),
+                    description: String::new(),
+                    category: Category::Correctness,
+                    default_severity: Severity::Warning,
+                }
+            }
+
+            fn needs_traversal(&self) -> bool {
+                false
+            }
+
+            fn run_once(&self, ctx: &mut LintContext<'_>) {
+                ctx.report_warning("skip-run-once", "should not appear", Span::new(0, 0));
+            }
+
+            fn should_run_on_file(&self, _source_text: &str, _file_path: &Path) -> bool {
+                false
+            }
+        }
+
+        let rules: Vec<Box<dyn LintRule>> = vec![
+            Box::new(EnterCountRule {
+                name: "active-enter",
+            }),
+            Box::new(SkipRunOnce),
+        ];
+        let diags = run_traversal("1;", &rules);
+
+        let enter_count = diags
+            .iter()
+            .filter(|d| d.rule_name == "active-enter")
+            .count();
+        let skip_count = diags
+            .iter()
+            .filter(|d| d.rule_name == "skip-run-once")
+            .count();
+        assert!(enter_count > 0, "active traversal rule should fire");
+        assert_eq!(
+            skip_count, 0,
+            "skipped run-once rule should not produce diagnostics"
+        );
+    }
 }

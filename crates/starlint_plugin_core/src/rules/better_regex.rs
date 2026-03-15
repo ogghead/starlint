@@ -71,12 +71,17 @@ impl LintRule for BetterRegex {
                 let fix = FIXABLE_PATTERNS.iter().find(|(c, _)| *c == class).and_then(
                     |(_, shorthand)| {
                         let source = ctx.source_text();
-                        let regex_text =
-                            source_text_for_span(source, Span::new(regex.span.start, regex.span.end))?;
+                        let regex_text = source_text_for_span(
+                            source,
+                            Span::new(regex.span.start, regex.span.end),
+                        )?;
                         let new_regex = regex_text.replacen(class, shorthand, 1);
-                        FixBuilder::new(format!("Replace `{class}` with `{shorthand}`"), FixKind::SafeFix)
-                            .replace(Span::new(regex.span.start, regex.span.end), new_regex)
-                            .build()
+                        FixBuilder::new(
+                            format!("Replace `{class}` with `{shorthand}`"),
+                            FixKind::SafeFix,
+                        )
+                        .replace(Span::new(regex.span.start, regex.span.end), new_regex)
+                        .build()
                     },
                 );
 
