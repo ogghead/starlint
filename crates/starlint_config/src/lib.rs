@@ -493,4 +493,123 @@ custom = { path = "./plugins/custom.wasm" }
             );
         }
     }
+
+    #[test]
+    fn test_plugin_entry_toggle_is_enabled() {
+        assert!(
+            PluginEntry::Toggle(true).is_enabled(),
+            "Toggle(true) should be enabled"
+        );
+        assert!(
+            !PluginEntry::Toggle(false).is_enabled(),
+            "Toggle(false) should be disabled"
+        );
+    }
+
+    #[test]
+    fn test_plugin_entry_detailed_is_enabled() {
+        let enabled = PluginEntry::Detailed(PluginDetail {
+            path: None,
+            enabled: true,
+        });
+        assert!(
+            enabled.is_enabled(),
+            "Detailed with enabled=true should be enabled"
+        );
+
+        let disabled = PluginEntry::Detailed(PluginDetail {
+            path: None,
+            enabled: false,
+        });
+        assert!(
+            !disabled.is_enabled(),
+            "Detailed with enabled=false should be disabled"
+        );
+    }
+
+    #[test]
+    fn test_plugin_entry_toggle_path_is_none() {
+        assert!(
+            PluginEntry::Toggle(true).path().is_none(),
+            "Toggle variant should have no path"
+        );
+    }
+
+    #[test]
+    fn test_plugin_entry_detailed_with_path() {
+        let entry = PluginEntry::Detailed(PluginDetail {
+            path: Some(PathBuf::from("./plugin.wasm")),
+            enabled: true,
+        });
+        assert!(
+            entry.path().is_some(),
+            "Detailed with path should return Some"
+        );
+        assert_eq!(
+            entry.path().map(PathBuf::as_path),
+            Some(std::path::Path::new("./plugin.wasm"))
+        );
+    }
+
+    #[test]
+    fn test_plugin_entry_detailed_without_path() {
+        let entry = PluginEntry::Detailed(PluginDetail {
+            path: None,
+            enabled: true,
+        });
+        assert!(
+            entry.path().is_none(),
+            "Detailed without path should return None"
+        );
+    }
+
+    #[test]
+    fn test_rule_config_detailed_deserialize() {
+        let toml_str = r#"
+[rules]
+"max-len" = { severity = "error", maxLen = 10 }
+"#;
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_ok(), "detailed rule config should deserialize");
+        if let Ok(cfg) = result {
+            let rule = cfg.rules.get("max-len");
+            assert!(
+                matches!(rule, Some(RuleConfig::Detailed(d)) if d.severity == "error"),
+                "rule should be Detailed with severity error"
+            );
+            if let Some(RuleConfig::Detailed(d)) = rule {
+                assert!(
+                    d.options.contains_key("maxLen"),
+                    "should have maxLen option"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_config_merge_from_empty_base() {
+        let mut local = Config::default();
+        local.rules.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("error".to_owned()),
+        );
+        local.settings.threads = 4;
+
+        let base = Config::default();
+        local.merge_from(&base);
+
+        assert_eq!(local.rules.len(), 1, "rules should be unchanged");
+        assert_eq!(local.settings.threads, 4, "threads should remain unchanged");
+        assert!(local.plugins.is_empty(), "plugins should remain empty");
+        assert!(local.overrides.is_empty(), "overrides should remain empty");
+    }
+
+    #[test]
+    fn test_settings_default() {
+        let settings = Settings::default();
+        assert_eq!(
+            settings.threads, 0,
+            "default threads should be 0 (auto-detect)"
+        );
+    }
 }

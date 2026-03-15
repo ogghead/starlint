@@ -880,4 +880,165 @@ mod tests {
             "should find directive in multi-line block comment start"
         );
     }
+
+    // ==================== parse_rule_list edge cases ====================
+
+    #[test]
+    fn test_parse_rule_list_trailing_comma() {
+        let result = parse_rule_list(" rule1, ");
+        assert_eq!(
+            result,
+            Some(vec!["rule1".to_owned()]),
+            "trailing comma should be filtered out, leaving only rule1"
+        );
+    }
+
+    #[test]
+    fn test_parse_rule_list_empty_between_commas() {
+        let result = parse_rule_list(" rule1,,rule2");
+        assert_eq!(
+            result,
+            Some(vec!["rule1".to_owned(), "rule2".to_owned()]),
+            "empty entries between commas should be filtered out"
+        );
+    }
+
+    #[test]
+    fn test_parse_rule_list_only_commas() {
+        let result = parse_rule_list(" , , , ");
+        assert_eq!(
+            result, None,
+            "only commas and whitespace should return None"
+        );
+    }
+
+    // ==================== find_substring edge cases ====================
+
+    #[test]
+    fn test_find_substring_not_found() {
+        let result = find_substring("hello world", "xyz", 0);
+        assert_eq!(result, None, "needle not in haystack should return None");
+    }
+
+    #[test]
+    fn test_find_substring_with_start_offset() {
+        // "ab ab" — first "ab" at 0, second at 3
+        let result = find_substring("ab ab", "ab", 1);
+        assert_eq!(
+            result,
+            Some(3),
+            "starting past first occurrence should find second"
+        );
+    }
+
+    #[test]
+    fn test_find_substring_start_past_end() {
+        let result = find_substring("hello", "lo", 100);
+        assert_eq!(
+            result, None,
+            "start beyond haystack length should return None"
+        );
+    }
+
+    // ==================== disable-line single-line comment mid-line ====================
+
+    #[test]
+    fn test_disable_line_single_line_comment_mid_line() {
+        // Single-line `//` comment that is NOT at the start of the trimmed line.
+        // The parser only checks `//` when `trimmed.strip_prefix("//")` succeeds,
+        // so a mid-line `//` comment is not detected as a single-line directive.
+        // However, it can still be detected via block comment syntax.
+        let source = "const x = 1; // starlint-disable-line";
+        let directives = parse_directives(source);
+        // The trimmed line starts with "const", not "//", so the single-line path
+        // does not fire. There is no `/* ... */` block comment either.
+        // Therefore no directives are found.
+        assert!(
+            directives.is_empty(),
+            "mid-line // comment should not be detected as directive (only block comments work mid-line)"
+        );
+    }
+
+    // ==================== enable with no matching open block ====================
+
+    #[test]
+    fn test_enable_specific_rules_no_overlap() {
+        // Enable for rules that don't match any open disable block.
+        let source = "// starlint-disable no-console\nconst x = 1;\n// starlint-enable no-debugger\nconst y = 2;\n";
+        let directives = parse_directives(source);
+        // The disable is for no-console, but the enable is for no-debugger.
+        // Since there is no overlap, the disable block remains open to EOF.
+        let mut diags = vec![make_diag("no-console", 31), make_diag("no-console", 60)];
+        filter_diagnostics_by_directives(&directives, &mut diags, source);
+        assert!(
+            diags.is_empty(),
+            "no-console should remain disabled to EOF since enable targets different rule"
+        );
+    }
+
+    // ==================== multiple disable blocks closed by enable-all ====================
+
+    #[test]
+    fn test_multiple_disable_blocks_close_all() {
+        let source = "// starlint-disable no-console\n// starlint-disable no-debugger\nconst x = 1;\n// starlint-enable\nconst y = 2;\n";
+        let directives = parse_directives(source);
+        assert_eq!(
+            directives.len(),
+            3,
+            "should find two disables and one enable"
+        );
+        // Line 3 diagnostic (offset ~62) is within both disable blocks → suppressed.
+        // Line 5 diagnostic (offset after enable) → not suppressed.
+        // "// starlint-disable no-console\n" = 31 bytes
+        // "// starlint-disable no-debugger\n" = 32 bytes, starts at 31, ends at 63
+        // "const x = 1;\n" starts at 63
+        // "// starlint-enable\n" starts at 76, ends at 95
+        // "const y = 2;\n" starts at 95
+        let mut diags = vec![
+            make_diag("no-console", 63),
+            make_diag("no-debugger", 63),
+            make_diag("no-console", 95),
+        ];
+        filter_diagnostics_by_directives(&directives, &mut diags, source);
+        assert_eq!(
+            diags.len(),
+            1,
+            "enable-all should close both disable blocks; only line 5 diagnostic kept"
+        );
+        assert_eq!(
+            offset_to_line(source, diags.first().map_or(0, |d| d.span.start)),
+            5,
+            "remaining diagnostic should be on line 5"
+        );
+    }
+
+    // ==================== filter with empty diagnostics ====================
+
+    #[test]
+    fn test_filter_empty_diagnostics() {
+        let source = "// starlint-disable\nconst x = 1;\n";
+        let directives = parse_directives(source);
+        assert!(!directives.is_empty(), "should have at least one directive");
+        let mut diags: Vec<Diagnostic> = vec![];
+        filter_diagnostics_by_directives(&directives, &mut diags, source);
+        assert!(
+            diags.is_empty(),
+            "filtering empty diagnostics should remain empty"
+        );
+    }
+
+    // ==================== offset_to_line with consecutive newlines ====================
+
+    #[test]
+    fn test_offset_to_line_multiple_newlines() {
+        let source = "\n\n\n";
+        // offset 0 = before first newline → line 1
+        assert_eq!(offset_to_line(source, 0), 1, "offset 0 should be line 1");
+        // offset 1 = after first newline → line 2
+        assert_eq!(offset_to_line(source, 1), 2, "offset 1 should be line 2");
+        // offset 2 = after second newline → line 3
+        assert_eq!(offset_to_line(source, 2), 3, "offset 2 should be line 3");
+        // offset 3 = after third newline → line 4
+        assert_eq!(offset_to_line(source, 3), 4, "offset 3 should be line 4");
+    }
 }

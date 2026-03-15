@@ -352,4 +352,138 @@ mod tests {
         #[allow(clippy::let_underscore_must_use)]
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn test_content_hash_empty() {
+        let hash = content_hash("");
+        assert_eq!(hash.len(), 16, "hash should be 16 hex characters");
+        assert!(
+            hash.chars().all(|c| c.is_ascii_hexdigit()),
+            "hash should contain only hex characters"
+        );
+    }
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use)]
+    fn test_cache_load_valid_format() {
+        let dir = std::env::temp_dir().join("starlint-cache-load-valid");
+        let _ = std::fs::create_dir_all(&dir);
+        let cache_path = dir.join(".starlintcache");
+
+        let hash = content_hash("hello");
+        let content = format!("{hash}\t3\t1\ttest.js\n");
+        let _ = std::fs::write(&cache_path, content);
+
+        let cache = LintCache::load(&cache_path);
+        assert_eq!(
+            cache.check(Path::new("test.js"), "hello"),
+            Some((3, 1)),
+            "loaded entry should match hash with correct counts"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use)]
+    fn test_cache_load_partial_lines() {
+        let dir = std::env::temp_dir().join("starlint-cache-partial");
+        let _ = std::fs::create_dir_all(&dir);
+        let cache_path = dir.join(".starlintcache");
+
+        let hash = content_hash("good");
+        // First line has only 3 fields (invalid), second is valid
+        let content = format!("badhash\t1\tonly_three\n{hash}\t0\t0\tgood.js\n");
+        let _ = std::fs::write(&cache_path, content);
+
+        let cache = LintCache::load(&cache_path);
+        assert!(
+            cache.check(Path::new("only_three"), "anything").is_none(),
+            "partial line should be skipped"
+        );
+        assert_eq!(
+            cache.check(Path::new("good.js"), "good"),
+            Some((0, 0)),
+            "valid line should be loaded"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    #[allow(clippy::let_underscore_must_use)]
+    fn test_cache_load_non_numeric_counts() {
+        let dir = std::env::temp_dir().join("starlint-cache-nonnumeric");
+        let _ = std::fs::create_dir_all(&dir);
+        let cache_path = dir.join(".starlintcache");
+
+        let hash = content_hash("data");
+        let content = format!("{hash}\tabc\txyz\tfile.js\n");
+        let _ = std::fs::write(&cache_path, content);
+
+        let cache = LintCache::load(&cache_path);
+        assert_eq!(
+            cache.check(Path::new("file.js"), "data"),
+            Some((0, 0)),
+            "non-numeric counts should default to 0"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_cache_default_impl() {
+        let default_cache = LintCache::default();
+        let new_cache = LintCache::new();
+        assert!(
+            default_cache.entries.is_empty() && new_cache.entries.is_empty(),
+            "default and new should both be empty"
+        );
+        assert!(
+            !default_cache.dirty && !new_cache.dirty,
+            "default and new should both be clean"
+        );
+    }
+
+    #[test]
+    fn test_cached_counts_default() {
+        let counts = CachedCounts::default();
+        assert_eq!(counts.errors, 0, "default errors should be 0");
+        assert_eq!(counts.warnings, 0, "default warnings should be 0");
+    }
+
+    #[test]
+    fn test_filter_unchanged_unreadable_file() {
+        let cache = LintCache::new();
+        let nonexistent = PathBuf::from("/nonexistent/path/to/file.js");
+        let (needs_lint, cached) = cache.filter_unchanged(std::slice::from_ref(&nonexistent));
+        assert_eq!(
+            needs_lint.len(),
+            1,
+            "unreadable file should be included in needs_lint"
+        );
+        assert_eq!(needs_lint.first(), Some(&nonexistent));
+        assert_eq!(cached.errors, 0);
+        assert_eq!(cached.warnings, 0);
+    }
+
+    #[test]
+    fn test_cache_update_overwrites() {
+        let mut cache = LintCache::new();
+        let path = Path::new("overwrite.js");
+
+        cache.update(path, "v1", 5, 3);
+        assert_eq!(cache.check(path, "v1"), Some((5, 3)));
+
+        cache.update(path, "v2", 1, 0);
+        assert!(
+            cache.check(path, "v1").is_none(),
+            "old content should no longer match"
+        );
+        assert_eq!(
+            cache.check(path, "v2"),
+            Some((1, 0)),
+            "new content should match with updated counts"
+        );
+    }
 }

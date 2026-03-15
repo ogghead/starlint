@@ -874,4 +874,122 @@ mod tests {
         const { assert!(MAX_FIX_PASSES >= 2) };
         const { assert!(MAX_FIX_PASSES <= 100) };
     }
+
+    // ── write_atomic ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_write_atomic_creates_and_renames() {
+        let dir = PathBuf::from("/tmp/starlint-test-write-atomic");
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::create_dir_all(&dir);
+        let target = dir.join("output.js");
+        let content = "console.log('hello');";
+        let result = write_atomic(&dir, &target, content);
+        assert!(result.is_ok());
+        let read_back = std::fs::read_to_string(&target).unwrap_or_default();
+        assert_eq!(read_back, content);
+        // Cleanup
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── cache_update_file ─────────────────────────────────────────────
+
+    #[test]
+    fn test_cache_update_file_with_source_text() {
+        let mut cache = starlint_core::cache::LintCache::new();
+        let path = PathBuf::from("test_source.js");
+        cache_update_file(&mut cache, &path, "var x = 1;", 1, 0);
+        // The cache should have been updated (no panic, no error).
+        // We can verify by checking that a second update with different content
+        // still succeeds.
+        cache_update_file(&mut cache, &path, "var y = 2;", 0, 1);
+    }
+
+    #[test]
+    fn test_cache_update_file_empty_source_reads_file() {
+        // When source_text is empty, cache_update_file tries to read the file
+        // from disk. If the file doesn't exist, the cache entry is simply skipped.
+        let mut cache = starlint_core::cache::LintCache::new();
+        let path = PathBuf::from("/tmp/starlint-test-nonexistent-file.js");
+        // Should not panic even when the file doesn't exist.
+        cache_update_file(&mut cache, &path, "", 0, 0);
+
+        // Now test with an actual file on disk.
+        let dir = PathBuf::from("/tmp/starlint-test-cache-empty-src");
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::create_dir_all(&dir);
+        let real_path = dir.join("real.js");
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::write(&real_path, "let a = 1;");
+        cache_update_file(&mut cache, &real_path, "", 1, 0);
+        // Cleanup
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── report_dry_run_fixes ──────────────────────────────────────────
+
+    #[test]
+    #[allow(clippy::print_stderr)]
+    fn test_report_dry_run_fixes_with_fixable() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("fix_me.js"),
+            source_text: String::from("debugger;"),
+            diagnostics: vec![make_diag_with_fix(Severity::Warning, FixKind::SafeFix)],
+        }];
+        // Should not panic; output goes to stderr.
+        report_dry_run_fixes(&results, false);
+    }
+
+    #[test]
+    fn test_report_dry_run_fixes_empty() {
+        let results: Vec<FileDiagnostics> = Vec::new();
+        report_dry_run_fixes(&results, false);
+        // No panic, no output — just verifying it handles empty input.
+    }
+
+    // ── configure_thread_pool ─────────────────────────────────────────
+
+    #[test]
+    fn test_configure_thread_pool_cli_takes_priority() {
+        // CLI threads > 0 should attempt to configure the pool.
+        // This may warn if the global pool is already initialized, but must not panic.
+        configure_thread_pool(2, 0);
+    }
+
+    // ── report_diagnostics ────────────────────────────────────────────
+
+    #[test]
+    fn test_report_diagnostics_with_pretty_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("pretty.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![
+                make_diag(Severity::Error),
+                make_diag(Severity::Warning),
+                make_diag(Severity::Warning),
+            ],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Pretty);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 2);
+    }
+
+    // ── category_label all variants ───────────────────────────────────
+
+    #[test]
+    fn test_category_label_all_variants() {
+        let variants: Vec<Category> = vec![
+            Category::Correctness,
+            Category::Style,
+            Category::Performance,
+            Category::Suggestion,
+            Category::Custom(String::from("test")),
+        ];
+        for variant in &variants {
+            let label = category_label(variant);
+            assert!(!label.is_empty(), "category label should be non-empty");
+        }
+    }
 }
