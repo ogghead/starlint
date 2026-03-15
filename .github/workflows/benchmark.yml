@@ -111,6 +111,3 @@ jobs:
                 body: fullBody,
               });
             }
-
-      - name: Update README locally (for reference)
-        run: ./benches/update-readme.sh
