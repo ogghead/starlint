@@ -14,7 +14,7 @@ use clap::Parser;
 
 use cli::{Cli, Command, OutputFormatArg};
 use starlint_config::resolve::{load_config, resolve_config};
-use starlint_core::diagnostic::OutputFormat;
+use starlint_core::diagnostic::{self, OutputFormat};
 use starlint_core::engine::{FileDiagnostics, LintSession};
 use starlint_core::file_discovery::discover_files;
 use starlint_loader::all_rule_metas;
@@ -63,14 +63,24 @@ pub fn run() -> miette::Result<ExitStatus> {
         OutputFormatArg::Json => OutputFormat::Json,
         OutputFormatArg::Compact => OutputFormat::Compact,
         OutputFormatArg::Count => OutputFormat::Count,
+        OutputFormatArg::Github => OutputFormat::Github,
+        OutputFormatArg::Gitlab => OutputFormat::Gitlab,
+        OutputFormatArg::Junit => OutputFormat::Junit,
+        OutputFormatArg::Sarif => OutputFormat::Sarif,
+        OutputFormatArg::Stylish => OutputFormat::Stylish,
     };
 
     // Determine fix mode from command or flags.
-    let (paths, fix_enabled, fix_dangerous) = match &args.command {
+    let (paths, fix_enabled, fix_dangerous, fix_dry_run) = match &args.command {
         Some(Command::Fix {
             paths, dangerous, ..
-        }) => (paths.clone(), true, *dangerous),
-        Some(Command::Lint { paths }) => (paths.clone(), args.fix, args.fix_dangerous),
+        }) => (paths.clone(), true, *dangerous, false),
+        Some(Command::Lint { paths }) => (
+            paths.clone(),
+            args.fix,
+            args.fix_dangerous,
+            args.fix_dry_run,
+        ),
         Some(Command::Lsp) => return run_lsp(),
         Some(Command::Init) => {
             run_init()?;
@@ -80,7 +90,12 @@ pub fn run() -> miette::Result<ExitStatus> {
             run_rules(plugin.as_deref(), *json);
             return Ok(ExitStatus::Success);
         }
-        None => (args.paths.clone(), args.fix, args.fix_dangerous),
+        None => (
+            args.paths.clone(),
+            args.fix,
+            args.fix_dangerous,
+            args.fix_dry_run,
+        ),
     };
 
     let config = load_merged_config(args.config.as_deref())?;
@@ -111,13 +126,56 @@ pub fn run() -> miette::Result<ExitStatus> {
         .with_disabled_rules(loaded.disabled_rules);
     let setup_elapsed = setup_start.elapsed();
 
+    // Optionally load result cache.
+    let mut cache = args
+        .cache
+        .then(|| starlint_core::cache::LintCache::load(&args.cache_location));
+
+    // Filter files using cache (skip unchanged files).
+    let (files_to_lint, _cached_counts) = if let Some(ref c) = cache {
+        let (need_lint, counts) = c.filter_unchanged(&files);
+        tracing::debug!(
+            "cache: {} cached, {} need linting",
+            files.len().saturating_sub(need_lint.len()),
+            need_lint.len()
+        );
+        (need_lint, counts)
+    } else {
+        (files.clone(), starlint_core::cache::CachedCounts::default())
+    };
+
     // Lint files.
     let lint_start = Instant::now();
-    let results = session.lint_files(&files);
+    let results = session.lint_files(&files_to_lint);
     let lint_elapsed = lint_start.elapsed();
+
+    // Update cache with new results.
+    if let Some(ref mut c) = cache {
+        for result in &results {
+            let mut errors = 0u32;
+            let mut warnings = 0u32;
+            for diag in &result.diagnostics {
+                match diag.severity {
+                    Severity::Error => {
+                        errors = errors.saturating_add(1);
+                    }
+                    Severity::Warning => {
+                        warnings = warnings.saturating_add(1);
+                    }
+                    Severity::Suggestion => {}
+                }
+            }
+            cache_update_file(c, &result.path, &result.source_text, errors, warnings);
+        }
+        if let Err(err) = c.save(&args.cache_location) {
+            tracing::warn!("failed to save cache: {err}");
+        }
+    }
 
     if fix_enabled {
         apply_fixes_to_files(&results, fix_dangerous, &session);
+    } else if fix_dry_run {
+        report_dry_run_fixes(&results, fix_dangerous);
     }
 
     let report_start = Instant::now();
@@ -313,16 +371,23 @@ fn report_diagnostics(
     if output_format != OutputFormat::Count {
         let stdout = std::io::stdout();
         let mut writer = std::io::BufWriter::new(stdout.lock());
-        for result in results {
-            #[allow(clippy::let_underscore_must_use)]
-            let _ = starlint_core::diagnostic::write_diagnostics(
-                &mut writer,
-                &result.diagnostics,
-                &result.source_text,
-                &result.path,
-                output_format,
-            );
+
+        if diagnostic::is_document_format(output_format) {
+            // Document formats produce a single output from all files.
+            write_document_diagnostics(&mut writer, results, output_format);
+        } else {
+            for result in results {
+                #[allow(clippy::let_underscore_must_use)]
+                let _ = starlint_core::diagnostic::write_diagnostics(
+                    &mut writer,
+                    &result.diagnostics,
+                    &result.source_text,
+                    &result.path,
+                    output_format,
+                );
+            }
         }
+
         #[allow(clippy::let_underscore_must_use)]
         let _ = writer.flush();
     }
@@ -338,6 +403,30 @@ fn report_diagnostics(
         errors: total_errors,
         warnings: total_warnings,
     }
+}
+
+/// Write all diagnostics as a single document for formats that require it.
+///
+/// GitLab Code Quality, `JUnit` XML, and SARIF are document-level formats:
+/// their output wraps all diagnostics in a single structure rather than
+/// streaming per-file.
+fn write_document_diagnostics(
+    writer: &mut impl IoWrite,
+    results: &[FileDiagnostics],
+    output_format: OutputFormat,
+) {
+    let collected: Vec<_> = results
+        .iter()
+        .map(|r| (r.diagnostics.clone(), r.source_text.clone(), r.path.clone()))
+        .collect();
+
+    #[allow(clippy::let_underscore_must_use)]
+    let _ = match output_format {
+        OutputFormat::Gitlab => diagnostic::write_document_gitlab(writer, &collected),
+        OutputFormat::Junit => diagnostic::write_document_junit(writer, &collected),
+        OutputFormat::Sarif => diagnostic::write_document_sarif(writer, &collected),
+        _ => Ok(()),
+    };
 }
 
 /// Print detailed timing information to stderr.
@@ -382,6 +471,44 @@ fn write_atomic(dir: &Path, target: &Path, content: &str) -> std::io::Result<()>
     std::fs::write(&tmp_path, content)?;
     std::fs::rename(&tmp_path, target)?;
     Ok(())
+}
+
+/// Update a single file entry in the lint cache.
+fn cache_update_file(
+    cache: &mut starlint_core::cache::LintCache,
+    path: &Path,
+    source_text: &str,
+    errors: u32,
+    warnings: u32,
+) {
+    // Re-read the file to get the actual on-disk content for hashing,
+    // but if source_text is available (non-empty), use it as-is.
+    if source_text.is_empty() {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            cache.update(path, &content, errors, warnings);
+        }
+    } else {
+        cache.update(path, source_text, errors, warnings);
+    }
+}
+
+/// Report fixes that would be applied in dry-run mode without writing to disk.
+#[allow(clippy::print_stderr)]
+fn report_dry_run_fixes(results: &[FileDiagnostics], include_dangerous: bool) {
+    let mut total_fixes = 0usize;
+
+    for result in results {
+        let fixable = filter_fixable_diags(&result.diagnostics, include_dangerous);
+        if !fixable.is_empty() {
+            let count = fixable.len();
+            total_fixes = total_fixes.saturating_add(count);
+            eprintln!("{}: {} fix(es) available", result.path.display(), count,);
+        }
+    }
+
+    if total_fixes > 0 {
+        eprintln!("{total_fixes} fix(es) would be applied (dry run)");
+    }
 }
 
 /// Initialize a default `starlint.toml` config file.
@@ -746,5 +873,275 @@ mod tests {
     fn max_fix_passes_is_reasonable() {
         const { assert!(MAX_FIX_PASSES >= 2) };
         const { assert!(MAX_FIX_PASSES <= 100) };
+    }
+
+    // ── write_atomic ──────────────────────────────────────────────────
+
+    #[test]
+    fn test_write_atomic_creates_and_renames() {
+        let dir = PathBuf::from("/tmp/starlint-test-write-atomic");
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::create_dir_all(&dir);
+        let target = dir.join("output.js");
+        let content = "console.log('hello');";
+        let result = write_atomic(&dir, &target, content);
+        assert!(result.is_ok());
+        let read_back = std::fs::read_to_string(&target).unwrap_or_default();
+        assert_eq!(read_back, content);
+        // Cleanup
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── cache_update_file ─────────────────────────────────────────────
+
+    #[test]
+    fn test_cache_update_file_with_source_text() {
+        let mut cache = starlint_core::cache::LintCache::new();
+        let path = PathBuf::from("test_source.js");
+        cache_update_file(&mut cache, &path, "var x = 1;", 1, 0);
+        // The cache should have been updated (no panic, no error).
+        // We can verify by checking that a second update with different content
+        // still succeeds.
+        cache_update_file(&mut cache, &path, "var y = 2;", 0, 1);
+    }
+
+    #[test]
+    fn test_cache_update_file_empty_source_reads_file() {
+        // When source_text is empty, cache_update_file tries to read the file
+        // from disk. If the file doesn't exist, the cache entry is simply skipped.
+        let mut cache = starlint_core::cache::LintCache::new();
+        let path = PathBuf::from("/tmp/starlint-test-nonexistent-file.js");
+        // Should not panic even when the file doesn't exist.
+        cache_update_file(&mut cache, &path, "", 0, 0);
+
+        // Now test with an actual file on disk.
+        let dir = PathBuf::from("/tmp/starlint-test-cache-empty-src");
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::create_dir_all(&dir);
+        let real_path = dir.join("real.js");
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::write(&real_path, "let a = 1;");
+        cache_update_file(&mut cache, &real_path, "", 1, 0);
+        // Cleanup
+        #[allow(clippy::let_underscore_must_use)]
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── report_dry_run_fixes ──────────────────────────────────────────
+
+    #[test]
+    #[allow(clippy::print_stderr)]
+    fn test_report_dry_run_fixes_with_fixable() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("fix_me.js"),
+            source_text: String::from("debugger;"),
+            diagnostics: vec![make_diag_with_fix(Severity::Warning, FixKind::SafeFix)],
+        }];
+        // Should not panic; output goes to stderr.
+        report_dry_run_fixes(&results, false);
+    }
+
+    #[test]
+    fn test_report_dry_run_fixes_empty() {
+        let results: Vec<FileDiagnostics> = Vec::new();
+        report_dry_run_fixes(&results, false);
+        // No panic, no output — just verifying it handles empty input.
+    }
+
+    // ── configure_thread_pool ─────────────────────────────────────────
+
+    #[test]
+    fn test_configure_thread_pool_cli_takes_priority() {
+        // CLI threads > 0 should attempt to configure the pool.
+        // This may warn if the global pool is already initialized, but must not panic.
+        configure_thread_pool(2, 0);
+    }
+
+    // ── report_diagnostics ────────────────────────────────────────────
+
+    #[test]
+    fn test_report_diagnostics_with_pretty_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("pretty.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![
+                make_diag(Severity::Error),
+                make_diag(Severity::Warning),
+                make_diag(Severity::Warning),
+            ],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Pretty);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 2);
+    }
+
+    // ── write_document_diagnostics ──────────────────────────────────
+
+    #[test]
+    fn test_write_document_diagnostics_gitlab() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("doc.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let mut buf = Vec::new();
+        write_document_diagnostics(&mut buf, &results, OutputFormat::Gitlab);
+        let output = String::from_utf8_lossy(&buf);
+        // GitLab Code Quality outputs JSON array.
+        assert!(
+            output.starts_with('['),
+            "expected JSON array, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_write_document_diagnostics_junit() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("doc.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Warning)],
+        }];
+        let mut buf = Vec::new();
+        write_document_diagnostics(&mut buf, &results, OutputFormat::Junit);
+        let output = String::from_utf8_lossy(&buf);
+        assert!(
+            output.contains("testsuites"),
+            "expected JUnit XML, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_write_document_diagnostics_sarif() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("doc.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let mut buf = Vec::new();
+        write_document_diagnostics(&mut buf, &results, OutputFormat::Sarif);
+        let output = String::from_utf8_lossy(&buf);
+        assert!(
+            output.contains("sarif"),
+            "expected SARIF JSON, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_write_document_diagnostics_non_document_format_is_noop() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("doc.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let mut buf = Vec::new();
+        write_document_diagnostics(&mut buf, &results, OutputFormat::Pretty);
+        assert!(
+            buf.is_empty(),
+            "non-document format should produce no output"
+        );
+    }
+
+    // ── report_diagnostics with document formats ────────────────────
+
+    #[test]
+    fn test_report_diagnostics_with_gitlab_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("gl.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error), make_diag(Severity::Warning)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Gitlab);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 1);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_junit_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("ju.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Junit);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_sarif_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("sa.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Warning)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Sarif);
+        assert_eq!(counts.errors, 0);
+        assert_eq!(counts.warnings, 1);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_github_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("gh.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Github);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_stylish_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("sty.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Warning), make_diag(Severity::Warning)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Stylish);
+        assert_eq!(counts.errors, 0);
+        assert_eq!(counts.warnings, 2);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_compact_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("cmp.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Compact);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_json_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("js.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Json);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    // ── category_label all variants ───────────────────────────────────
+
+    #[test]
+    fn test_category_label_all_variants() {
+        let variants: Vec<Category> = vec![
+            Category::Correctness,
+            Category::Style,
+            Category::Performance,
+            Category::Suggestion,
+            Category::Custom(String::from("test")),
+        ];
+        for variant in &variants {
+            let label = category_label(variant);
+            assert!(!label.is_empty(), "category label should be non-empty");
+        }
     }
 }
