@@ -3,7 +3,15 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "*.md"
+      - "LICENSE*"
+      - "benches/results/**"
   pull_request:
+    paths-ignore:
+      - "*.md"
+      - "LICENSE*"
+      - "benches/results/**"
 
 permissions:
   contents: read
