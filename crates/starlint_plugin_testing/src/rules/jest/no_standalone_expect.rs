@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::ast_utils::is_inside_call_with_names;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -51,7 +52,7 @@ impl LintRule for NoStandaloneExpect {
         }
 
         // Walk up the AST to check if inside a test/hook callback
-        if !is_inside_test_via_ancestors(node_id, ctx) {
+        if !is_inside_call_with_names(node_id, ctx, TEST_CALLBACK_NAMES) {
             ctx.report(Diagnostic {
                 rule_name: RULE_NAME.to_owned(),
                 message: "`expect()` must be called inside an `it()` or `test()` block".to_owned(),
@@ -74,24 +75,6 @@ const TEST_CALLBACK_NAMES: &[&str] = &[
     "beforeAll",
     "afterAll",
 ];
-
-/// Walk up the AST parent chain to check if `node_id` is inside a
-/// test/hook callback. `O(depth)` instead of `O(source_length)`.
-fn is_inside_test_via_ancestors(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
-    let tree = ctx.tree();
-    let mut current = tree.parent(node_id);
-    while let Some(pid) = current {
-        if let Some(AstNode::CallExpression(call)) = tree.get(pid) {
-            if let Some(AstNode::IdentifierReference(id)) = tree.get(call.callee) {
-                if TEST_CALLBACK_NAMES.contains(&id.name.as_str()) {
-                    return true;
-                }
-            }
-        }
-        current = tree.parent(pid);
-    }
-    false
-}
 
 #[cfg(test)]
 mod tests {

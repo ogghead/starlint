@@ -11,6 +11,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
+use starlint_rule_framework::source_utils::find_matching_brace;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -98,27 +99,6 @@ fn find_void_function_regions(source: &str) -> Vec<VoidFunctionRegion> {
     }
 
     regions
-}
-
-/// Find the matching closing brace for an opening brace at `open_pos`.
-///
-/// Returns the byte offset of the matching `}`, or `None` if unbalanced.
-fn find_matching_brace(source: &str, open_pos: usize) -> Option<usize> {
-    let mut depth: usize = 0;
-    let slice = source.get(open_pos..)?;
-
-    for (offset, ch) in slice.char_indices() {
-        if ch == '{' {
-            depth = depth.saturating_add(1);
-        } else if ch == '}' {
-            depth = depth.saturating_sub(1);
-            if depth == 0 {
-                return Some(open_pos.saturating_add(offset));
-            }
-        }
-    }
-
-    None
 }
 
 /// Check whether a `return` statement at the given position is a bare `return;`

@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::get_jsx_attr_string_value;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -16,26 +17,6 @@ const RULE_NAME: &str = "react/jsx-no-target-blank";
 /// Flags `<a target="_blank">` elements that are missing `rel="noreferrer"`.
 #[derive(Debug)]
 pub struct JsxNoTargetBlank;
-
-/// Get string value of an attribute by name.
-fn get_attr_string_value(
-    attributes: &[NodeId],
-    attr_name: &str,
-    ctx: &LintContext<'_>,
-) -> Option<String> {
-    for &attr_id in attributes {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            if attr.name == attr_name {
-                if let Some(value_id) = attr.value {
-                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
-                        return Some(lit.value.clone());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
 
 /// Get the span of a named attribute.
 fn get_attr_span(attributes: &[NodeId], attr_name: &str, ctx: &LintContext<'_>) -> Option<Span> {
@@ -79,14 +60,14 @@ impl LintRule for JsxNoTargetBlank {
 
         // Check for target="_blank"
         let has_target_blank =
-            get_attr_string_value(&attrs, "target", ctx).as_deref() == Some("_blank");
+            get_jsx_attr_string_value(&attrs, "target", ctx).as_deref() == Some("_blank");
 
         if !has_target_blank {
             return;
         }
 
         // Check for rel containing "noreferrer"
-        let has_noreferrer = get_attr_string_value(&attrs, "rel", ctx)
+        let has_noreferrer = get_jsx_attr_string_value(&attrs, "rel", ctx)
             .is_some_and(|val| val.split_whitespace().any(|part| part == "noreferrer"));
 
         if !has_noreferrer {
@@ -94,7 +75,7 @@ impl LintRule for JsxNoTargetBlank {
 
             // Find existing rel attribute to determine fix strategy
             let rel_span = get_attr_span(&attrs, "rel", ctx);
-            let existing_rel_val = get_attr_string_value(&attrs, "rel", ctx);
+            let existing_rel_val = get_jsx_attr_string_value(&attrs, "rel", ctx);
 
             let fix = if let Some(rel_s) = rel_span {
                 // Existing rel attribute: replace its value to include "noreferrer"

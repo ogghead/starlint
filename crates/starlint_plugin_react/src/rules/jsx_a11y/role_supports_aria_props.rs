@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::get_string_value;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -45,19 +46,6 @@ const GLOBAL_ARIA_PROPS: &[&str] = &[
 #[derive(Debug)]
 pub struct RoleSupportAriaProps;
 
-/// Get the string value of a JSX attribute's value (if it's a string literal).
-fn get_attr_string_value(
-    attr: &starlint_ast::node::JSXAttributeNode,
-    ctx: &LintContext<'_>,
-) -> Option<String> {
-    let value_id = attr.value?;
-    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
-        Some(lit.value.clone())
-    } else {
-        None
-    }
-}
-
 impl LintRule for RoleSupportAriaProps {
     fn meta(&self) -> RuleMeta {
         RuleMeta {
@@ -82,7 +70,7 @@ impl LintRule for RoleSupportAriaProps {
         for attr_id in &opening.attributes {
             if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
                 if attr.name.as_str() == "role" {
-                    role_value = get_attr_string_value(attr, ctx);
+                    role_value = get_string_value(ctx, attr.value);
                     break;
                 }
             }

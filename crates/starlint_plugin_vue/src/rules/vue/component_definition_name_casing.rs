@@ -6,6 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use starlint_rule_framework::case_utils::{is_kebab_case, is_pascal_case, to_pascal_case};
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -14,38 +15,6 @@ const RULE_NAME: &str = "vue/component-definition-name-casing";
 /// Enforce `PascalCase` or kebab-case for component definition names.
 #[derive(Debug)]
 pub struct ComponentDefinitionNameCasing;
-
-/// Check if a string is `PascalCase` (starts uppercase, no hyphens).
-fn is_pascal_case(s: &str) -> bool {
-    let first = s.chars().next();
-    matches!(first, Some('A'..='Z')) && !s.contains('-')
-}
-
-/// Convert a string to `PascalCase`.
-fn to_pascal_case(s: &str) -> String {
-    s.split(['-', '_', ' '])
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => {
-                    let upper: String = first.to_uppercase().collect();
-                    let rest: String = chars.collect();
-                    format!("{upper}{rest}")
-                }
-                None => String::new(),
-            }
-        })
-        .collect()
-}
-
-/// Check if a string is kebab-case (all lowercase with hyphens).
-fn is_kebab_case(s: &str) -> bool {
-    s.chars()
-        .all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit())
-        && !s.starts_with('-')
-        && !s.ends_with('-')
-}
 
 impl LintRule for ComponentDefinitionNameCasing {
     fn meta(&self) -> RuleMeta {

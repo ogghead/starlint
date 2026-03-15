@@ -11,6 +11,7 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::source_utils::find_matching_paren;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -133,27 +134,6 @@ impl LintRule for PreferFunctionType {
             labels: vec![],
         });
     }
-}
-
-/// Find the matching closing parenthesis for an opening paren at `open_pos`.
-fn find_matching_paren(source: &str, open_pos: usize) -> Option<usize> {
-    let bytes = source.as_bytes();
-    let mut depth: usize = 0;
-    let mut pos = open_pos;
-    while pos < bytes.len() {
-        match bytes.get(pos) {
-            Some(b'(') => depth = depth.saturating_add(1),
-            Some(b')') => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(pos);
-                }
-            }
-            _ => {}
-        }
-        pos = pos.saturating_add(1);
-    }
-    None
 }
 
 #[cfg(test)]

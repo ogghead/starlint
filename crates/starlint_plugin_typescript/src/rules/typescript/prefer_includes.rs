@@ -18,6 +18,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use starlint_rule_framework::source_utils::find_matching_paren;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Flags `.indexOf()` comparisons that can be replaced with `.includes()`.
@@ -116,7 +117,8 @@ fn find_indexof_comparisons(source: &str) -> Vec<(u32, u32)> {
         let after_needle = absolute_pos.saturating_add(needle.len());
 
         // Find the closing parenthesis for indexOf(...)
-        if let Some(close_paren) = find_matching_paren(source, after_needle) {
+        // `after_needle` points one past the `(`; shared helper expects the `(` position.
+        if let Some(close_paren) = find_matching_paren(source, after_needle.saturating_sub(1)) {
             let after_close = close_paren.saturating_add(1);
             let rest = source.get(after_close..).unwrap_or("");
             let trimmed = rest.trim_start();
@@ -140,33 +142,6 @@ fn find_indexof_comparisons(source: &str) -> Vec<(u32, u32)> {
     }
 
     results
-}
-
-/// Find the matching closing parenthesis, handling nesting.
-///
-/// `start` is the position right after the opening `(`.
-/// Returns the position of the matching `)`.
-fn find_matching_paren(source: &str, start: usize) -> Option<usize> {
-    let mut depth: u32 = 1;
-    let mut pos = start;
-    let bytes = source.as_bytes();
-    let len = bytes.len();
-
-    while pos < len {
-        match bytes.get(pos).copied() {
-            Some(b'(') => depth = depth.saturating_add(1),
-            Some(b')') => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(pos);
-                }
-            }
-            _ => {}
-        }
-        pos = pos.saturating_add(1);
-    }
-
-    None
 }
 
 #[cfg(test)]

@@ -13,6 +13,7 @@ use starlint_ast::node::{AstNode, ClassNode, ObjectExpressionNode};
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::operator::{MethodDefinitionKind, PropertyKind};
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::ast_utils::extract_static_key_name;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Flags getter/setter pairs that are not adjacent.
@@ -75,7 +76,7 @@ fn check_object_expression(obj: &ObjectExpressionNode, ctx: &mut LintContext<'_>
             continue;
         }
 
-        let Some(name) = static_property_key_name(prop.key, ctx) else {
+        let Some(name) = extract_static_key_name(prop.key, ctx) else {
             continue;
         };
 
@@ -122,7 +123,7 @@ fn check_class_body(class: &ClassNode, ctx: &mut LintContext<'_>) {
             continue;
         }
 
-        let Some(name) = static_property_key_name(method.key, ctx) else {
+        let Some(name) = extract_static_key_name(method.key, ctx) else {
             continue;
         };
 
@@ -200,17 +201,6 @@ fn report_non_adjacent_keyed(
                 });
             }
         }
-    }
-}
-
-/// Extract a static key name from a property key `NodeId`.
-fn static_property_key_name(key: NodeId, ctx: &LintContext<'_>) -> Option<String> {
-    match ctx.node(key)? {
-        AstNode::IdentifierReference(ident) => Some(ident.name.clone()),
-        AstNode::BindingIdentifier(ident) => Some(ident.name.clone()),
-        AstNode::StringLiteral(lit) => Some(lit.value.clone()),
-        AstNode::NumericLiteral(lit) => Some(lit.raw.clone()),
-        _ => None,
     }
 }
 

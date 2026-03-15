@@ -10,6 +10,7 @@ use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
 use starlint_rule_framework::FixBuilder;
 use starlint_rule_framework::fix_utils;
+use starlint_rule_framework::jsx_utils::has_jsx_attribute;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -62,17 +63,6 @@ const NON_INTERACTIVE_ELEMENTS: &[&str] = &[
 
 #[derive(Debug)]
 pub struct NoNoninteractiveTabindex;
-
-/// Check if an attribute exists on a JSX opening element.
-fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
-    attributes.iter().any(|&attr_id| {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            attr.name == name
-        } else {
-            false
-        }
-    })
-}
 
 /// Get string value and span of an attribute if it's a string literal.
 fn get_attr_string_value_and_span(
@@ -141,7 +131,7 @@ impl LintRule for NoNoninteractiveTabindex {
         }
 
         // If element has a role, it may be intentionally interactive
-        if has_attribute(&attrs, "role", ctx) {
+        if has_jsx_attribute(&attrs, "role", ctx) {
             return;
         }
 

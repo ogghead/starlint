@@ -10,6 +10,7 @@ use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
 use starlint_rule_framework::FixBuilder;
 use starlint_rule_framework::fix_utils;
+use starlint_rule_framework::jsx_utils::has_jsx_attribute;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -17,17 +18,6 @@ const RULE_NAME: &str = "jsx-a11y/anchor-has-content";
 
 #[derive(Debug)]
 pub struct AnchorHasContent;
-
-/// Check if an attribute exists on a JSX opening element by examining its attribute `NodeIds`.
-fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
-    attributes.iter().any(|&attr_id| {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            attr.name == name
-        } else {
-            false
-        }
-    })
-}
 
 impl LintRule for AnchorHasContent {
     fn meta(&self) -> RuleMeta {
@@ -65,8 +55,8 @@ impl LintRule for AnchorHasContent {
         let attrs: Vec<NodeId> = opening.attributes.to_vec();
 
         // Check for aria-label or aria-labelledby as alternative content
-        let has_accessible_content = has_attribute(&attrs, "aria-label", ctx)
-            || has_attribute(&attrs, "aria-labelledby", ctx);
+        let has_accessible_content = has_jsx_attribute(&attrs, "aria-label", ctx)
+            || has_jsx_attribute(&attrs, "aria-labelledby", ctx);
 
         if !has_accessible_content {
             let insert_pos = fix_utils::jsx_attr_insert_offset(

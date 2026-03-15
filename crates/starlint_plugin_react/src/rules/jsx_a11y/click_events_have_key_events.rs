@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::has_jsx_attribute;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -15,21 +16,6 @@ const RULE_NAME: &str = "jsx-a11y/click-events-have-key-events";
 
 #[derive(Debug)]
 pub struct ClickEventsHaveKeyEvents;
-
-/// Check if an attribute with the given name exists on a JSX element.
-fn has_attribute(
-    opening: &starlint_ast::node::JSXOpeningElementNode,
-    name: &str,
-    ctx: &LintContext<'_>,
-) -> bool {
-    opening.attributes.iter().any(|attr_id| {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
-            attr.name.as_str() == name
-        } else {
-            false
-        }
-    })
-}
 
 impl LintRule for ClickEventsHaveKeyEvents {
     fn meta(&self) -> RuleMeta {
@@ -50,13 +36,13 @@ impl LintRule for ClickEventsHaveKeyEvents {
             return;
         };
 
-        if !has_attribute(opening, "onClick", ctx) {
+        if !has_jsx_attribute(&opening.attributes, "onClick", ctx) {
             return;
         }
 
-        let has_key_event = has_attribute(opening, "onKeyDown", ctx)
-            || has_attribute(opening, "onKeyUp", ctx)
-            || has_attribute(opening, "onKeyPress", ctx);
+        let has_key_event = has_jsx_attribute(&opening.attributes, "onKeyDown", ctx)
+            || has_jsx_attribute(&opening.attributes, "onKeyUp", ctx)
+            || has_jsx_attribute(&opening.attributes, "onKeyPress", ctx);
 
         if !has_key_event {
             ctx.report(Diagnostic {

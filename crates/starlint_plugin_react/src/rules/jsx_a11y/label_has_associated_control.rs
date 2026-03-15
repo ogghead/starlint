@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::has_jsx_attribute;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -15,16 +16,6 @@ const RULE_NAME: &str = "jsx-a11y/label-has-associated-control";
 
 #[derive(Debug)]
 pub struct LabelHasAssociatedControl;
-
-/// Check if an attribute with the given name exists on a JSX opening element's attributes.
-fn has_attribute(ctx: &LintContext<'_>, attributes: &[NodeId], name: &str) -> bool {
-    attributes.iter().any(|attr_id| {
-        let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
-            return false;
-        };
-        attr.name.as_str() == name
-    })
-}
 
 impl LintRule for LabelHasAssociatedControl {
     fn meta(&self) -> RuleMeta {
@@ -56,7 +47,7 @@ impl LintRule for LabelHasAssociatedControl {
         }
 
         // Check for htmlFor attribute
-        let has_html_for = has_attribute(ctx, &opening.attributes, "htmlFor");
+        let has_html_for = has_jsx_attribute(&opening.attributes, "htmlFor", ctx);
 
         let opening_span_start = opening.span.start;
         let opening_span_end = opening.span.end;
