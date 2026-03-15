@@ -17,6 +17,11 @@ use serde::{Deserialize, Serialize};
 /// Top-level configuration.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Config {
+    /// Config files to extend. Paths are relative to the config file's directory.
+    /// Built-in presets: `"starlint:recommended"`, `"starlint:strict"`.
+    #[serde(default)]
+    pub extends: Vec<String>,
+
     /// General settings.
     #[serde(default)]
     pub settings: Settings,
@@ -49,6 +54,41 @@ pub struct Config {
     /// for matching files. Multiple matching blocks merge in order (later wins).
     #[serde(default)]
     pub overrides: Vec<Override>,
+}
+
+impl Config {
+    /// Merge a base config into this one. `self` (the child/local) takes priority.
+    ///
+    /// - `settings`: `self` wins if non-default (non-zero threads).
+    /// - `plugins`: `self` entries override base entries by key.
+    /// - `rules`: `self` entries override base entries by key.
+    /// - `overrides`: base overrides come first, then `self`'s are appended.
+    /// - `extends`: not merged (only the top-level `extends` is processed).
+    pub fn merge_from(&mut self, base: &Self) {
+        // Settings: keep self's value if non-zero, else use base.
+        if self.settings.threads == 0 {
+            self.settings.threads = base.settings.threads;
+        }
+
+        // Plugins: base entries fill in gaps; self's entries take priority.
+        for (name, entry) in &base.plugins {
+            self.plugins
+                .entry(name.clone())
+                .or_insert_with(|| entry.clone());
+        }
+
+        // Rules: base entries fill in gaps; self's entries take priority.
+        for (name, rule) in &base.rules {
+            self.rules
+                .entry(name.clone())
+                .or_insert_with(|| rule.clone());
+        }
+
+        // Overrides: base overrides come first, then self's.
+        let mut merged_overrides = base.overrides.clone();
+        merged_overrides.append(&mut self.overrides);
+        self.overrides = merged_overrides;
+    }
 }
 
 /// General settings.
@@ -264,6 +304,162 @@ files = ["**/*.stories.tsx"]
         if let Ok(cfg) = result {
             assert!(cfg.plugins.is_empty(), "plugins should default to empty");
         }
+    }
+
+    #[test]
+    fn test_config_deserialize_with_extends() {
+        let toml_str = r#"
+extends = ["./base.toml", "starlint:recommended"]
+
+[rules]
+"no-debugger" = "error"
+"#;
+        let result: Result<Config, _> = toml::from_str(toml_str);
+        assert!(result.is_ok(), "config with extends should deserialize");
+        if let Ok(cfg) = result {
+            assert_eq!(cfg.extends.len(), 2, "should have two extends entries");
+            assert_eq!(cfg.extends.first().map(String::as_str), Some("./base.toml"));
+            assert_eq!(
+                cfg.extends.get(1).map(String::as_str),
+                Some("starlint:recommended")
+            );
+        }
+    }
+
+    #[test]
+    fn test_config_merge_from_rules() {
+        let mut local = Config::default();
+        local.rules.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("error".to_owned()),
+        );
+        local.rules.insert(
+            "no-console".to_owned(),
+            RuleConfig::Severity("warn".to_owned()),
+        );
+
+        let mut base = Config::default();
+        base.rules.insert(
+            "no-console".to_owned(),
+            RuleConfig::Severity("error".to_owned()),
+        );
+        base.rules.insert(
+            "no-eval".to_owned(),
+            RuleConfig::Severity("error".to_owned()),
+        );
+
+        local.merge_from(&base);
+
+        assert_eq!(local.rules.len(), 3, "should have three rules after merge");
+        // local's no-console (warn) should win over base's (error)
+        assert!(matches!(
+            local.rules.get("no-console"),
+            Some(RuleConfig::Severity(s)) if s == "warn"
+        ));
+        // base's no-eval should be present
+        assert!(local.rules.contains_key("no-eval"));
+    }
+
+    #[test]
+    fn test_config_merge_from_plugins() {
+        let mut local = Config::default();
+        local
+            .plugins
+            .insert("react".to_owned(), PluginEntry::Toggle(false));
+
+        let mut base = Config::default();
+        base.plugins
+            .insert("react".to_owned(), PluginEntry::Toggle(true));
+        base.plugins
+            .insert("core".to_owned(), PluginEntry::Toggle(true));
+
+        local.merge_from(&base);
+
+        assert_eq!(
+            local.plugins.len(),
+            2,
+            "should have two plugins after merge"
+        );
+        // local's react=false should win
+        assert!(
+            !local
+                .plugins
+                .get("react")
+                .is_some_and(PluginEntry::is_enabled)
+        );
+        // base's core=true should be inherited
+        assert!(
+            local
+                .plugins
+                .get("core")
+                .is_some_and(PluginEntry::is_enabled)
+        );
+    }
+
+    #[test]
+    fn test_config_merge_from_overrides() {
+        let mut local = Config::default();
+        local.overrides.push(Override {
+            files: vec!["**/*.test.ts".to_owned()],
+            rules: HashMap::new(),
+        });
+
+        let mut base = Config::default();
+        base.overrides.push(Override {
+            files: vec!["**/*.stories.tsx".to_owned()],
+            rules: HashMap::new(),
+        });
+
+        local.merge_from(&base);
+
+        assert_eq!(
+            local.overrides.len(),
+            2,
+            "should have two overrides after merge"
+        );
+        // Base overrides come first.
+        assert_eq!(
+            local
+                .overrides
+                .first()
+                .and_then(|o| o.files.first())
+                .map(String::as_str),
+            Some("**/*.stories.tsx"),
+            "base override should come first"
+        );
+        assert_eq!(
+            local
+                .overrides
+                .get(1)
+                .and_then(|o| o.files.first())
+                .map(String::as_str),
+            Some("**/*.test.ts"),
+            "local override should come second"
+        );
+    }
+
+    #[test]
+    fn test_config_merge_from_settings() {
+        let mut local = Config::default();
+        // threads == 0 (default)
+
+        let mut base = Config::default();
+        base.settings.threads = 4;
+
+        local.merge_from(&base);
+        assert_eq!(
+            local.settings.threads, 4,
+            "base threads should be used when local is default"
+        );
+
+        // Now test that local non-zero wins
+        let mut local2 = Config::default();
+        local2.settings.threads = 8;
+        local2.merge_from(&base);
+        assert_eq!(
+            local2.settings.threads, 8,
+            "local threads should win when non-zero"
+        );
     }
 
     #[test]

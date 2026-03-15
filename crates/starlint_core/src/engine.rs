@@ -179,6 +179,16 @@ impl LintSession {
                 .apply(file_path, &self.disabled_rules, &mut diagnostics);
         }
 
+        // Apply inline disable/enable comment directives.
+        let directives = crate::directives::parse_directives(source_text);
+        if !directives.is_empty() {
+            crate::directives::filter_diagnostics_by_directives(
+                &directives,
+                &mut diagnostics,
+                source_text,
+            );
+        }
+
         FileDiagnostics {
             path: file_path.to_path_buf(),
             // Only clone source text when there are diagnostics (needed for line/col formatting).

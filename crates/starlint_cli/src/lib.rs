@@ -14,7 +14,7 @@ use clap::Parser;
 
 use cli::{Cli, Command, OutputFormatArg};
 use starlint_config::resolve::{load_config, resolve_config};
-use starlint_core::diagnostic::OutputFormat;
+use starlint_core::diagnostic::{self, OutputFormat};
 use starlint_core::engine::{FileDiagnostics, LintSession};
 use starlint_core::file_discovery::discover_files;
 use starlint_loader::all_rule_metas;
@@ -63,14 +63,24 @@ pub fn run() -> miette::Result<ExitStatus> {
         OutputFormatArg::Json => OutputFormat::Json,
         OutputFormatArg::Compact => OutputFormat::Compact,
         OutputFormatArg::Count => OutputFormat::Count,
+        OutputFormatArg::Github => OutputFormat::Github,
+        OutputFormatArg::Gitlab => OutputFormat::Gitlab,
+        OutputFormatArg::Junit => OutputFormat::Junit,
+        OutputFormatArg::Sarif => OutputFormat::Sarif,
+        OutputFormatArg::Stylish => OutputFormat::Stylish,
     };
 
     // Determine fix mode from command or flags.
-    let (paths, fix_enabled, fix_dangerous) = match &args.command {
+    let (paths, fix_enabled, fix_dangerous, fix_dry_run) = match &args.command {
         Some(Command::Fix {
             paths, dangerous, ..
-        }) => (paths.clone(), true, *dangerous),
-        Some(Command::Lint { paths }) => (paths.clone(), args.fix, args.fix_dangerous),
+        }) => (paths.clone(), true, *dangerous, false),
+        Some(Command::Lint { paths }) => (
+            paths.clone(),
+            args.fix,
+            args.fix_dangerous,
+            args.fix_dry_run,
+        ),
         Some(Command::Lsp) => return run_lsp(),
         Some(Command::Init) => {
             run_init()?;
@@ -80,7 +90,12 @@ pub fn run() -> miette::Result<ExitStatus> {
             run_rules(plugin.as_deref(), *json);
             return Ok(ExitStatus::Success);
         }
-        None => (args.paths.clone(), args.fix, args.fix_dangerous),
+        None => (
+            args.paths.clone(),
+            args.fix,
+            args.fix_dangerous,
+            args.fix_dry_run,
+        ),
     };
 
     let config = load_merged_config(args.config.as_deref())?;
@@ -111,13 +126,56 @@ pub fn run() -> miette::Result<ExitStatus> {
         .with_disabled_rules(loaded.disabled_rules);
     let setup_elapsed = setup_start.elapsed();
 
+    // Optionally load result cache.
+    let mut cache = args
+        .cache
+        .then(|| starlint_core::cache::LintCache::load(&args.cache_location));
+
+    // Filter files using cache (skip unchanged files).
+    let (files_to_lint, _cached_counts) = if let Some(ref c) = cache {
+        let (need_lint, counts) = c.filter_unchanged(&files);
+        tracing::debug!(
+            "cache: {} cached, {} need linting",
+            files.len().saturating_sub(need_lint.len()),
+            need_lint.len()
+        );
+        (need_lint, counts)
+    } else {
+        (files.clone(), starlint_core::cache::CachedCounts::default())
+    };
+
     // Lint files.
     let lint_start = Instant::now();
-    let results = session.lint_files(&files);
+    let results = session.lint_files(&files_to_lint);
     let lint_elapsed = lint_start.elapsed();
+
+    // Update cache with new results.
+    if let Some(ref mut c) = cache {
+        for result in &results {
+            let mut errors = 0u32;
+            let mut warnings = 0u32;
+            for diag in &result.diagnostics {
+                match diag.severity {
+                    Severity::Error => {
+                        errors = errors.saturating_add(1);
+                    }
+                    Severity::Warning => {
+                        warnings = warnings.saturating_add(1);
+                    }
+                    Severity::Suggestion => {}
+                }
+            }
+            cache_update_file(c, &result.path, &result.source_text, errors, warnings);
+        }
+        if let Err(err) = c.save(&args.cache_location) {
+            tracing::warn!("failed to save cache: {err}");
+        }
+    }
 
     if fix_enabled {
         apply_fixes_to_files(&results, fix_dangerous, &session);
+    } else if fix_dry_run {
+        report_dry_run_fixes(&results, fix_dangerous);
     }
 
     let report_start = Instant::now();
@@ -313,16 +371,23 @@ fn report_diagnostics(
     if output_format != OutputFormat::Count {
         let stdout = std::io::stdout();
         let mut writer = std::io::BufWriter::new(stdout.lock());
-        for result in results {
-            #[allow(clippy::let_underscore_must_use)]
-            let _ = starlint_core::diagnostic::write_diagnostics(
-                &mut writer,
-                &result.diagnostics,
-                &result.source_text,
-                &result.path,
-                output_format,
-            );
+
+        if diagnostic::is_document_format(output_format) {
+            // Document formats produce a single output from all files.
+            write_document_diagnostics(&mut writer, results, output_format);
+        } else {
+            for result in results {
+                #[allow(clippy::let_underscore_must_use)]
+                let _ = starlint_core::diagnostic::write_diagnostics(
+                    &mut writer,
+                    &result.diagnostics,
+                    &result.source_text,
+                    &result.path,
+                    output_format,
+                );
+            }
         }
+
         #[allow(clippy::let_underscore_must_use)]
         let _ = writer.flush();
     }
@@ -338,6 +403,30 @@ fn report_diagnostics(
         errors: total_errors,
         warnings: total_warnings,
     }
+}
+
+/// Write all diagnostics as a single document for formats that require it.
+///
+/// GitLab Code Quality, `JUnit` XML, and SARIF are document-level formats:
+/// their output wraps all diagnostics in a single structure rather than
+/// streaming per-file.
+fn write_document_diagnostics(
+    writer: &mut impl IoWrite,
+    results: &[FileDiagnostics],
+    output_format: OutputFormat,
+) {
+    let collected: Vec<_> = results
+        .iter()
+        .map(|r| (r.diagnostics.clone(), r.source_text.clone(), r.path.clone()))
+        .collect();
+
+    #[allow(clippy::let_underscore_must_use)]
+    let _ = match output_format {
+        OutputFormat::Gitlab => diagnostic::write_document_gitlab(writer, &collected),
+        OutputFormat::Junit => diagnostic::write_document_junit(writer, &collected),
+        OutputFormat::Sarif => diagnostic::write_document_sarif(writer, &collected),
+        _ => Ok(()),
+    };
 }
 
 /// Print detailed timing information to stderr.
@@ -382,6 +471,44 @@ fn write_atomic(dir: &Path, target: &Path, content: &str) -> std::io::Result<()>
     std::fs::write(&tmp_path, content)?;
     std::fs::rename(&tmp_path, target)?;
     Ok(())
+}
+
+/// Update a single file entry in the lint cache.
+fn cache_update_file(
+    cache: &mut starlint_core::cache::LintCache,
+    path: &Path,
+    source_text: &str,
+    errors: u32,
+    warnings: u32,
+) {
+    // Re-read the file to get the actual on-disk content for hashing,
+    // but if source_text is available (non-empty), use it as-is.
+    if source_text.is_empty() {
+        if let Ok(content) = std::fs::read_to_string(path) {
+            cache.update(path, &content, errors, warnings);
+        }
+    } else {
+        cache.update(path, source_text, errors, warnings);
+    }
+}
+
+/// Report fixes that would be applied in dry-run mode without writing to disk.
+#[allow(clippy::print_stderr)]
+fn report_dry_run_fixes(results: &[FileDiagnostics], include_dangerous: bool) {
+    let mut total_fixes = 0usize;
+
+    for result in results {
+        let fixable = filter_fixable_diags(&result.diagnostics, include_dangerous);
+        if !fixable.is_empty() {
+            let count = fixable.len();
+            total_fixes = total_fixes.saturating_add(count);
+            eprintln!("{}: {} fix(es) available", result.path.display(), count,);
+        }
+    }
+
+    if total_fixes > 0 {
+        eprintln!("{total_fixes} fix(es) would be applied (dry run)");
+    }
 }
 
 /// Initialize a default `starlint.toml` config file.
