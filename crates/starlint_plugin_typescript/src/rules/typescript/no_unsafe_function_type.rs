@@ -6,13 +6,13 @@
 //! `() => void`, `(arg: string) => number`, or the `(...args: any[]) => any`
 //! escape hatch when the signature is truly unknown.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags usage of the `Function` type in type annotations.
 #[derive(Debug)]
@@ -48,15 +48,9 @@ impl LintRule for NoUnsafeFunctionType {
             span: Span::new(type_ref.span.start, type_ref.span.end),
             severity: Severity::Warning,
             help: Some("Replace with `(...args: any[]) => any`".to_owned()),
-            fix: Some(Fix {
-                kind: FixKind::SafeFix,
-                message: "Replace with `(...args: any[]) => any`".to_owned(),
-                edits: vec![Edit {
-                    span: Span::new(type_ref.span.start, type_ref.span.end),
-                    replacement: "(...args: any[]) => any".to_owned(),
-                }],
-                is_snippet: false,
-            }),
+            fix: FixBuilder::new("Replace with `(...args: any[]) => any`", FixKind::SafeFix)
+                .replace(Span::new(type_ref.span.start, type_ref.span.end), "(...args: any[]) => any")
+                .build(),
             labels: vec![],
         });
     }
@@ -66,12 +60,8 @@ impl LintRule for NoUnsafeFunctionType {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeFunctionType)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnsafeFunctionType, "test.ts");
 
     #[test]
     fn test_flags_function_variable() {

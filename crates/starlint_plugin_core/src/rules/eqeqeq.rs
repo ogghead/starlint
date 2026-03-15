@@ -96,12 +96,8 @@ fn find_operator_span(source: &str, start: u32, end: u32, operator: &str) -> Spa
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(Eqeqeq)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(Eqeqeq);
 
     #[test]
     fn test_flags_loose_equality() {

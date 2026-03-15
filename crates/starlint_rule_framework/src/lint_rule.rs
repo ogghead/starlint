@@ -47,12 +47,12 @@ pub trait LintRule: Debug + Send + Sync {
         true
     }
 
-    /// Whether this rule requires semantic analysis (scope tree, symbol table).
+    /// Whether this rule requires scope analysis (scope tree, symbol table).
     ///
     /// Return `true` to indicate that the rule needs access to `ScopeData`
     /// via [`LintContext::scope_data()`]. When any active rule returns `true`,
     /// the engine runs scope analysis before traversal.
-    fn needs_semantic(&self) -> bool {
+    fn needs_scope_analysis(&self) -> bool {
         false
     }
 
@@ -254,6 +254,36 @@ impl<'a> LintContext<'a> {
     }
 }
 
+/// Generate a `lint(source) -> Vec<Diagnostic>` test helper for a single rule.
+///
+/// Eliminates the boilerplate of constructing a rule vec and calling
+/// [`lint_source`] that is otherwise duplicated in every rule's test module.
+///
+/// # Usage
+///
+/// ```ignore
+/// // Unit struct (no fields):
+/// lint_rule_test!(RuleName);
+///
+/// // Custom file extension:
+/// lint_rule_test!(RuleName, "test.tsx");
+/// ```
+///
+/// Expands to a `fn lint(source: &str) -> Vec<Diagnostic>` in the current scope.
+#[cfg(any(feature = "test-utils", test))]
+#[macro_export]
+macro_rules! lint_rule_test {
+    ($rule_expr:expr) => {
+        $crate::lint_rule_test!($rule_expr, "test.js");
+    };
+    ($rule_expr:expr, $file_path:expr) => {
+        fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
+            let rules: Vec<Box<dyn $crate::LintRule>> = vec![Box::new($rule_expr)];
+            $crate::lint_source(source, $file_path, &rules)
+        }
+    };
+}
+
 /// Parse source and run the given [`LintRule`]s, returning diagnostics.
 ///
 /// Convenience helper for tests so each rule doesn't have to duplicate the
@@ -271,8 +301,8 @@ pub fn lint_source(source: &str, file_path: &str, rules: &[Box<dyn LintRule>]) -
     let tree = starlint_parser::parse(source, options).tree;
 
     // Scope analysis via starlint_scope (no oxc needed).
-    let needs_semantic = rules.iter().any(|r| r.needs_semantic());
-    let scope_data = needs_semantic.then(|| starlint_scope::build_scope_data(&tree));
+    let needs_scope = rules.iter().any(|r| r.needs_scope_analysis());
+    let scope_data = needs_scope.then(|| starlint_scope::build_scope_data(&tree));
 
     let traversal_indices: Vec<usize> = rules
         .iter()

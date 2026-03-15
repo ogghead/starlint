@@ -120,12 +120,8 @@ impl LintRule for CustomEventNameCasing {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(CustomEventNameCasing)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(CustomEventNameCasing);
 
     #[test]
     fn test_allows_camel_case_event() {

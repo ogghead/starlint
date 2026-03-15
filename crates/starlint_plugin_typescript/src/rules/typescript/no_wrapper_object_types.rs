@@ -6,13 +6,13 @@
 //! use the lowercase primitive forms (`string`, `number`, `boolean`, `bigint`,
 //! `symbol`) instead.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Rule name constant.
 const RULE_NAME: &str = "typescript/no-wrapper-object-types";
@@ -62,15 +62,12 @@ impl LintRule for NoWrapperObjectTypes {
                     span: type_span,
                     severity: Severity::Error,
                     help: Some(message),
-                    fix: Some(Fix {
-                        kind: FixKind::SafeFix,
-                        message: format!("Replace `{wrapper}` with `{primitive}`"),
-                        edits: vec![Edit {
-                            span: type_span,
-                            replacement: primitive.to_owned(),
-                        }],
-                        is_snippet: false,
-                    }),
+                    fix: FixBuilder::new(
+                        format!("Replace `{wrapper}` with `{primitive}`"),
+                        FixKind::SafeFix,
+                    )
+                    .replace(type_span, primitive)
+                    .build(),
                     labels: vec![],
                 });
                 return;
@@ -83,12 +80,8 @@ impl LintRule for NoWrapperObjectTypes {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoWrapperObjectTypes)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoWrapperObjectTypes, "test.ts");
 
     #[test]
     fn test_flags_string_wrapper() {

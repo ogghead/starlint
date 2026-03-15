@@ -74,12 +74,8 @@ impl LintRule for NoDefaultExport {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDefaultExport)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoDefaultExport);
 
     #[test]
     fn test_flags_default_export_function() {

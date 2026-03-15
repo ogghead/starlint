@@ -138,12 +138,8 @@ fn check_empty_object_type(lit: &starlint_ast::node::TSTypeLiteralNode, ctx: &mu
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRestrictedTypes)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoRestrictedTypes, "test.ts");
 
     #[test]
     fn test_flags_object_type() {

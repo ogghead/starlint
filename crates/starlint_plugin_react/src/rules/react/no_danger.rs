@@ -64,12 +64,8 @@ impl LintRule for NoDanger {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDanger)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoDanger);
 
     #[test]
     fn test_flags_dangerously_set_inner_html() {

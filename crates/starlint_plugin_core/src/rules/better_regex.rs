@@ -3,13 +3,14 @@
 //! Flags regular expressions that contain character classes which can be
 //! replaced with shorter built-in shorthand classes (e.g. `[0-9]` to `\d`).
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Known improvable character class patterns and their replacements.
 const IMPROVABLE_PATTERNS: &[(&str, &str)] = &[
@@ -67,22 +68,15 @@ impl LintRule for BetterRegex {
         for &(class, replacement) in IMPROVABLE_PATTERNS {
             if pattern.contains(class) {
                 // Build fix for patterns with direct shorthand replacements
-                #[allow(clippy::as_conversions)]
                 let fix = FIXABLE_PATTERNS.iter().find(|(c, _)| *c == class).and_then(
                     |(_, shorthand)| {
                         let source = ctx.source_text();
                         let regex_text =
-                            source.get(regex.span.start as usize..regex.span.end as usize)?;
+                            source_text_for_span(source, Span::new(regex.span.start, regex.span.end))?;
                         let new_regex = regex_text.replacen(class, shorthand, 1);
-                        Some(Fix {
-                            kind: FixKind::SafeFix,
-                            message: format!("Replace `{class}` with `{shorthand}`"),
-                            edits: vec![Edit {
-                                span: Span::new(regex.span.start, regex.span.end),
-                                replacement: new_regex,
-                            }],
-                            is_snippet: false,
-                        })
+                        FixBuilder::new(format!("Replace `{class}` with `{shorthand}`"), FixKind::SafeFix)
+                            .replace(Span::new(regex.span.start, regex.span.end), new_regex)
+                            .build()
                     },
                 );
 
@@ -108,12 +102,8 @@ impl LintRule for BetterRegex {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BetterRegex)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(BetterRegex);
 
     #[test]
     fn test_flags_digit_class() {

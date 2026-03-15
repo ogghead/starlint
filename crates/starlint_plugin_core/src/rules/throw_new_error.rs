@@ -85,12 +85,8 @@ impl LintRule for ThrowNewError {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ThrowNewError)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ThrowNewError);
 
     #[test]
     fn test_flags_throw_error() {

@@ -123,12 +123,8 @@ impl LintRule for PreferArrayFlatMap {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferArrayFlatMap)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferArrayFlatMap);
 
     #[test]
     fn test_flags_map_flat() {

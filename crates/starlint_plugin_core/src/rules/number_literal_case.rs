@@ -4,13 +4,14 @@
 //! Hex digits should be uppercase (`0xFF`), prefixes lowercase (`0x`),
 //! and exponential notation lowercase (`1e3`).
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags numeric literals with inconsistent casing.
 #[derive(Debug)]
@@ -104,9 +105,9 @@ impl LintRule for NumberLiteralCase {
             return;
         };
 
-        let start = usize::try_from(lit.span.start).unwrap_or(0);
-        let end = usize::try_from(lit.span.end).unwrap_or(0);
-        let Some(raw) = ctx.source_text().get(start..end) else {
+        let Some(raw) =
+            source_text_for_span(ctx.source_text(), Span::new(lit.span.start, lit.span.end))
+        else {
             return;
         };
 
@@ -120,15 +121,12 @@ impl LintRule for NumberLiteralCase {
             span: Span::new(lit.span.start, lit.span.end),
             severity: Severity::Warning,
             help: Some(format!("Replace with `{normalized}`")),
-            fix: Some(Fix {
-                kind: FixKind::SafeFix,
-                message: format!("Replace `{raw}` with `{normalized}`"),
-                edits: vec![Edit {
-                    span: Span::new(lit.span.start, lit.span.end),
-                    replacement: normalized,
-                }],
-                is_snippet: false,
-            }),
+            fix: FixBuilder::new(
+                format!("Replace `{raw}` with `{normalized}`"),
+                FixKind::SafeFix,
+            )
+            .replace(Span::new(lit.span.start, lit.span.end), normalized)
+            .build(),
             labels: vec![],
         });
     }
@@ -138,13 +136,8 @@ impl LintRule for NumberLiteralCase {
 mod tests {
 
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NumberLiteralCase)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NumberLiteralCase);
 
     #[test]
     fn test_flags_lowercase_hex_digits() {

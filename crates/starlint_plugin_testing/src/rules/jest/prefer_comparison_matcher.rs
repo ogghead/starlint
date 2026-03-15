@@ -152,12 +152,8 @@ const fn operator_str(op: BinaryOperator) -> &'static str {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferComparisonMatcher)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferComparisonMatcher);
 
     #[test]
     fn test_flags_greater_than() {

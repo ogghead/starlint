@@ -83,12 +83,8 @@ impl LintRule for NoRenderReturnValue {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRenderReturnValue)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoRenderReturnValue);
 
     #[test]
     fn test_flags_assigned_render_return_value() {

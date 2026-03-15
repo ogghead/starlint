@@ -103,12 +103,8 @@ impl LintRule for NoArrayMethodThisArgument {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrayMethodThisArgument)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoArrayMethodThisArgument);
 
     #[test]
     fn test_flags_map_with_this_arg() {

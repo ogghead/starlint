@@ -98,12 +98,8 @@ impl LintRule for NoDuplicateCase {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDuplicateCase)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoDuplicateCase);
 
     #[test]
     fn test_flags_duplicate_case() {

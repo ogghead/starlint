@@ -187,13 +187,7 @@ fn is_primitive_literal(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeEnumComparison)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnsafeEnumComparison, "test.ts");
 
     #[test]
     fn test_flags_enum_compared_to_number() {

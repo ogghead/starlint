@@ -110,15 +110,10 @@ impl LintRule for NoNegationInEqualityCheck {
 
 #[cfg(test)]
 mod tests {
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNegationInEqualityCheck)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoNegationInEqualityCheck);
 
     #[test]
     fn test_flags_negation_loose_equality() {

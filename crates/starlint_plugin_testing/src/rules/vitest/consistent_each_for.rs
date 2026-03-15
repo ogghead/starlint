@@ -97,12 +97,8 @@ impl LintRule for ConsistentEachFor {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentEachFor)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentEachFor);
 
     #[test]
     fn test_flags_empty_each_array() {

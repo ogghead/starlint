@@ -168,12 +168,8 @@ fn is_simple_super_call(expr_id: NodeId, params: &[NodeId], ctx: &LintContext<'_
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessConstructor)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUselessConstructor);
 
     #[test]
     fn test_flags_empty_constructor() {

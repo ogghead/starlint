@@ -5,13 +5,14 @@
 //! namespace or an ambient module declaration. Using `namespace` makes the
 //! intent explicit and avoids confusion with ES modules.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags `module Foo {}` declarations that should use `namespace` instead.
 #[derive(Debug)]
@@ -39,9 +40,9 @@ impl LintRule for PreferNamespaceKeyword {
 
         // TSModuleDeclarationNode has no `kind` field in starlint_ast.
         // Use source text to detect `module` vs `namespace` keyword.
-        let decl_start = usize::try_from(decl.span.start).unwrap_or(0);
-        let decl_end = usize::try_from(decl.span.end).unwrap_or(0);
-        let decl_text = ctx.source_text().get(decl_start..decl_end).unwrap_or("");
+        let decl_text =
+            source_text_for_span(ctx.source_text(), Span::new(decl.span.start, decl.span.end))
+                .unwrap_or("");
 
         // Only flag `module` keyword, not `namespace`.
         if !decl_text.starts_with("module") && !decl_text.starts_with("declare module") {
@@ -60,7 +61,10 @@ impl LintRule for PreferNamespaceKeyword {
 
         // Find the `module` keyword in the source text within the declaration span
         if let Some(module_offset) = decl_text.find("module") {
-            let module_start = u32::try_from(decl_start.saturating_add(module_offset)).unwrap_or(0);
+            let module_start = decl
+                .span
+                .start
+                .saturating_add(u32::try_from(module_offset).unwrap_or(0));
             let module_end = module_start.saturating_add(6); // "module".len() == 6
 
             ctx.report(Diagnostic {
@@ -70,15 +74,9 @@ impl LintRule for PreferNamespaceKeyword {
                 span: Span::new(decl.span.start, decl.span.end),
                 severity: Severity::Warning,
                 help: Some("Replace `module` with `namespace`".to_owned()),
-                fix: Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: "Replace `module` with `namespace`".to_owned(),
-                    edits: vec![Edit {
-                        span: Span::new(module_start, module_end),
-                        replacement: "namespace".to_owned(),
-                    }],
-                    is_snippet: false,
-                }),
+                fix: FixBuilder::new("Replace `module` with `namespace`", FixKind::SafeFix)
+                    .replace(Span::new(module_start, module_end), "namespace")
+                    .build(),
                 labels: vec![],
             });
         }
@@ -89,12 +87,8 @@ impl LintRule for PreferNamespaceKeyword {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferNamespaceKeyword)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferNamespaceKeyword, "test.ts");
 
     #[test]
     fn test_flags_module_with_identifier() {

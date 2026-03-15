@@ -101,13 +101,8 @@ impl LintRule for TextEncodingIdentifierCase {
 mod tests {
 
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(TextEncodingIdentifierCase)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(TextEncodingIdentifierCase);
 
     #[test]
     fn test_flags_uppercase_utf8() {

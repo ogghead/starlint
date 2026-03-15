@@ -87,13 +87,8 @@ fn is_multi_char_string(ctx: &LintContext<'_>, id: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BadCharAtComparison)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(BadCharAtComparison);
 
     #[test]
     fn test_flags_char_at_vs_multi_char() {

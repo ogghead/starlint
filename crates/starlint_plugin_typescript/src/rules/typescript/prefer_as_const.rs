@@ -164,12 +164,8 @@ fn is_literal_self_assertion_from_source(
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferAsConst)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferAsConst, "test.ts");
 
     #[test]
     fn test_flags_string_literal_self_assertion() {

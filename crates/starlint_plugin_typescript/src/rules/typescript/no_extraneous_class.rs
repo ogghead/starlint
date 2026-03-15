@@ -104,12 +104,8 @@ fn has_constructor_or_instance_member(elements: &[NodeId], ctx: &LintContext<'_>
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExtraneousClass)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoExtraneousClass, "test.ts");
 
     #[test]
     fn test_flags_static_only_class() {

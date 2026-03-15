@@ -193,13 +193,7 @@ fn find_type_only_exports(source: &str) -> Vec<(String, Span)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentTypeExports)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentTypeExports, "test.ts");
 
     #[test]
     fn test_flags_interface_export_without_type() {

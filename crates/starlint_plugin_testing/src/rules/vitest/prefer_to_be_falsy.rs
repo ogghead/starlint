@@ -105,12 +105,8 @@ impl LintRule for PreferToBeFalsy {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferToBeFalsy)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferToBeFalsy);
 
     #[test]
     fn test_flags_to_be_false() {

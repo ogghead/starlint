@@ -71,13 +71,8 @@ impl LintRule for NoSequences {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSequences)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoSequences);
 
     #[test]
     fn test_flags_comma_operator() {

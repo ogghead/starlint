@@ -128,12 +128,8 @@ fn check_statement_for_control_flow(stmt_id: NodeId, ctx: &mut LintContext<'_>) 
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeFinally)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnsafeFinally);
 
     #[test]
     fn test_flags_return_in_finally() {

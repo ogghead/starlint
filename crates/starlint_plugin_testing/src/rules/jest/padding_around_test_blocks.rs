@@ -118,12 +118,7 @@ impl LintRule for PaddingAroundTestBlocks {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PaddingAroundTestBlocks)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PaddingAroundTestBlocks);
 
     #[test]
     fn test_flags_missing_padding_before_test() {

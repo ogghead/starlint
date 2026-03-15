@@ -4,13 +4,14 @@
 //! (or one with no assertions) is likely a placeholder; using `test.todo`
 //! makes the intent explicit and appears in test runner summaries.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags empty `it()` / `test()` callbacks that should use `test.todo()`.
 #[derive(Debug)]
@@ -71,20 +72,13 @@ impl LintRule for PreferTodo {
 
         if is_empty {
             let source = ctx.source_text();
-            #[allow(clippy::as_conversions)]
             let fix = call.arguments.first().and_then(|&a| {
                 let sp = ctx.node(a)?.span();
-                let title = source.get(sp.start as usize..sp.end as usize)?.to_owned();
+                let title = source_text_for_span(source, Span::new(sp.start, sp.end))?;
                 let replacement = format!("{callee_name}.todo({title})");
-                Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: format!("Replace with `{replacement}`"),
-                    edits: vec![Edit {
-                        span: Span::new(call.span.start, call.span.end),
-                        replacement,
-                    }],
-                    is_snippet: false,
-                })
+                FixBuilder::new(format!("Replace with `{replacement}`"), FixKind::SafeFix)
+                    .replace(Span::new(call.span.start, call.span.end), replacement)
+                    .build()
             });
 
             ctx.report(Diagnostic {
@@ -118,12 +112,8 @@ fn is_body_empty(body_id: NodeId, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferTodo)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferTodo);
 
     #[test]
     fn test_flags_empty_arrow_test() {

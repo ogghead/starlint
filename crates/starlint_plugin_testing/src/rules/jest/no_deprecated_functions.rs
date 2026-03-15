@@ -97,12 +97,8 @@ impl LintRule for NoDeprecatedFunctions {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDeprecatedFunctions)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoDeprecatedFunctions);
 
     #[test]
     fn test_flags_reset_module_registry() {

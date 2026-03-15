@@ -8,10 +8,11 @@ use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags regex literals that start with `=`.
 #[derive(Debug)]
@@ -31,7 +32,6 @@ impl LintRule for NoDivRegex {
         Some(&[AstNodeType::RegExpLiteral])
     }
 
-    #[allow(clippy::as_conversions)]
     fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         let AstNode::RegExpLiteral(regex) = node else {
             return;
@@ -39,19 +39,19 @@ impl LintRule for NoDivRegex {
 
         if regex.pattern.starts_with('=') {
             // Fix: escape the leading = by wrapping in char class [=]
-            let source = ctx.source_text();
-            let start = regex.span.start as usize;
-            let end = regex.span.end as usize;
-            let raw = source.get(start..end).unwrap_or("");
+            let raw = source_text_for_span(
+                ctx.source_text(),
+                Span::new(regex.span.start, regex.span.end),
+            )
+            .unwrap_or("");
             // raw is "/=pattern/flags" — insert [=] after first /
-            let fix = raw.get(2..).map(|rest| Fix {
-                kind: FixKind::SafeFix,
-                message: "Escape leading `=` in regex".to_owned(),
-                edits: vec![Edit {
-                    span: Span::new(regex.span.start, regex.span.end),
-                    replacement: format!("/[=]{rest}"),
-                }],
-                is_snippet: false,
+            let fix = raw.get(2..).and_then(|rest| {
+                FixBuilder::new("Escape leading `=` in regex", FixKind::SafeFix)
+                    .replace(
+                        Span::new(regex.span.start, regex.span.end),
+                        format!("/[=]{rest}"),
+                    )
+                    .build()
             });
 
             ctx.report(Diagnostic {
@@ -70,13 +70,8 @@ impl LintRule for NoDivRegex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoDivRegex)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoDivRegex);
 
     #[test]
     fn test_flags_div_like_regex() {

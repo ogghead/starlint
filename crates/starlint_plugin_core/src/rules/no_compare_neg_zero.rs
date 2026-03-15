@@ -108,13 +108,8 @@ fn is_negative_zero(ctx: &LintContext<'_>, id: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoCompareNegZero)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoCompareNegZero);
 
     #[test]
     fn test_flags_strict_equality_neg_zero() {

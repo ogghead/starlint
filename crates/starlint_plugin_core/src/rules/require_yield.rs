@@ -82,12 +82,8 @@ fn source_contains_yield(source: &str, start: u32, end: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RequireYield)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(RequireYield);
 
     #[test]
     fn test_flags_empty_generator() {

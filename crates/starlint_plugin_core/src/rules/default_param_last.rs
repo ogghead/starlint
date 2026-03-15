@@ -79,12 +79,8 @@ impl LintRule for DefaultParamLast {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DefaultParamLast)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(DefaultParamLast);
 
     #[test]
     fn test_allows_defaults_at_end() {

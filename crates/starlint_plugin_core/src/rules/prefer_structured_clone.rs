@@ -120,12 +120,8 @@ fn is_json_method_call(callee_id: NodeId, method: &str, ctx: &LintContext<'_>) -
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStructuredClone)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferStructuredClone);
 
     #[test]
     fn test_flags_json_parse_stringify() {

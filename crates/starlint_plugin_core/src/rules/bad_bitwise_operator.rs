@@ -99,13 +99,8 @@ fn looks_boolean(_ctx: &LintContext<'_>, node: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BadBitwiseOperator)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(BadBitwiseOperator);
 
     #[test]
     fn test_flags_pipe_with_booleans() {

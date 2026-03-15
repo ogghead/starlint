@@ -89,12 +89,8 @@ impl LintRule for ConsistentTypeAssertions {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentTypeAssertions)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentTypeAssertions, "test.ts");
 
     #[test]
     fn test_flags_angle_bracket_assertion() {

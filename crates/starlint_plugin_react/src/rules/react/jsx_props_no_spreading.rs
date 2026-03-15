@@ -58,12 +58,7 @@ impl LintRule for JsxPropsNoSpreading {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxPropsNoSpreading)];
-        lint_source(source, "test.tsx", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(JsxPropsNoSpreading, "test.tsx");
 
     #[test]
     fn test_flags_spread_props() {

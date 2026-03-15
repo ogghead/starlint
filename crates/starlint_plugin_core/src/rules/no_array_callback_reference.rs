@@ -96,12 +96,8 @@ impl LintRule for NoArrayCallbackReference {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrayCallbackReference)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoArrayCallbackReference);
 
     #[test]
     fn test_flags_map_parse_int() {

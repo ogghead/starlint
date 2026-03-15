@@ -184,12 +184,8 @@ impl LintRule for BlockScopedVar {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BlockScopedVar::new())];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(BlockScopedVar::new());
 
     #[test]
     fn test_flags_var_in_if_block() {

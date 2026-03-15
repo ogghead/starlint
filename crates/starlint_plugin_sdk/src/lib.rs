@@ -6,5 +6,5 @@
 pub mod diagnostic;
 pub mod rule;
 
-pub use diagnostic::{Diagnostic, Edit, Fix, Label, Severity, Span};
+pub use diagnostic::{Diagnostic, Edit, Fix, Label, Severity, Span, parse_severity};
 pub use rule::{Category, FixKind, RuleMeta};

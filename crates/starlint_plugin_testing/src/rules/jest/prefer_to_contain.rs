@@ -151,12 +151,8 @@ impl LintRule for PreferToContain {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferToContain)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferToContain);
 
     #[test]
     fn test_flags_includes_to_be_true() {

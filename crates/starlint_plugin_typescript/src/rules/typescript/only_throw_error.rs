@@ -111,12 +111,8 @@ fn is_undefined_identifier(id: NodeId, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(OnlyThrowError)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(OnlyThrowError, "test.ts");
 
     #[test]
     fn test_flags_throw_string() {

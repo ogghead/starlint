@@ -173,12 +173,8 @@ fn collect_private_references_from_source(
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnusedPrivateClassMembers)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnusedPrivateClassMembers);
 
     #[test]
     fn test_flags_unused_private_field() {
