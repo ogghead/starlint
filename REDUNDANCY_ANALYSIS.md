@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-The codebase is well-architected overall — the crate dependency graph is clean, the `declare_plugin!` macro eliminates boilerplate effectively, and the SDK/framework layering is intentional. However, analysis reveals **19 actionable redundancies** and **9 organizational improvements** across the workspace, concentrated in four areas: duplicated JSX attribute helpers (21 copies across react/nextjs), duplicated utility functions within and across plugin crates, unused/underutilized builder APIs, and a dual `Span` type situation.
+The codebase is well-architected overall — the crate dependency graph is clean, the `declare_plugin!` macro eliminates boilerplate effectively, and the SDK/framework layering is intentional. However, analysis reveals **21 actionable redundancies** and **9 organizational improvements** across the workspace, concentrated in four areas: duplicated JSX attribute helpers (21 copies across react/nextjs), duplicated utility functions within and across plugin crates, unused/underutilized builder APIs, and a dual `Span` type situation.
 
 ---
 
@@ -154,7 +154,39 @@ This would deduplicate ~21 function definitions across 2 plugins and simplify ~2
 
 **Recommendation:** Migrate to `FixBuilder` incrementally alongside the `DiagnosticBuilder` migration (R9).
 
-### R15. `static_key_name()` / `static_property_key_name()` duplicated 6 times in core plugin (HIGH)
+### R15. `find_matching_brace()` duplicated 9 times across typescript and testing plugins (HIGH)
+
+**Implementations in:**
+- `crates/starlint_plugin_typescript/src/rules/typescript/consistent_return.rs:159`
+- `crates/starlint_plugin_typescript/src/rules/typescript/require_await.rs:120`
+- `crates/starlint_plugin_typescript/src/rules/typescript/strict_void_return.rs:106`
+- `crates/starlint_plugin_typescript/src/rules/typescript/switch_exhaustiveness_check.rs:156`
+- `crates/starlint_plugin_typescript/src/rules/typescript/no_unnecessary_qualifier.rs:159`
+- `crates/starlint_plugin_typescript/src/rules/typescript/no_unnecessary_parameter_property_assignment.rs:230`
+- `crates/starlint_plugin_testing/src/rules/vitest/no_conditional_tests.rs:118`
+- `crates/starlint_plugin_testing/src/rules/vitest/prefer_import_in_mock.rs:101`
+- `crates/starlint_plugin_testing/src/rules/vitest/require_local_test_context_for_concurrent_snapshots.rs:112`
+
+All find the closing `}` for a given opening `{` position, counting nesting depth. Minor variations: one operates on `&[u8]` instead of `&str`.
+
+### R16. `find_matching_paren()` duplicated 5 times in typescript plugin (HIGH)
+
+**Implementations in:**
+- `crates/starlint_plugin_typescript/src/rules/typescript/no_unnecessary_parameter_property_assignment.rs:212`
+- `crates/starlint_plugin_typescript/src/rules/typescript/unified_signatures.rs:190`
+- `crates/starlint_plugin_typescript/src/rules/typescript/prefer_function_type.rs:139`
+- `crates/starlint_plugin_typescript/src/rules/typescript/prefer_includes.rs:149`
+- `crates/starlint_plugin_typescript/src/rules/typescript/prefer_find.rs:132`
+
+Same pattern as R15 but for parentheses.
+
+**Recommendation for R15 + R16:** Extract to `starlint_rule_framework::source_utils`:
+```rust
+pub fn find_matching_delimiter(source: &str, open_pos: usize, open: char, close: char) -> Option<usize>
+```
+This single generic function replaces all 14 copies.
+
+### R17. `static_key_name()` / `static_property_key_name()` duplicated 6 times in core plugin (HIGH)
 
 **Implementations in:**
 - `crates/starlint_plugin_core/src/rules/grouped_accessor_pairs.rs:207` — `static_property_key_name()`
@@ -171,7 +203,7 @@ All extract a key name from a property/method key `NodeId` (matching `Identifier
 pub fn extract_static_key_name(key_id: NodeId, ctx: &LintContext) -> Option<String>
 ```
 
-### R16. `is_literal()` duplicated 2 times in core plugin (LOW)
+### R18. `is_literal()` duplicated 2 times in core plugin (LOW)
 
 **Implementations in:**
 - `crates/starlint_plugin_core/src/rules/prefer_class_fields.rs:119` — checks `NumericLiteral`, `StringLiteral`, `BooleanLiteral`, `NullLiteral`, `RegExpLiteral`, and `UnaryExpression` for negative numbers
@@ -306,7 +338,9 @@ The engine supports `mjsx` and `mtsx` but file discovery does not. This means fi
 | HIGH | R6 | `is_expect_chain()` x5 | Testing plugin maintenance |
 | HIGH | R12 | `has_attribute()` x13 across JSX rules | Massive duplication |
 | HIGH | R13 | `get_attr_string_value()` x8 across JSX rules | Massive duplication |
-| HIGH | R15 | `static_key_name()` x6 in core plugin | Internal duplication |
+| HIGH | R15 | `find_matching_brace()` x9 across TS + testing | Cross-plugin duplication |
+| HIGH | R16 | `find_matching_paren()` x5 in TS plugin | Internal duplication |
+| HIGH | R17 | `static_key_name()` x6 in core plugin | Internal duplication |
 | HIGH | R1 | `is_pascal_case()` x4 across plugins | Cross-plugin maintenance |
 | MEDIUM | O1 | Core plugin 327 flat files, no subdirs | Developer navigation |
 | MEDIUM | R2 | `to_pascal_case()` x2 | Consistency |
@@ -317,7 +351,7 @@ The engine supports `mjsx` and `mtsx` but file discovery does not. This means fi
 | MEDIUM | O6 | No shared test utilities beyond `lint_source()` | Test boilerplate |
 | MEDIUM | O9 | File extension lists diverge (8 vs 10) in starlint_core | Potential bug |
 | LOW | R4 | Case utils only in Vue (preemptive) | Future duplication risk |
-| LOW | R16 | `is_literal()` x2 in core plugin | Internal duplication |
+| LOW | R18 | `is_literal()` x2 in core plugin | Internal duplication |
 | LOW | R8 | `is_promise_call()` x2 | Testing plugin cleanup |
 | LOW | O2-O8 | Various organizational improvements | Maintainability |
 
@@ -333,7 +367,8 @@ The engine supports `mjsx` and `mtsx` but file discovery does not. This means fi
 
 2. **Medium effort (half-day each):**
    - R12 + R13: Create `jsx_utils` module in `starlint_rule_framework` (biggest impact — deduplicates 21 functions across 25+ files)
-   - R15: Create `ast_utils` module with `extract_static_key_name()` (deduplicates 6 functions in core plugin)
+   - R15 + R16: Create `source_utils` module with `find_matching_delimiter()` (deduplicates 14 functions across TS + testing)
+   - R17: Create `ast_utils` module with `extract_static_key_name()` (deduplicates 6 functions in core plugin)
    - R1 + R2 + R3 + R4: Create `case_utils` module in `starlint_rule_framework`
    - R10: Remove redundant `source_text_for_span()` once Spans are unified
    - O5: Single `native_plugin_registry()` call
