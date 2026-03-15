@@ -212,6 +212,16 @@ Both functions exist for the same purpose. `write_diagnostics` is the streaming 
 
 **Recommendation:** No immediate action — both serve different use cases. Could consider removing `format_diagnostics()` if tests can be updated to use `write_diagnostics` with a `Vec<u8>` buffer.
 
+### O9. File extension lists diverge between discovery and engine (MEDIUM — potential bug)
+
+**Locations:**
+- `crates/starlint_core/src/file_discovery.rs:10` — `DEFAULT_EXTENSIONS` = `["js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts"]` (8 extensions)
+- `crates/starlint_core/src/engine.rs:201` — `is_supported_extension()` matches `["js", "mjs", "cjs", "jsx", "mjsx", "ts", "mts", "cts", "tsx", "mtsx"]` (10 extensions)
+
+The engine supports `mjsx` and `mtsx` but file discovery does not. This means files with `.mjsx` or `.mtsx` extensions will never be discovered by directory walking, but would be accepted if passed directly. This is either a latent bug or an undocumented inconsistency.
+
+**Recommendation:** Define a single `SUPPORTED_EXTENSIONS` constant in `file_discovery.rs` and reuse it in `engine.rs`. Decide whether `mjsx`/`mtsx` should be supported (they are non-standard but occasionally used).
+
 ---
 
 ## Priority Summary
@@ -229,6 +239,7 @@ Both functions exist for the same purpose. `write_diagnostics` is the streaming 
 | MEDIUM | R7 | `get_string_value()` x2 in Next.js | Internal duplication |
 | MEDIUM | R10 | `source_text_for_span` vs `Span::source_text` | API confusion |
 | MEDIUM | O6 | No shared test utilities beyond `lint_source()` | Test boilerplate |
+| MEDIUM | O9 | File extension lists diverge (8 vs 10) in starlint_core | Potential bug |
 | LOW | R4 | Case utils only in Vue (preemptive) | Future duplication risk |
 | LOW | R8 | `is_promise_call()` x2 | Testing plugin cleanup |
 | LOW | O2-O8 | Various organizational improvements | Maintainability |
@@ -241,6 +252,7 @@ Both functions exist for the same purpose. `write_diagnostics` is the streaming 
    - R5 + R6 + R8: Create `jest_utils` module in `starlint_plugin_testing`
    - R7: Create `nextjs_utils` module in `starlint_plugin_nextjs`
    - R11: Add `From` impls between the two `Span` types
+   - O9: Unify file extension lists in `starlint_core`
 
 2. **Medium effort (half-day each):**
    - R1 + R2 + R3 + R4: Create `case_utils` module in `starlint_rule_framework`
