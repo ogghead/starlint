@@ -39,6 +39,66 @@ struct DiagnosticCounts {
     warnings: usize,
 }
 
+/// Convert a CLI format argument to the internal output format enum.
+const fn resolve_output_format(arg: OutputFormatArg) -> OutputFormat {
+    match arg {
+        OutputFormatArg::Pretty => OutputFormat::Pretty,
+        OutputFormatArg::Json => OutputFormat::Json,
+        OutputFormatArg::Compact => OutputFormat::Compact,
+        OutputFormatArg::Count => OutputFormat::Count,
+        OutputFormatArg::Github => OutputFormat::Github,
+        OutputFormatArg::Gitlab => OutputFormat::Gitlab,
+        OutputFormatArg::Junit => OutputFormat::Junit,
+        OutputFormatArg::Sarif => OutputFormat::Sarif,
+        OutputFormatArg::Stylish => OutputFormat::Stylish,
+    }
+}
+
+/// Extract lint paths and fix mode from parsed CLI arguments.
+///
+/// Returns `None` for non-lint commands (Lsp, Init, Rules) — those are
+/// handled separately in [`run`].
+fn resolve_lint_args(args: &Cli) -> Option<(Vec<PathBuf>, bool, bool, bool)> {
+    match &args.command {
+        Some(Command::Fix {
+            paths, dangerous, ..
+        }) => Some((paths.clone(), true, *dangerous, false)),
+        Some(Command::Lint { paths }) => Some((
+            paths.clone(),
+            args.fix,
+            args.fix_dangerous,
+            args.fix_dry_run,
+        )),
+        Some(Command::Lsp | Command::Init | Command::Rules { .. }) => None,
+        None => Some((
+            args.paths.clone(),
+            args.fix,
+            args.fix_dangerous,
+            args.fix_dry_run,
+        )),
+    }
+}
+
+/// Count error/warning diagnostics for a single file's results.
+///
+/// Used when updating the lint cache with per-file counts.
+fn count_diagnostics(diagnostics: &[starlint_plugin_sdk::diagnostic::Diagnostic]) -> (u32, u32) {
+    let mut errors = 0u32;
+    let mut warnings = 0u32;
+    for diag in diagnostics {
+        match diag.severity {
+            Severity::Error => {
+                errors = errors.saturating_add(1);
+            }
+            Severity::Warning => {
+                warnings = warnings.saturating_add(1);
+            }
+            Severity::Suggestion => {}
+        }
+    }
+    (errors, warnings)
+}
+
 /// Run the starlint CLI.
 ///
 /// Parses arguments, loads config, discovers files, lints, and formats output.
@@ -58,29 +118,10 @@ pub fn run() -> miette::Result<ExitStatus> {
 
     let args = Cli::parse();
 
-    let output_format = match args.format {
-        OutputFormatArg::Pretty => OutputFormat::Pretty,
-        OutputFormatArg::Json => OutputFormat::Json,
-        OutputFormatArg::Compact => OutputFormat::Compact,
-        OutputFormatArg::Count => OutputFormat::Count,
-        OutputFormatArg::Github => OutputFormat::Github,
-        OutputFormatArg::Gitlab => OutputFormat::Gitlab,
-        OutputFormatArg::Junit => OutputFormat::Junit,
-        OutputFormatArg::Sarif => OutputFormat::Sarif,
-        OutputFormatArg::Stylish => OutputFormat::Stylish,
-    };
+    let output_format = resolve_output_format(args.format);
 
-    // Determine fix mode from command or flags.
-    let (paths, fix_enabled, fix_dangerous, fix_dry_run) = match &args.command {
-        Some(Command::Fix {
-            paths, dangerous, ..
-        }) => (paths.clone(), true, *dangerous, false),
-        Some(Command::Lint { paths }) => (
-            paths.clone(),
-            args.fix,
-            args.fix_dangerous,
-            args.fix_dry_run,
-        ),
+    // Handle non-lint commands first.
+    match &args.command {
         Some(Command::Lsp) => return run_lsp(),
         Some(Command::Init) => {
             run_init()?;
@@ -90,13 +131,12 @@ pub fn run() -> miette::Result<ExitStatus> {
             run_rules(plugin.as_deref(), *json);
             return Ok(ExitStatus::Success);
         }
-        None => (
-            args.paths.clone(),
-            args.fix,
-            args.fix_dangerous,
-            args.fix_dry_run,
-        ),
-    };
+        _ => {}
+    }
+
+    // Determine fix mode from command or flags.
+    let (paths, fix_enabled, fix_dangerous, fix_dry_run) =
+        resolve_lint_args(&args).unwrap_or_default();
 
     let config = load_merged_config(args.config.as_deref())?;
     configure_thread_pool(args.threads, config.settings.threads);
@@ -152,19 +192,7 @@ pub fn run() -> miette::Result<ExitStatus> {
     // Update cache with new results.
     if let Some(ref mut c) = cache {
         for result in &results {
-            let mut errors = 0u32;
-            let mut warnings = 0u32;
-            for diag in &result.diagnostics {
-                match diag.severity {
-                    Severity::Error => {
-                        errors = errors.saturating_add(1);
-                    }
-                    Severity::Warning => {
-                        warnings = warnings.saturating_add(1);
-                    }
-                    Severity::Suggestion => {}
-                }
-            }
+            let (errors, warnings) = count_diagnostics(&result.diagnostics);
             cache_update_file(c, &result.path, &result.source_text, errors, warnings);
         }
         if let Err(err) = c.save(&args.cache_location) {
@@ -1126,6 +1154,194 @@ mod tests {
         let counts = report_diagnostics(&results, OutputFormat::Json);
         assert_eq!(counts.errors, 1);
         assert_eq!(counts.warnings, 0);
+    }
+
+    // ── resolve_output_format ────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_output_format_all_variants() {
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Pretty),
+            OutputFormat::Pretty
+        );
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Json),
+            OutputFormat::Json
+        );
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Compact),
+            OutputFormat::Compact
+        );
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Count),
+            OutputFormat::Count
+        );
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Github),
+            OutputFormat::Github
+        );
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Gitlab),
+            OutputFormat::Gitlab
+        );
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Junit),
+            OutputFormat::Junit
+        );
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Sarif),
+            OutputFormat::Sarif
+        );
+        assert_eq!(
+            resolve_output_format(OutputFormatArg::Stylish),
+            OutputFormat::Stylish
+        );
+    }
+
+    // ── resolve_lint_args ────────────────────────────────────────────
+
+    #[test]
+    fn test_resolve_lint_args_no_command() {
+        let args = Cli {
+            command: None,
+            paths: vec![PathBuf::from("src")],
+            format: OutputFormatArg::Pretty,
+            config: None,
+            fix: true,
+            fix_dangerous: false,
+            fix_dry_run: false,
+            cache: false,
+            cache_location: PathBuf::from(".starlintcache"),
+            max_warnings: 0,
+            threads: 0,
+            timing: false,
+        };
+        let result = resolve_lint_args(&args);
+        assert!(result.is_some());
+        let (paths, fix, dangerous, dry_run) = result.unwrap_or_default();
+        assert_eq!(paths, vec![PathBuf::from("src")]);
+        assert!(fix);
+        assert!(!dangerous);
+        assert!(!dry_run);
+    }
+
+    #[test]
+    fn test_resolve_lint_args_lint_command() {
+        let args = Cli {
+            command: Some(Command::Lint {
+                paths: vec![PathBuf::from("lib")],
+            }),
+            paths: vec![],
+            format: OutputFormatArg::Pretty,
+            config: None,
+            fix: false,
+            fix_dangerous: false,
+            fix_dry_run: true,
+            cache: false,
+            cache_location: PathBuf::from(".starlintcache"),
+            max_warnings: 0,
+            threads: 0,
+            timing: false,
+        };
+        let result = resolve_lint_args(&args);
+        assert!(result.is_some());
+        let (paths, fix, dangerous, dry_run) = result.unwrap_or_default();
+        assert_eq!(paths, vec![PathBuf::from("lib")]);
+        assert!(!fix);
+        assert!(!dangerous);
+        assert!(dry_run);
+    }
+
+    #[test]
+    fn test_resolve_lint_args_fix_command() {
+        let args = Cli {
+            command: Some(Command::Fix {
+                paths: vec![PathBuf::from("app")],
+                dangerous: true,
+            }),
+            paths: vec![],
+            format: OutputFormatArg::Pretty,
+            config: None,
+            fix: false,
+            fix_dangerous: false,
+            fix_dry_run: false,
+            cache: false,
+            cache_location: PathBuf::from(".starlintcache"),
+            max_warnings: 0,
+            threads: 0,
+            timing: false,
+        };
+        let result = resolve_lint_args(&args);
+        assert!(result.is_some());
+        let (paths, fix, dangerous, dry_run) = result.unwrap_or_default();
+        assert_eq!(paths, vec![PathBuf::from("app")]);
+        assert!(fix);
+        assert!(dangerous);
+        assert!(!dry_run);
+    }
+
+    #[test]
+    fn test_resolve_lint_args_non_lint_commands_return_none() {
+        for command in [
+            Command::Lsp,
+            Command::Init,
+            Command::Rules {
+                plugin: None,
+                json: false,
+            },
+        ] {
+            let args = Cli {
+                command: Some(command),
+                paths: vec![],
+                format: OutputFormatArg::Pretty,
+                config: None,
+                fix: false,
+                fix_dangerous: false,
+                fix_dry_run: false,
+                cache: false,
+                cache_location: PathBuf::from(".starlintcache"),
+                max_warnings: 0,
+                threads: 0,
+                timing: false,
+            };
+            assert!(
+                resolve_lint_args(&args).is_none(),
+                "non-lint command should return None"
+            );
+        }
+    }
+
+    // ── count_diagnostics ────────────────────────────────────────────
+
+    #[test]
+    fn test_count_diagnostics_mixed() {
+        let diags = vec![
+            make_diag(Severity::Error),
+            make_diag(Severity::Error),
+            make_diag(Severity::Warning),
+            make_diag(Severity::Suggestion),
+        ];
+        let (errors, warnings) = count_diagnostics(&diags);
+        assert_eq!(errors, 2);
+        assert_eq!(warnings, 1);
+    }
+
+    #[test]
+    fn test_count_diagnostics_empty() {
+        let (errors, warnings) = count_diagnostics(&[]);
+        assert_eq!(errors, 0);
+        assert_eq!(warnings, 0);
+    }
+
+    #[test]
+    fn test_count_diagnostics_suggestions_only() {
+        let diags = vec![
+            make_diag(Severity::Suggestion),
+            make_diag(Severity::Suggestion),
+        ];
+        let (errors, warnings) = count_diagnostics(&diags);
+        assert_eq!(errors, 0);
+        assert_eq!(warnings, 0);
     }
 
     // ── category_label all variants ───────────────────────────────────
