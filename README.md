@@ -19,15 +19,15 @@ Compared against [oxlint](https://oxc.rs) and [eslint](https://eslint.org) on re
 
 | Corpus | Files | starlint | oxlint | eslint |
 |--------|------:|----------|--------|--------|
-| express | 141 | **17ms (12 MB)** | 84ms (110 MB) | 1.53s (252 MB) |
-| date-fns | 1562 | 90ms (12 MB) | **89ms (114 MB)** | 4.64s (417 MB) |
-| grafana | 6259 | 540ms (36 MB) | **361ms (138 MB)** | 31.86s (555 MB) |
+| express | 141 | **17ms (12 MB)** | 84ms (111 MB) | 1.51s (250 MB) |
+| date-fns | 1562 | 90ms (13 MB) | **89ms (113 MB)** | 4.69s (442 MB) |
+| grafana | 6259 | 529ms (38 MB) | **356ms (138 MB)** | 32.42s (555 MB) |
 <details>
 <summary>All rules (~630-710 rules per tool)</summary>
 
 | Corpus | Files | starlint | oxlint | eslint |
 |--------|------:|----------|--------|--------|
-| express | 141 | **60ms (18 MB)** | 277ms (133 MB) | 13.22s (735 MB) |
+| express | 141 | **60ms (18 MB)** | 278ms (131 MB) | 13.23s (739 MB) |
 </details>
 
 *Last updated: 2026-03-15. Benchmarked with [hyperfine](https://github.com/sharkdp/hyperfine) (3 warmup, 10+ runs).*
