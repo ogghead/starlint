@@ -488,3 +488,263 @@ const fn category_label(category: &starlint_plugin_sdk::rule::Category) -> &'sta
         Category::Custom(_) => "custom",
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    use starlint_core::engine::FileDiagnostics;
+    use starlint_plugin_sdk::diagnostic::{Diagnostic, Fix, Span};
+    use starlint_plugin_sdk::rule::{Category, FixKind};
+
+    /// Helper: create a minimal diagnostic with the given severity and no fix.
+    fn make_diag(severity: Severity) -> Diagnostic {
+        Diagnostic {
+            rule_name: String::from("test/rule"),
+            message: String::from("test message"),
+            span: Span::new(0, 1),
+            severity,
+            help: None,
+            fix: None,
+            labels: Vec::new(),
+        }
+    }
+
+    /// Helper: create a diagnostic with a fix of the given kind.
+    fn make_diag_with_fix(severity: Severity, fix_kind: FixKind) -> Diagnostic {
+        Diagnostic {
+            rule_name: String::from("test/fixable"),
+            message: String::from("fixable issue"),
+            span: Span::new(0, 1),
+            severity,
+            help: None,
+            fix: Some(Fix {
+                kind: fix_kind,
+                message: String::from("apply fix"),
+                edits: Vec::new(),
+                is_snippet: false,
+            }),
+            labels: Vec::new(),
+        }
+    }
+
+    // ── category_label ──────────────────────────────────────────────────
+
+    #[test]
+    fn category_label_correctness() {
+        assert_eq!(category_label(&Category::Correctness), "correctness");
+    }
+
+    #[test]
+    fn category_label_style() {
+        assert_eq!(category_label(&Category::Style), "style");
+    }
+
+    #[test]
+    fn category_label_performance() {
+        assert_eq!(category_label(&Category::Performance), "performance");
+    }
+
+    #[test]
+    fn category_label_suggestion() {
+        assert_eq!(category_label(&Category::Suggestion), "suggestion");
+    }
+
+    #[test]
+    fn category_label_custom() {
+        assert_eq!(
+            category_label(&Category::Custom(String::from("my-cat"))),
+            "custom"
+        );
+    }
+
+    // ── ExitStatus ──────────────────────────────────────────────────────
+
+    #[test]
+    fn exit_status_eq() {
+        assert_eq!(ExitStatus::Success, ExitStatus::Success);
+        assert_eq!(ExitStatus::LintErrors, ExitStatus::LintErrors);
+        assert_ne!(ExitStatus::Success, ExitStatus::LintErrors);
+    }
+
+    #[test]
+    fn exit_status_debug() {
+        let success_fmt = format!("{:?}", ExitStatus::Success);
+        assert!(success_fmt.contains("Success"));
+
+        let errors_fmt = format!("{:?}", ExitStatus::LintErrors);
+        assert!(errors_fmt.contains("LintErrors"));
+    }
+
+    #[test]
+    fn exit_status_copy() {
+        let s = ExitStatus::Success;
+        let copied = s;
+        assert_eq!(s, copied);
+    }
+
+    // ── filter_fixable_diags ────────────────────────────────────────────
+
+    #[test]
+    fn filter_fixable_empty_input() {
+        let result = filter_fixable_diags(&[], false);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn filter_fixable_no_fix_diagnostics() {
+        let diags = vec![make_diag(Severity::Error), make_diag(Severity::Warning)];
+        let result = filter_fixable_diags(&diags, false);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn filter_fixable_safe_fix_always_included() {
+        let diags = vec![make_diag_with_fix(Severity::Error, FixKind::SafeFix)];
+        let safe_only = filter_fixable_diags(&diags, false);
+        assert_eq!(safe_only.len(), 1);
+
+        let with_dangerous = filter_fixable_diags(&diags, true);
+        assert_eq!(with_dangerous.len(), 1);
+    }
+
+    #[test]
+    fn filter_fixable_suggestion_fix_excluded_without_dangerous() {
+        let diags = vec![make_diag_with_fix(
+            Severity::Warning,
+            FixKind::SuggestionFix,
+        )];
+        let safe_only = filter_fixable_diags(&diags, false);
+        assert!(safe_only.is_empty());
+
+        let with_dangerous = filter_fixable_diags(&diags, true);
+        assert_eq!(with_dangerous.len(), 1);
+    }
+
+    #[test]
+    fn filter_fixable_dangerous_fix_excluded_without_dangerous() {
+        let diags = vec![make_diag_with_fix(Severity::Warning, FixKind::DangerousFix)];
+        let safe_only = filter_fixable_diags(&diags, false);
+        assert!(safe_only.is_empty());
+
+        let with_dangerous = filter_fixable_diags(&diags, true);
+        assert_eq!(with_dangerous.len(), 1);
+    }
+
+    #[test]
+    fn filter_fixable_none_fix_kind_excluded() {
+        let diags = vec![make_diag_with_fix(Severity::Error, FixKind::None)];
+        let result = filter_fixable_diags(&diags, true);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn filter_fixable_mixed_diagnostics() {
+        let diags = vec![
+            make_diag(Severity::Error),
+            make_diag_with_fix(Severity::Error, FixKind::SafeFix),
+            make_diag_with_fix(Severity::Warning, FixKind::DangerousFix),
+            make_diag_with_fix(Severity::Warning, FixKind::None),
+        ];
+
+        let safe_only = filter_fixable_diags(&diags, false);
+        assert_eq!(safe_only.len(), 1);
+        assert_eq!(
+            safe_only.first().map(|d| &d.rule_name),
+            Some(&String::from("test/fixable"))
+        );
+
+        let with_dangerous = filter_fixable_diags(&diags, true);
+        assert_eq!(with_dangerous.len(), 2);
+    }
+
+    // ── report_diagnostics ──────────────────────────────────────────────
+
+    #[test]
+    fn report_diagnostics_empty() {
+        let results: Vec<FileDiagnostics> = Vec::new();
+        let counts = report_diagnostics(&results, OutputFormat::Count);
+        assert_eq!(counts.errors, 0);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    #[test]
+    fn report_diagnostics_counts_errors_and_warnings() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("test.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![
+                make_diag(Severity::Error),
+                make_diag(Severity::Error),
+                make_diag(Severity::Warning),
+            ],
+        }];
+        // Use Count mode to skip formatting output.
+        let counts = report_diagnostics(&results, OutputFormat::Count);
+        assert_eq!(counts.errors, 2);
+        assert_eq!(counts.warnings, 1);
+    }
+
+    #[test]
+    fn report_diagnostics_ignores_suggestions() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("test.js"),
+            source_text: String::from("x"),
+            diagnostics: vec![make_diag(Severity::Suggestion)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Count);
+        assert_eq!(counts.errors, 0);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    #[test]
+    fn report_diagnostics_multiple_files() {
+        let results = vec![
+            FileDiagnostics {
+                path: PathBuf::from("a.js"),
+                source_text: String::from("a"),
+                diagnostics: vec![make_diag(Severity::Error)],
+            },
+            FileDiagnostics {
+                path: PathBuf::from("b.js"),
+                source_text: String::from("b"),
+                diagnostics: vec![make_diag(Severity::Warning), make_diag(Severity::Warning)],
+            },
+        ];
+        let counts = report_diagnostics(&results, OutputFormat::Count);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 2);
+    }
+
+    // ── configure_thread_pool ───────────────────────────────────────────
+
+    #[test]
+    fn configure_thread_pool_zero_does_not_panic() {
+        // Both values zero means "do nothing" — should not panic.
+        configure_thread_pool(0, 0);
+    }
+
+    // ── load_merged_config ──────────────────────────────────────────────
+
+    #[test]
+    fn load_merged_config_nonexistent_explicit_path_errors() {
+        let result = load_merged_config(Some(Path::new("/tmp/nonexistent-starlint-config.toml")));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn load_merged_config_none_returns_default() {
+        // With no explicit path and no starlint.toml in cwd, should resolve to defaults.
+        let result = load_merged_config(None);
+        assert!(result.is_ok());
+    }
+
+    // ── MAX_FIX_PASSES constant ─────────────────────────────────────────
+
+    #[test]
+    fn max_fix_passes_is_reasonable() {
+        const { assert!(MAX_FIX_PASSES >= 2) };
+        const { assert!(MAX_FIX_PASSES <= 100) };
+    }
+}

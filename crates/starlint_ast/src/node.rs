@@ -2221,7 +2221,10 @@ pub struct UnknownNode {
 mod tests {
     #[allow(clippy::wildcard_imports)]
     use super::*;
-    use crate::operator::VariableDeclarationKind;
+    use crate::operator::{
+        AssignmentOperator, BinaryOperator, LogicalOperator, MethodDefinitionKind, PropertyKind,
+        UnaryOperator, UpdateOperator, VariableDeclarationKind,
+    };
     use crate::types::{NodeId, Span};
 
     // -----------------------------------------------------------------------
@@ -2438,6 +2441,508 @@ mod tests {
             id: NodeId(1),
             body: None,
             is_declare: true,
+        })
+    }
+
+    // -----------------------------------------------------------------------
+    // Helper constructors for remaining node types
+    // -----------------------------------------------------------------------
+
+    fn make_block_statement() -> AstNode {
+        AstNode::BlockStatement(BlockStatementNode {
+            span: Span::new(0, 10),
+            body: Box::new([]),
+        })
+    }
+
+    fn make_switch_statement() -> AstNode {
+        AstNode::SwitchStatement(SwitchStatementNode {
+            span: Span::new(0, 30),
+            discriminant: NodeId(1),
+            cases: Box::new([]),
+        })
+    }
+
+    fn make_switch_case() -> AstNode {
+        AstNode::SwitchCase(SwitchCaseNode {
+            span: Span::new(0, 20),
+            test: None,
+            consequent: Box::new([]),
+        })
+    }
+
+    fn make_for_statement() -> AstNode {
+        AstNode::ForStatement(ForStatementNode {
+            span: Span::new(0, 30),
+            init: None,
+            test: None,
+            update: None,
+            body: NodeId(1),
+        })
+    }
+
+    fn make_for_in_statement() -> AstNode {
+        AstNode::ForInStatement(ForInStatementNode {
+            span: Span::new(0, 25),
+            left: NodeId(1),
+            right: NodeId(2),
+            body: NodeId(3),
+        })
+    }
+
+    fn make_for_of_statement() -> AstNode {
+        AstNode::ForOfStatement(ForOfStatementNode {
+            span: Span::new(0, 25),
+            is_await: false,
+            left: NodeId(1),
+            right: NodeId(2),
+            body: NodeId(3),
+        })
+    }
+
+    fn make_while_statement() -> AstNode {
+        AstNode::WhileStatement(WhileStatementNode {
+            span: Span::new(0, 20),
+            test: NodeId(1),
+            body: NodeId(2),
+        })
+    }
+
+    fn make_do_while_statement() -> AstNode {
+        AstNode::DoWhileStatement(DoWhileStatementNode {
+            span: Span::new(0, 25),
+            body: NodeId(1),
+            test: NodeId(2),
+        })
+    }
+
+    fn make_try_statement() -> AstNode {
+        AstNode::TryStatement(TryStatementNode {
+            span: Span::new(0, 40),
+            block: NodeId(1),
+            handler: None,
+            finalizer: None,
+        })
+    }
+
+    fn make_catch_clause() -> AstNode {
+        AstNode::CatchClause(CatchClauseNode {
+            span: Span::new(0, 20),
+            param: None,
+            body: NodeId(1),
+        })
+    }
+
+    fn make_throw_statement() -> AstNode {
+        AstNode::ThrowStatement(ThrowStatementNode {
+            span: Span::new(0, 15),
+            argument: NodeId(1),
+        })
+    }
+
+    fn make_return_statement() -> AstNode {
+        AstNode::ReturnStatement(ReturnStatementNode {
+            span: Span::new(0, 10),
+            argument: None,
+        })
+    }
+
+    fn make_labeled_statement() -> AstNode {
+        AstNode::LabeledStatement(LabeledStatementNode {
+            span: Span::new(0, 20),
+            label: String::from("loop1"),
+            body: NodeId(1),
+        })
+    }
+
+    fn make_break_statement() -> AstNode {
+        AstNode::BreakStatement(BreakStatementNode {
+            span: Span::new(0, 6),
+            label: None,
+        })
+    }
+
+    fn make_continue_statement() -> AstNode {
+        AstNode::ContinueStatement(ContinueStatementNode {
+            span: Span::new(0, 9),
+            label: None,
+        })
+    }
+
+    fn make_with_statement() -> AstNode {
+        AstNode::WithStatement(WithStatementNode {
+            span: Span::new(0, 20),
+            object: NodeId(1),
+            body: NodeId(2),
+        })
+    }
+
+    fn make_expression_statement() -> AstNode {
+        AstNode::ExpressionStatement(ExpressionStatementNode {
+            span: Span::new(0, 10),
+            expression: NodeId(1),
+        })
+    }
+
+    fn make_variable_declarator() -> AstNode {
+        AstNode::VariableDeclarator(VariableDeclaratorNode {
+            span: Span::new(0, 10),
+            id: NodeId(1),
+            type_annotation: None,
+            init: None,
+        })
+    }
+
+    fn make_function_body() -> AstNode {
+        AstNode::FunctionBody(FunctionBodyNode {
+            span: Span::new(0, 15),
+            statements: Box::new([]),
+        })
+    }
+
+    fn make_static_block() -> AstNode {
+        AstNode::StaticBlock(StaticBlockNode {
+            span: Span::new(0, 10),
+            body: Box::new([]),
+        })
+    }
+
+    fn make_new_expression() -> AstNode {
+        AstNode::NewExpression(NewExpressionNode {
+            span: Span::new(0, 15),
+            callee: NodeId(1),
+            arguments: Box::new([]),
+        })
+    }
+
+    fn make_binary_expression() -> AstNode {
+        AstNode::BinaryExpression(BinaryExpressionNode {
+            span: Span::new(0, 10),
+            operator: BinaryOperator::Addition,
+            left: NodeId(1),
+            right: NodeId(2),
+        })
+    }
+
+    fn make_logical_expression() -> AstNode {
+        AstNode::LogicalExpression(LogicalExpressionNode {
+            span: Span::new(0, 10),
+            operator: LogicalOperator::And,
+            left: NodeId(1),
+            right: NodeId(2),
+        })
+    }
+
+    fn make_assignment_expression() -> AstNode {
+        AstNode::AssignmentExpression(AssignmentExpressionNode {
+            span: Span::new(0, 10),
+            operator: AssignmentOperator::Assign,
+            left: NodeId(1),
+            right: NodeId(2),
+        })
+    }
+
+    fn make_unary_expression() -> AstNode {
+        AstNode::UnaryExpression(UnaryExpressionNode {
+            span: Span::new(0, 8),
+            operator: UnaryOperator::LogicalNot,
+            argument: NodeId(1),
+        })
+    }
+
+    fn make_update_expression() -> AstNode {
+        AstNode::UpdateExpression(UpdateExpressionNode {
+            span: Span::new(0, 5),
+            operator: UpdateOperator::Increment,
+            prefix: true,
+            argument: NodeId(1),
+        })
+    }
+
+    fn make_conditional_expression() -> AstNode {
+        AstNode::ConditionalExpression(ConditionalExpressionNode {
+            span: Span::new(0, 15),
+            test: NodeId(1),
+            consequent: NodeId(2),
+            alternate: NodeId(3),
+        })
+    }
+
+    fn make_sequence_expression() -> AstNode {
+        AstNode::SequenceExpression(SequenceExpressionNode {
+            span: Span::new(0, 10),
+            expressions: Box::new([NodeId(1), NodeId(2)]),
+        })
+    }
+
+    fn make_binding_identifier() -> AstNode {
+        AstNode::BindingIdentifier(BindingIdentifierNode {
+            span: Span::new(0, 3),
+            name: String::from("bar"),
+        })
+    }
+
+    fn make_tagged_template_expression() -> AstNode {
+        AstNode::TaggedTemplateExpression(TaggedTemplateExpressionNode {
+            span: Span::new(0, 15),
+            tag: NodeId(1),
+            quasi: NodeId(2),
+        })
+    }
+
+    fn make_array_expression() -> AstNode {
+        AstNode::ArrayExpression(ArrayExpressionNode {
+            span: Span::new(0, 10),
+            elements: Box::new([]),
+        })
+    }
+
+    fn make_object_expression() -> AstNode {
+        AstNode::ObjectExpression(ObjectExpressionNode {
+            span: Span::new(0, 10),
+            properties: Box::new([]),
+        })
+    }
+
+    fn make_object_property() -> AstNode {
+        AstNode::ObjectProperty(ObjectPropertyNode {
+            span: Span::new(0, 10),
+            kind: PropertyKind::Init,
+            key: NodeId(1),
+            value: NodeId(2),
+            computed: false,
+            shorthand: false,
+            method: false,
+        })
+    }
+
+    fn make_spread_element() -> AstNode {
+        AstNode::SpreadElement(SpreadElementNode {
+            span: Span::new(0, 8),
+            argument: NodeId(1),
+        })
+    }
+
+    fn make_arrow_function_expression() -> AstNode {
+        AstNode::ArrowFunctionExpression(ArrowFunctionExpressionNode {
+            span: Span::new(0, 20),
+            params: Box::new([]),
+            body: NodeId(1),
+            is_async: false,
+            expression: true,
+        })
+    }
+
+    fn make_await_expression() -> AstNode {
+        AstNode::AwaitExpression(AwaitExpressionNode {
+            span: Span::new(0, 12),
+            argument: NodeId(1),
+        })
+    }
+
+    fn make_static_member_expression() -> AstNode {
+        AstNode::StaticMemberExpression(StaticMemberExpressionNode {
+            span: Span::new(0, 10),
+            object: NodeId(1),
+            property: String::from("prop"),
+            optional: false,
+        })
+    }
+
+    fn make_computed_member_expression() -> AstNode {
+        AstNode::ComputedMemberExpression(ComputedMemberExpressionNode {
+            span: Span::new(0, 10),
+            object: NodeId(1),
+            expression: NodeId(2),
+            optional: false,
+        })
+    }
+
+    fn make_chain_expression() -> AstNode {
+        AstNode::ChainExpression(ChainExpressionNode {
+            span: Span::new(0, 12),
+            expression: NodeId(1),
+        })
+    }
+
+    fn make_array_pattern() -> AstNode {
+        AstNode::ArrayPattern(ArrayPatternNode {
+            span: Span::new(0, 10),
+            elements: Box::new([]),
+            rest: None,
+        })
+    }
+
+    fn make_object_pattern() -> AstNode {
+        AstNode::ObjectPattern(ObjectPatternNode {
+            span: Span::new(0, 10),
+            properties: Box::new([]),
+            rest: None,
+        })
+    }
+
+    fn make_assignment_pattern() -> AstNode {
+        AstNode::AssignmentPattern(AssignmentPatternNode {
+            span: Span::new(0, 10),
+            left: NodeId(1),
+            right: NodeId(2),
+        })
+    }
+
+    fn make_import_specifier() -> AstNode {
+        AstNode::ImportSpecifier(ImportSpecifierNode {
+            span: Span::new(0, 10),
+            imported: String::from("foo"),
+            local: String::from("foo"),
+            is_type: false,
+        })
+    }
+
+    fn make_export_specifier() -> AstNode {
+        AstNode::ExportSpecifier(ExportSpecifierNode {
+            span: Span::new(0, 10),
+            local: String::from("foo"),
+            exported: String::from("foo"),
+        })
+    }
+
+    fn make_method_definition() -> AstNode {
+        AstNode::MethodDefinition(MethodDefinitionNode {
+            span: Span::new(0, 20),
+            kind: MethodDefinitionKind::Method,
+            key: NodeId(1),
+            value: NodeId(2),
+            is_static: false,
+            computed: false,
+            is_accessor: false,
+        })
+    }
+
+    fn make_property_definition() -> AstNode {
+        AstNode::PropertyDefinition(PropertyDefinitionNode {
+            span: Span::new(0, 15),
+            key: NodeId(1),
+            value: None,
+            is_static: false,
+            computed: false,
+            is_declare: false,
+        })
+    }
+
+    fn make_jsx_opening_element() -> AstNode {
+        AstNode::JSXOpeningElement(JSXOpeningElementNode {
+            span: Span::new(0, 10),
+            name: String::from("div"),
+            attributes: Box::new([]),
+            self_closing: false,
+        })
+    }
+
+    fn make_jsx_fragment() -> AstNode {
+        AstNode::JSXFragment(JSXFragmentNode {
+            span: Span::new(0, 10),
+            children: Box::new([]),
+        })
+    }
+
+    fn make_jsx_attribute() -> AstNode {
+        AstNode::JSXAttribute(JSXAttributeNode {
+            span: Span::new(0, 10),
+            name: String::from("id"),
+            value: None,
+        })
+    }
+
+    fn make_jsx_spread_attribute() -> AstNode {
+        AstNode::JSXSpreadAttribute(JSXSpreadAttributeNode {
+            span: Span::new(0, 10),
+            argument: NodeId(1),
+        })
+    }
+
+    fn make_jsx_expression_container() -> AstNode {
+        AstNode::JSXExpressionContainer(JSXExpressionContainerNode {
+            span: Span::new(0, 10),
+            expression: None,
+        })
+    }
+
+    fn make_jsx_namespaced_name() -> AstNode {
+        AstNode::JSXNamespacedName(JSXNamespacedNameNode {
+            span: Span::new(0, 10),
+            namespace: String::from("xml"),
+            name: String::from("lang"),
+        })
+    }
+
+    fn make_jsx_text() -> AstNode {
+        AstNode::JSXText(JSXTextNode {
+            span: Span::new(0, 5),
+            value: String::from("hello"),
+        })
+    }
+
+    fn make_ts_enum_member() -> AstNode {
+        AstNode::TSEnumMember(TSEnumMemberNode {
+            span: Span::new(0, 10),
+            id: NodeId(1),
+            initializer: None,
+        })
+    }
+
+    fn make_ts_type_assertion() -> AstNode {
+        AstNode::TSTypeAssertion(TSTypeAssertionNode {
+            span: Span::new(0, 10),
+            expression: NodeId(1),
+        })
+    }
+
+    fn make_ts_non_null_expression() -> AstNode {
+        AstNode::TSNonNullExpression(TSNonNullExpressionNode {
+            span: Span::new(0, 8),
+            expression: NodeId(1),
+        })
+    }
+
+    fn make_ts_type_literal() -> AstNode {
+        AstNode::TSTypeLiteral(TSTypeLiteralNode {
+            span: Span::new(0, 10),
+            members: Box::new([]),
+        })
+    }
+
+    fn make_ts_type_reference() -> AstNode {
+        AstNode::TSTypeReference(TSTypeReferenceNode {
+            span: Span::new(0, 10),
+            type_name: String::from("Foo"),
+            type_arguments: Box::new([]),
+        })
+    }
+
+    fn make_ts_type_parameter() -> AstNode {
+        AstNode::TSTypeParameter(TSTypeParameterNode {
+            span: Span::new(0, 5),
+            name: String::from("T"),
+            constraint: None,
+            default: None,
+        })
+    }
+
+    fn make_ts_any_keyword() -> AstNode {
+        AstNode::TSAnyKeyword(TSAnyKeywordNode {
+            span: Span::new(0, 3),
+        })
+    }
+
+    fn make_ts_void_keyword() -> AstNode {
+        AstNode::TSVoidKeyword(TSVoidKeywordNode {
+            span: Span::new(0, 4),
+        })
+    }
+
+    fn make_unknown() -> AstNode {
+        AstNode::Unknown(UnknownNode {
+            span: Span::new(0, 1),
         })
     }
 
@@ -3386,5 +3891,368 @@ mod tests {
                 "Deserialized node should still be CallExpression"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Comprehensive as_*() positive tests — every variant returns Some
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn as_methods_return_some_for_all_statement_variants() {
+        assert!(make_block_statement().as_block_statement().is_some());
+        assert!(make_switch_statement().as_switch_statement().is_some());
+        assert!(make_switch_case().as_switch_case().is_some());
+        assert!(make_for_statement().as_for_statement().is_some());
+        assert!(make_for_in_statement().as_for_in_statement().is_some());
+        assert!(make_for_of_statement().as_for_of_statement().is_some());
+        assert!(make_while_statement().as_while_statement().is_some());
+        assert!(make_do_while_statement().as_do_while_statement().is_some());
+        assert!(make_try_statement().as_try_statement().is_some());
+        assert!(make_catch_clause().as_catch_clause().is_some());
+        assert!(make_throw_statement().as_throw_statement().is_some());
+        assert!(make_return_statement().as_return_statement().is_some());
+        assert!(make_labeled_statement().as_labeled_statement().is_some());
+        assert!(make_break_statement().as_break_statement().is_some());
+        assert!(make_continue_statement().as_continue_statement().is_some());
+        assert!(make_empty_statement().as_empty_statement().is_some());
+        assert!(make_with_statement().as_with_statement().is_some());
+        assert!(
+            make_expression_statement()
+                .as_expression_statement()
+                .is_some()
+        );
+        assert!(make_debugger_statement().as_debugger_statement().is_some());
+    }
+
+    #[test]
+    fn as_methods_return_some_for_all_declaration_variants() {
+        assert!(
+            make_variable_declaration()
+                .as_variable_declaration()
+                .is_some()
+        );
+        assert!(
+            make_variable_declarator()
+                .as_variable_declarator()
+                .is_some()
+        );
+        assert!(make_function().as_function().is_some());
+        assert!(make_function_body().as_function_body().is_some());
+        assert!(make_class().as_class().is_some());
+        assert!(make_static_block().as_static_block().is_some());
+    }
+
+    #[test]
+    fn as_methods_return_some_for_all_expression_variants() {
+        assert!(make_call_expression().as_call_expression().is_some());
+        assert!(make_new_expression().as_new_expression().is_some());
+        assert!(make_binary_expression().as_binary_expression().is_some());
+        assert!(make_logical_expression().as_logical_expression().is_some());
+        assert!(
+            make_assignment_expression()
+                .as_assignment_expression()
+                .is_some()
+        );
+        assert!(make_unary_expression().as_unary_expression().is_some());
+        assert!(make_update_expression().as_update_expression().is_some());
+        assert!(
+            make_conditional_expression()
+                .as_conditional_expression()
+                .is_some()
+        );
+        assert!(
+            make_sequence_expression()
+                .as_sequence_expression()
+                .is_some()
+        );
+        assert!(
+            make_identifier_reference()
+                .as_identifier_reference()
+                .is_some()
+        );
+        assert!(make_binding_identifier().as_binding_identifier().is_some());
+        assert!(make_string_literal().as_string_literal().is_some());
+        assert!(make_numeric_literal().as_numeric_literal().is_some());
+        assert!(make_boolean_literal().as_boolean_literal().is_some());
+        assert!(make_null_literal().as_null_literal().is_some());
+        assert!(make_regexp_literal().as_reg_exp_literal().is_some());
+        assert!(make_template_literal().as_template_literal().is_some());
+        assert!(
+            make_tagged_template_expression()
+                .as_tagged_template_expression()
+                .is_some()
+        );
+        assert!(make_array_expression().as_array_expression().is_some());
+        assert!(make_object_expression().as_object_expression().is_some());
+        assert!(make_object_property().as_object_property().is_some());
+        assert!(make_spread_element().as_spread_element().is_some());
+        assert!(
+            make_arrow_function_expression()
+                .as_arrow_function_expression()
+                .is_some()
+        );
+        assert!(make_await_expression().as_await_expression().is_some());
+        assert!(
+            make_static_member_expression()
+                .as_static_member_expression()
+                .is_some()
+        );
+        assert!(
+            make_computed_member_expression()
+                .as_computed_member_expression()
+                .is_some()
+        );
+        assert!(make_chain_expression().as_chain_expression().is_some());
+        assert!(make_this_expression().as_this_expression().is_some());
+    }
+
+    #[test]
+    fn as_methods_return_some_for_all_pattern_variants() {
+        assert!(make_array_pattern().as_array_pattern().is_some());
+        assert!(make_object_pattern().as_object_pattern().is_some());
+        assert!(make_assignment_pattern().as_assignment_pattern().is_some());
+    }
+
+    #[test]
+    fn as_methods_return_some_for_all_module_variants() {
+        assert!(make_import_declaration().as_import_declaration().is_some());
+        assert!(make_import_specifier().as_import_specifier().is_some());
+        assert!(
+            make_export_named_declaration()
+                .as_export_named_declaration()
+                .is_some()
+        );
+        assert!(
+            make_export_default_declaration()
+                .as_export_default_declaration()
+                .is_some()
+        );
+        assert!(
+            make_export_all_declaration()
+                .as_export_all_declaration()
+                .is_some()
+        );
+        assert!(make_export_specifier().as_export_specifier().is_some());
+    }
+
+    #[test]
+    fn as_methods_return_some_for_all_class_member_variants() {
+        assert!(make_method_definition().as_method_definition().is_some());
+        assert!(
+            make_property_definition()
+                .as_property_definition()
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn as_methods_return_some_for_all_jsx_variants() {
+        assert!(make_jsx_element().as_jsx_element().is_some());
+        assert!(
+            make_jsx_opening_element()
+                .as_jsx_opening_element()
+                .is_some()
+        );
+        assert!(make_jsx_fragment().as_jsx_fragment().is_some());
+        assert!(make_jsx_attribute().as_jsx_attribute().is_some());
+        assert!(
+            make_jsx_spread_attribute()
+                .as_jsx_spread_attribute()
+                .is_some()
+        );
+        assert!(
+            make_jsx_expression_container()
+                .as_jsx_expression_container()
+                .is_some()
+        );
+        assert!(
+            make_jsx_namespaced_name()
+                .as_jsx_namespaced_name()
+                .is_some()
+        );
+        assert!(make_jsx_text().as_jsx_text().is_some());
+    }
+
+    #[test]
+    fn as_methods_return_some_for_all_ts_variants() {
+        assert!(
+            make_ts_type_alias_declaration()
+                .as_ts_type_alias_declaration()
+                .is_some()
+        );
+        assert!(
+            make_ts_interface_declaration()
+                .as_ts_interface_declaration()
+                .is_some()
+        );
+        assert!(
+            make_ts_enum_declaration()
+                .as_ts_enum_declaration()
+                .is_some()
+        );
+        assert!(make_ts_enum_member().as_ts_enum_member().is_some());
+        assert!(
+            make_ts_module_declaration()
+                .as_ts_module_declaration()
+                .is_some()
+        );
+        assert!(make_ts_as_expression().as_ts_as_expression().is_some());
+        assert!(make_ts_type_assertion().as_ts_type_assertion().is_some());
+        assert!(
+            make_ts_non_null_expression()
+                .as_ts_non_null_expression()
+                .is_some()
+        );
+        assert!(make_ts_type_literal().as_ts_type_literal().is_some());
+        assert!(make_ts_type_reference().as_ts_type_reference().is_some());
+        assert!(make_ts_type_parameter().as_ts_type_parameter().is_some());
+        assert!(make_ts_any_keyword().as_ts_any_keyword().is_some());
+        assert!(make_ts_void_keyword().as_ts_void_keyword().is_some());
+    }
+
+    #[test]
+    fn as_program_returns_some_for_program_variant() {
+        assert!(make_program().as_program().is_some());
+    }
+
+    // -----------------------------------------------------------------------
+    // Comprehensive as_*() negative tests — non-matching variants return None
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn as_statement_methods_return_none_for_expression_variant() {
+        // Use a single expression node and check all statement as_*() methods
+        let node = make_numeric_literal();
+        assert!(node.as_block_statement().is_none());
+        assert!(node.as_switch_statement().is_none());
+        assert!(node.as_switch_case().is_none());
+        assert!(node.as_for_statement().is_none());
+        assert!(node.as_for_in_statement().is_none());
+        assert!(node.as_for_of_statement().is_none());
+        assert!(node.as_while_statement().is_none());
+        assert!(node.as_do_while_statement().is_none());
+        assert!(node.as_try_statement().is_none());
+        assert!(node.as_catch_clause().is_none());
+        assert!(node.as_throw_statement().is_none());
+        assert!(node.as_return_statement().is_none());
+        assert!(node.as_labeled_statement().is_none());
+        assert!(node.as_break_statement().is_none());
+        assert!(node.as_continue_statement().is_none());
+        assert!(node.as_empty_statement().is_none());
+        assert!(node.as_with_statement().is_none());
+        assert!(node.as_expression_statement().is_none());
+    }
+
+    #[test]
+    fn as_expression_methods_return_none_for_statement_variant() {
+        // Use a statement node and check all expression as_*() methods
+        let node = make_block_statement();
+        assert!(node.as_call_expression().is_none());
+        assert!(node.as_new_expression().is_none());
+        assert!(node.as_binary_expression().is_none());
+        assert!(node.as_logical_expression().is_none());
+        assert!(node.as_assignment_expression().is_none());
+        assert!(node.as_unary_expression().is_none());
+        assert!(node.as_update_expression().is_none());
+        assert!(node.as_conditional_expression().is_none());
+        assert!(node.as_sequence_expression().is_none());
+        assert!(node.as_identifier_reference().is_none());
+        assert!(node.as_binding_identifier().is_none());
+        assert!(node.as_string_literal().is_none());
+        assert!(node.as_numeric_literal().is_none());
+        assert!(node.as_boolean_literal().is_none());
+        assert!(node.as_null_literal().is_none());
+        assert!(node.as_reg_exp_literal().is_none());
+        assert!(node.as_template_literal().is_none());
+        assert!(node.as_tagged_template_expression().is_none());
+        assert!(node.as_array_expression().is_none());
+        assert!(node.as_object_expression().is_none());
+        assert!(node.as_object_property().is_none());
+        assert!(node.as_spread_element().is_none());
+        assert!(node.as_arrow_function_expression().is_none());
+        assert!(node.as_await_expression().is_none());
+        assert!(node.as_static_member_expression().is_none());
+        assert!(node.as_computed_member_expression().is_none());
+        assert!(node.as_chain_expression().is_none());
+        assert!(node.as_this_expression().is_none());
+    }
+
+    #[test]
+    fn as_declaration_methods_return_none_for_expression_variant() {
+        let node = make_string_literal();
+        assert!(node.as_variable_declaration().is_none());
+        assert!(node.as_variable_declarator().is_none());
+        assert!(node.as_function().is_none());
+        assert!(node.as_function_body().is_none());
+        assert!(node.as_class().is_none());
+        assert!(node.as_static_block().is_none());
+    }
+
+    #[test]
+    fn as_pattern_methods_return_none_for_statement_variant() {
+        let node = make_if_statement();
+        assert!(node.as_array_pattern().is_none());
+        assert!(node.as_object_pattern().is_none());
+        assert!(node.as_assignment_pattern().is_none());
+    }
+
+    #[test]
+    fn as_module_methods_return_none_for_expression_variant() {
+        let node = make_call_expression();
+        assert!(node.as_import_declaration().is_none());
+        assert!(node.as_import_specifier().is_none());
+        assert!(node.as_export_named_declaration().is_none());
+        assert!(node.as_export_default_declaration().is_none());
+        assert!(node.as_export_all_declaration().is_none());
+        assert!(node.as_export_specifier().is_none());
+    }
+
+    #[test]
+    fn as_class_member_methods_return_none_for_expression_variant() {
+        let node = make_numeric_literal();
+        assert!(node.as_method_definition().is_none());
+        assert!(node.as_property_definition().is_none());
+    }
+
+    #[test]
+    fn as_jsx_methods_return_none_for_ts_variant() {
+        let node = make_ts_enum_declaration();
+        assert!(node.as_jsx_element().is_none());
+        assert!(node.as_jsx_opening_element().is_none());
+        assert!(node.as_jsx_fragment().is_none());
+        assert!(node.as_jsx_attribute().is_none());
+        assert!(node.as_jsx_spread_attribute().is_none());
+        assert!(node.as_jsx_expression_container().is_none());
+        assert!(node.as_jsx_namespaced_name().is_none());
+        assert!(node.as_jsx_text().is_none());
+    }
+
+    #[test]
+    fn as_ts_methods_return_none_for_jsx_variant() {
+        let node = make_jsx_element();
+        assert!(node.as_ts_type_alias_declaration().is_none());
+        assert!(node.as_ts_interface_declaration().is_none());
+        assert!(node.as_ts_enum_declaration().is_none());
+        assert!(node.as_ts_enum_member().is_none());
+        assert!(node.as_ts_module_declaration().is_none());
+        assert!(node.as_ts_as_expression().is_none());
+        assert!(node.as_ts_type_assertion().is_none());
+        assert!(node.as_ts_non_null_expression().is_none());
+        assert!(node.as_ts_type_literal().is_none());
+        assert!(node.as_ts_type_reference().is_none());
+        assert!(node.as_ts_type_parameter().is_none());
+        assert!(node.as_ts_any_keyword().is_none());
+        assert!(node.as_ts_void_keyword().is_none());
+    }
+
+    #[test]
+    fn as_methods_return_none_for_unknown_variant() {
+        let node = make_unknown();
+        assert!(node.as_program().is_none());
+        assert!(node.as_if_statement().is_none());
+        assert!(node.as_call_expression().is_none());
+        assert!(node.as_string_literal().is_none());
+        assert!(node.as_jsx_element().is_none());
+        assert!(node.as_ts_enum_declaration().is_none());
     }
 }
