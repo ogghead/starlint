@@ -34,7 +34,11 @@ below are ranked by user impact.
 | **`--fix-dry-run`** | Built-in | Not implemented | Not implemented | Medium |
 | **Unused disable directive reporting** | `reportUnusedDisableDirectives` | `--report-unused-disable-directives` | N/A (no directives yet) | Blocked |
 | **Config migration tools** | Config Migrator, Inspector | `oxlint-migrate` from ESLint | Not implemented | Low |
-| **Parallel linting** | Community (`eslint-parallel`) | Built-in (Rust) | Built-in (rayon) | None |
+| **Bulk suppressions** | `eslint-suppressions.json` (v9.24+) | Not implemented | Not implemented | Medium |
+| **MCP server (AI integration)** | `eslint --mcp` / `@eslint/mcp` (v9.26+) | Not implemented | Not implemented | Low |
+| **Config inspector** | Visual web UI (`--inspect-config`) | Not implemented | Not implemented | Low |
+| **Multithreaded linting** | `--concurrency` (v9.34+, worker threads) | Built-in (Rust) | Built-in (rayon) | None |
+| **Parallel linting** | `--concurrency=auto` | Built-in (Rust) | Built-in (rayon) | None |
 | **Autofix** | `--fix` | `--fix` | `--fix` (multi-pass) | None |
 | **LSP** | VS Code extension | Oxc VS Code extension | Built-in LSP server | None |
 | **Scope analysis** | eslint-scope | Built-in | Built-in (two-pass) | None |
@@ -86,8 +90,10 @@ linter. This is the single biggest blocker.
 the primary reason teams use typescript-eslint. Without them, starlint cannot fully
 replace ESLint for TypeScript projects.
 
-**ESLint:** 61 type-aware rules via typescript-eslint (requires `tsconfig.json` and
-a running type checker).
+**ESLint:** 100+ type-aware rules via typescript-eslint v8 (requires `tsconfig.json`
+and a running type checker). Project Service mode (`parserOptions.projectService: true`)
+simplifies setup for monorepos. Presets: `recommendedTypeChecked`, `strictTypeChecked`,
+`stylisticTypeChecked`.
 
 **Oxlint:** 59/61 type-aware rules, powered by `tsgo` (TypeScript 7's Go port).
 Performance is ~10x faster than ESLint's type-aware linting.
@@ -219,7 +225,12 @@ into WASM or runs them in a JS runtime subprocess. Low priority given WASM strat
 | **Checkstyle output** | Legacy CI format, declining usage |
 | **Config inspector** | Web UI for debugging config (ESLint has this) |
 | **Editor config integration** | EditorConfig-aware formatting rules |
-| **Monorepo config cascading** | Per-directory config overrides (ESLint flat config does this) |
+| **Monorepo config cascading** | Per-directory config overrides (ESLint v10 starts lookup from file dir) |
+| **Bulk suppressions file** | Gradual rule adoption without inline noise (ESLint v9.24+) |
+| **MCP server** | AI tool integration for lint-aware code generation |
+| **`--fix-type` filtering** | Apply only `problem`, `suggestion`, `layout`, or `directive` fixes |
+| **`--quiet` skip execution** | ESLint v9 skips warn-level rule execution entirely (perf win) |
+| **Multi-language linting** | ESLint now lints CSS, JSON, Markdown, HTML via official plugins |
 
 ---
 
@@ -258,3 +269,22 @@ These are features where starlint leads:
 9. Processors (Vue SFC, Markdown)
 10. Config migration tools
 11. ESLint plugin compatibility layer
+
+---
+
+## Sources
+
+- [Oxlint docs](https://oxc.rs/docs/guide/usage/linter.html)
+- [Oxlint configuration](https://oxc.rs/docs/guide/usage/linter/config)
+- [Oxlint output formats](https://oxc.rs/docs/guide/usage/linter/output-formats.html)
+- [Oxlint v1.0 announcement](https://voidzero.dev/posts/announcing-oxlint-1-stable)
+- [Oxlint type-aware linting](https://oxc.rs/docs/guide/usage/linter/type-aware.html)
+- [ESLint CLI reference](https://eslint.org/docs/latest/use/command-line-interface)
+- [ESLint formatters](https://eslint.org/docs/latest/use/formatters/)
+- [ESLint flat config extends](https://eslint.org/blog/2025/03/flat-config-extends-define-config-global-ignores/)
+- [ESLint multithread linting](https://eslint.org/blog/2025/08/multithread-linting/)
+- [ESLint bulk suppressions](https://eslint.org/blog/2025/04/introducing-bulk-suppressions/)
+- [ESLint MCP server](https://eslint.org/docs/latest/use/mcp)
+- [ESLint code path analysis](https://eslint.org/docs/latest/extend/code-path-analysis)
+- [typescript-eslint typed linting](https://typescript-eslint.io/getting-started/typed-linting/)
+- [Oxlint vs ESLint comparison](https://betterstack.com/community/guides/scaling-nodejs/oxlint-vs-eslint/)
