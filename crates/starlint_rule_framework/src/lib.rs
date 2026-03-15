@@ -1,7 +1,8 @@
 //! Rule authoring framework for starlint.
 //!
 //! Provides the [`LintRule`] trait, [`LintContext`], [`Plugin`] trait,
-//! [`LintRulePlugin`] adapter, AST traversal dispatch, and fix utilities.
+//! [`LintRulePlugin`] adapter, AST traversal dispatch, fix utilities,
+//! and shared helpers (AST, JSX, case-conversion, source-text scanning).
 //!
 //! This crate is the rule-authoring layer above [`starlint_plugin_sdk`]:
 //! plugin crates depend on this for rule infrastructure, while the SDK
