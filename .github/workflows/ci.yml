@@ -46,6 +46,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # Full history needed for patch coverage diff
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools
@@ -72,6 +74,16 @@ jobs:
 
       - name: Enforce coverage floor
         run: cargo llvm-cov report --fail-under-lines 90
+
+      - name: Generate Cobertura report
+        if: github.event_name == 'pull_request'
+        run: cargo llvm-cov report --cobertura --output-path cobertura.xml
+
+      - name: Enforce patch coverage (≥95% on changed lines)
+        if: github.event_name == 'pull_request'
+        run: |
+          pip install diff-cover
+          diff-cover cobertura.xml --compare-branch=origin/${{ github.base_ref }} --fail-under=95
 
       - name: Upload to Codecov
         uses: codecov/codecov-action@v5

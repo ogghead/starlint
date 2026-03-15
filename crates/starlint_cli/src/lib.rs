@@ -976,6 +976,158 @@ mod tests {
         assert_eq!(counts.warnings, 2);
     }
 
+    // ── write_document_diagnostics ──────────────────────────────────
+
+    #[test]
+    fn test_write_document_diagnostics_gitlab() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("doc.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let mut buf = Vec::new();
+        write_document_diagnostics(&mut buf, &results, OutputFormat::Gitlab);
+        let output = String::from_utf8_lossy(&buf);
+        // GitLab Code Quality outputs JSON array.
+        assert!(
+            output.starts_with('['),
+            "expected JSON array, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_write_document_diagnostics_junit() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("doc.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Warning)],
+        }];
+        let mut buf = Vec::new();
+        write_document_diagnostics(&mut buf, &results, OutputFormat::Junit);
+        let output = String::from_utf8_lossy(&buf);
+        assert!(
+            output.contains("testsuites"),
+            "expected JUnit XML, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_write_document_diagnostics_sarif() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("doc.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let mut buf = Vec::new();
+        write_document_diagnostics(&mut buf, &results, OutputFormat::Sarif);
+        let output = String::from_utf8_lossy(&buf);
+        assert!(
+            output.contains("sarif"),
+            "expected SARIF JSON, got: {output}"
+        );
+    }
+
+    #[test]
+    fn test_write_document_diagnostics_non_document_format_is_noop() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("doc.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let mut buf = Vec::new();
+        write_document_diagnostics(&mut buf, &results, OutputFormat::Pretty);
+        assert!(
+            buf.is_empty(),
+            "non-document format should produce no output"
+        );
+    }
+
+    // ── report_diagnostics with document formats ────────────────────
+
+    #[test]
+    fn test_report_diagnostics_with_gitlab_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("gl.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error), make_diag(Severity::Warning)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Gitlab);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 1);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_junit_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("ju.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Junit);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_sarif_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("sa.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Warning)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Sarif);
+        assert_eq!(counts.errors, 0);
+        assert_eq!(counts.warnings, 1);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_github_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("gh.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Github);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_stylish_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("sty.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Warning), make_diag(Severity::Warning)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Stylish);
+        assert_eq!(counts.errors, 0);
+        assert_eq!(counts.warnings, 2);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_compact_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("cmp.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Compact);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 0);
+    }
+
+    #[test]
+    fn test_report_diagnostics_with_json_format() {
+        let results = vec![FileDiagnostics {
+            path: PathBuf::from("js.js"),
+            source_text: String::from("var x = 1;"),
+            diagnostics: vec![make_diag(Severity::Error)],
+        }];
+        let counts = report_diagnostics(&results, OutputFormat::Json);
+        assert_eq!(counts.errors, 1);
+        assert_eq!(counts.warnings, 0);
+    }
+
     // ── category_label all variants ───────────────────────────────────
 
     #[test]
