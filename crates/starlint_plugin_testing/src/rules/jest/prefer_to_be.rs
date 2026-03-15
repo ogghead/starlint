@@ -11,6 +11,7 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::ast_utils::is_expect_chain;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Flags `expect(x).toEqual(primitive)` patterns that should use `toBe`.
@@ -55,7 +56,7 @@ impl LintRule for PreferToBe {
         }
 
         // The object should be an `expect(...)` call (or chained `.not.toEqual`)
-        if !is_expect_chain(ctx, member.object) {
+        if !is_expect_chain(member.object, ctx) {
             return;
         }
 
@@ -123,21 +124,6 @@ fn is_primitive_literal(node: &AstNode) -> bool {
 /// Check if the node is the identifier `undefined`.
 fn is_undefined(node: &AstNode) -> bool {
     matches!(node, AstNode::IdentifierReference(id) if id.name.as_str() == "undefined")
-}
-
-/// Check if a node (by ID) is an `expect(...)` call or a chain like
-/// `expect(...).not`.
-fn is_expect_chain(ctx: &LintContext<'_>, id: NodeId) -> bool {
-    let Some(node) = ctx.node(id) else {
-        return false;
-    };
-    match node {
-        AstNode::CallExpression(call) => ctx.node(call.callee).is_some_and(
-            |n| matches!(n, AstNode::IdentifierReference(id) if id.name.as_str() == "expect"),
-        ),
-        AstNode::StaticMemberExpression(member) => is_expect_chain(ctx, member.object),
-        _ => false,
-    }
 }
 
 #[cfg(test)]

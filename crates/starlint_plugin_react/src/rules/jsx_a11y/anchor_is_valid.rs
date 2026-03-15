@@ -10,6 +10,7 @@ use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
 use starlint_rule_framework::FixBuilder;
 use starlint_rule_framework::fix_utils;
+use starlint_rule_framework::jsx_utils::{get_jsx_attr_string_value, has_jsx_attribute};
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -17,37 +18,6 @@ const RULE_NAME: &str = "jsx-a11y/anchor-is-valid";
 
 #[derive(Debug)]
 pub struct AnchorIsValid;
-
-/// Check if an attribute exists on a JSX opening element.
-fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
-    attributes.iter().any(|&attr_id| {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            attr.name == name
-        } else {
-            false
-        }
-    })
-}
-
-/// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value(
-    attributes: &[NodeId],
-    attr_name: &str,
-    ctx: &LintContext<'_>,
-) -> Option<String> {
-    for &attr_id in attributes {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            if attr.name == attr_name {
-                if let Some(value_id) = attr.value {
-                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
-                        return Some(lit.value.clone());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
 
 /// Get the span of an attribute's value (including quotes) if it's a string literal.
 fn get_attr_value_span(
@@ -98,7 +68,7 @@ impl LintRule for AnchorIsValid {
         let attrs: Vec<NodeId> = opening.attributes.to_vec();
 
         // Check if href exists
-        if !has_attribute(&attrs, "href", ctx) {
+        if !has_jsx_attribute(&attrs, "href", ctx) {
             let insert_pos = fix_utils::jsx_attr_insert_offset(
                 ctx.source_text(),
                 Span::new(opening_span.start, opening_span.end),
@@ -120,7 +90,7 @@ impl LintRule for AnchorIsValid {
         }
 
         // Check for invalid href values
-        if let Some(href) = get_attr_string_value(&attrs, "href", ctx) {
+        if let Some(href) = get_jsx_attr_string_value(&attrs, "href", ctx) {
             if href == "#" || href.starts_with("javascript:") {
                 let fix = get_attr_value_span(&attrs, "href", ctx).and_then(|val_span| {
                     FixBuilder::new("Replace with a valid URL", FixKind::SuggestionFix)

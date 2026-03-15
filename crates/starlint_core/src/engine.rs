@@ -202,12 +202,7 @@ impl LintSession {
         file_path
             .extension()
             .and_then(std::ffi::OsStr::to_str)
-            .is_some_and(|ext| {
-                matches!(
-                    ext,
-                    "js" | "mjs" | "cjs" | "jsx" | "mjsx" | "ts" | "mts" | "cts" | "tsx" | "mtsx"
-                )
-            })
+            .is_some_and(|ext| crate::file_discovery::DEFAULT_EXTENSIONS.contains(&ext))
     }
 }
 

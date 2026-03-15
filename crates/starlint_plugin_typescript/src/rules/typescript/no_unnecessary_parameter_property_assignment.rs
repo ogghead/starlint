@@ -9,6 +9,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use starlint_rule_framework::source_utils::{find_matching_brace, find_matching_paren};
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Flags redundant `this.x = x` assignments in constructors that already
@@ -206,42 +207,6 @@ fn extract_param_property_names(params: &str) -> Vec<String> {
     }
 
     names
-}
-
-/// Find the position of the matching closing parenthesis for an opening `(`.
-fn find_matching_paren(source: &str, open_pos: usize) -> Option<usize> {
-    let mut depth: u32 = 0;
-    for (i, ch) in source.get(open_pos..)?.char_indices() {
-        match ch {
-            '(' => depth = depth.saturating_add(1),
-            ')' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(open_pos.saturating_add(i));
-                }
-            }
-            _ => {}
-        }
-    }
-    None
-}
-
-/// Find the position of the matching closing brace for an opening `{`.
-fn find_matching_brace(source: &str, open_pos: usize) -> Option<usize> {
-    let mut depth: u32 = 0;
-    for (i, ch) in source.get(open_pos..)?.char_indices() {
-        match ch {
-            '{' => depth = depth.saturating_add(1),
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(open_pos.saturating_add(i));
-                }
-            }
-            _ => {}
-        }
-    }
-    None
 }
 
 #[cfg(test)]

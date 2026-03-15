@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::has_jsx_attribute;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -30,16 +31,6 @@ const ROLE_REQUIRED_PROPS: &[(&str, &[&str])] = &[
 
 #[derive(Debug)]
 pub struct RoleHasRequiredAriaProps;
-
-/// Check if an attribute with the given name exists on a JSX opening element's attributes.
-fn has_attribute(ctx: &LintContext<'_>, attributes: &[NodeId], name: &str) -> bool {
-    attributes.iter().any(|attr_id| {
-        let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) else {
-            return false;
-        };
-        attr.name.as_str() == name
-    })
-}
 
 /// Get the required aria props for a given role.
 fn required_props(role: &str) -> Option<&'static [&'static str]> {
@@ -101,7 +92,7 @@ impl LintRule for RoleHasRequiredAriaProps {
         let attr_ids: Vec<NodeId> = opening.attributes.to_vec();
 
         for prop in props {
-            if !has_attribute(ctx, &attr_ids, prop) {
+            if !has_jsx_attribute(&attr_ids, prop, ctx) {
                 ctx.report(Diagnostic {
                     rule_name: RULE_NAME.to_owned(),
                     message: format!(

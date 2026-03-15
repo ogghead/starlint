@@ -9,6 +9,7 @@ use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
 use starlint_rule_framework::FixBuilder;
+use starlint_rule_framework::jsx_utils::{get_jsx_attr_string_value, has_jsx_attribute};
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -20,40 +21,9 @@ const ELEMENTS_REQUIRING_ALT: &[&str] = &["img", "area", "object"];
 #[derive(Debug)]
 pub struct AltText;
 
-/// Check if an attribute exists on a JSX opening element by examining its attribute `NodeIds`.
-fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
-    attributes.iter().any(|&attr_id| {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            attr.name == name
-        } else {
-            false
-        }
-    })
-}
-
-/// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value(
-    attributes: &[NodeId],
-    attr_name: &str,
-    ctx: &LintContext<'_>,
-) -> Option<String> {
-    for &attr_id in attributes {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            if attr.name == attr_name {
-                if let Some(value_id) = attr.value {
-                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
-                        return Some(lit.value.clone());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
-
 /// Check if an `<input>` element has `type="image"`.
 fn is_input_type_image(attributes: &[NodeId], ctx: &LintContext<'_>) -> bool {
-    get_attr_string_value(attributes, "type", ctx).as_deref() == Some("image")
+    get_jsx_attr_string_value(attributes, "type", ctx).as_deref() == Some("image")
 }
 
 impl LintRule for AltText {
@@ -88,11 +58,11 @@ impl LintRule for AltText {
             return;
         }
 
-        let has_alt = has_attribute(&attrs, "alt", ctx);
+        let has_alt = has_jsx_attribute(&attrs, "alt", ctx);
 
         // For <object>, also accept aria-label or aria-labelledby
-        let has_aria_label = has_attribute(&attrs, "aria-label", ctx)
-            || has_attribute(&attrs, "aria-labelledby", ctx);
+        let has_aria_label = has_jsx_attribute(&attrs, "aria-label", ctx)
+            || has_jsx_attribute(&attrs, "aria-labelledby", ctx);
 
         if name == "object" {
             if !has_alt && !has_aria_label {

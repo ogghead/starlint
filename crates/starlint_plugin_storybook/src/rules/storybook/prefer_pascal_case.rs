@@ -6,6 +6,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use starlint_rule_framework::case_utils::{is_pascal_case, to_pascal_case};
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -14,38 +15,6 @@ const RULE_NAME: &str = "storybook/prefer-pascal-case";
 /// Stories should use `PascalCase` names.
 #[derive(Debug)]
 pub struct PreferPascalCase;
-
-/// Convert a string to `PascalCase`.
-fn to_pascal_case(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut capitalize_next = true;
-    for c in s.chars() {
-        if c == '_' || c == '-' || c == ' ' {
-            capitalize_next = true;
-        } else if capitalize_next {
-            result.extend(c.to_uppercase());
-            capitalize_next = false;
-        } else {
-            result.push(c);
-        }
-    }
-    result
-}
-
-/// Check if a string is `PascalCase` (starts with uppercase, no underscores/hyphens at start).
-fn is_pascal_case(s: &str) -> bool {
-    let Some(first) = s.chars().next() else {
-        return false;
-    };
-
-    // Must start with uppercase letter
-    if !first.is_ascii_uppercase() {
-        return false;
-    }
-
-    // Should not contain underscores or hyphens (allowing `_` for special exports like `__namedExportsOrder`)
-    !s.contains('-')
-}
 
 impl LintRule for PreferPascalCase {
     fn meta(&self) -> RuleMeta {

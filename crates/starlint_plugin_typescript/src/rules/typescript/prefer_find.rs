@@ -14,6 +14,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use starlint_rule_framework::source_utils::find_matching_paren;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -123,33 +124,6 @@ fn find_filter_first_access(source: &str) -> Vec<(u32, u32)> {
     }
 
     results
-}
-
-/// Find the matching closing parenthesis, handling nesting.
-///
-/// `start` is the position right after the opening `(`.
-/// Returns the position of the matching `)`.
-fn find_matching_paren(source: &str, start: usize) -> Option<usize> {
-    let mut depth: u32 = 1;
-    let mut pos = start;
-    let bytes = source.as_bytes();
-    let len = bytes.len();
-
-    while pos < len {
-        match bytes.get(pos).copied() {
-            Some(b'(') => depth = depth.saturating_add(1),
-            Some(b')') => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(pos);
-                }
-            }
-            _ => {}
-        }
-        pos = pos.saturating_add(1);
-    }
-
-    None
 }
 
 #[cfg(test)]

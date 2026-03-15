@@ -9,6 +9,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::get_string_value;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -17,19 +18,6 @@ const RULE_NAME: &str = "nextjs/no-unwanted-polyfillio";
 /// Flags `<script>` elements that load from polyfill.io.
 #[derive(Debug)]
 pub struct NoUnwantedPolyfillio;
-
-/// Get string value from a JSX attribute's value node.
-fn get_attr_string_value(
-    attr: &starlint_ast::node::JSXAttributeNode,
-    ctx: &LintContext<'_>,
-) -> Option<String> {
-    let value_id = attr.value?;
-    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
-        Some(lit.value.clone())
-    } else {
-        None
-    }
-}
 
 impl LintRule for NoUnwantedPolyfillio {
     fn meta(&self) -> RuleMeta {
@@ -57,7 +45,7 @@ impl LintRule for NoUnwantedPolyfillio {
         let has_polyfill_src = opening.attributes.iter().any(|attr_id| {
             if let Some(AstNode::JSXAttribute(attr)) = ctx.node(*attr_id) {
                 if attr.name.as_str() == "src" {
-                    if let Some(val) = get_attr_string_value(attr, ctx) {
+                    if let Some(val) = get_string_value(ctx, attr.value) {
                         return val.contains("polyfill.io") || val.contains("polyfill.min.js");
                     }
                 }

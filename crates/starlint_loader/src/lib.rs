@@ -129,8 +129,8 @@ pub fn load_plugins(config: &Config) -> LoadedPlugins {
 
     if config.plugins.is_empty() {
         // No plugins section → enable all native plugins by default.
-        for np in native_plugin_registry() {
-            all_native_rules.extend((np.factory)());
+        for factory in registry.values() {
+            all_native_rules.extend(factory());
         }
     } else {
         // Explicit plugin list — load only what's configured.

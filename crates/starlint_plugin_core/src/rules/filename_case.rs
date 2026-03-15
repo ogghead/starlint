@@ -8,6 +8,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
+use starlint_rule_framework::case_utils::is_kebab_case;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Flags filenames that do not follow kebab-case convention.
@@ -16,19 +17,6 @@ pub struct FilenameCase;
 
 /// Filenames that are exempt from the kebab-case check.
 const EXEMPT_STEMS: &[&str] = &["index", "lib", "main"];
-
-/// Check whether the given filename stem is valid kebab-case.
-///
-/// Valid: all lowercase ASCII letters, digits, and hyphens.
-/// Invalid: uppercase letters, underscores, or other non-alphanumeric chars
-/// (except hyphens).
-fn is_kebab_case(stem: &str) -> bool {
-    if stem.is_empty() {
-        return true;
-    }
-    stem.bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
-}
 
 impl LintRule for FilenameCase {
     fn meta(&self) -> RuleMeta {

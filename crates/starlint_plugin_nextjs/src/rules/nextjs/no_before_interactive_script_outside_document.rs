@@ -9,6 +9,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::get_string_value;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -17,17 +18,6 @@ const RULE_NAME: &str = "nextjs/no-before-interactive-script-outside-document";
 /// Flags `<Script strategy="beforeInteractive">` outside of `_document` files.
 #[derive(Debug)]
 pub struct NoBeforeInteractiveScriptOutsideDocument;
-
-/// Get string value from a JSX attribute's value node.
-fn get_string_value(ctx: &LintContext<'_>, value: Option<NodeId>) -> Option<String> {
-    let id = value?;
-    let node = ctx.node(id)?;
-    if let AstNode::StringLiteral(lit) = node {
-        Some(lit.value.clone())
-    } else {
-        None
-    }
-}
 
 impl LintRule for NoBeforeInteractiveScriptOutsideDocument {
     fn meta(&self) -> RuleMeta {

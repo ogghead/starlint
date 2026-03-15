@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::jsx_utils::{get_jsx_attr_string_value, has_jsx_attribute};
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -18,37 +19,6 @@ const INTERACTIVE_ELEMENTS: &[&str] = &["input", "select", "textarea", "button",
 
 #[derive(Debug)]
 pub struct AriaActivedescendantHasTabindex;
-
-/// Check if an attribute exists on a JSX opening element by examining its attribute `NodeIds`.
-fn has_attribute(attributes: &[NodeId], name: &str, ctx: &LintContext<'_>) -> bool {
-    attributes.iter().any(|&attr_id| {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            attr.name == name
-        } else {
-            false
-        }
-    })
-}
-
-/// Get string value of an attribute if it's a string literal.
-fn get_attr_string_value(
-    attributes: &[NodeId],
-    attr_name: &str,
-    ctx: &LintContext<'_>,
-) -> Option<String> {
-    for &attr_id in attributes {
-        if let Some(AstNode::JSXAttribute(attr)) = ctx.node(attr_id) {
-            if attr.name == attr_name {
-                if let Some(value_id) = attr.value {
-                    if let Some(AstNode::StringLiteral(lit)) = ctx.node(value_id) {
-                        return Some(lit.value.clone());
-                    }
-                }
-            }
-        }
-    }
-    None
-}
 
 impl LintRule for AriaActivedescendantHasTabindex {
     fn meta(&self) -> RuleMeta {
@@ -71,7 +41,7 @@ impl LintRule for AriaActivedescendantHasTabindex {
 
         let attrs: Vec<NodeId> = opening.attributes.to_vec();
 
-        if !has_attribute(&attrs, "aria-activedescendant", ctx) {
+        if !has_jsx_attribute(&attrs, "aria-activedescendant", ctx) {
             return;
         }
 
@@ -83,8 +53,8 @@ impl LintRule for AriaActivedescendantHasTabindex {
         }
 
         // Non-interactive: must have tabIndex
-        let has_tabindex = has_attribute(&attrs, "tabIndex", ctx);
-        let tabindex_val = get_attr_string_value(&attrs, "tabIndex", ctx);
+        let has_tabindex = has_jsx_attribute(&attrs, "tabIndex", ctx);
+        let tabindex_val = get_jsx_attr_string_value(&attrs, "tabIndex", ctx);
         let is_negative = tabindex_val
             .and_then(|v| v.parse::<i32>().ok())
             .is_some_and(|n| n < 0);

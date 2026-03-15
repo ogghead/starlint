@@ -11,6 +11,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, RuleMeta};
 
+use starlint_rule_framework::source_utils::find_matching_brace;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -151,46 +152,6 @@ fn find_function_bodies(source: &str) -> Vec<FunctionBody> {
     }
 
     bodies
-}
-
-/// Find the matching closing brace for an opening brace at `open_pos`.
-///
-/// Tracks nesting depth to find the correct match.
-fn find_matching_brace(source: &str, open_pos: usize) -> Option<usize> {
-    let mut depth: usize = 0;
-    let mut in_string = false;
-    let mut string_char: char = '"';
-    let mut prev_char: char = '\0';
-
-    for (idx, ch) in source.get(open_pos..)?.char_indices() {
-        if in_string {
-            if ch == string_char && prev_char != '\\' {
-                in_string = false;
-            }
-            prev_char = ch;
-            continue;
-        }
-
-        match ch {
-            '"' | '\'' | '`' => {
-                in_string = true;
-                string_char = ch;
-            }
-            '{' => {
-                depth = depth.saturating_add(1);
-            }
-            '}' => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(open_pos.saturating_add(idx));
-                }
-            }
-            _ => {}
-        }
-        prev_char = ch;
-    }
-
-    None
 }
 
 /// Classify return statements in a function body as bare or with-value.

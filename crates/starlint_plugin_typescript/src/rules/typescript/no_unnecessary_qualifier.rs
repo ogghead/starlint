@@ -8,6 +8,7 @@
 use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
+use starlint_rule_framework::source_utils::find_matching_brace;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Flags unnecessary namespace qualifiers where the reference is already
@@ -153,29 +154,6 @@ fn extract_identifier(source: &str, start: usize) -> Option<String> {
 /// Check if a byte is a valid identifier character.
 const fn is_ident_char(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_' || b == b'$'
-}
-
-/// Find the matching closing brace for an opening brace at `open_pos`.
-fn find_matching_brace(source: &str, open_pos: usize) -> Option<usize> {
-    let bytes = source.as_bytes();
-    let mut depth: usize = 0;
-    let mut pos = open_pos;
-
-    while pos < bytes.len() {
-        match bytes.get(pos) {
-            Some(b'{') => depth = depth.saturating_add(1),
-            Some(b'}') => {
-                depth = depth.saturating_sub(1);
-                if depth == 0 {
-                    return Some(pos);
-                }
-            }
-            _ => {}
-        }
-        pos = pos.saturating_add(1);
-    }
-
-    None
 }
 
 /// Simple heuristic check whether a position is inside a string or comment.

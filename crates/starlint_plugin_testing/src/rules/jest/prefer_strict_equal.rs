@@ -10,6 +10,7 @@ use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::ast_utils::is_expect_chain;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Flags `.toEqual()` calls that could use `.toStrictEqual()`.
@@ -81,18 +82,6 @@ impl LintRule for PreferStrictEqual {
             }),
             labels: vec![],
         });
-    }
-}
-
-/// Check if an expression is an `expect(...)` call or a chain like
-/// `expect(...).not`.
-fn is_expect_chain(expr_id: NodeId, ctx: &LintContext<'_>) -> bool {
-    match ctx.node(expr_id) {
-        Some(AstNode::CallExpression(call)) => {
-            matches!(ctx.node(call.callee), Some(AstNode::IdentifierReference(id)) if id.name.as_str() == "expect")
-        }
-        Some(AstNode::StaticMemberExpression(member)) => is_expect_chain(member.object, ctx),
-        _ => false,
     }
 }
 

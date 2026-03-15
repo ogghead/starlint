@@ -7,7 +7,12 @@ use std::path::{Path, PathBuf};
 use ignore::WalkBuilder;
 
 /// Default file extensions to lint.
-const DEFAULT_EXTENSIONS: &[&str] = &["js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts"];
+///
+/// This is the single source of truth for supported JS/TS extensions.
+/// Used by both file discovery and the lint engine.
+pub const DEFAULT_EXTENSIONS: &[&str] = &[
+    "js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts", "mjsx", "mtsx",
+];
 
 /// Discover JS/TS files in the given paths.
 ///

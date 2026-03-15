@@ -8,6 +8,7 @@ use starlint_plugin_sdk::rule::{Category, RuleMeta};
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
+use starlint_rule_framework::case_utils::is_pascal_case;
 use starlint_rule_framework::{LintContext, LintRule};
 
 /// Rule name constant.
@@ -16,29 +17,6 @@ const RULE_NAME: &str = "react/jsx-pascal-case";
 /// Flags user-defined JSX component names that are not `PascalCase`.
 #[derive(Debug)]
 pub struct JsxPascalCase;
-
-/// Check if a name is `PascalCase` (starts with uppercase, contains at least
-/// one lowercase character). `ALL_CAPS` names like `SVG` are allowed.
-fn is_pascal_case(name: &str) -> bool {
-    let Some(first) = name.chars().next() else {
-        return true;
-    };
-    if !first.is_ascii_uppercase() {
-        return false;
-    }
-    // Allow ALL_CAPS_WITH_UNDERSCORES (e.g., SVG, UNSAFE_Component)
-    let is_all_upper = name
-        .chars()
-        .all(|c| c.is_ascii_uppercase() || c == '_' || c.is_ascii_digit());
-    if is_all_upper {
-        return true;
-    }
-    // Must have at least one lowercase letter for PascalCase
-    // and no underscores (except leading _)
-    let has_lowercase = name.chars().any(|c| c.is_ascii_lowercase());
-    let has_invalid_underscore = name.chars().skip(1).any(|c| c == '_');
-    has_lowercase && !has_invalid_underscore
-}
 
 impl LintRule for JsxPascalCase {
     fn meta(&self) -> RuleMeta {
