@@ -7,7 +7,7 @@
 
 ## Executive Summary
 
-The codebase is well-architected overall — the crate dependency graph is clean, the `declare_plugin!` macro eliminates boilerplate effectively, and the SDK/framework layering is intentional. However, analysis reveals **17 actionable redundancies** and **9 organizational improvements** across the workspace, concentrated in four areas: duplicated JSX attribute helpers (21 copies across react/nextjs), duplicated utility functions across plugin crates, unused/underutilized builder APIs, and a dual `Span` type situation.
+The codebase is well-architected overall — the crate dependency graph is clean, the `declare_plugin!` macro eliminates boilerplate effectively, and the SDK/framework layering is intentional. However, analysis reveals **19 actionable redundancies** and **9 organizational improvements** across the workspace, concentrated in four areas: duplicated JSX attribute helpers (21 copies across react/nextjs), duplicated utility functions within and across plugin crates, unused/underutilized builder APIs, and a dual `Span` type situation.
 
 ---
 
@@ -154,6 +154,35 @@ This would deduplicate ~21 function definitions across 2 plugins and simplify ~2
 
 **Recommendation:** Migrate to `FixBuilder` incrementally alongside the `DiagnosticBuilder` migration (R9).
 
+### R15. `static_key_name()` / `static_property_key_name()` duplicated 6 times in core plugin (HIGH)
+
+**Implementations in:**
+- `crates/starlint_plugin_core/src/rules/grouped_accessor_pairs.rs:207` — `static_property_key_name()`
+- `crates/starlint_plugin_core/src/rules/no_dupe_keys.rs:83` — `static_property_key_name()`
+- `crates/starlint_plugin_core/src/rules/accessor_pairs.rs:191` — `static_property_key_name()`
+- `crates/starlint_plugin_core/src/rules/no_invalid_fetch_options.rs:112` — `static_key_name()`
+- `crates/starlint_plugin_core/src/rules/no_dupe_class_members.rs:84` — `static_key_name()`
+- `crates/starlint_plugin_core/src/rules/sort_keys.rs:19` — `key_name()`
+
+All extract a key name from a property/method key `NodeId` (matching `IdentifierReference`, `BindingIdentifier`, `StringLiteral`, `NumericLiteral`). Minor variations in which node types each handles.
+
+**Recommendation:** Extract to `starlint_rule_framework` or a shared `core_utils` module:
+```rust
+pub fn extract_static_key_name(key_id: NodeId, ctx: &LintContext) -> Option<String>
+```
+
+### R16. `is_literal()` duplicated 2 times in core plugin (LOW)
+
+**Implementations in:**
+- `crates/starlint_plugin_core/src/rules/prefer_class_fields.rs:119` — checks `NumericLiteral`, `StringLiteral`, `BooleanLiteral`, `NullLiteral`, `RegExpLiteral`, and `UnaryExpression` for negative numbers
+- `crates/starlint_plugin_core/src/rules/yoda.rs:95` — checks `StringLiteral`, `NumericLiteral`, `BooleanLiteral`, `NullLiteral` only
+
+**Recommendation:** Extract to shared utilities with two variants:
+```rust
+pub fn is_literal(node: &AstNode) -> bool
+pub fn is_literal_or_unary(node: &AstNode) -> bool  // includes negative numbers, regex
+```
+
 ### R10. `source_text_for_span()` overlaps with `Span::source_text()` (MEDIUM)
 
 **Implementations:**
@@ -277,6 +306,7 @@ The engine supports `mjsx` and `mtsx` but file discovery does not. This means fi
 | HIGH | R6 | `is_expect_chain()` x5 | Testing plugin maintenance |
 | HIGH | R12 | `has_attribute()` x13 across JSX rules | Massive duplication |
 | HIGH | R13 | `get_attr_string_value()` x8 across JSX rules | Massive duplication |
+| HIGH | R15 | `static_key_name()` x6 in core plugin | Internal duplication |
 | HIGH | R1 | `is_pascal_case()` x4 across plugins | Cross-plugin maintenance |
 | MEDIUM | O1 | Core plugin 327 flat files, no subdirs | Developer navigation |
 | MEDIUM | R2 | `to_pascal_case()` x2 | Consistency |
@@ -287,6 +317,7 @@ The engine supports `mjsx` and `mtsx` but file discovery does not. This means fi
 | MEDIUM | O6 | No shared test utilities beyond `lint_source()` | Test boilerplate |
 | MEDIUM | O9 | File extension lists diverge (8 vs 10) in starlint_core | Potential bug |
 | LOW | R4 | Case utils only in Vue (preemptive) | Future duplication risk |
+| LOW | R16 | `is_literal()` x2 in core plugin | Internal duplication |
 | LOW | R8 | `is_promise_call()` x2 | Testing plugin cleanup |
 | LOW | O2-O8 | Various organizational improvements | Maintainability |
 
@@ -302,6 +333,7 @@ The engine supports `mjsx` and `mtsx` but file discovery does not. This means fi
 
 2. **Medium effort (half-day each):**
    - R12 + R13: Create `jsx_utils` module in `starlint_rule_framework` (biggest impact — deduplicates 21 functions across 25+ files)
+   - R15: Create `ast_utils` module with `extract_static_key_name()` (deduplicates 6 functions in core plugin)
    - R1 + R2 + R3 + R4: Create `case_utils` module in `starlint_rule_framework`
    - R10: Remove redundant `source_text_for_span()` once Spans are unified
    - O5: Single `native_plugin_registry()` call
