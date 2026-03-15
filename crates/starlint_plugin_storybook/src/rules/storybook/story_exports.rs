@@ -64,12 +64,8 @@ impl LintRule for StoryExports {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
     use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(StoryExports)];
-        lint_source(source, "Button.stories.tsx", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(StoryExports, "Button.stories.tsx");
 
     #[test]
     fn test_flags_no_story_exports() {

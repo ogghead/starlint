@@ -7,7 +7,7 @@
 use std::collections::{HashMap, HashSet};
 
 use starlint_config::{Config, RuleConfig};
-use starlint_plugin_sdk::diagnostic::Severity;
+use starlint_plugin_sdk::diagnostic::{Severity, parse_severity};
 use starlint_rule_framework::{LintRule, LintRulePlugin, Plugin};
 
 #[cfg(feature = "wasm")]
@@ -102,18 +102,6 @@ fn all_lint_rules() -> Vec<Box<dyn LintRule>> {
 #[must_use]
 pub fn all_rule_metas() -> Vec<starlint_plugin_sdk::rule::RuleMeta> {
     all_lint_rules().iter().map(|r| r.meta()).collect()
-}
-
-/// Parse a severity string from config.
-fn parse_severity(s: &str) -> Result<Option<Severity>, String> {
-    match s {
-        "error" => Ok(Some(Severity::Error)),
-        "warn" | "warning" => Ok(Some(Severity::Warning)),
-        "off" => Ok(None),
-        _ => Err(format!(
-            "unknown severity `{s}`; expected \"error\", \"warn\", or \"off\""
-        )),
-    }
 }
 
 /// Load all plugins from config.

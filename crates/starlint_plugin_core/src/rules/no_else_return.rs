@@ -111,12 +111,8 @@ fn consequent_always_returns(stmt_id: NodeId, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoElseReturn)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoElseReturn);
 
     #[test]
     fn test_flags_else_after_return() {

@@ -90,6 +90,25 @@ pub struct Label {
     pub message: String,
 }
 
+/// Parse a severity string from config into a [`Severity`].
+///
+/// Accepts `"error"`, `"warn"`/`"warning"`, and `"off"`.
+/// Returns `Ok(None)` for `"off"` (rule disabled).
+///
+/// # Errors
+///
+/// Returns an error message if the severity string is not recognized.
+pub fn parse_severity(s: &str) -> Result<Option<Severity>, String> {
+    match s {
+        "error" => Ok(Some(Severity::Error)),
+        "warn" | "warning" => Ok(Some(Severity::Warning)),
+        "off" => Ok(None),
+        _ => Err(format!(
+            "unknown severity `{s}`; expected \"error\", \"warn\", or \"off\""
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[allow(clippy::wildcard_imports)]

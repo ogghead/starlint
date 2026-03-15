@@ -97,13 +97,8 @@ fn is_integer_literal(ctx: &LintContext<'_>, id: NodeId, value: u64) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ErasingOp)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ErasingOp);
 
     #[test]
     fn test_flags_multiply_by_zero() {

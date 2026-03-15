@@ -3,13 +3,14 @@
 //! Disallow unnecessary zero fractions in numeric literals.
 //! `1.0` should be `1`, `1.50` should be `1.5`.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags numeric literals with unnecessary zero fractions.
 #[derive(Debug)]
@@ -34,9 +35,9 @@ impl LintRule for NoZeroFractions {
             return;
         };
 
-        let start = usize::try_from(lit.span.start).unwrap_or(0);
-        let end = usize::try_from(lit.span.end).unwrap_or(0);
-        let Some(raw) = ctx.source_text().get(start..end) else {
+        let Some(raw) =
+            source_text_for_span(ctx.source_text(), Span::new(lit.span.start, lit.span.end))
+        else {
             return;
         };
 
@@ -75,15 +76,12 @@ impl LintRule for NoZeroFractions {
             span: Span::new(lit.span.start, lit.span.end),
             severity: Severity::Warning,
             help: Some(format!("Replace with `{replacement}`")),
-            fix: Some(Fix {
-                kind: FixKind::SafeFix,
-                message: format!("Replace `{raw}` with `{replacement}`"),
-                edits: vec![Edit {
-                    span: Span::new(lit.span.start, lit.span.end),
-                    replacement,
-                }],
-                is_snippet: false,
-            }),
+            fix: FixBuilder::new(
+                format!("Replace `{raw}` with `{replacement}`"),
+                FixKind::SafeFix,
+            )
+            .replace(Span::new(lit.span.start, lit.span.end), replacement)
+            .build(),
             labels: vec![],
         });
     }
@@ -93,13 +91,8 @@ impl LintRule for NoZeroFractions {
 mod tests {
 
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoZeroFractions)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoZeroFractions);
 
     #[test]
     fn test_flags_dot_zero() {

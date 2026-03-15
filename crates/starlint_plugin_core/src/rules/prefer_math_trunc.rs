@@ -123,12 +123,8 @@ impl LintRule for PreferMathTrunc {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferMathTrunc)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferMathTrunc);
 
     #[test]
     fn test_flags_double_bitwise_not() {

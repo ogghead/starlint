@@ -89,12 +89,8 @@ impl LintRule for NoReturnInFinally {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoReturnInFinally)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoReturnInFinally);
 
     #[test]
     fn test_flags_return_in_finally() {

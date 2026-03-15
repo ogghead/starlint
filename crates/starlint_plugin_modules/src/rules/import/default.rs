@@ -84,12 +84,8 @@ impl LintRule for DefaultExport {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DefaultExport)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(DefaultExport);
 
     #[test]
     fn test_flags_default_import_from_json() {

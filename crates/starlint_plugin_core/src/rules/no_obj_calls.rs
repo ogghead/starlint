@@ -82,12 +82,8 @@ fn callee_global_name<'a>(ctx: &'a LintContext<'_>, id: NodeId) -> Option<&'a st
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoObjCalls)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoObjCalls);
 
     #[test]
     fn test_flags_math_call() {

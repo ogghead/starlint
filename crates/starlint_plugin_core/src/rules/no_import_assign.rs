@@ -26,7 +26,7 @@ impl LintRule for NoImportAssign {
         }
     }
 
-    fn needs_semantic(&self) -> bool {
+    fn needs_scope_analysis(&self) -> bool {
         true
     }
 
@@ -97,12 +97,8 @@ impl LintRule for NoImportAssign {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoImportAssign)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoImportAssign);
 
     #[test]
     fn test_flags_import_reassignment() {

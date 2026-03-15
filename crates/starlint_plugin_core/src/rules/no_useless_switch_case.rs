@@ -177,12 +177,8 @@ fn get_text(source: &str, start: u32, end: u32) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessSwitchCase)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUselessSwitchCase);
 
     #[test]
     fn test_flags_empty_case_before_default() {

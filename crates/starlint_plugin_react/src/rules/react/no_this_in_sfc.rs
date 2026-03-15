@@ -105,12 +105,7 @@ impl LintRule for NoThisInSfc {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoThisInSfc)];
-        lint_source(source, "test.tsx", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoThisInSfc, "test.tsx");
 
     #[test]
     fn test_flags_this_in_arrow_sfc() {

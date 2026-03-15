@@ -106,13 +106,8 @@ fn contains_template_placeholder(s: &str) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoTemplateCurlyInString)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoTemplateCurlyInString);
 
     #[test]
     fn test_flags_template_in_double_quotes() {

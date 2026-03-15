@@ -217,12 +217,8 @@ fn get_single_return_expression(body_id: NodeId, ctx: &LintContext<'_>) -> Optio
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferMockPromiseShorthand)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferMockPromiseShorthand);
 
     #[test]
     fn test_flags_mock_implementation_promise_resolve() {

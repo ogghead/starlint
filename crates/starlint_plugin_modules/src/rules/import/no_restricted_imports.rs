@@ -31,12 +31,7 @@ impl LintRule for NoRestrictedImports {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRestrictedImports)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoRestrictedImports);
 
     #[test]
     fn test_stub_does_not_flag_any_import() {

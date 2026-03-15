@@ -84,12 +84,8 @@ impl LintRule for NoInterpolationInSnapshots {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInterpolationInSnapshots)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoInterpolationInSnapshots);
 
     #[test]
     fn test_flags_interpolated_snapshot() {

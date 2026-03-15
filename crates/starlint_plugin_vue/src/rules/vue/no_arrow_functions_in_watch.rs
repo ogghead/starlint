@@ -62,12 +62,7 @@ impl LintRule for NoArrowFunctionsInWatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrowFunctionsInWatch)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoArrowFunctionsInWatch);
 
     #[test]
     fn test_flags_arrow_in_watch() {

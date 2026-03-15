@@ -43,21 +43,21 @@ pub struct LintSession {
     /// Rules loaded but disabled by default (only active via file-pattern overrides).
     disabled_rules: HashSet<String>,
     /// Pre-computed: whether any plugin needs scope analysis.
-    needs_semantic: bool,
+    needs_scope_analysis: bool,
 }
 
 impl LintSession {
     /// Create a new lint session from a set of plugins.
     #[must_use]
     pub fn new(plugins: Vec<Box<dyn Plugin>>, output_format: OutputFormat) -> Self {
-        let needs_semantic = plugins.iter().any(|p| p.needs_scope_analysis());
+        let needs_scope_analysis = plugins.iter().any(|p| p.needs_scope_analysis());
         Self {
             plugins,
             output_format,
             severity_overrides: HashMap::new(),
             override_set: OverrideSet::empty(),
             disabled_rules: HashSet::new(),
-            needs_semantic,
+            needs_scope_analysis,
         }
     }
 
@@ -141,7 +141,7 @@ impl LintSession {
 
         // Build scope analysis if any plugin needs it.
         let scope_data = self
-            .needs_semantic
+            .needs_scope_analysis
             .then(|| starlint_scope::build_scope_data(&tree));
 
         let extension = file_path

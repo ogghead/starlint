@@ -117,13 +117,7 @@ fn find_optional_chain_or_patterns(source: &str) -> Vec<(u32, u32)> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferNullishCoalescing)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferNullishCoalescing, "test.ts");
 
     #[test]
     fn test_flags_optional_chain_with_or() {

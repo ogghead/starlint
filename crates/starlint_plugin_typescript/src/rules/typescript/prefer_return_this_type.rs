@@ -175,13 +175,7 @@ fn collect_class_names(source: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferReturnThisType)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferReturnThisType, "test.ts");
 
     #[test]
     fn test_flags_method_returning_class_name() {

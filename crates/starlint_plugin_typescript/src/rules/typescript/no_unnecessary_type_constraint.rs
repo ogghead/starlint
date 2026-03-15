@@ -111,12 +111,8 @@ impl LintRule for NoUnnecessaryTypeConstraint {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryTypeConstraint)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnnecessaryTypeConstraint, "test.ts");
 
     #[test]
     fn test_flags_extends_any() {

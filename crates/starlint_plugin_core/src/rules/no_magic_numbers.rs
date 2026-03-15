@@ -59,12 +59,7 @@ impl LintRule for NoMagicNumbers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoMagicNumbers)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoMagicNumbers);
 
     #[test]
     fn test_flags_magic_number() {

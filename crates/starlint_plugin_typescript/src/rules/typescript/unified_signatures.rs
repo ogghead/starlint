@@ -285,12 +285,7 @@ fn extract_param_type(param: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(UnifiedSignatures)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(UnifiedSignatures, "test.ts");
 
     #[test]
     fn test_flags_overloads_differing_in_one_param_type() {

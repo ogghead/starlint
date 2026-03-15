@@ -101,12 +101,8 @@ impl LintRule for NoUnmodifiedLoopCondition {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnmodifiedLoopCondition)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnmodifiedLoopCondition);
 
     #[test]
     fn test_flags_unmodified_condition() {

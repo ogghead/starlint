@@ -4,13 +4,14 @@
 //! `Object.hasOwn()` (ES2022) is shorter and more intuitive.
 
 #![allow(clippy::shadow_unrelated)]
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags `Object.prototype.hasOwnProperty.call()` patterns.
 #[derive(Debug)]
@@ -66,32 +67,29 @@ impl LintRule for PreferObjectHasOwn {
 
         if is_object_prototype || is_object_literal {
             let source = ctx.source_text();
-            let fix = call
-                .arguments
-                .first()
-                .zip(call.arguments.last())
-                .map(|(first, last)| {
-                    let f_span = ctx.node(*first).map_or(
-                        starlint_ast::types::Span::EMPTY,
-                        starlint_ast::AstNode::span,
-                    );
-                    let l_span = ctx.node(*last).map_or(
-                        starlint_ast::types::Span::EMPTY,
-                        starlint_ast::AstNode::span,
-                    );
-                    let f_start = usize::try_from(f_span.start).unwrap_or(0);
-                    let l_end = usize::try_from(l_span.end).unwrap_or(0);
-                    let args_text = source.get(f_start..l_end).unwrap_or("");
-                    Fix {
-                        kind: FixKind::SafeFix,
-                        message: "Replace with `Object.hasOwn()`".to_owned(),
-                        edits: vec![Edit {
-                            span: Span::new(call.span.start, call.span.end),
-                            replacement: format!("Object.hasOwn({args_text})"),
-                        }],
-                        is_snippet: false,
-                    }
-                });
+            let fix =
+                call.arguments
+                    .first()
+                    .zip(call.arguments.last())
+                    .and_then(|(first, last)| {
+                        let f_span = ctx.node(*first).map_or(
+                            starlint_ast::types::Span::EMPTY,
+                            starlint_ast::AstNode::span,
+                        );
+                        let l_span = ctx.node(*last).map_or(
+                            starlint_ast::types::Span::EMPTY,
+                            starlint_ast::AstNode::span,
+                        );
+                        let args_text =
+                            source_text_for_span(source, Span::new(f_span.start, l_span.end))
+                                .unwrap_or("");
+                        FixBuilder::new("Replace with `Object.hasOwn()`", FixKind::SafeFix)
+                            .replace(
+                                Span::new(call.span.start, call.span.end),
+                                format!("Object.hasOwn({args_text})"),
+                            )
+                            .build()
+                    });
 
             ctx.report(Diagnostic {
                 rule_name: "prefer-object-has-own".to_owned(),
@@ -125,12 +123,8 @@ fn is_object_prototype_pattern(id: NodeId, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferObjectHasOwn)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferObjectHasOwn);
 
     #[test]
     fn test_flags_object_prototype_has_own_property_call() {

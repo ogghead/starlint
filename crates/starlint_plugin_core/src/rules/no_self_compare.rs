@@ -93,12 +93,8 @@ impl LintRule for NoSelfCompare {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSelfCompare)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoSelfCompare);
 
     #[test]
     fn test_flags_self_strict_equality() {

@@ -138,12 +138,8 @@ fn find_error_callee_span(ctx: &LintContext<'_>, node: &AstNode) -> Option<Span>
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferTypeError)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferTypeError);
 
     #[test]
     fn test_flags_typeof_with_error() {

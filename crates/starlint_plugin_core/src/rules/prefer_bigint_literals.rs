@@ -101,12 +101,8 @@ fn get_bigint_literal_value(arg_id: NodeId, ctx: &LintContext<'_>) -> Option<Str
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferBigintLiterals)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferBigintLiterals);
 
     #[test]
     fn test_flags_bigint_with_numeric_literal() {

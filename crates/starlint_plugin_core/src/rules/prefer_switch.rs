@@ -121,12 +121,8 @@ fn strict_eq_identifier(expr_id: NodeId, ctx: &LintContext<'_>) -> Option<String
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferSwitch)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferSwitch);
 
     #[test]
     fn test_flags_three_strict_equality_branches() {

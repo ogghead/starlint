@@ -75,12 +75,8 @@ impl LintRule for PreferReduceTypeParameter {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferReduceTypeParameter)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferReduceTypeParameter, "test.ts");
 
     #[test]
     fn test_flags_reduce_with_as_assertion_on_init() {

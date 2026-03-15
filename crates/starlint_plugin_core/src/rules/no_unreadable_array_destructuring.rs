@@ -77,12 +77,8 @@ impl LintRule for NoUnreadableArrayDestructuring {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnreadableArrayDestructuring)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnreadableArrayDestructuring);
 
     #[test]
     fn test_flags_many_holes() {

@@ -202,13 +202,7 @@ fn is_empty_braces(s: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessEmptyExport)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUselessEmptyExport, "test.ts");
 
     #[test]
     fn test_flags_empty_export_with_other_export() {

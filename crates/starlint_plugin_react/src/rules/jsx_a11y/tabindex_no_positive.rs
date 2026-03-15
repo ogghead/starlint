@@ -79,12 +79,8 @@ impl LintRule for TabindexNoPositive {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(TabindexNoPositive)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(TabindexNoPositive);
 
     #[test]
     fn test_flags_positive_tabindex() {

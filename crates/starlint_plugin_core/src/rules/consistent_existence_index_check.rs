@@ -137,12 +137,8 @@ fn is_numeric_literal(id: NodeId, value: f64, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentExistenceIndexCheck)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentExistenceIndexCheck);
 
     #[test]
     fn test_flags_gte_zero() {

@@ -128,12 +128,8 @@ impl LintRule for PreferOptionalCatchBinding {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferOptionalCatchBinding)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferOptionalCatchBinding);
 
     #[test]
     fn test_flags_empty_catch_body() {

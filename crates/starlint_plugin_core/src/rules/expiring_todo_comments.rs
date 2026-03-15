@@ -276,13 +276,7 @@ const fn is_expired(year: u32, month: u32, day: u32) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ExpiringTodoComments)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ExpiringTodoComments);
 
     #[test]
     fn test_flags_expired_todo_bracket() {

@@ -114,12 +114,8 @@ impl LintRule for SortKeys {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SortKeys)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(SortKeys);
 
     #[test]
     fn test_allows_sorted_keys() {

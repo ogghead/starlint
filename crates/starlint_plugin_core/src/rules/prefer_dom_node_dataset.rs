@@ -146,12 +146,8 @@ fn data_attr_to_camel_case(attr: &str) -> String {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferDomNodeDataset)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferDomNodeDataset);
 
     #[test]
     fn test_flags_get_attribute_data() {

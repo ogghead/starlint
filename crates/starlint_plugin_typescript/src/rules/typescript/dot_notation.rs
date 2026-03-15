@@ -117,12 +117,8 @@ fn is_valid_js_identifier(name: &str) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DotNotation)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(DotNotation, "test.ts");
 
     #[test]
     fn test_flags_bracket_with_simple_string() {

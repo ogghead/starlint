@@ -126,11 +126,7 @@ const fn is_variation_selector(ch: char) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoMisleadingCharacterClass)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoMisleadingCharacterClass);
 
     #[test]
     fn test_allows_simple_char_class() {

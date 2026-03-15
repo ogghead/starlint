@@ -201,13 +201,7 @@ fn find_redundant_type_args(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryTypeArguments)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnnecessaryTypeArguments, "test.ts");
 
     #[test]
     fn test_flags_redundant_type_argument() {

@@ -66,12 +66,8 @@ impl LintRule for RequirePostMessageTargetOrigin {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RequirePostMessageTargetOrigin)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(RequirePostMessageTargetOrigin);
 
     #[test]
     fn test_allows_post_message_with_target_origin() {

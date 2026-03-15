@@ -195,12 +195,7 @@ fn check_disable_comment(source: &str, start: usize, end: usize, results: &mut V
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAbusiveEslintDisable)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoAbusiveEslintDisable);
 
     #[test]
     fn test_flags_blanket_block_disable() {

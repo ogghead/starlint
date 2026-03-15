@@ -147,12 +147,8 @@ impl LintRule for ClassMethodsUseThis {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ClassMethodsUseThis::new())];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ClassMethodsUseThis::new());
 
     #[test]
     fn test_flags_method_without_this() {

@@ -22,7 +22,7 @@ use tower_lsp::lsp_types::{
 };
 use tower_lsp::{Client, LanguageServer};
 
-use starlint_config::resolve::{find_config_file, load_config};
+use starlint_config::resolve::resolve_config;
 use starlint_core::diagnostic::OutputFormat;
 use starlint_core::engine::LintSession;
 
@@ -71,15 +71,10 @@ impl Backend {
             .unwrap_or_else(|| PathBuf::from("."));
 
         let task = tokio::task::spawn_blocking(move || {
-            let config = find_config_file(&search_dir)
-                .and_then(|p| match load_config(&p) {
-                    Ok(c) => Some(c),
-                    Err(err) => {
-                        tracing::warn!("failed to parse {}: {err}", p.display());
-                        None
-                    }
-                })
-                .unwrap_or_default();
+            let config = resolve_config(&search_dir).unwrap_or_else(|err| {
+                tracing::warn!("failed to load config: {err}");
+                starlint_config::Config::default()
+            });
 
             let loaded = starlint_loader::load_plugins(&config);
             tracing::info!("LSP: loaded {} plugin(s)", loaded.plugins.len());

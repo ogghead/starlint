@@ -113,12 +113,8 @@ impl LintRule for PreferPrototypeMethods {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferPrototypeMethods)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferPrototypeMethods);
 
     #[test]
     fn test_flags_array_foreach_call() {

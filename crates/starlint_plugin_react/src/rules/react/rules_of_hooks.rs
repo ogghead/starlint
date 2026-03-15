@@ -142,12 +142,8 @@ impl LintRule for RulesOfHooks {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RulesOfHooks::new())];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(RulesOfHooks::new());
 
     #[test]
     fn test_flags_hook_in_if_block() {

@@ -126,12 +126,8 @@ fn is_json_stringify_call(callee_id: NodeId, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferResponseStaticJson)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferResponseStaticJson);
 
     #[test]
     fn test_flags_new_response_json_stringify() {

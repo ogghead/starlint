@@ -140,12 +140,8 @@ fn is_literal(ctx: &LintContext<'_>, node: &AstNode) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferClassFields)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferClassFields);
 
     #[test]
     fn test_flags_this_assign_number() {

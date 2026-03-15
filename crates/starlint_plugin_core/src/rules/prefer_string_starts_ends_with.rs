@@ -5,14 +5,15 @@
 //! `str.startsWith('foo')` and `str.indexOf('x') === 0` should be
 //! `str.startsWith('x')`.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::operator::BinaryOperator;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags patterns that can use `startsWith`/`endsWith`.
 #[derive(Debug)]
@@ -90,26 +91,20 @@ fn check_index_of_comparison(
     // Build fix: `obj.startsWith(arg)`
     let source = ctx.source_text();
     let obj_span = ctx.node(member.object).map(starlint_ast::AstNode::span);
-    let (obj_start, obj_end) = match obj_span {
-        Some(s) => (s.start as usize, s.end as usize),
-        None => return,
+    let Some(s) = obj_span else {
+        return;
     };
-    let obj_text = source.get(obj_start..obj_end).unwrap_or("");
+    let obj_text = source_text_for_span(source, Span::new(s.start, s.end)).unwrap_or("");
 
     let fix = call.arguments.first().and_then(|&arg_id| {
         let arg_span = ctx.node(arg_id)?.span();
-        let a_start = arg_span.start as usize;
-        let a_end = arg_span.end as usize;
-        let arg_text = source.get(a_start..a_end)?;
-        Some(Fix {
-            kind: FixKind::SuggestionFix,
-            message: "Replace with `.startsWith()`".to_owned(),
-            edits: vec![Edit {
-                span: Span::new(expr.span.start, expr.span.end),
-                replacement: format!("{obj_text}.startsWith({arg_text})"),
-            }],
-            is_snippet: false,
-        })
+        let arg_text = source_text_for_span(source, Span::new(arg_span.start, arg_span.end))?;
+        FixBuilder::new("Replace with `.startsWith()`", FixKind::SuggestionFix)
+            .replace(
+                Span::new(expr.span.start, expr.span.end),
+                format!("{obj_text}.startsWith({arg_text})"),
+            )
+            .build()
     });
 
     ctx.report(Diagnostic {
@@ -166,18 +161,16 @@ fn check_regex_test(call: &starlint_ast::node::CallExpressionNode, ctx: &mut Lin
     let source = ctx.source_text();
     let fix = call.arguments.first().and_then(|&arg_id| {
         let arg_span = ctx.node(arg_id)?.span();
-        let a_start = arg_span.start as usize;
-        let a_end = arg_span.end as usize;
-        let arg_text = source.get(a_start..a_end)?;
-        Some(Fix {
-            kind: FixKind::SuggestionFix,
-            message: format!("Replace with `.{kind}('{literal_part}')` "),
-            edits: vec![Edit {
-                span: Span::new(call.span.start, call.span.end),
-                replacement: format!("{arg_text}.{kind}('{literal_part}')"),
-            }],
-            is_snippet: false,
-        })
+        let arg_text = source_text_for_span(source, Span::new(arg_span.start, arg_span.end))?;
+        FixBuilder::new(
+            format!("Replace with `.{kind}('{literal_part}')` "),
+            FixKind::SuggestionFix,
+        )
+        .replace(
+            Span::new(call.span.start, call.span.end),
+            format!("{arg_text}.{kind}('{literal_part}')"),
+        )
+        .build()
     });
 
     ctx.report(Diagnostic {
@@ -203,12 +196,8 @@ fn is_zero_literal(node_id: NodeId, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStringStartsEndsWith)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferStringStartsEndsWith);
 
     #[test]
     fn test_flags_index_of_equals_zero() {

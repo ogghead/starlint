@@ -147,12 +147,8 @@ impl LintRule for JsxKey {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxKey)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(JsxKey);
 
     #[test]
     fn test_flags_missing_key_in_map() {

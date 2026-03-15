@@ -139,12 +139,7 @@ impl LintRule for ComponentDefinitionNameCasing {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ComponentDefinitionNameCasing)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ComponentDefinitionNameCasing);
 
     #[test]
     fn test_allows_pascal_case() {

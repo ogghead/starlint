@@ -137,15 +137,10 @@ fn check_condition(test_id: NodeId, is_ternary: bool, ctx: &mut LintContext<'_>)
 
 #[cfg(test)]
 mod tests {
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoCondAssign)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoCondAssign);
 
     #[test]
     fn test_flags_assignment_in_if() {

@@ -97,12 +97,8 @@ impl LintRule for SwitchCaseBraces {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SwitchCaseBraces)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(SwitchCaseBraces);
 
     #[test]
     fn test_flags_case_without_braces() {

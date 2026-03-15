@@ -143,12 +143,8 @@ fn boolean_value(node_id: NodeId, ctx: &LintContext<'_>) -> Option<bool> {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryBooleanLiteralCompare)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnnecessaryBooleanLiteralCompare, "test.ts");
 
     #[test]
     fn test_flags_strict_equals_true() {

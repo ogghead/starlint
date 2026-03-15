@@ -218,12 +218,8 @@ fn static_property_key_name(key: NodeId, ctx: &LintContext<'_>) -> Option<String
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(GroupedAccessorPairs)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(GroupedAccessorPairs);
 
     #[test]
     fn test_allows_adjacent_object_accessors() {

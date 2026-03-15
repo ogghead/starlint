@@ -120,12 +120,8 @@ impl LintRule for PreserveCaughtError {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreserveCaughtError)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreserveCaughtError);
 
     #[test]
     fn test_allows_used_error_log() {

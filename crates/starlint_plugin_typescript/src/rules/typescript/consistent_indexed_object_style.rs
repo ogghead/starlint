@@ -102,12 +102,8 @@ fn extract_index_sig_types(text: &str) -> Option<(&str, &str)> {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentIndexedObjectStyle)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentIndexedObjectStyle, "test.ts");
 
     #[test]
     fn test_flags_index_signature_only() {

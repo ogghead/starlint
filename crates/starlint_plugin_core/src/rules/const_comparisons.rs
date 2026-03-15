@@ -225,12 +225,8 @@ fn check_tautological_range(
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConstComparisons)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConstComparisons);
 
     #[test]
     fn test_flags_impossible_range() {

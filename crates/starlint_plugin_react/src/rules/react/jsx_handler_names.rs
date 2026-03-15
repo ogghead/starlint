@@ -95,12 +95,8 @@ impl LintRule for JsxHandlerNames {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxHandlerNames)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(JsxHandlerNames);
 
     #[test]
     fn test_flags_non_handle_prefix() {

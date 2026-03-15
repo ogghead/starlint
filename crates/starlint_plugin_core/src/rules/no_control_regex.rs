@@ -114,12 +114,7 @@ const fn hex_value(ch: u8) -> Option<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code with the `NoControlRegex` rule.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoControlRegex)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoControlRegex);
 
     #[test]
     fn test_flags_hex_control_char() {

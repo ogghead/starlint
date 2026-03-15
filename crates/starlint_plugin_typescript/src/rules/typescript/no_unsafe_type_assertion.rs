@@ -69,12 +69,8 @@ impl LintRule for NoUnsafeTypeAssertion {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnsafeTypeAssertion)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnsafeTypeAssertion, "test.ts");
 
     #[test]
     fn test_flags_as_any() {

@@ -78,12 +78,8 @@ impl LintRule for JsxMaxDepth {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxMaxDepth)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(JsxMaxDepth);
 
     #[test]
     fn test_allows_shallow_nesting() {

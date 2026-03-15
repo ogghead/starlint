@@ -170,12 +170,8 @@ fn statement_references_label(ctx: &LintContext<'_>, stmt: &AstNode, label: &str
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnusedLabels)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnusedLabels);
 
     #[test]
     fn test_flags_unused_label() {

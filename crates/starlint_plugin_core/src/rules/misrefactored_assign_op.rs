@@ -130,12 +130,8 @@ fn node_id_span(id: NodeId, ctx: &LintContext<'_>) -> Option<(usize, usize)> {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(MisrefactoredAssignOp)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(MisrefactoredAssignOp);
 
     #[test]
     fn test_flags_subtract_assign() {

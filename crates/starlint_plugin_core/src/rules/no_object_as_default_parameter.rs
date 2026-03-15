@@ -72,12 +72,8 @@ impl LintRule for NoObjectAsDefaultParameter {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoObjectAsDefaultParameter)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoObjectAsDefaultParameter);
 
     #[test]
     fn test_flags_object_literal_default() {

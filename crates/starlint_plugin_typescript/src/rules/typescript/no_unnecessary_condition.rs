@@ -95,12 +95,8 @@ fn boolean_literal_value(ctx: &LintContext<'_>, id: NodeId) -> Option<bool> {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryCondition)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnnecessaryCondition, "test.ts");
 
     #[test]
     fn test_flags_if_true() {

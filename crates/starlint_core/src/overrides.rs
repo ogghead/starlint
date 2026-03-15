@@ -8,21 +8,7 @@ use std::path::Path;
 
 use globset::{Glob, GlobSet, GlobSetBuilder};
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity};
-
-/// Parse a severity string from config into a [`Severity`].
-///
-/// Returns `Ok(None)` for "off" (rule disabled).
-fn parse_severity(s: &str) -> Result<Option<Severity>, String> {
-    match s {
-        "error" => Ok(Some(Severity::Error)),
-        "warn" | "warning" => Ok(Some(Severity::Warning)),
-        "off" => Ok(None),
-        _ => Err(format!(
-            "unknown severity `{s}`; expected \"error\", \"warn\", or \"off\""
-        )),
-    }
-}
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, parse_severity};
 
 /// A single compiled override block.
 struct CompiledOverride {

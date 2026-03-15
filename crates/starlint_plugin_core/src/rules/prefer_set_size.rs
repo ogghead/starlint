@@ -4,13 +4,14 @@
 //! Patterns like `[...set].length` or `Array.from(set).length` create an
 //! unnecessary intermediate array just to count elements.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags `.length` access on patterns that convert a Set to an array.
 #[derive(Debug)]
@@ -50,15 +51,9 @@ impl LintRule for PreferSetSize {
                 span: Span::new(member.span.start, member.span.end),
                 severity: Severity::Warning,
                 help: Some(format!("Replace with `{replacement}`")),
-                fix: Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: format!("Replace with `{replacement}`"),
-                    edits: vec![Edit {
-                        span: Span::new(member.span.start, member.span.end),
-                        replacement,
-                    }],
-                    is_snippet: false,
-                }),
+                fix: FixBuilder::new(format!("Replace with `{replacement}`"), FixKind::SafeFix)
+                    .replace(Span::new(member.span.start, member.span.end), replacement)
+                    .build(),
                 labels: vec![],
             });
             return;
@@ -73,15 +68,9 @@ impl LintRule for PreferSetSize {
                 span: Span::new(member.span.start, member.span.end),
                 severity: Severity::Warning,
                 help: Some(format!("Replace with `{replacement}`")),
-                fix: Some(Fix {
-                    kind: FixKind::SafeFix,
-                    message: format!("Replace with `{replacement}`"),
-                    edits: vec![Edit {
-                        span: Span::new(member.span.start, member.span.end),
-                        replacement,
-                    }],
-                    is_snippet: false,
-                }),
+                fix: FixBuilder::new(format!("Replace with `{replacement}`"), FixKind::SafeFix)
+                    .replace(Span::new(member.span.start, member.span.end), replacement)
+                    .build(),
                 labels: vec![],
             });
         }
@@ -89,7 +78,6 @@ impl LintRule for PreferSetSize {
 }
 
 /// Extract the spread argument name from `[...something]` (array with a single spread element).
-#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
 fn get_spread_arg_name<'s>(
     obj_id: NodeId,
     source: &'s str,
@@ -109,11 +97,10 @@ fn get_spread_arg_name<'s>(
     };
 
     let arg_span = ctx.node(spread.argument)?.span();
-    Some(&source[arg_span.start as usize..arg_span.end as usize])
+    source_text_for_span(source, Span::new(arg_span.start, arg_span.end))
 }
 
 /// Extract the argument name from `Array.from(something)` (single-argument call).
-#[allow(clippy::as_conversions)] // u32→usize is lossless on 32/64-bit
 fn get_array_from_arg_name<'s>(
     obj_id: NodeId,
     source: &'s str,
@@ -142,19 +129,15 @@ fn get_array_from_arg_name<'s>(
 
     let arg_id = call.arguments.first()?;
     let arg_span = ctx.node(*arg_id)?.span();
-    Some(&source[arg_span.start as usize..arg_span.end as usize])
+    source_text_for_span(source, Span::new(arg_span.start, arg_span.end))
 }
 
 #[cfg(test)]
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferSetSize)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferSetSize);
 
     #[test]
     fn test_flags_spread_into_array_length() {

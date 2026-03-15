@@ -196,12 +196,8 @@ fn extract_math_log_arg_text(
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferModernMathApis)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferModernMathApis);
 
     #[test]
     fn test_flags_log_div_log2() {

@@ -177,12 +177,7 @@ fn has_multiple_spaces_outside_char_class(pattern: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code with the `NoRegexSpaces` rule.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRegexSpaces)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoRegexSpaces);
 
     #[test]
     fn test_flags_multiple_spaces() {

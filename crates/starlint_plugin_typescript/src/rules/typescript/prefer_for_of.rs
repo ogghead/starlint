@@ -156,12 +156,8 @@ fn is_increment(update_id: NodeId, counter_name: &str, ctx: &LintContext<'_>) ->
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferForOf)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferForOf, "test.ts");
 
     #[test]
     fn test_flags_classic_indexed_loop() {

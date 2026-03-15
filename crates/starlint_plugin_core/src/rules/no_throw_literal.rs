@@ -93,13 +93,8 @@ const fn is_literal_or_non_error(node: &AstNode) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoThrowLiteral)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoThrowLiteral);
 
     #[test]
     fn test_flags_throw_string() {

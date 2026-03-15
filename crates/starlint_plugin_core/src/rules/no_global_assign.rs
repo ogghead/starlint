@@ -76,7 +76,7 @@ impl LintRule for NoGlobalAssign {
         }
     }
 
-    fn needs_semantic(&self) -> bool {
+    fn needs_scope_analysis(&self) -> bool {
         true
     }
 
@@ -123,12 +123,8 @@ impl LintRule for NoGlobalAssign {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoGlobalAssign)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoGlobalAssign);
 
     #[test]
     fn test_flags_object_reassignment() {

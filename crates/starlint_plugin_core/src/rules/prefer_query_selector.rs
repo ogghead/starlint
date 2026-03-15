@@ -114,12 +114,8 @@ fn suggested_replacement(method: &str) -> &'static str {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferQuerySelector)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferQuerySelector);
 
     #[test]
     fn test_flags_get_element_by_id() {

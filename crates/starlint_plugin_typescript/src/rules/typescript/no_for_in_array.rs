@@ -82,12 +82,8 @@ impl LintRule for NoForInArray {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoForInArray)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoForInArray, "test.ts");
 
     #[test]
     fn test_flags_for_in_with_array() {

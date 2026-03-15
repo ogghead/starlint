@@ -133,12 +133,8 @@ impl LintRule for NoConsoleSpaces {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoConsoleSpaces)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoConsoleSpaces);
 
     #[test]
     fn test_flags_leading_space() {

@@ -131,13 +131,8 @@ fn node_source<'s>(ctx: &LintContext<'_>, id: NodeId, source: &'s str) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DoubleComparisons)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(DoubleComparisons);
 
     #[test]
     fn test_flags_gte_and_lte() {

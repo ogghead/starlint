@@ -103,12 +103,8 @@ fn is_non_error_argument(arg_id: NodeId, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferPromiseRejectErrors)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferPromiseRejectErrors, "test.ts");
 
     #[test]
     fn test_flags_reject_with_string() {

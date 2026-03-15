@@ -27,7 +27,7 @@ impl LintRule for PreferConst {
         }
     }
 
-    fn needs_semantic(&self) -> bool {
+    fn needs_scope_analysis(&self) -> bool {
         true
     }
 
@@ -113,12 +113,8 @@ impl LintRule for PreferConst {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferConst)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferConst);
 
     #[test]
     fn test_let_with_no_reassignment() {

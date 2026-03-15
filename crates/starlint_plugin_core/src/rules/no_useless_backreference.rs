@@ -139,11 +139,7 @@ fn find_useless_backreference(pattern: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessBackreference)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUselessBackreference);
 
     #[test]
     fn test_flags_forward_reference() {

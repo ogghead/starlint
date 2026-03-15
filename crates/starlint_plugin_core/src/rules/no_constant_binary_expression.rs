@@ -82,15 +82,10 @@ fn is_always_new_value(ctx: &LintContext<'_>, id: NodeId) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoConstantBinaryExpression)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoConstantBinaryExpression);
 
     #[test]
     fn test_flags_comparison_with_object_literal() {

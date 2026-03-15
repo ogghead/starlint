@@ -200,12 +200,8 @@ fn extract_call_args_text<'a>(
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrayPushPush::new())];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoArrayPushPush::new());
 
     #[test]
     fn test_flags_consecutive_push() {

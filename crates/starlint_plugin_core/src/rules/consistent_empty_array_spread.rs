@@ -8,10 +8,11 @@ use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags spreading an empty array literal inside an array expression.
 #[derive(Debug)]
@@ -31,7 +32,6 @@ impl LintRule for ConsistentEmptyArraySpread {
         Some(&[AstNodeType::ArrayExpression])
     }
 
-    #[allow(clippy::as_conversions)]
     fn run(&self, _node_id: NodeId, node: &AstNode, ctx: &mut LintContext<'_>) {
         let AstNode::ArrayExpression(arr) = node else {
             return;
@@ -54,7 +54,7 @@ impl LintRule for ConsistentEmptyArraySpread {
             .filter(|&&el_id| !is_empty_array_spread(ctx, el_id))
             .filter_map(|&el_id| {
                 let s = ctx.node(el_id)?.span();
-                source.get(s.start as usize..s.end as usize)
+                source_text_for_span(source, Span::new(s.start, s.end))
             })
             .collect();
         let replacement = format!("[{}]", non_empty.join(", "));
@@ -65,15 +65,9 @@ impl LintRule for ConsistentEmptyArraySpread {
             span: Span::new(arr.span.start, arr.span.end),
             severity: Severity::Warning,
             help: Some("Remove the empty array spread".to_owned()),
-            fix: Some(Fix {
-                kind: FixKind::SafeFix,
-                message: "Remove empty array spread".to_owned(),
-                edits: vec![Edit {
-                    span: Span::new(arr.span.start, arr.span.end),
-                    replacement,
-                }],
-                is_snippet: false,
-            }),
+            fix: FixBuilder::new("Remove empty array spread", FixKind::SafeFix)
+                .replace(Span::new(arr.span.start, arr.span.end), replacement)
+                .build(),
             labels: vec![],
         });
     }
@@ -93,13 +87,8 @@ fn is_empty_array_spread(ctx: &LintContext<'_>, id: NodeId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentEmptyArraySpread)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentEmptyArraySpread);
 
     #[test]
     fn test_flags_single_empty_spread() {

@@ -77,12 +77,8 @@ fn binding_name<'a>(id: NodeId, ctx: &'a LintContext<'_>) -> Option<&'a str> {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoThisAlias)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoThisAlias, "test.ts");
 
     #[test]
     fn test_flags_that_equals_this() {

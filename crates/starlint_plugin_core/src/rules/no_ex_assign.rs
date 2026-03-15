@@ -110,12 +110,8 @@ fn scan_statement_for_assignment(stmt_id: NodeId, name: &str, ctx: &mut LintCont
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExAssign)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoExAssign);
 
     #[test]
     fn test_flags_catch_param_reassign() {

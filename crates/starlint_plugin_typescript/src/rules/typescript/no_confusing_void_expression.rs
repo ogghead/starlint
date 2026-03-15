@@ -120,12 +120,8 @@ fn is_in_value_position(source: &str, start: u32) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoConfusingVoidExpression)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoConfusingVoidExpression, "test.ts");
 
     #[test]
     fn test_flags_void_in_variable_initializer() {

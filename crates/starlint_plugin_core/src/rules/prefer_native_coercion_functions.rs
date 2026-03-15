@@ -133,12 +133,8 @@ impl LintRule for PreferNativeCoercionFunctions {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferNativeCoercionFunctions)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferNativeCoercionFunctions);
 
     #[test]
     fn test_flags_number_wrapper() {

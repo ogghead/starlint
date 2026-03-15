@@ -100,12 +100,8 @@ fn is_expect_call_or_chain(id: NodeId, ctx: &LintContext<'_>) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RequireToThrowMessage)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(RequireToThrowMessage);
 
     #[test]
     fn test_flags_to_throw_without_message() {

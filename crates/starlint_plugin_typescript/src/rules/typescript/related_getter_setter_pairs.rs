@@ -166,13 +166,7 @@ fn extract_accessor_name(rest: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RelatedGetterSetterPairs)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(RelatedGetterSetterPairs, "test.ts");
 
     #[test]
     fn test_flags_getter_without_setter() {

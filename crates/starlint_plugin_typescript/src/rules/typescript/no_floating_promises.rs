@@ -129,13 +129,7 @@ fn find_floating_calls(source: &str, async_fn_names: &[String]) -> Vec<Span> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint TypeScript source code.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoFloatingPromises)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoFloatingPromises, "test.ts");
 
     #[test]
     fn test_flags_floating_async_call() {

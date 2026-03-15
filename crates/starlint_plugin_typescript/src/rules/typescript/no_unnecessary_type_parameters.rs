@@ -258,12 +258,7 @@ fn find_word_position(text: &str, word: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnnecessaryTypeParameters)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnnecessaryTypeParameters, "test.ts");
 
     #[test]
     fn test_flags_single_use_type_param() {

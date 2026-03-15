@@ -129,12 +129,8 @@ impl LintRule for NoStaticElementInteractions {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoStaticElementInteractions)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoStaticElementInteractions);
 
     #[test]
     fn test_flags_div_with_onclick_no_role() {

@@ -125,12 +125,7 @@ fn is_inside_test_block(source: &str, pos: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoConfusingSetTimeout)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoConfusingSetTimeout);
 
     #[test]
     fn test_flags_set_timeout_in_test() {

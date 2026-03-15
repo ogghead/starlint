@@ -26,110 +26,79 @@ pub(crate) fn is_test_file(file_path: &std::path::Path) -> bool {
         })
 }
 
-use starlint_rule_framework::{LintRule, LintRulePlugin, Plugin};
-
-/// Create the testing plugin with all its rules.
-#[must_use]
-pub fn create_plugin() -> Box<dyn Plugin> {
-    Box::new(LintRulePlugin::new(all_rules()))
-}
-
-/// Return all testing lint rules.
-#[must_use]
-#[allow(clippy::too_many_lines)]
-pub fn all_rules() -> Vec<Box<dyn LintRule>> {
-    vec![
-        Box::new(crate::rules::jest::consistent_test_it::ConsistentTestIt),
-        Box::new(crate::rules::jest::expect_expect::ExpectExpect),
-        Box::new(crate::rules::jest::max_expects::MaxExpects::new()),
-        Box::new(crate::rules::jest::max_nested_describe::MaxNestedDescribe),
-        Box::new(crate::rules::jest::no_alias_methods::NoAliasMethods),
-        Box::new(crate::rules::jest::no_commented_out_tests::NoCommentedOutTests),
-        Box::new(crate::rules::jest::no_conditional_expect::NoConditionalExpect),
-        Box::new(crate::rules::jest::no_conditional_in_test::NoConditionalInTest),
-        Box::new(crate::rules::jest::no_confusing_set_timeout::NoConfusingSetTimeout),
-        Box::new(crate::rules::jest::no_deprecated_functions::NoDeprecatedFunctions),
-        Box::new(crate::rules::jest::no_disabled_tests::NoDisabledTests),
-        Box::new(crate::rules::jest::no_done_callback::NoDoneCallback),
-        Box::new(crate::rules::jest::no_duplicate_hooks::NoDuplicateHooks),
-        Box::new(crate::rules::jest::no_export::NoExport),
-        Box::new(crate::rules::jest::no_focused_tests::NoFocusedTests),
-        Box::new(crate::rules::jest::no_hooks::NoHooks),
-        Box::new(crate::rules::jest::no_identical_title::NoIdenticalTitle),
-        Box::new(crate::rules::jest::no_interpolation_in_snapshots::NoInterpolationInSnapshots),
-        Box::new(crate::rules::jest::no_jasmine_globals::NoJasmineGlobals),
-        Box::new(crate::rules::jest::no_large_snapshots::NoLargeSnapshots),
-        Box::new(crate::rules::jest::no_mocks_import::NoMocksImport),
-        Box::new(crate::rules::jest::no_restricted_jest_methods::NoRestrictedJestMethods),
-        Box::new(crate::rules::jest::no_restricted_matchers::NoRestrictedMatchers),
-        Box::new(crate::rules::jest::no_standalone_expect::NoStandaloneExpect),
-        Box::new(crate::rules::jest::no_test_prefixes::NoTestPrefixes),
-        Box::new(crate::rules::jest::no_test_return_statement::NoTestReturnStatement),
-        Box::new(crate::rules::jest::no_unneeded_async_expect_function::NoUnneededAsyncExpectFunction),
-        Box::new(crate::rules::jest::no_untyped_mock_factory::NoUntypedMockFactory),
-        Box::new(crate::rules::jest::padding_around_test_blocks::PaddingAroundTestBlocks),
-        Box::new(crate::rules::jest::prefer_called_with::PreferCalledWith),
-        Box::new(crate::rules::jest::prefer_comparison_matcher::PreferComparisonMatcher),
-        Box::new(crate::rules::jest::prefer_each::PreferEach),
-        Box::new(crate::rules::jest::prefer_equality_matcher::PreferEqualityMatcher),
-        Box::new(crate::rules::jest::prefer_expect_resolves::PreferExpectResolves),
-        Box::new(crate::rules::jest::prefer_hooks_in_order::PreferHooksInOrder),
-        Box::new(crate::rules::jest::prefer_hooks_on_top::PreferHooksOnTop),
-        Box::new(crate::rules::jest::prefer_jest_mocked::PreferJestMocked),
-        Box::new(crate::rules::jest::prefer_lowercase_title::PreferLowercaseTitle),
-        Box::new(crate::rules::jest::prefer_mock_promise_shorthand::PreferMockPromiseShorthand),
-        Box::new(crate::rules::jest::prefer_mock_return_shorthand::PreferMockReturnShorthand),
-        Box::new(crate::rules::jest::prefer_spy_on::PreferSpyOn),
-        Box::new(crate::rules::jest::prefer_strict_equal::PreferStrictEqual),
-        Box::new(crate::rules::jest::prefer_to_be::PreferToBe),
-        Box::new(crate::rules::jest::prefer_to_contain::PreferToContain),
-        Box::new(crate::rules::jest::prefer_to_have_been_called::PreferToHaveBeenCalled),
-        Box::new(crate::rules::jest::prefer_to_have_been_called_times::PreferToHaveBeenCalledTimes),
-        Box::new(crate::rules::jest::prefer_to_have_length::PreferToHaveLength),
-        Box::new(crate::rules::jest::prefer_todo::PreferTodo),
-        Box::new(crate::rules::jest::require_hook::RequireHook),
-        Box::new(crate::rules::jest::require_to_throw_message::RequireToThrowMessage),
-        Box::new(crate::rules::jest::require_top_level_describe::RequireTopLevelDescribe),
-        Box::new(crate::rules::jest::valid_describe_callback::ValidDescribeCallback),
-        Box::new(crate::rules::jest::valid_expect::ValidExpect),
-        Box::new(crate::rules::jest::valid_title::ValidTitle),
-        Box::new(crate::rules::vitest::consistent_each_for::ConsistentEachFor),
-        Box::new(crate::rules::vitest::consistent_test_filename::ConsistentTestFilename),
-        Box::new(crate::rules::vitest::consistent_vitest_vi::ConsistentVitestVi),
-        Box::new(crate::rules::vitest::hoisted_apis_on_top::HoistedApisOnTop),
-        Box::new(crate::rules::vitest::no_conditional_tests::NoConditionalTests),
-        Box::new(crate::rules::vitest::no_import_node_test::NoImportNodeTest),
-        Box::new(crate::rules::vitest::no_importing_vitest_globals::NoImportingVitestGlobals),
-        Box::new(crate::rules::vitest::prefer_called_once::PreferCalledOnce),
-        Box::new(crate::rules::vitest::prefer_called_times::PreferCalledTimes),
-        Box::new(crate::rules::vitest::prefer_describe_function_title::PreferDescribeFunctionTitle),
-        Box::new(crate::rules::vitest::prefer_expect_type_of::PreferExpectTypeOf),
-        Box::new(crate::rules::vitest::prefer_import_in_mock::PreferImportInMock),
-        Box::new(crate::rules::vitest::prefer_to_be_falsy::PreferToBeFalsy),
-        Box::new(crate::rules::vitest::prefer_to_be_object::PreferToBeObject),
-        Box::new(crate::rules::vitest::prefer_to_be_truthy::PreferToBeTruthy),
-        Box::new(crate::rules::vitest::require_local_test_context_for_concurrent_snapshots::RequireLocalTestContextForConcurrentSnapshots),
-        Box::new(crate::rules::vitest::warn_todo::WarnTodo),
+starlint_rule_framework::declare_plugin! {
+    name: "testing",
+    rules: [
+        crate::rules::jest::consistent_test_it::ConsistentTestIt,
+        crate::rules::jest::expect_expect::ExpectExpect,
+        crate::rules::jest::max_expects::MaxExpects::new(),
+        crate::rules::jest::max_nested_describe::MaxNestedDescribe,
+        crate::rules::jest::no_alias_methods::NoAliasMethods,
+        crate::rules::jest::no_commented_out_tests::NoCommentedOutTests,
+        crate::rules::jest::no_conditional_expect::NoConditionalExpect,
+        crate::rules::jest::no_conditional_in_test::NoConditionalInTest,
+        crate::rules::jest::no_confusing_set_timeout::NoConfusingSetTimeout,
+        crate::rules::jest::no_deprecated_functions::NoDeprecatedFunctions,
+        crate::rules::jest::no_disabled_tests::NoDisabledTests,
+        crate::rules::jest::no_done_callback::NoDoneCallback,
+        crate::rules::jest::no_duplicate_hooks::NoDuplicateHooks,
+        crate::rules::jest::no_export::NoExport,
+        crate::rules::jest::no_focused_tests::NoFocusedTests,
+        crate::rules::jest::no_hooks::NoHooks,
+        crate::rules::jest::no_identical_title::NoIdenticalTitle,
+        crate::rules::jest::no_interpolation_in_snapshots::NoInterpolationInSnapshots,
+        crate::rules::jest::no_jasmine_globals::NoJasmineGlobals,
+        crate::rules::jest::no_large_snapshots::NoLargeSnapshots,
+        crate::rules::jest::no_mocks_import::NoMocksImport,
+        crate::rules::jest::no_restricted_jest_methods::NoRestrictedJestMethods,
+        crate::rules::jest::no_restricted_matchers::NoRestrictedMatchers,
+        crate::rules::jest::no_standalone_expect::NoStandaloneExpect,
+        crate::rules::jest::no_test_prefixes::NoTestPrefixes,
+        crate::rules::jest::no_test_return_statement::NoTestReturnStatement,
+        crate::rules::jest::no_unneeded_async_expect_function::NoUnneededAsyncExpectFunction,
+        crate::rules::jest::no_untyped_mock_factory::NoUntypedMockFactory,
+        crate::rules::jest::padding_around_test_blocks::PaddingAroundTestBlocks,
+        crate::rules::jest::prefer_called_with::PreferCalledWith,
+        crate::rules::jest::prefer_comparison_matcher::PreferComparisonMatcher,
+        crate::rules::jest::prefer_each::PreferEach,
+        crate::rules::jest::prefer_equality_matcher::PreferEqualityMatcher,
+        crate::rules::jest::prefer_expect_resolves::PreferExpectResolves,
+        crate::rules::jest::prefer_hooks_in_order::PreferHooksInOrder,
+        crate::rules::jest::prefer_hooks_on_top::PreferHooksOnTop,
+        crate::rules::jest::prefer_jest_mocked::PreferJestMocked,
+        crate::rules::jest::prefer_lowercase_title::PreferLowercaseTitle,
+        crate::rules::jest::prefer_mock_promise_shorthand::PreferMockPromiseShorthand,
+        crate::rules::jest::prefer_mock_return_shorthand::PreferMockReturnShorthand,
+        crate::rules::jest::prefer_spy_on::PreferSpyOn,
+        crate::rules::jest::prefer_strict_equal::PreferStrictEqual,
+        crate::rules::jest::prefer_to_be::PreferToBe,
+        crate::rules::jest::prefer_to_contain::PreferToContain,
+        crate::rules::jest::prefer_to_have_been_called::PreferToHaveBeenCalled,
+        crate::rules::jest::prefer_to_have_been_called_times::PreferToHaveBeenCalledTimes,
+        crate::rules::jest::prefer_to_have_length::PreferToHaveLength,
+        crate::rules::jest::prefer_todo::PreferTodo,
+        crate::rules::jest::require_hook::RequireHook,
+        crate::rules::jest::require_to_throw_message::RequireToThrowMessage,
+        crate::rules::jest::require_top_level_describe::RequireTopLevelDescribe,
+        crate::rules::jest::valid_describe_callback::ValidDescribeCallback,
+        crate::rules::jest::valid_expect::ValidExpect,
+        crate::rules::jest::valid_title::ValidTitle,
+        crate::rules::vitest::consistent_each_for::ConsistentEachFor,
+        crate::rules::vitest::consistent_test_filename::ConsistentTestFilename,
+        crate::rules::vitest::consistent_vitest_vi::ConsistentVitestVi,
+        crate::rules::vitest::hoisted_apis_on_top::HoistedApisOnTop,
+        crate::rules::vitest::no_conditional_tests::NoConditionalTests,
+        crate::rules::vitest::no_import_node_test::NoImportNodeTest,
+        crate::rules::vitest::no_importing_vitest_globals::NoImportingVitestGlobals,
+        crate::rules::vitest::prefer_called_once::PreferCalledOnce,
+        crate::rules::vitest::prefer_called_times::PreferCalledTimes,
+        crate::rules::vitest::prefer_describe_function_title::PreferDescribeFunctionTitle,
+        crate::rules::vitest::prefer_expect_type_of::PreferExpectTypeOf,
+        crate::rules::vitest::prefer_import_in_mock::PreferImportInMock,
+        crate::rules::vitest::prefer_to_be_falsy::PreferToBeFalsy,
+        crate::rules::vitest::prefer_to_be_object::PreferToBeObject,
+        crate::rules::vitest::prefer_to_be_truthy::PreferToBeTruthy,
+        crate::rules::vitest::require_local_test_context_for_concurrent_snapshots::RequireLocalTestContextForConcurrentSnapshots,
+        crate::rules::vitest::warn_todo::WarnTodo,
     ]
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_create_plugin_returns_rules() {
-        let plugin = create_plugin();
-        let rules = plugin.rules();
-        assert!(
-            !rules.is_empty(),
-            "testing plugin should provide at least one rule"
-        );
-    }
-
-    #[test]
-    fn test_all_rules_count() {
-        let rules = all_rules();
-        assert_eq!(rules.len(), 71, "testing should have 71 rules");
-    }
 }

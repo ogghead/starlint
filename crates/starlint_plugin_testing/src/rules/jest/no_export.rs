@@ -64,10 +64,7 @@ mod tests {
     use super::*;
     use starlint_plugin_sdk::diagnostic::Diagnostic;
     use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExport)];
-        lint_source(source, "test.test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoExport, "test.test.ts");
 
     fn lint_non_test(source: &str) -> Vec<Diagnostic> {
         let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExport)];

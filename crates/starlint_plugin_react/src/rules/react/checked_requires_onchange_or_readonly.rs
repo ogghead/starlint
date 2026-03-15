@@ -88,12 +88,8 @@ impl LintRule for CheckedRequiresOnchangeOrReadonly {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(CheckedRequiresOnchangeOrReadonly)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(CheckedRequiresOnchangeOrReadonly);
 
     #[test]
     fn test_flags_checked_without_onchange_or_readonly() {

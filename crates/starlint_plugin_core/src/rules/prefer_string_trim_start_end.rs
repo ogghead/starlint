@@ -95,12 +95,8 @@ impl LintRule for PreferStringTrimStartEnd {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferStringTrimStartEnd)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferStringTrimStartEnd);
 
     #[test]
     fn test_flags_trim_left() {

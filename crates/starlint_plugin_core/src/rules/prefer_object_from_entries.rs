@@ -87,12 +87,8 @@ impl LintRule for PreferObjectFromEntries {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferObjectFromEntries)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferObjectFromEntries);
 
     #[test]
     fn test_flags_reduce_with_empty_object() {

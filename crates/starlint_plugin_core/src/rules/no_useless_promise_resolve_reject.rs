@@ -27,7 +27,7 @@ impl LintRule for NoUselessPromiseResolveReject {
         }
     }
 
-    fn needs_semantic(&self) -> bool {
+    fn needs_scope_analysis(&self) -> bool {
         false
     }
 
@@ -170,12 +170,8 @@ fn is_promise_resolve_or_reject(expr_id: NodeId, ctx: &LintContext<'_>) -> Optio
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessPromiseResolveReject)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUselessPromiseResolveReject);
 
     #[test]
     fn test_flags_resolve_in_async() {

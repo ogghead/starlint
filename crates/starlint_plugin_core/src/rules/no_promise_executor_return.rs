@@ -130,12 +130,8 @@ fn check_statement_for_value_return(stmt_id: NodeId, ctx: &mut LintContext<'_>) 
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoPromiseExecutorReturn)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoPromiseExecutorReturn);
 
     #[test]
     fn test_flags_return_value_in_executor() {

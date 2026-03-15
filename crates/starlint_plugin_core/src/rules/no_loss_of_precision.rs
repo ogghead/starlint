@@ -155,11 +155,7 @@ fn count_significant_digits(s: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLossOfPrecision)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoLossOfPrecision);
 
     #[test]
     fn test_allows_safe_integer() {

@@ -142,12 +142,8 @@ fn get_integer_value(node: &AstNode) -> Option<i64> {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NumberArgOutOfRange)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NumberArgOutOfRange);
 
     #[test]
     fn test_flags_parse_int_bad_radix() {

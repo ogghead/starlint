@@ -137,13 +137,7 @@ fn is_inside_comment(source: &str, pos: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code as TypeScript.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(BanTslintComment)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(BanTslintComment, "test.ts");
 
     #[test]
     fn test_flags_tslint_disable() {

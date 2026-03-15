@@ -104,12 +104,8 @@ fn count_lines(s: &str) -> usize {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLargeSnapshots)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoLargeSnapshots);
 
     #[test]
     fn test_flags_large_inline_snapshot() {

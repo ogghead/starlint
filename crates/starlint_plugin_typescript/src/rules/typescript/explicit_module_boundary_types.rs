@@ -254,12 +254,8 @@ fn check_params_for_types(params: &[NodeId], ctx: &mut LintContext<'_>) {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ExplicitModuleBoundaryTypes)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ExplicitModuleBoundaryTypes, "test.ts");
 
     #[test]
     fn test_flags_exported_function_missing_return_type() {

@@ -114,12 +114,8 @@ fn check_statement_for_value_return(stmt_id: NodeId, ctx: &mut LintContext<'_>) 
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSetterReturn)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoSetterReturn);
 
     #[test]
     fn test_flags_setter_return_value() {

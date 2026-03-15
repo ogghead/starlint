@@ -112,12 +112,8 @@ fn source_slice(source: &str, start: u32, end: u32) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUselessRename)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUselessRename);
 
     #[test]
     fn test_flags_useless_import_rename() {

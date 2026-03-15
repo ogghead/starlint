@@ -106,13 +106,8 @@ impl LintRule for DefaultCaseLast {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    /// Helper to lint source code with the `DefaultCaseLast` rule.
-    fn lint(source: &str) -> Vec<starlint_plugin_sdk::diagnostic::Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(DefaultCaseLast)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(DefaultCaseLast);
 
     #[test]
     fn test_flags_default_not_last() {

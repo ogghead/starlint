@@ -152,13 +152,7 @@ fn check_comment(source: &str, start: usize, end: usize, results: &mut Vec<(Stri
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoWarningComments)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoWarningComments);
 
     #[test]
     fn test_flags_todo_comment() {

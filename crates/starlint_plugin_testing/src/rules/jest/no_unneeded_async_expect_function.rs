@@ -177,12 +177,7 @@ fn find_matching_close_paren(source: &str, start: usize) -> Option<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnneededAsyncExpectFunction)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnneededAsyncExpectFunction);
 
     #[test]
     fn test_flags_async_single_await_expect() {

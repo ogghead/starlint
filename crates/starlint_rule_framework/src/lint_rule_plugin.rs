@@ -26,7 +26,7 @@ pub struct LintRulePlugin {
     /// Indices of rules that only run via `run_once` (no traversal).
     run_once_indices: Vec<usize>,
     /// Whether any wrapped rule needs scope analysis.
-    needs_semantic: bool,
+    needs_scope_analysis: bool,
 }
 
 impl LintRulePlugin {
@@ -35,7 +35,7 @@ impl LintRulePlugin {
     /// Pre-computes the dispatch table and traversal/run-once partitions.
     #[must_use]
     pub fn new(rules: Vec<Box<dyn LintRule>>) -> Self {
-        let needs_semantic = rules.iter().any(|r| r.needs_semantic());
+        let needs_scope_analysis = rules.iter().any(|r| r.needs_scope_analysis());
 
         let traversal_indices: Vec<usize> = rules
             .iter()
@@ -55,7 +55,7 @@ impl LintRulePlugin {
             rules,
             dispatch_table,
             run_once_indices,
-            needs_semantic,
+            needs_scope_analysis,
         }
     }
 }
@@ -78,7 +78,7 @@ impl Plugin for LintRulePlugin {
     }
 
     fn needs_scope_analysis(&self) -> bool {
-        self.needs_semantic
+        self.needs_scope_analysis
     }
 
     fn configure(&mut self, config: &str) -> Vec<String> {
@@ -160,7 +160,7 @@ mod tests {
             self.traversal
         }
 
-        fn needs_semantic(&self) -> bool {
+        fn needs_scope_analysis(&self) -> bool {
             self.semantic
         }
 
