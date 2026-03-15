@@ -145,13 +145,8 @@ fn unwrap_boolean_cast(ctx: &LintContext<'_>, node: &AstNode) -> Span {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoExtraBooleanCast)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoExtraBooleanCast);
 
     #[test]
     fn test_flags_double_negation_in_if() {

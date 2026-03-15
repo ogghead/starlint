@@ -139,11 +139,7 @@ mod tests {
         let diag = DiagnosticBuilder::new("test/rule", "msg", Span::new(0, 1))
             .help("fix it")
             .build();
-        assert_eq!(
-            diag.help.as_deref(),
-            Some("fix it"),
-            "help should match"
-        );
+        assert_eq!(diag.help.as_deref(), Some("fix it"), "help should match");
     }
 
     #[test]

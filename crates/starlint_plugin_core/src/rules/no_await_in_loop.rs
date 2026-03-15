@@ -162,12 +162,8 @@ impl LintRule for NoAwaitInLoop {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAwaitInLoop::new())];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoAwaitInLoop::new());
 
     #[test]
     fn test_flags_await_in_for_of_loop() {

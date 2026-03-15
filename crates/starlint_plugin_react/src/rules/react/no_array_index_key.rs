@@ -108,12 +108,8 @@ fn extract_param_name(param_id: NodeId, ctx: &LintContext<'_>) -> Option<String>
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoArrayIndexKey)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoArrayIndexKey);
 
     #[test]
     fn test_flags_index_as_key_in_map() {

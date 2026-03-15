@@ -108,12 +108,8 @@ impl LintRule for NoImportingVitestGlobals {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoImportingVitestGlobals)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoImportingVitestGlobals);
 
     #[test]
     fn test_flags_describe_import() {

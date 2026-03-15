@@ -115,12 +115,8 @@ fn is_jest_fn_call(ctx: &LintContext<'_>, node: &AstNode) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferSpyOn)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferSpyOn);
 
     #[test]
     fn test_flags_property_assign_jest_fn() {

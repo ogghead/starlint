@@ -135,12 +135,8 @@ impl LintRule for RoleSupportAriaProps {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RoleSupportAriaProps)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(RoleSupportAriaProps);
 
     #[test]
     fn test_flags_aria_checked_on_presentation() {

@@ -90,12 +90,8 @@ impl LintRule for NoNonNullAssertedOptionalChain {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNonNullAssertedOptionalChain)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoNonNullAssertedOptionalChain, "test.ts");
 
     #[test]
     fn test_flags_non_null_after_optional_chain() {

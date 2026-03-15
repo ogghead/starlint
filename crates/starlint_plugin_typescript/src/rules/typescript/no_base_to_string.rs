@@ -97,12 +97,8 @@ fn unwrap_parens<'a>(node_id: NodeId, ctx: &'a LintContext<'_>) -> Option<&'a As
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoBaseToString)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoBaseToString, "test.ts");
 
     #[test]
     fn test_flags_object_literal_to_string() {

@@ -117,12 +117,7 @@ fn find_call_positions(source: &str, pattern: &str) -> Vec<usize> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentTestIt)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentTestIt);
 
     #[test]
     fn test_flags_mixed_test_and_it() {

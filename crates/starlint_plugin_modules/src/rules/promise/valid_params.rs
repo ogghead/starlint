@@ -83,12 +83,8 @@ impl LintRule for ValidParams {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ValidParams)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ValidParams);
 
     #[test]
     fn test_flags_promise_all_no_args() {

@@ -114,12 +114,8 @@ impl LintRule for ConsistentFunctionScoping {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentFunctionScoping::new())];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentFunctionScoping::new());
 
     #[test]
     fn test_flags_nested_named_function() {

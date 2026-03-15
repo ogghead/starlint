@@ -89,12 +89,8 @@ fn expression_name<'a>(expr_id: NodeId, ctx: &'a LintContext<'_>) -> Option<&'a 
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoSelfAssign)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoSelfAssign);
 
     #[test]
     fn test_flags_self_assign() {

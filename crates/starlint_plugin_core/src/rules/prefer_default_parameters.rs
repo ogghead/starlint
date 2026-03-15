@@ -94,12 +94,8 @@ impl LintRule for PreferDefaultParameters {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferDefaultParameters)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferDefaultParameters);
 
     #[test]
     fn test_flags_or_pattern() {

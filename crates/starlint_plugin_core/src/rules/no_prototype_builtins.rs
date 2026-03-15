@@ -121,15 +121,10 @@ impl LintRule for NoPrototypeBuiltins {
 
 #[cfg(test)]
 mod tests {
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoPrototypeBuiltins)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoPrototypeBuiltins);
 
     #[test]
     fn test_flags_has_own_property() {

@@ -227,12 +227,8 @@ fn find_return_type_span(source: &str, func_start: u32, func_end: u32) -> Option
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoInvalidVoidType::new())];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoInvalidVoidType::new(), "test.ts");
 
     #[test]
     fn test_allows_void_return_type() {

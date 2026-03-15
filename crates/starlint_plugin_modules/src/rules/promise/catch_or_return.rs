@@ -71,12 +71,8 @@ impl LintRule for CatchOrReturn {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(CatchOrReturn)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(CatchOrReturn);
 
     #[test]
     fn test_flags_then_without_catch() {

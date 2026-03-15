@@ -121,12 +121,8 @@ fn has_block_scoped_declaration(stmts: &[NodeId], ctx: &LintContext<'_>) -> bool
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLoneBlocks)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoLoneBlocks);
 
     #[test]
     fn test_flags_lone_block() {

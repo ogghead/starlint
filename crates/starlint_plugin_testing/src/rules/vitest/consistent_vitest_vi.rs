@@ -106,12 +106,8 @@ impl LintRule for ConsistentVitestVi {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentVitestVi)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentVitestVi);
 
     #[test]
     fn test_flags_vitest_fn() {

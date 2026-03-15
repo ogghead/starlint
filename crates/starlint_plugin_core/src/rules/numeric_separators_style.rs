@@ -157,13 +157,8 @@ fn insert_separators(digits: &str, group_size: usize) -> String {
 mod tests {
 
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NumericSeparatorsStyle)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NumericSeparatorsStyle);
 
     #[test]
     fn test_flags_large_number_without_separator() {

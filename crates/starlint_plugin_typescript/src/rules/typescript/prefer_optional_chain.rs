@@ -143,12 +143,8 @@ fn object_matches_name(name: &str, object_id: NodeId, ctx: &LintContext<'_>) -> 
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferOptionalChain)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferOptionalChain, "test.ts");
 
     #[test]
     fn test_flags_and_member_access() {

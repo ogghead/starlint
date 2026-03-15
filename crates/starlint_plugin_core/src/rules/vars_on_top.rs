@@ -113,12 +113,8 @@ fn check_statements(stmt_ids: &[NodeId], ctx: &mut LintContext<'_>) {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(VarsOnTop)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(VarsOnTop);
 
     #[test]
     fn test_allows_var_at_top() {

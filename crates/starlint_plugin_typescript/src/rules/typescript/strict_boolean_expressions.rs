@@ -87,12 +87,8 @@ fn non_boolean_literal_kind(expr: &AstNode) -> Option<&'static str> {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(StrictBooleanExpressions)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(StrictBooleanExpressions, "test.ts");
 
     #[test]
     fn test_flags_string_literal_in_if() {

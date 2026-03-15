@@ -82,12 +82,8 @@ fn is_undefined_identifier(node: &AstNode) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(AwaitThenable)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(AwaitThenable, "test.ts");
 
     #[test]
     fn test_flags_await_string_literal() {

@@ -84,12 +84,7 @@ impl LintRule for NoUnescapedEntities {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoUnescapedEntities)];
-        lint_source(source, "test.tsx", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoUnescapedEntities, "test.tsx");
 
     #[test]
     fn test_flags_unescaped_single_quote() {

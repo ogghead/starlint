@@ -82,12 +82,8 @@ fn is_mixed_string_number(left_id: NodeId, right_id: NodeId, ctx: &LintContext<'
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(RestrictPlusOperands)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(RestrictPlusOperands, "test.ts");
 
     #[test]
     fn test_flags_string_plus_number() {

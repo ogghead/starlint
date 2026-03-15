@@ -76,12 +76,7 @@ impl LintRule for NoAsyncAwait {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
-    /// Helper to lint source code.
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAsyncAwait)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoAsyncAwait);
 
     #[test]
     fn test_flags_async_function_declaration() {

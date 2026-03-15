@@ -4,13 +4,14 @@
 //! constructor. Using `new` with it is almost always a mistake \u{2014}
 //! typically the intent is `new (require('module'))()`.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags `new require(...)` expressions.
 #[derive(Debug)]
@@ -42,23 +43,21 @@ impl LintRule for NoNewRequire {
 
         if is_require {
             // Fix: new require('x') → new (require('x'))()
-            #[allow(clippy::as_conversions)]
             let fix = {
                 let source = ctx.source_text();
                 let callee_start = ctx.node(new_expr.callee).map_or(0, |n| n.span().start);
                 let args_end = new_expr.span.end;
-                let require_text = source.get(callee_start as usize..args_end as usize);
-                require_text.map(|text| {
+                source_text_for_span(source, Span::new(callee_start, args_end)).and_then(|text| {
                     let replacement = format!("new ({text})()");
-                    Fix {
-                        kind: FixKind::SuggestionFix,
-                        message: format!("Replace with `{replacement}`"),
-                        edits: vec![Edit {
-                            span: Span::new(new_expr.span.start, new_expr.span.end),
-                            replacement,
-                        }],
-                        is_snippet: false,
-                    }
+                    FixBuilder::new(
+                        format!("Replace with `{replacement}`"),
+                        FixKind::SuggestionFix,
+                    )
+                    .replace(
+                        Span::new(new_expr.span.start, new_expr.span.end),
+                        replacement,
+                    )
+                    .build()
                 })
             };
 
@@ -79,12 +78,8 @@ impl LintRule for NoNewRequire {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoNewRequire)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoNewRequire);
 
     #[test]
     fn test_flags_new_require() {

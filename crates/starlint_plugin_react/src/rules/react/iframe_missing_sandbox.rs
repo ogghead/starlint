@@ -84,12 +84,8 @@ impl LintRule for IframeMissingSandbox {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(IframeMissingSandbox)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(IframeMissingSandbox);
 
     #[test]
     fn test_flags_iframe_without_sandbox() {

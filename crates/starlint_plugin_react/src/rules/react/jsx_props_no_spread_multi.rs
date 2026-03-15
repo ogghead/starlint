@@ -63,12 +63,8 @@ impl LintRule for JsxPropsNoSpreadMulti {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(JsxPropsNoSpreadMulti)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(JsxPropsNoSpreadMulti);
 
     #[test]
     fn test_flags_multiple_spreads() {

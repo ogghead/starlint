@@ -82,7 +82,7 @@ impl LintRule for PreventAbbreviations {
         }
     }
 
-    fn needs_semantic(&self) -> bool {
+    fn needs_scope_analysis(&self) -> bool {
         true
     }
 
@@ -133,12 +133,8 @@ mod tests {
 
     use super::*;
     use starlint_rule_framework::fix::apply_fixes;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreventAbbreviations)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreventAbbreviations);
 
     #[test]
     fn test_flags_btn() {

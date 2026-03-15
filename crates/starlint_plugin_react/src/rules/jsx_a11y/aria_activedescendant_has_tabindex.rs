@@ -108,12 +108,8 @@ impl LintRule for AriaActivedescendantHasTabindex {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(AriaActivedescendantHasTabindex)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(AriaActivedescendantHasTabindex);
 
     #[test]
     fn test_flags_div_with_activedescendant_no_tabindex() {

@@ -28,7 +28,7 @@ impl LintRule for NoConstAssign {
         }
     }
 
-    fn needs_semantic(&self) -> bool {
+    fn needs_scope_analysis(&self) -> bool {
         true
     }
 
@@ -107,12 +107,8 @@ impl LintRule for NoConstAssign {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoConstAssign)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoConstAssign);
 
     #[test]
     fn test_flags_const_reassignment() {

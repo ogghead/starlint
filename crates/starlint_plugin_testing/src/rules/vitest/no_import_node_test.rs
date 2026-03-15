@@ -80,11 +80,7 @@ impl LintRule for NoImportNodeTest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use starlint_rule_framework::lint_source;
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoImportNodeTest)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoImportNodeTest);
 
     #[test]
     fn test_flags_node_test_import() {

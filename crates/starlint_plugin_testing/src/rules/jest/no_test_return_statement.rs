@@ -90,13 +90,8 @@ fn is_inside_test_via_ancestors(node_id: NodeId, ctx: &LintContext<'_>) -> bool 
 mod tests {
 
     use super::*;
-    use starlint_plugin_sdk::diagnostic::Diagnostic;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoTestReturnStatement)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoTestReturnStatement);
 
     #[test]
     fn test_flags_return_in_test() {

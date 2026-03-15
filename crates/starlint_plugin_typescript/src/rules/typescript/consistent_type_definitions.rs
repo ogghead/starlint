@@ -89,12 +89,8 @@ impl LintRule for ConsistentTypeDefinitions {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ConsistentTypeDefinitions)];
-        lint_source(source, "test.ts", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ConsistentTypeDefinitions, "test.ts");
 
     #[test]
     fn test_flags_type_with_object_literal() {

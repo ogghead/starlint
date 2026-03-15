@@ -157,12 +157,8 @@ fn targets_match(target_id: NodeId, expr_id: NodeId, source: &str, ctx: &LintCon
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(OperatorAssignment)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(OperatorAssignment);
 
     #[test]
     fn test_flags_add_assignment() {

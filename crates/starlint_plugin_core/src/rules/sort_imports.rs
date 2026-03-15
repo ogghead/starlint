@@ -87,12 +87,8 @@ impl LintRule for SortImports {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(SortImports)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(SortImports);
 
     #[test]
     fn test_allows_sorted_imports() {

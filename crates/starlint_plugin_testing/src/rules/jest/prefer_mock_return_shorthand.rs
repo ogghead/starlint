@@ -162,12 +162,8 @@ fn is_promise_call(ctx: &LintContext<'_>, id: NodeId) -> bool {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferMockReturnShorthand)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferMockReturnShorthand);
 
     #[test]
     fn test_flags_simple_arrow_return() {

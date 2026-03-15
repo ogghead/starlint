@@ -112,12 +112,8 @@ fn extends_pure_component(class: &starlint_ast::node::ClassNode, ctx: &LintConte
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoRedundantShouldComponentUpdate)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoRedundantShouldComponentUpdate);
 
     #[test]
     fn test_flags_should_component_update_in_pure_component() {

@@ -2,13 +2,14 @@
 //!
 //! Disallow the use of `Math.pow()` in favor of the `**` operator.
 
-use starlint_plugin_sdk::diagnostic::{Diagnostic, Edit, Fix, Severity, Span};
+use starlint_plugin_sdk::diagnostic::{Diagnostic, Severity, Span};
 use starlint_plugin_sdk::rule::{Category, FixKind, RuleMeta};
 
 use starlint_ast::node::AstNode;
 use starlint_ast::node_type::AstNodeType;
 use starlint_ast::types::NodeId;
-use starlint_rule_framework::{LintContext, LintRule};
+use starlint_rule_framework::fix_utils::source_text_for_span;
+use starlint_rule_framework::{FixBuilder, LintContext, LintRule};
 
 /// Flags `Math.pow()` calls.
 #[derive(Debug)]
@@ -48,21 +49,20 @@ impl LintRule for PreferExponentiationOperator {
                     let first_node = ctx.node(*first_id)?;
                     let second_node = ctx.node(*second_id)?;
                     let source = ctx.source_text();
-                    let f_start = usize::try_from(first_node.span().start).unwrap_or(0);
-                    let f_end = usize::try_from(first_node.span().end).unwrap_or(0);
-                    let s_start = usize::try_from(second_node.span().start).unwrap_or(0);
-                    let s_end = usize::try_from(second_node.span().end).unwrap_or(0);
-                    let first_text = source.get(f_start..f_end).unwrap_or("");
-                    let second_text = source.get(s_start..s_end).unwrap_or("");
-                    Some(Fix {
-                        kind: FixKind::SafeFix,
-                        message: "Use `**` operator".to_owned(),
-                        edits: vec![Edit {
-                            span: Span::new(call.span.start, call.span.end),
-                            replacement: format!("{first_text} ** {second_text}"),
-                        }],
-                        is_snippet: false,
-                    })
+                    let first_span = first_node.span();
+                    let second_span = second_node.span();
+                    let first_text =
+                        source_text_for_span(source, Span::new(first_span.start, first_span.end))
+                            .unwrap_or("");
+                    let second_text =
+                        source_text_for_span(source, Span::new(second_span.start, second_span.end))
+                            .unwrap_or("");
+                    FixBuilder::new("Use `**` operator", FixKind::SafeFix)
+                        .replace(
+                            Span::new(call.span.start, call.span.end),
+                            format!("{first_text} ** {second_text}"),
+                        )
+                        .build()
                 },
             );
 
@@ -83,12 +83,8 @@ impl LintRule for PreferExponentiationOperator {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(PreferExponentiationOperator)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(PreferExponentiationOperator);
 
     #[test]
     fn test_flags_math_pow() {

@@ -69,12 +69,8 @@ impl LintRule for ExhaustiveDeps {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(ExhaustiveDeps)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(ExhaustiveDeps);
 
     #[test]
     fn test_flags_use_effect_without_deps() {

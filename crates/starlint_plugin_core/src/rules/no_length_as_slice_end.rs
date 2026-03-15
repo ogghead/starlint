@@ -117,12 +117,8 @@ fn extract_source_text_by_id<'a>(
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoLengthAsSliceEnd)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoLengthAsSliceEnd);
 
     #[test]
     fn test_flags_slice_with_same_length() {

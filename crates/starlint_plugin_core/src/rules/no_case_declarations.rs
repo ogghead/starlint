@@ -101,12 +101,8 @@ fn lexical_declaration_span(stmt_id: NodeId, ctx: &LintContext<'_>) -> Option<Sp
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoCaseDeclarations)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoCaseDeclarations);
 
     #[test]
     fn test_flags_let_in_case() {

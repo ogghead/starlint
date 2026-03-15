@@ -106,12 +106,8 @@ impl LintRule for NoAriaHiddenOnFocusable {
 mod tests {
 
     use super::*;
-    use starlint_rule_framework::lint_source;
 
-    fn lint(source: &str) -> Vec<Diagnostic> {
-        let rules: Vec<Box<dyn LintRule>> = vec![Box::new(NoAriaHiddenOnFocusable)];
-        lint_source(source, "test.js", &rules)
-    }
+    starlint_rule_framework::lint_rule_test!(NoAriaHiddenOnFocusable);
 
     #[test]
     fn test_flags_aria_hidden_on_button() {
