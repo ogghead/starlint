@@ -12,7 +12,7 @@ coverage:
         if_ci_failed: error
 
 comment:
-  layout: "reach,diff,flags,files"
+  layout: "reach,flags,files"
   behavior: new
   require_changes: true
 
