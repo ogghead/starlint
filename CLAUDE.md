@@ -85,10 +85,10 @@ Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets --
 
 ### Coverage Policy
 
-Two Codecov checks run on every PR (configured in `.codecov.yml`):
+Two coverage checks run on every PR:
 
-- **`codecov/project`**: Overall coverage must not decrease vs base commit (no regression)
-- **`codecov/patch`**: New/changed lines must have ≥95% coverage
+- **`codecov/project`**: Overall coverage must not decrease vs base commit (no regression, configured in `.codecov.yml`)
+- **`diff-cover`**: New/changed lines must have ≥95% coverage (enforced in CI via `diff-cover --fail-under=95`)
 
 The 90% `--fail-under-lines` floor remains as a hard minimum in CI.
 
