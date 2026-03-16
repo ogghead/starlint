@@ -4,10 +4,10 @@ coverage:
       default:
         target: auto     # compare against base commit — no regression allowed
         threshold: 0%
-    # Patch coverage enforcement handled by diff-cover in CI (≥95% on changed lines).
-    # Codecov patch status is disabled to avoid false ❌ in PR comments when
-    # coverage is above the target but has any uncovered lines.
-    patch: off
+    patch:
+      default:
+        target: 95%      # new/changed lines must be ≥95% covered
+        threshold: 1%    # allow up to 1% below target before marking ❌
 
 comment:
   layout: "reach,diff,flags,files"
