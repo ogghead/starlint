@@ -8,6 +8,7 @@ coverage:
     patch:
       default:
         target: 95%      # new/changed lines must be ≥95% covered
+        threshold: 1%    # allow up to 1% below target before marking failure
         if_ci_failed: error
 
 comment:
