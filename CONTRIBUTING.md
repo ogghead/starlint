@@ -44,12 +44,10 @@ CI runs on every push to `master` and every pull request:
 
 ### Coverage Policy
 
-Two Codecov checks run on every PR (configured in `.codecov.yml`):
+Two coverage checks run in CI:
 
-- **`codecov/project`**: Overall coverage must not decrease vs base commit (no regression)
-- **`codecov/patch`**: New/changed lines must have >=95% coverage
-
-The 90% `--fail-under-lines` floor remains as a hard minimum in CI.
+- **Project floor**: Overall coverage must stay ≥90% (`cargo llvm-cov report --fail-under-lines 90`)
+- **Patch coverage**: New/changed lines must have ≥95% coverage (`diff-cover --fail-under=95`)
 
 ## Architecture
 

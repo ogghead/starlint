@@ -33,6 +33,18 @@ pub struct Cli {
     #[arg(long, requires = "fix")]
     pub fix_dangerous: bool,
 
+    /// Compute fixes without writing them to disk (dry run).
+    #[arg(long, conflicts_with = "fix")]
+    pub fix_dry_run: bool,
+
+    /// Enable result caching to skip unchanged files.
+    #[arg(long)]
+    pub cache: bool,
+
+    /// Path to the cache file (default: .starlintcache).
+    #[arg(long, default_value = ".starlintcache")]
+    pub cache_location: PathBuf,
+
     /// Maximum number of warnings before failing (0 = unlimited).
     #[arg(long, default_value = "0")]
     pub max_warnings: usize,
@@ -90,6 +102,16 @@ pub enum OutputFormatArg {
     Compact,
     /// Count-only: suppress diagnostic output, print only summary.
     Count,
+    /// GitHub Actions workflow command annotations.
+    Github,
+    /// GitLab Code Quality JSON format.
+    Gitlab,
+    /// `JUnit` XML format.
+    Junit,
+    /// SARIF v2.1.0 JSON format.
+    Sarif,
+    /// ESLint-style grouped output.
+    Stylish,
 }
 
 #[cfg(test)]

@@ -85,12 +85,10 @@ Before committing: `cargo fmt --all && cargo clippy --workspace --all-targets --
 
 ### Coverage Policy
 
-Two Codecov checks run on every PR (configured in `.codecov.yml`):
+Two coverage checks run in CI:
 
-- **`codecov/project`**: Overall coverage must not decrease vs base commit (no regression)
-- **`codecov/patch`**: New/changed lines must have ≥95% coverage
-
-The 90% `--fail-under-lines` floor remains as a hard minimum in CI.
+- **Project floor**: Overall coverage must stay ≥90% (`cargo llvm-cov report --fail-under-lines 90`)
+- **Patch coverage**: New/changed lines must have ≥95% coverage (`diff-cover --fail-under=95`)
 
 ## Architecture
 
@@ -228,7 +226,7 @@ Runs on every push to `master` and every PR:
 1. **Fmt / Clippy / Machete** — formatting, lint warnings as errors, unused dependency check
 2. **MSRV (1.85)** — `cargo check` on minimum supported Rust version
 3. **Dependency audit** — `cargo deny` for license (MIT, Apache-2.0, BSD-*, ISC, MPL-2.0, Unicode, Zlib) and vulnerability checks
-4. **Test + Coverage** — full test suite with `cargo-llvm-cov`, enforces 90% floor, Codecov upload
+4. **Test + Coverage** — full test suite with `cargo-llvm-cov`, enforces 90% floor + 95% patch coverage
 5. **Benchmarks** (PRs) — hyperfine comparison against oxlint/eslint on real-world corpora
 
 ## Git and Change Hygiene

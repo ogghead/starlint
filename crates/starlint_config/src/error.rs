@@ -33,6 +33,17 @@ pub enum ConfigError {
         /// Parse error details.
         reason: String,
     },
+
+    /// Circular `extends` chain detected.
+    #[error("circular extends detected: {path} was already visited")]
+    #[diagnostic(
+        code(starlint::config::circular_extend),
+        help("Remove the circular reference in your extends chain")
+    )]
+    CircularExtend {
+        /// Path that was visited more than once.
+        path: String,
+    },
 }
 
 #[cfg(test)]
@@ -50,6 +61,18 @@ mod tests {
             err.to_string(),
             "failed to read config file starlint.toml: not found",
             "read error format must be stable"
+        );
+    }
+
+    #[test]
+    fn test_config_error_circular_extend_display() {
+        let err = ConfigError::CircularExtend {
+            path: "/configs/a.toml".to_owned(),
+        };
+        assert_eq!(
+            err.to_string(),
+            "circular extends detected: /configs/a.toml was already visited",
+            "circular extend error format must be stable"
         );
     }
 

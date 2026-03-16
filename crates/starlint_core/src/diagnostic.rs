@@ -1,7 +1,10 @@
 //! Diagnostic formatting for output.
 //!
-//! Supports pretty (human-readable), JSON, and compact output formats.
+//! Supports pretty (human-readable), JSON, compact, GitHub Actions, GitLab Code
+//! Quality, `JUnit` XML, SARIF v2.1.0, and stylish (ESLint-style grouped) output
+//! formats.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use serde::Serialize;
@@ -19,6 +22,26 @@ pub enum OutputFormat {
     Compact,
     /// Count-only mode: no diagnostic output, just summary counts.
     Count,
+    /// GitHub Actions workflow command format (`::error`, `::warning`, `::notice`).
+    Github,
+    /// GitLab Code Quality JSON array format.
+    Gitlab,
+    /// `JUnit` XML format.
+    Junit,
+    /// SARIF v2.1.0 JSON format.
+    Sarif,
+    /// ESLint-style grouped format (grouped by file with summary).
+    Stylish,
+}
+
+/// Returns `true` for formats that produce a single document from all files
+/// (as opposed to per-file streaming).
+#[must_use]
+pub const fn is_document_format(format: OutputFormat) -> bool {
+    matches!(
+        format,
+        OutputFormat::Gitlab | OutputFormat::Sarif | OutputFormat::Junit
+    )
 }
 
 /// Format a collection of diagnostics for a single file.
@@ -34,6 +57,12 @@ pub fn format_diagnostics(
         OutputFormat::Json => format_json(diagnostics, file_path),
         OutputFormat::Compact => format_compact(diagnostics, file_path),
         OutputFormat::Count => String::new(),
+        OutputFormat::Github => format_github(diagnostics, source_text, file_path),
+        OutputFormat::Gitlab | OutputFormat::Sarif | OutputFormat::Junit => {
+            // Document formats are handled via write_document_diagnostics.
+            String::new()
+        }
+        OutputFormat::Stylish => format_stylish(diagnostics, source_text, file_path),
     }
 }
 
@@ -53,6 +82,12 @@ pub fn write_diagnostics(
         OutputFormat::Json => write_json(writer, diagnostics, file_path),
         OutputFormat::Compact => write_compact(writer, diagnostics, file_path),
         OutputFormat::Count => Ok(()),
+        OutputFormat::Github => write_github(writer, diagnostics, source_text, file_path),
+        OutputFormat::Gitlab | OutputFormat::Sarif | OutputFormat::Junit => {
+            // Document formats are handled via write_document_diagnostics.
+            Ok(())
+        }
+        OutputFormat::Stylish => write_stylish(writer, diagnostics, source_text, file_path),
     }
 }
 
@@ -207,6 +242,426 @@ fn write_compact(
             message = diag.message,
         )?;
     }
+    Ok(())
+}
+
+// ── GitHub Actions format ─────────────────────────────────────────────
+
+/// Format diagnostics as GitHub Actions workflow commands.
+fn format_github(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path) -> String {
+    let mut output = Vec::new();
+    write_github(&mut output, diagnostics, source_text, file_path).ok();
+    String::from_utf8(output).unwrap_or_default()
+}
+
+/// Write diagnostics as GitHub Actions workflow commands directly to a writer.
+///
+/// Format: `::error file={path},line={line},col={col}::{message} [{rule}]`
+/// Severity mapping: Error -> `error`, Warning -> `warning`, Suggestion -> `notice`.
+fn write_github(
+    writer: &mut impl std::io::Write,
+    diagnostics: &[Diagnostic],
+    source_text: &str,
+    file_path: &Path,
+) -> std::io::Result<()> {
+    let index = LineIndex::new(source_text);
+
+    for diag in diagnostics {
+        let (line, col) = index.offset_to_line_col(source_text, diag.span.start);
+        let level = match diag.severity {
+            Severity::Error => "error",
+            Severity::Warning => "warning",
+            Severity::Suggestion => "notice",
+        };
+
+        writeln!(
+            writer,
+            "::{level} file={path},line={line},col={col}::{message} [{rule}]",
+            path = file_path.display(),
+            message = diag.message,
+            rule = diag.rule_name,
+        )?;
+    }
+
+    Ok(())
+}
+
+// ── GitLab Code Quality format ────────────────────────────────────────
+
+/// A single entry in the GitLab Code Quality JSON array.
+#[derive(Serialize)]
+struct GitlabEntry<'a> {
+    /// Diagnostic message.
+    description: &'a str,
+    /// Rule name.
+    check_name: &'a str,
+    /// Unique fingerprint for deduplication.
+    fingerprint: String,
+    /// Severity level.
+    severity: &'a str,
+    /// Source location.
+    location: GitlabLocation<'a>,
+}
+
+/// Location information for a GitLab Code Quality entry.
+#[derive(Serialize)]
+struct GitlabLocation<'a> {
+    /// File path.
+    path: &'a str,
+    /// Line range.
+    lines: GitlabLines,
+}
+
+/// Line range for a GitLab Code Quality entry.
+#[derive(Serialize)]
+struct GitlabLines {
+    /// Beginning line number.
+    begin: usize,
+}
+
+/// Write diagnostics from multiple files as a GitLab Code Quality JSON array.
+///
+/// This is a document-level format: all diagnostics across all files are
+/// collected into a single JSON array.
+pub fn write_document_gitlab(
+    writer: &mut impl std::io::Write,
+    all_results: &[(Vec<Diagnostic>, String, std::path::PathBuf)],
+) -> std::io::Result<()> {
+    let mut entries: Vec<GitlabEntry<'_>> = Vec::new();
+
+    for (diagnostics, source_text, file_path) in all_results {
+        let index = LineIndex::new(source_text);
+        let file_str = file_path.display().to_string();
+
+        for diag in diagnostics {
+            let (line, _col) = index.offset_to_line_col(source_text, diag.span.start);
+            let severity = match diag.severity {
+                Severity::Error => "critical",
+                Severity::Warning => "major",
+                Severity::Suggestion => "minor",
+            };
+            let fingerprint = format!("{}:{}:{}", file_str, diag.rule_name, line);
+
+            entries.push(GitlabEntry {
+                description: &diag.message,
+                check_name: &diag.rule_name,
+                fingerprint,
+                severity,
+                location: GitlabLocation {
+                    path: file_path.to_str().unwrap_or(""),
+                    lines: GitlabLines { begin: line },
+                },
+            });
+        }
+    }
+
+    match serde_json::to_writer_pretty(writer, &entries) {
+        Ok(()) => {}
+        Err(err) => {
+            tracing::warn!("failed to serialize GitLab output: {err}");
+        }
+    }
+    Ok(())
+}
+
+/// Format diagnostics for a single file as GitLab Code Quality JSON.
+///
+/// Primarily used for testing; production use goes through
+/// [`write_document_gitlab`].
+#[cfg(test)]
+fn format_gitlab(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path) -> String {
+    let mut output = Vec::new();
+    let data = vec![(
+        diagnostics.to_vec(),
+        source_text.to_owned(),
+        file_path.to_path_buf(),
+    )];
+    write_document_gitlab(&mut output, &data).ok();
+    String::from_utf8(output).unwrap_or_default()
+}
+
+// ── `JUnit` XML format ──────────────────────────────────────────────────
+
+/// Escape a string for safe inclusion in XML text content or attribute values.
+#[must_use]
+fn xml_escape(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    for ch in input.chars() {
+        match ch {
+            '<' => result.push_str("&lt;"),
+            '>' => result.push_str("&gt;"),
+            '&' => result.push_str("&amp;"),
+            '"' => result.push_str("&quot;"),
+            '\'' => result.push_str("&apos;"),
+            other => result.push(other),
+        }
+    }
+    result
+}
+
+/// Internal representation of a single `JUnit` test case for XML generation.
+struct JunitTestCase {
+    /// Rule name for the test case.
+    rule: String,
+    /// File path as classname.
+    classname: String,
+    /// Severity label.
+    severity: String,
+    /// Diagnostic message.
+    message: String,
+    /// Full detail string (`path:line:col message`).
+    detail: String,
+}
+
+/// Write diagnostics from multiple files as a `JUnit` XML document.
+///
+/// This is a document-level format: all diagnostics across all files are
+/// collected into a single `<testsuites>` element.
+pub fn write_document_junit(
+    writer: &mut impl std::io::Write,
+    all_results: &[(Vec<Diagnostic>, String, std::path::PathBuf)],
+) -> std::io::Result<()> {
+    let mut total_tests = 0usize;
+    let mut total_failures = 0usize;
+    let mut cases: Vec<JunitTestCase> = Vec::new();
+
+    for (diagnostics, source_text, file_path) in all_results {
+        let index = LineIndex::new(source_text);
+        let file_str = file_path.display().to_string();
+
+        for diag in diagnostics {
+            let (line, col) = index.offset_to_line_col(source_text, diag.span.start);
+            let severity = match diag.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+                Severity::Suggestion => "suggestion",
+            };
+
+            total_tests = total_tests.saturating_add(1);
+            total_failures = total_failures.saturating_add(1);
+
+            cases.push(JunitTestCase {
+                rule: diag.rule_name.clone(),
+                classname: file_str.clone(),
+                severity: severity.to_owned(),
+                message: diag.message.clone(),
+                detail: format!("{file_str}:{line}:{col} {}", diag.message),
+            });
+        }
+    }
+
+    writeln!(writer, "<?xml version=\"1.0\" encoding=\"UTF-8\"?>")?;
+    writeln!(writer, "<testsuites>")?;
+    writeln!(
+        writer,
+        "  <testsuite name=\"starlint\" tests=\"{total_tests}\" failures=\"{total_failures}\">"
+    )?;
+
+    for case in &cases {
+        writeln!(
+            writer,
+            "    <testcase name=\"{rule}\" classname=\"{classname}\">",
+            rule = xml_escape(&case.rule),
+            classname = xml_escape(&case.classname),
+        )?;
+        writeln!(
+            writer,
+            "      <failure message=\"{message}\" type=\"{severity}\">{detail}</failure>",
+            message = xml_escape(&case.message),
+            severity = xml_escape(&case.severity),
+            detail = xml_escape(&case.detail),
+        )?;
+        writeln!(writer, "    </testcase>")?;
+    }
+
+    writeln!(writer, "  </testsuite>")?;
+    writeln!(writer, "</testsuites>")?;
+    Ok(())
+}
+
+/// Format diagnostics for a single file as `JUnit` XML.
+///
+/// Primarily used for testing; production use goes through
+/// [`write_document_junit`].
+#[cfg(test)]
+fn format_junit(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path) -> String {
+    let mut output = Vec::new();
+    let data = vec![(
+        diagnostics.to_vec(),
+        source_text.to_owned(),
+        file_path.to_path_buf(),
+    )];
+    write_document_junit(&mut output, &data).ok();
+    String::from_utf8(output).unwrap_or_default()
+}
+
+// ── SARIF v2.1.0 format ──────────────────────────────────────────────
+
+/// Write diagnostics from multiple files as a SARIF v2.1.0 JSON document.
+///
+/// This is a document-level format: all diagnostics across all files are
+/// collected into a single SARIF `runs` array.
+pub fn write_document_sarif(
+    writer: &mut impl std::io::Write,
+    all_results: &[(Vec<Diagnostic>, String, std::path::PathBuf)],
+) -> std::io::Result<()> {
+    // Collect unique rules for the driver rules array.
+    let mut rule_names: Vec<String> = Vec::new();
+    let mut rule_index_map: HashMap<String, usize> = HashMap::new();
+    let mut results_array: Vec<serde_json::Value> = Vec::new();
+
+    for (diagnostics, source_text, file_path) in all_results {
+        let index = LineIndex::new(source_text);
+        let file_str = file_path.display().to_string();
+
+        for diag in diagnostics {
+            let (line, col) = index.offset_to_line_col(source_text, diag.span.start);
+            let rule_position = if let Some(&idx) = rule_index_map.get(&diag.rule_name) {
+                idx
+            } else {
+                let idx = rule_names.len();
+                rule_names.push(diag.rule_name.clone());
+                rule_index_map.insert(diag.rule_name.clone(), idx);
+                idx
+            };
+
+            let level = match diag.severity {
+                Severity::Error => "error",
+                Severity::Warning => "warning",
+                Severity::Suggestion => "note",
+            };
+
+            let result_obj = serde_json::json!({
+                "ruleId": diag.rule_name,
+                "ruleIndex": rule_position,
+                "level": level,
+                "message": {
+                    "text": diag.message
+                },
+                "locations": [{
+                    "physicalLocation": {
+                        "artifactLocation": {
+                            "uri": file_str
+                        },
+                        "region": {
+                            "startLine": line,
+                            "startColumn": col
+                        }
+                    }
+                }]
+            });
+            results_array.push(result_obj);
+        }
+    }
+
+    let rules_array: Vec<serde_json::Value> = rule_names
+        .iter()
+        .map(|id| {
+            serde_json::json!({
+                "id": id
+            })
+        })
+        .collect();
+
+    let sarif = serde_json::json!({
+        "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/sarif-2.1/schema/sarif-schema-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {
+                "driver": {
+                    "name": "starlint",
+                    "rules": rules_array
+                }
+            },
+            "results": results_array
+        }]
+    });
+
+    match serde_json::to_writer_pretty(writer, &sarif) {
+        Ok(()) => {}
+        Err(err) => {
+            tracing::warn!("failed to serialize SARIF output: {err}");
+        }
+    }
+    Ok(())
+}
+
+/// Format diagnostics for a single file as SARIF v2.1.0 JSON.
+///
+/// Primarily used for testing; production use goes through
+/// [`write_document_sarif`].
+#[cfg(test)]
+fn format_sarif(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path) -> String {
+    let mut output = Vec::new();
+    let data = vec![(
+        diagnostics.to_vec(),
+        source_text.to_owned(),
+        file_path.to_path_buf(),
+    )];
+    write_document_sarif(&mut output, &data).ok();
+    String::from_utf8(output).unwrap_or_default()
+}
+
+// ── Stylish (ESLint-style) format ─────────────────────────────────────
+
+/// Format diagnostics in ESLint-style grouped format.
+fn format_stylish(diagnostics: &[Diagnostic], source_text: &str, file_path: &Path) -> String {
+    let mut output = Vec::new();
+    write_stylish(&mut output, diagnostics, source_text, file_path).ok();
+    String::from_utf8(output).unwrap_or_default()
+}
+
+/// Write diagnostics in ESLint-style grouped format directly to a writer.
+///
+/// Groups diagnostics under the file path and appends a summary line with
+/// total problem, error, and warning counts.
+fn write_stylish(
+    writer: &mut impl std::io::Write,
+    diagnostics: &[Diagnostic],
+    source_text: &str,
+    file_path: &Path,
+) -> std::io::Result<()> {
+    if diagnostics.is_empty() {
+        return Ok(());
+    }
+
+    let index = LineIndex::new(source_text);
+
+    writeln!(writer, "{}", file_path.display())?;
+
+    let mut error_count = 0usize;
+    let mut warning_count = 0usize;
+
+    for diag in diagnostics {
+        let (line, col) = index.offset_to_line_col(source_text, diag.span.start);
+        let severity_str = match diag.severity {
+            Severity::Error => {
+                error_count = error_count.saturating_add(1);
+                "error"
+            }
+            Severity::Warning => {
+                warning_count = warning_count.saturating_add(1);
+                "warning"
+            }
+            Severity::Suggestion => "suggestion",
+        };
+
+        writeln!(
+            writer,
+            "  {line}:{col}  {severity_str}  {message}  {rule}",
+            message = diag.message,
+            rule = diag.rule_name,
+        )?;
+    }
+
+    writeln!(writer)?;
+
+    let total = error_count.saturating_add(warning_count);
+    writeln!(
+        writer,
+        "X {total} problem(s) ({error_count} error(s), {warning_count} warning(s))"
+    )?;
+
     Ok(())
 }
 
@@ -398,6 +853,38 @@ mod tests {
 
         let count = format_diagnostics(diags, source, path, OutputFormat::Count);
         assert!(count.is_empty(), "count format should be empty");
+
+        let github = format_diagnostics(diags, source, path, OutputFormat::Github);
+        assert!(
+            github.contains("::error"),
+            "github format should contain ::error"
+        );
+
+        // Document formats return empty from format_diagnostics (handled via
+        // write_document_* functions in the CLI layer).
+        let gitlab = format_diagnostics(diags, source, path, OutputFormat::Gitlab);
+        assert!(
+            gitlab.is_empty(),
+            "gitlab via format_diagnostics should be empty (document format)"
+        );
+
+        let junit = format_diagnostics(diags, source, path, OutputFormat::Junit);
+        assert!(
+            junit.is_empty(),
+            "junit via format_diagnostics should be empty (document format)"
+        );
+
+        let sarif = format_diagnostics(diags, source, path, OutputFormat::Sarif);
+        assert!(
+            sarif.is_empty(),
+            "sarif via format_diagnostics should be empty (document format)"
+        );
+
+        let stylish = format_diagnostics(diags, source, path, OutputFormat::Stylish);
+        assert!(
+            stylish.contains("test.js"),
+            "stylish format should contain file path"
+        );
     }
 
     #[test]
@@ -588,5 +1075,560 @@ mod tests {
             output.contains("\"help\":\"helpful\""),
             "json should contain help"
         );
+    }
+
+    // ── GitHub Actions format tests ───────────────────────────────────
+
+    #[test]
+    fn test_format_github() {
+        let diags = vec![
+            make_diag("no-debugger", "Unexpected debugger", Severity::Error),
+            make_diag("no-console", "Unexpected console", Severity::Warning),
+            make_diag("prefer-const", "Use const", Severity::Suggestion),
+        ];
+        let output = format_github(
+            &diags,
+            "debugger;\nconsole.log();\nlet x = 1;",
+            Path::new("test.js"),
+        );
+        assert!(
+            output.contains("::error file=test.js,line=1,col=1::Unexpected debugger [no-debugger]"),
+            "should contain error annotation: {output}"
+        );
+        assert!(
+            output.contains("::warning file=test.js,line=1,col=1::Unexpected console [no-console]"),
+            "should contain warning annotation: {output}"
+        );
+        assert!(
+            output.contains("::notice file=test.js,line=1,col=1::Use const [prefer-const]"),
+            "should contain notice annotation for suggestion: {output}"
+        );
+    }
+
+    // ── GitLab Code Quality format tests ──────────────────────────────
+
+    #[test]
+    fn test_format_gitlab() {
+        let diags = vec![
+            make_diag("no-debugger", "Unexpected debugger", Severity::Error),
+            make_diag("no-console", "Unexpected console", Severity::Warning),
+        ];
+        let output = format_gitlab(&diags, "debugger;", Path::new("test.js"));
+        assert!(
+            output.contains("\"check_name\": \"no-debugger\""),
+            "should contain check_name: {output}"
+        );
+        assert!(
+            output.contains("\"severity\": \"critical\""),
+            "error should map to critical: {output}"
+        );
+        assert!(
+            output.contains("\"severity\": \"major\""),
+            "warning should map to major: {output}"
+        );
+        assert!(
+            output.contains("\"description\": \"Unexpected debugger\""),
+            "should contain description: {output}"
+        );
+        assert!(
+            output.contains("\"fingerprint\""),
+            "should contain fingerprint: {output}"
+        );
+
+        // Verify it is a valid JSON array.
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&output);
+        assert!(parsed.is_ok(), "should be valid JSON: {output}");
+        assert!(
+            parsed.ok().is_some_and(|v| v.is_array()),
+            "should be a JSON array"
+        );
+    }
+
+    // ── `JUnit` XML format tests ────────────────────────────────────────
+
+    #[test]
+    fn test_format_junit() {
+        let diags = vec![
+            make_diag("no-debugger", "Unexpected debugger", Severity::Error),
+            make_diag("no-console", "Unexpected console", Severity::Warning),
+        ];
+        let output = format_junit(&diags, "debugger;", Path::new("test.js"));
+        assert!(
+            output.contains("<?xml version=\"1.0\" encoding=\"UTF-8\"?>"),
+            "should contain XML declaration: {output}"
+        );
+        assert!(
+            output.contains("<testsuites>"),
+            "should contain testsuites element: {output}"
+        );
+        assert!(
+            output.contains("tests=\"2\""),
+            "should have 2 tests: {output}"
+        );
+        assert!(
+            output.contains("failures=\"2\""),
+            "should have 2 failures: {output}"
+        );
+        assert!(
+            output.contains("name=\"no-debugger\""),
+            "should contain rule name in testcase: {output}"
+        );
+        assert!(
+            output.contains("classname=\"test.js\""),
+            "should contain file as classname: {output}"
+        );
+        assert!(
+            output.contains("type=\"error\""),
+            "should contain severity type: {output}"
+        );
+        assert!(
+            output.contains("</testsuites>"),
+            "should close testsuites: {output}"
+        );
+    }
+
+    #[test]
+    fn test_format_junit_xml_escaping() {
+        let diag = make_diag("rule", "Use <div> & \"quotes\"", Severity::Error);
+        let output = format_junit(&[diag], "x;", Path::new("test.js"));
+        assert!(
+            output.contains("&lt;div&gt;"),
+            "should escape angle brackets: {output}"
+        );
+        assert!(
+            output.contains("&amp;"),
+            "should escape ampersand: {output}"
+        );
+        assert!(
+            output.contains("&quot;quotes&quot;"),
+            "should escape quotes: {output}"
+        );
+    }
+
+    // ── SARIF v2.1.0 format tests ────────────────────────────────────
+
+    #[test]
+    fn test_format_sarif() {
+        let diags = vec![
+            make_diag("no-debugger", "Unexpected debugger", Severity::Error),
+            make_diag("no-console", "Unexpected console", Severity::Warning),
+        ];
+        let output = format_sarif(&diags, "debugger;\nconsole.log();", Path::new("test.js"));
+        assert!(
+            output.contains("\"version\": \"2.1.0\""),
+            "should contain SARIF version: {output}"
+        );
+        assert!(
+            output.contains("sarif-schema-2.1.0.json"),
+            "should contain schema reference: {output}"
+        );
+        assert!(
+            output.contains("\"name\": \"starlint\""),
+            "should contain tool name: {output}"
+        );
+        assert!(
+            output.contains("\"ruleId\": \"no-debugger\""),
+            "should contain ruleId: {output}"
+        );
+        assert!(
+            output.contains("\"level\": \"error\""),
+            "should contain error level: {output}"
+        );
+        assert!(
+            output.contains("\"level\": \"warning\""),
+            "should contain warning level: {output}"
+        );
+
+        // Verify it is valid JSON with the expected structure.
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&output);
+        assert!(parsed.is_ok(), "should be valid JSON: {output}");
+        assert!(
+            parsed.ok().and_then(|v| v.get("runs").cloned()).is_some(),
+            "should have runs key"
+        );
+    }
+
+    // ── Stylish format tests ──────────────────────────────────────────
+
+    #[test]
+    fn test_format_stylish() {
+        let diags = vec![
+            make_diag("no-debugger", "Unexpected debugger", Severity::Error),
+            make_diag("no-console", "Unexpected console", Severity::Warning),
+        ];
+        let output = format_stylish(&diags, "debugger;\nconsole.log();", Path::new("test.js"));
+        assert!(
+            output.contains("test.js"),
+            "should contain file path: {output}"
+        );
+        assert!(
+            output.contains("error"),
+            "should contain error severity: {output}"
+        );
+        assert!(
+            output.contains("warning"),
+            "should contain warning severity: {output}"
+        );
+        assert!(
+            output.contains("Unexpected debugger"),
+            "should contain error message: {output}"
+        );
+        assert!(
+            output.contains("no-debugger"),
+            "should contain rule name: {output}"
+        );
+        assert!(
+            output.contains("X 2 problem(s) (1 error(s), 1 warning(s))"),
+            "should contain summary line: {output}"
+        );
+    }
+
+    #[test]
+    fn test_format_stylish_empty() {
+        let output = format_stylish(&[], "x;", Path::new("test.js"));
+        assert!(
+            output.is_empty(),
+            "empty diagnostics should produce no output"
+        );
+    }
+
+    // ── is_document_format ────────────────────────────────────────────
+
+    #[test]
+    fn test_is_document_format() {
+        assert!(!is_document_format(OutputFormat::Pretty));
+        assert!(!is_document_format(OutputFormat::Json));
+        assert!(!is_document_format(OutputFormat::Compact));
+        assert!(!is_document_format(OutputFormat::Count));
+        assert!(!is_document_format(OutputFormat::Github));
+        assert!(is_document_format(OutputFormat::Gitlab));
+        assert!(is_document_format(OutputFormat::Junit));
+        assert!(is_document_format(OutputFormat::Sarif));
+        assert!(!is_document_format(OutputFormat::Stylish));
+    }
+
+    // ── xml_escape ────────────────────────────────────────────────────
+
+    #[test]
+    fn test_xml_escape() {
+        assert_eq!(xml_escape("hello"), "hello");
+        assert_eq!(xml_escape("<div>"), "&lt;div&gt;");
+        assert_eq!(xml_escape("a&b"), "a&amp;b");
+        assert_eq!(xml_escape("\"quoted\""), "&quot;quoted&quot;");
+        assert_eq!(xml_escape("it's"), "it&apos;s");
+    }
+
+    // ── write_diagnostics coverage for remaining formats ──────────────
+
+    #[test]
+    fn test_write_diagnostics_github() {
+        let diag = make_diag("test/rule", "msg", Severity::Error);
+        let mut buf = Vec::new();
+        write_diagnostics(
+            &mut buf,
+            &[diag],
+            "x;",
+            Path::new("test.js"),
+            OutputFormat::Github,
+        )
+        .ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("::error file=test.js"),
+            "github should contain ::error annotation: {output}"
+        );
+        assert!(
+            output.contains("[test/rule]"),
+            "github should contain rule name: {output}"
+        );
+    }
+
+    #[test]
+    fn test_write_diagnostics_stylish() {
+        let diag = make_diag("test/rule", "msg", Severity::Error);
+        let mut buf = Vec::new();
+        write_diagnostics(
+            &mut buf,
+            &[diag],
+            "x;",
+            Path::new("test.js"),
+            OutputFormat::Stylish,
+        )
+        .ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("test.js"),
+            "stylish should contain file path: {output}"
+        );
+        assert!(
+            output.contains("error"),
+            "stylish should contain severity: {output}"
+        );
+        assert!(
+            output.contains("test/rule"),
+            "stylish should contain rule name: {output}"
+        );
+    }
+
+    #[test]
+    fn test_write_diagnostics_document_formats_are_noop() {
+        let diag = make_diag("test/rule", "msg", Severity::Error);
+
+        for format in [
+            OutputFormat::Gitlab,
+            OutputFormat::Junit,
+            OutputFormat::Sarif,
+        ] {
+            let mut buf = Vec::new();
+            let result = write_diagnostics(
+                &mut buf,
+                std::slice::from_ref(&diag),
+                "x;",
+                Path::new("test.js"),
+                format,
+            );
+            assert!(
+                result.is_ok(),
+                "document format {format:?} should return Ok(())"
+            );
+            assert!(
+                buf.is_empty(),
+                "document format {format:?} should write nothing"
+            );
+        }
+    }
+
+    // ── Suggestion severity in document formats ───────────────────────
+
+    #[test]
+    fn test_format_gitlab_suggestion_severity() {
+        let diag = make_diag("suggest/rule", "Consider this", Severity::Suggestion);
+        let output = format_gitlab(&[diag], "x;", Path::new("test.js"));
+        assert!(
+            output.contains("\"severity\": \"minor\""),
+            "suggestion should map to minor in gitlab: {output}"
+        );
+    }
+
+    #[test]
+    fn test_format_sarif_suggestion_level() {
+        let diag = make_diag("suggest/rule", "Consider this", Severity::Suggestion);
+        let output = format_sarif(&[diag], "x;", Path::new("test.js"));
+        assert!(
+            output.contains("\"level\": \"note\""),
+            "suggestion should map to note in sarif: {output}"
+        );
+    }
+
+    #[test]
+    fn test_format_stylish_suggestion_only() {
+        let diag = make_diag("suggest/rule", "Consider this", Severity::Suggestion);
+        let output = format_stylish(&[diag], "x;", Path::new("test.js"));
+        assert!(
+            output.contains("suggestion"),
+            "should contain suggestion severity: {output}"
+        );
+        assert!(
+            output.contains("X 0 problem(s) (0 error(s), 0 warning(s))"),
+            "suggestions should not count as errors or warnings: {output}"
+        );
+    }
+
+    // ── Empty document format outputs ─────────────────────────────────
+
+    #[test]
+    fn test_format_gitlab_empty() {
+        let output = format_gitlab(&[], "x;", Path::new("test.js"));
+        assert_eq!(
+            output.trim(),
+            "[]",
+            "empty gitlab should produce empty JSON array"
+        );
+    }
+
+    #[test]
+    fn test_format_junit_empty() {
+        let output = format_junit(&[], "x;", Path::new("test.js"));
+        assert!(
+            output.contains("tests=\"0\""),
+            "empty junit should have tests=0: {output}"
+        );
+        assert!(
+            output.contains("<?xml version=\"1.0\""),
+            "empty junit should have XML declaration: {output}"
+        );
+    }
+
+    #[test]
+    fn test_format_sarif_empty() {
+        let output = format_sarif(&[], "x;", Path::new("test.js"));
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&output);
+        assert!(parsed.is_ok(), "empty sarif should be valid JSON: {output}");
+        let val = parsed.unwrap_or_default();
+        let results = val
+            .get("runs")
+            .and_then(|r| r.get(0))
+            .and_then(|r| r.get("results"))
+            .and_then(|r| r.as_array());
+        assert!(
+            results.is_some_and(Vec::is_empty),
+            "empty sarif should have empty results array"
+        );
+    }
+
+    // ── Multi-file document format tests ──────────────────────────────
+
+    #[test]
+    fn test_format_gitlab_multiple_files() {
+        let diag_a = make_diag("rule-a", "issue in a", Severity::Error);
+        let diag_b = make_diag("rule-b", "issue in b", Severity::Warning);
+        let data = vec![
+            (
+                vec![diag_a],
+                "x;".to_owned(),
+                std::path::PathBuf::from("a.js"),
+            ),
+            (
+                vec![diag_b],
+                "y;".to_owned(),
+                std::path::PathBuf::from("b.js"),
+            ),
+        ];
+        let mut buf = Vec::new();
+        write_document_gitlab(&mut buf, &data).ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("\"check_name\": \"rule-a\""),
+            "should contain rule-a: {output}"
+        );
+        assert!(
+            output.contains("\"check_name\": \"rule-b\""),
+            "should contain rule-b: {output}"
+        );
+        assert!(
+            output.contains("a.js"),
+            "should contain first file path: {output}"
+        );
+        assert!(
+            output.contains("b.js"),
+            "should contain second file path: {output}"
+        );
+    }
+
+    #[test]
+    fn test_format_sarif_rule_deduplication() {
+        let diag_a = make_diag("shared-rule", "issue in a", Severity::Error);
+        let diag_b = make_diag("shared-rule", "issue in b", Severity::Error);
+        let data = vec![
+            (
+                vec![diag_a],
+                "x;".to_owned(),
+                std::path::PathBuf::from("a.js"),
+            ),
+            (
+                vec![diag_b],
+                "y;".to_owned(),
+                std::path::PathBuf::from("b.js"),
+            ),
+        ];
+        let mut buf = Vec::new();
+        write_document_sarif(&mut buf, &data).ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+
+        let parsed: Result<serde_json::Value, _> = serde_json::from_str(&output);
+        assert!(parsed.is_ok(), "should be valid JSON: {output}");
+        let val = parsed.unwrap_or_default();
+        let rules = val
+            .get("runs")
+            .and_then(|r| r.get(0))
+            .and_then(|r| r.get("tool"))
+            .and_then(|t| t.get("driver"))
+            .and_then(|d| d.get("rules"))
+            .and_then(|r| r.as_array());
+        assert!(
+            rules.is_some_and(|arr| arr.len() == 1),
+            "shared-rule should appear only once in rules array"
+        );
+
+        let results = val
+            .get("runs")
+            .and_then(|r| r.get(0))
+            .and_then(|r| r.get("results"))
+            .and_then(|r| r.as_array());
+        assert!(
+            results.is_some_and(|arr| arr.len() == 2),
+            "should have two results for two files"
+        );
+    }
+
+    #[test]
+    fn test_format_junit_multiple_files() {
+        let diag_a = make_diag("rule-a", "issue in a", Severity::Error);
+        let diag_b = make_diag("rule-b", "issue in b", Severity::Warning);
+        let data = vec![
+            (
+                vec![diag_a],
+                "x;".to_owned(),
+                std::path::PathBuf::from("a.js"),
+            ),
+            (
+                vec![diag_b],
+                "y;".to_owned(),
+                std::path::PathBuf::from("b.js"),
+            ),
+        ];
+        let mut buf = Vec::new();
+        write_document_junit(&mut buf, &data).ok();
+        let output = String::from_utf8(buf).unwrap_or_default();
+        assert!(
+            output.contains("tests=\"2\""),
+            "should have 2 tests total: {output}"
+        );
+        assert!(
+            output.contains("classname=\"a.js\""),
+            "should contain first file: {output}"
+        );
+        assert!(
+            output.contains("classname=\"b.js\""),
+            "should contain second file: {output}"
+        );
+    }
+
+    // ── xml_escape edge case ──────────────────────────────────────────
+
+    #[test]
+    fn test_xml_escape_empty() {
+        assert_eq!(
+            xml_escape(""),
+            "",
+            "empty string should produce empty output"
+        );
+    }
+
+    // ── LineIndex edge cases ──────────────────────────────────────────
+
+    #[test]
+    fn test_line_index_empty_source() {
+        let idx = LineIndex::new("");
+        let (line, col) = idx.offset_to_line_col("", 0);
+        assert_eq!(line, 1, "empty source should report line 1");
+        assert_eq!(col, 1, "empty source should report col 1");
+    }
+
+    #[test]
+    fn test_line_index_multiline() {
+        let source = "aaa\nbbb\nccc";
+        let idx = LineIndex::new(source);
+        let (line1, col1) = idx.offset_to_line_col(source, 0);
+        assert_eq!((line1, col1), (1, 1), "start of first line");
+
+        let (line2, col2) = idx.offset_to_line_col(source, 4);
+        assert_eq!((line2, col2), (2, 1), "start of second line");
+
+        let (line3, col3) = idx.offset_to_line_col(source, 8);
+        assert_eq!((line3, col3), (3, 1), "start of third line");
+
+        let (line2b, col2b) = idx.offset_to_line_col(source, 6);
+        assert_eq!((line2b, col2b), (2, 3), "third char of second line");
     }
 }
