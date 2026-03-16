@@ -12,7 +12,8 @@ coverage:
         if_ci_failed: error
 
 comment:
-  layout: "reach,flags,files"
+  layout: "condensed_header,flags,condensed_files,condensed_footer"
+  hide_project_coverage: true
   behavior: new
   require_changes: true
 
