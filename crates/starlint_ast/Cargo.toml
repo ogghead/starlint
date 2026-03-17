@@ -10,6 +10,7 @@ description = "Stable AST types for starlint (flat indexed tree)"
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
+starlint_plugin_sdk = { workspace = true }
 
 [dev-dependencies]
 pretty_assertions = { workspace = true }
