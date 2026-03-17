@@ -171,6 +171,24 @@ impl<'a> LintContext<'a> {
         self.file_path
     }
 
+    /// Extract the source text for a [`Span`].
+    ///
+    /// Returns `None` if the span is out of bounds or lands on a non-char-boundary.
+    #[must_use]
+    pub fn text_for_span(&self, span: Span) -> Option<&str> {
+        crate::fix_utils::source_text_for_span(self.source_text, span)
+    }
+
+    /// Extract the source text for the node identified by [`NodeId`].
+    ///
+    /// Returns `None` if the node doesn't exist or the span is out of bounds.
+    #[must_use]
+    pub fn text_for_node(&self, id: NodeId) -> Option<&str> {
+        let node = self.tree.get(id)?;
+        let span = node.span();
+        self.text_for_span(Span::new(span.start, span.end))
+    }
+
     /// Report a diagnostic.
     pub fn report(&mut self, diagnostic: Diagnostic) {
         self.diagnostics.push(diagnostic);
@@ -437,6 +455,37 @@ mod tests {
         assert!(
             ctx.parent(starlint_ast::types::NodeId::ROOT).is_none(),
             "empty tree should have no parent"
+        );
+    }
+
+    #[test]
+    fn test_lint_context_text_for_span() {
+        let tree = AstTree::new();
+        let ctx = LintContext::new(&tree, "hello world", Path::new("test.js"));
+        assert_eq!(
+            ctx.text_for_span(Span::new(0, 5)),
+            Some("hello"),
+            "should extract 'hello'"
+        );
+        assert_eq!(
+            ctx.text_for_span(Span::new(6, 11)),
+            Some("world"),
+            "should extract 'world'"
+        );
+        assert!(
+            ctx.text_for_span(Span::new(0, 100)).is_none(),
+            "out of bounds should return None"
+        );
+    }
+
+    #[test]
+    fn test_lint_context_text_for_node_missing() {
+        let tree = AstTree::new();
+        let ctx = LintContext::new(&tree, "hello", Path::new("test.js"));
+        assert!(
+            ctx.text_for_node(starlint_ast::types::NodeId::ROOT)
+                .is_none(),
+            "empty tree should return None for text_for_node"
         );
     }
 

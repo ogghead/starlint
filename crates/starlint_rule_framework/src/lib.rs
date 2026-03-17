@@ -7,6 +7,7 @@
 //! plugin crates depend on this for rule infrastructure, while the SDK
 //! provides the wire types (diagnostics, spans, rule metadata).
 
+pub mod ast_utils;
 pub mod diagnostic_builder;
 pub mod fix;
 pub mod fix_builder;

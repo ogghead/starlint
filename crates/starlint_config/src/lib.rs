@@ -57,6 +57,33 @@ pub struct Config {
 }
 
 impl Config {
+    /// Validate that rule names in the config correspond to known rules.
+    ///
+    /// Returns a list of unknown rule names found in `rules` and `overrides`.
+    /// An empty return means all rule names are valid.
+    #[must_use]
+    pub fn validate_rules(&self, known_rules: &[&str]) -> Vec<String> {
+        let known: std::collections::HashSet<&str> = known_rules.iter().copied().collect();
+        let mut unknown = Vec::new();
+
+        for rule_name in self.rules.keys() {
+            if !known.contains(rule_name.as_str()) {
+                unknown.push(rule_name.clone());
+            }
+        }
+
+        for override_block in &self.overrides {
+            for rule_name in override_block.rules.keys() {
+                if !known.contains(rule_name.as_str()) && !unknown.contains(rule_name) {
+                    unknown.push(rule_name.clone());
+                }
+            }
+        }
+
+        unknown.sort();
+        unknown
+    }
+
     /// Merge a base config into this one. `self` (the child/local) takes priority.
     ///
     /// - `settings`: `self` wins if non-default (non-zero threads).
@@ -611,5 +638,64 @@ custom = { path = "./plugins/custom.wasm" }
             settings.threads, 0,
             "default threads should be 0 (auto-detect)"
         );
+    }
+
+    #[test]
+    fn test_validate_rules_all_known() {
+        let mut cfg = Config::default();
+        cfg.rules.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("error".to_owned()),
+        );
+        cfg.rules.insert(
+            "no-console".to_owned(),
+            RuleConfig::Severity("warn".to_owned()),
+        );
+        let unknown = cfg.validate_rules(&["no-debugger", "no-console", "no-eval"]);
+        assert!(unknown.is_empty(), "all rules should be known");
+    }
+
+    #[test]
+    fn test_validate_rules_with_unknown() {
+        let mut cfg = Config::default();
+        cfg.rules.insert(
+            "no-debugger".to_owned(),
+            RuleConfig::Severity("error".to_owned()),
+        );
+        cfg.rules.insert(
+            "typo-rule".to_owned(),
+            RuleConfig::Severity("warn".to_owned()),
+        );
+        let unknown = cfg.validate_rules(&["no-debugger", "no-console"]);
+        assert_eq!(unknown, vec!["typo-rule"], "should detect unknown rule");
+    }
+
+    #[test]
+    fn test_validate_rules_in_overrides() {
+        let mut cfg = Config::default();
+        cfg.overrides.push(Override {
+            files: vec!["**/*.test.ts".to_owned()],
+            rules: {
+                let mut r = HashMap::new();
+                r.insert(
+                    "unknown-rule".to_owned(),
+                    RuleConfig::Severity("error".to_owned()),
+                );
+                r
+            },
+        });
+        let unknown = cfg.validate_rules(&["no-debugger"]);
+        assert_eq!(
+            unknown,
+            vec!["unknown-rule"],
+            "should detect unknown rule in overrides"
+        );
+    }
+
+    #[test]
+    fn test_validate_rules_empty_config() {
+        let cfg = Config::default();
+        let unknown = cfg.validate_rules(&["no-debugger"]);
+        assert!(unknown.is_empty(), "empty config should have no unknowns");
     }
 }

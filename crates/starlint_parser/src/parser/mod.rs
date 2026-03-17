@@ -234,19 +234,6 @@ impl<'a> Parser<'a> {
     pub(crate) fn has_preceding_line_break(&self) -> bool {
         self.prev_end_on_newline()
     }
-
-    /// Parse a statement list item (statement or declaration).
-    fn parse_statement_list_item(&mut self, parent: Option<NodeId>) -> NodeId {
-        // Module declarations
-        if self.options.module {
-            match self.cur() {
-                TokenKind::Import => return self.parse_import_declaration(parent),
-                TokenKind::Export => return self.parse_export_declaration(parent),
-                _ => {}
-            }
-        }
-        self.parse_statement_with_parent(parent)
-    }
 }
 
 #[cfg(test)]

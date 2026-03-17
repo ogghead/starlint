@@ -76,6 +76,18 @@ impl Span {
     }
 }
 
+impl From<Span> for starlint_plugin_sdk::diagnostic::Span {
+    fn from(span: Span) -> Self {
+        Self::new(span.start, span.end)
+    }
+}
+
+impl From<starlint_plugin_sdk::diagnostic::Span> for Span {
+    fn from(span: starlint_plugin_sdk::diagnostic::Span) -> Self {
+        Self::new(span.start, span.end)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{NodeId, Span};
@@ -110,5 +122,21 @@ mod tests {
             Some("world"),
             "should extract 'world'"
         );
+    }
+
+    #[test]
+    fn span_from_sdk_span() {
+        let sdk_span = starlint_plugin_sdk::diagnostic::Span::new(10, 20);
+        let ast_span: Span = sdk_span.into();
+        assert_eq!(ast_span.start, 10, "start should be preserved");
+        assert_eq!(ast_span.end, 20, "end should be preserved");
+    }
+
+    #[test]
+    fn span_into_sdk_span() {
+        let ast_span = Span::new(5, 15);
+        let sdk_span: starlint_plugin_sdk::diagnostic::Span = ast_span.into();
+        assert_eq!(sdk_span.start, 5, "start should be preserved");
+        assert_eq!(sdk_span.end, 15, "end should be preserved");
     }
 }
